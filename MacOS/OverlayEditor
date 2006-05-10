@@ -1,0 +1,4 @@
+#!/bin/bash
+# This is executed by user's default shell, ignoring previous line
+
+/usr/bin/env pythonw "$0.py"
