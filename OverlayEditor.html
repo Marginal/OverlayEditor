@@ -1,0 +1,177 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+  <meta content="text/html; charset=ISO-8859-1" http-equiv="content-type">
+  <meta content="DSF overlay editor">
+  <meta content="X-Plane, simulator, scenery" name="keywords">
+  <title>OverlayEditor</title>
+  <meta content="Jonathan Harris" name="author">
+  <style type="text/css">
+.banner { font-family: Arial,Helvetica,sans-serif; background-color: lightskyblue; text-align: left; height: 32px; }
+.dnl { font-family: Arial,Helvetica,sans-serif; font-size: small; background-color: lightskyblue; }
+samp { font-family: Arial,Helvetica,sans-serif; }
+h2 { font-family: Arial,Helvetica,sans-serif; }
+h3 { font-family: Arial,Helvetica,sans-serif; }
+h4 { font-family: Arial,Helvetica,sans-serif; }
+h5 { font-family: Arial,Helvetica,sans-serif; }
+  </style>
+</head>
+<body>
+<table style="width: 100%;" border="0" cellpadding="2">
+  <tbody>
+    <tr>
+      <td class="banner">Marginal &raquo; <a href="http://marginal.org.uk/x-planescenery/">X-Plane
+Scenery</a> &raquo; <a href="http://marginal.org.uk/x-planescenery/tools.html">Tools</a>
+&raquo; OverlayEditor</td>
+    </tr>
+  </tbody>
+</table>
+<hr>
+<h2>DSF overlay editor</h2>
+<h3>Overview</h3>
+<p>This application edits X-Plane<small><sup>&reg;</sup></small>
+DSF overlay scenery packages.</p>
+<h3>Setting up</h3>
+<p>The first time that you run the application you are asked to
+identify X-Plane's top-level folder (<i>ie</i> the folder which
+contains X-Plane, PlaneMaker etc.<p>
+<h3>The application window</h3>
+<p>The application window consists of four parts:</p>
+<img style="border: 0px solid ; width: 792px; height: 562px;" alt="main window" src="Resources/screenshot.png">
+<h4>Main window</h4>
+<p>This shows the objects in the loaded scenery package.
+Runways and taxiways are displays in simplified form.
+Terrain and "autogen" scenery objects are not displayed.<p>
+<p>Navigate with the cursor keys:</p>
+<table style="width: 100%;" border="0">
+  <tbody>
+    <tr>
+      <td style="width: 33%;">
+<samp>Up</samp>, <samp>Down</samp>, <samp>Left</samp>, <samp>Right</samp></td>
+      <td>Move</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Home</samp>, <samp>End</samp></td>
+      <td>Rotate</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>PageUp</samp>, <samp>PageDown</samp></td>
+      <td>Change elevation</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>=</samp>, <samp>-</samp></td>
+      <td>Zoom</td>
+    </tr>
+  </tbody>
+</table>
+<p>You can click on an object to select it. The currently selected
+object is highlighted in pink in the main window and is also highlighted
+in the <a href="#objectlist">list of objects</a>.<p>
+<p>These keys affect the selected object:</p>
+<table style="width: 100%;" border="0">
+  <tbody>
+    <tr>
+      <td style="width: 33%;">
+<samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
+      <td>Move selected object</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Q</samp>, <samp>E</samp></td>
+      <td>Rotate selected object</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>C</samp></td>
+      <td>Centre on selected object</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Delete</samp></td>
+      <td>Delete selected object</td>
+    </tr>
+  </tbody>
+</table>
+<p>You can combine these keys with <samp>Ctrl</samp> for bigger steps,
+or <samp>Shift</samp> for smaller steps.</p>
+<h4>Status bar</h4>
+<p>This shows your current location and heading and, if you have
+selected an object, the object's location and heading.</p>
+<h4>Tool bar</h4>
+<table style="width: 100%;" border="0">
+  <tbody>
+    <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="New" src="Resources/new.png"></td>
+      <td>Create a new scenery package. This just creates a new folder
+in X-Plane's <code>Custom Scenery</code> folder.</td>
+    </tr>
+    <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Open" src="Resources/open.png"></td>
+      <td>Open an existing scenery package. All the packages in
+X-Plane's <code>Custom Scenery</code> folder are listed but you
+can only actually edit those that use DSF overlays (rather than
+ENVs or "full" DSFs).</td>
+    </tr>
+    <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Save" src="Resources/save.png"></td>
+      <td>Save the scenery package. Any existing <code>.dsf</code>
+files are backed up with the extension <code>.dsf.bak</code></td>
+    </tr>
+    <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Add" src="Resources/add.png"></td>
+      <td>Add the object that is highlighted in the
+<a href="#objectlist">list of objects</a> to the scenery.
+The object is added at the current location and with the current heading.</td>
+    </tr>
+    <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Delete" src="Resources/delete.png"></td>
+      <td>Delete the selected object.</td>
+    </tr>
+    <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="reload"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Reload" src="Resources/reload.png"></a></td>
+      <td>Reloads the object, texture and apt.dat files in the scenery package
+The DSF files are not reloaded.
+Use this if you have modified any of these files outside of this application.
+Also use this if you have added new objects to the scenery package and you want
+these new objects to appear in the <a href="#objectlist">list of objects</a>.</td>
+    </tr>
+    <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Go To" src="Resources/goto.png"></td>
+      <td>Go to an airport.</td>
+    </tr>
+    <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="reload"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Preferences" src="Resources/prefs.png"></a></td>
+      <td>Identify X-Plane's top-level folder. Do not change the location
+of X-Plane's top-level folder while you are editing a scenery package.</td>
+    </tr>
+  </tbody>
+</table>
+<h4><a name="objectlist">List of objects</a></h4>
+<p>All the objects in the scenery package folder are listed
+(including those that are present in the scenery package folder
+but are not used in the scenery). You can only add objects that
+appear in this list - use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have added new objects to the scenery package folder.</p>
+<h3>Limitations</h3>
+<ul>
+  <li>It's slow.</li>
+  <li>Does not display terrain or autogen scenery.</li>
+  <li>Does not convert or edit <code>.env</code> files.</li>
+  <li>Does not edit <code>apt.dat</code> files.</li>
+</ul>
+<hr>
+<table style="width: 100%;" border="0" cellpadding="2">
+  <tbody>
+    <tr>
+      <td class="banner">1.00 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan
+Harris</a> <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
+      </td>
+    </tr>
+  </tbody>
+</table>
+<!--/Creative Commons License-->
+<!-- <rdf:RDF xmlns="http://web.resource.org/cc/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<Work rdf:about="">
+<license rdf:resource="http://creativecommons.org/licenses/by-sa/2.5/" />
+<dc:type rdf:resource="http://purl.org/dc/dcmitype/InteractiveResource" />
+</Work>
+<License rdf:about="http://creativecommons.org/licenses/by-sa/2.5/"><permits rdf:resource="http://web.resource.org/cc/Reproduction"/><permits rdf:resource="http://web.resource.org/cc/Distribution"/><requires rdf:resource="http://web.resource.org/cc/Notice"/><requires rdf:resource="http://web.resource.org/cc/Attribution"/><permits rdf:resource="http://web.resource.org/cc/DerivativeWorks"/><requires rdf:resource="http://web.resource.org/cc/ShareAlike"/></License></rdf:RDF>
+-->
+</body>
+</html>
