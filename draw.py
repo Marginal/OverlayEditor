@@ -7,9 +7,10 @@ except NameError:
     from OpenGL import GLU
     gluTessVertex = GLU._gluTessVertex
 
-from math import acos, atan2, cos, sin, floor, hypot, pi, fabs
+from math import acos, atan2, cos, sin, floor, hypot, pi
 from os.path import join
 from sys import exit, platform, maxint, version
+#import time
 import wx
 import wx.glcanvas
 
@@ -67,7 +68,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.objectslist=0
         self.background=None
         self.meshlist=0
-        self.sizecache={}
         
         self.selected=[]	# Indices into self.objects[self.tile]
         self.selections=[]	# List for picking
@@ -208,10 +208,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         event.Skip()
             
     def OnIdle(self, event):
-        self.prepareselect()
         if self.selectnode:
             self.updatepoly(self.currentpolygons()[self.selected[0]&MSKPOLY])
             self.Refresh()
+        if not self.selectlist: self.prepareselect()
         event.Skip()
 
     def OnMouseMotion(self, event):
@@ -311,15 +311,14 @@ class MyGL(wx.glcanvas.GLCanvas):
 
             glInitNames()
             glPushName(0)
-            for poly in self.currentpolygons():
-                for point in poly.points:
-                    glBegin(GL_POINTS)
-                    glVertex3f(point[0], point[1], point[2])
-                    glEnd()
+            poly=self.currentpolygons()[self.selected[0]&MSKPOLY]
+            for point in poly.points:
+                glBegin(GL_POINTS)
+                glVertex3f(point[0], point[1], point[2])
+                glEnd()
             try:
-                for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
+                if glRenderMode(GL_RENDER):
                     self.SetCursor(self.dragcursor)
-                    break
                 else:
                     self.SetCursor(wx.NullCursor)
             except:	# overflow
@@ -473,7 +472,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     continue	# don't have to recompute on move
                 obj=objects[i]
                 (x,z)=self.latlon2m(obj.lat, obj.lon)
-                (base,culled,nocull,texno,poly)=self.vertexcache.get(obj.name)
+                (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(obj.name)
                 if poly:
                     if polystate!=poly:
                         glPolygonOffset(-1*poly, -1*poly)
@@ -594,7 +593,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 # assumes cache is already properly set up
                 obj=objects[i]
                 (x,z)=self.latlon2m(obj.lat, obj.lon)
-                (base,culled,nocull,texno,poly)=self.vertexcache.get(obj.name)
+                (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(obj.name)
                 glPushMatrix()
                 glTranslatef(x, obj.height, z)
                 glRotatef(-obj.hdg, 0.0,1.0,0.0)
@@ -665,50 +664,49 @@ class MyGL(wx.glcanvas.GLCanvas):
 
 
     def prepareselect(self):
-        # Pre-prepare selection list
-        if not self.selectlist:
-            #print "prep"
-            objects=self.currentobjects()
-            polygons=self.currentpolygons()
-            self.selectlist=glGenLists(1)
-            glNewList(self.selectlist, GL_COMPILE)
-            glInitNames()
-            glPushName(0)
-            glDisable(GL_TEXTURE_2D)
-            glDisable(GL_DEPTH_TEST)
-            glDisable(GL_CULL_FACE)
-            for i in range(len(objects)):
-                glLoadName(i)
-                obj=objects[i]
-                (x,z)=self.latlon2m(obj.lat, obj.lon)
-                (base,culled,nocull,texno,poly)=self.vertexcache.get(obj.name)
-                glPushMatrix()
-                glTranslatef(x, obj.height, z)
-                glRotatef(-obj.hdg, 0.0,1.0,0.0)
-                glDrawArrays(GL_TRIANGLES, base, culled+nocull)
-                glPopMatrix()
-            for i in range(len(polygons)):
-                poly=polygons[i]
-                if poly.kind not in [Polygon.EXCLUDE, Polygon.FACADE, Polygon.FOREST]: continue
-                glLoadName(i|MSKSEL)
-                glBegin(GL_LINE_LOOP)
-                for p in poly.points:
+        # Pre-prepare selection list - assumes self.selectlist==0
+        #print "prep"
+        objects=self.currentobjects()
+        polygons=self.currentpolygons()
+        self.selectlist=glGenLists(1)
+        glNewList(self.selectlist, GL_COMPILE)
+        glInitNames()
+        glPushName(0)
+        glDisable(GL_TEXTURE_2D)
+        glDisable(GL_DEPTH_TEST)
+        glDisable(GL_CULL_FACE)
+        for i in range(len(objects)):
+            glLoadName(i)
+            obj=objects[i]
+            (x,z)=self.latlon2m(obj.lat, obj.lon)
+            (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(obj.name)
+            glPushMatrix()
+            glTranslatef(x, obj.height, z)
+            glRotatef(-obj.hdg, 0.0,1.0,0.0)
+            glDrawArrays(GL_TRIANGLES, base, culled+nocull)
+            glPopMatrix()
+        for i in range(len(polygons)):
+            poly=polygons[i]
+            if poly.kind not in [Polygon.EXCLUDE, Polygon.FACADE, Polygon.FOREST]: continue
+            glLoadName(i|MSKSEL)
+            glBegin(GL_LINE_LOOP)
+            for p in poly.points:
+                glVertex3f(p[0],p[1],p[2])
+            glEnd()
+            if poly.kind==Polygon.FACADE:
+                glBegin(GL_QUADS)
+                for p in poly.quads:
+                    glTexCoord2f(p[3],p[4])
                     glVertex3f(p[0],p[1],p[2])
                 glEnd()
-                if poly.kind==Polygon.FACADE:
-                    glBegin(GL_QUADS)
-                    for p in poly.quads:
+                if poly.roof:
+                    glBegin(GL_TRIANGLE_FAN)	# Better for concave
+                    for p in poly.roof+[poly.roof[1]]:
                         glTexCoord2f(p[3],p[4])
                         glVertex3f(p[0],p[1],p[2])
                     glEnd()
-                    if poly.roof:
-                        glBegin(GL_TRIANGLE_FAN)	# Better for concave
-                        for p in poly.roof+[poly.roof[1]]:
-                            glTexCoord2f(p[3],p[4])
-                            glVertex3f(p[0],p[1],p[2])
-                        glEnd()
-            glEnable(GL_DEPTH_TEST)
-            glEndList()
+        glEnable(GL_DEPTH_TEST)
+        glEndList()
 
             
     def select(self):
@@ -716,6 +714,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         if not self.currentobjects():
             self.selections=[]	# Can't remember
 
+        if not self.selectlist: self.prepareselect()
+        
         glSelectBuffer(65536)	# number of objects appears to be this/4
         glRenderMode(GL_SELECT)
 
@@ -911,7 +911,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD,
                                             self.selected))
         else:
-            (base,culled,nocull,texno,poly)=thing	# for poly
+            (base,culled,nocull,texno,poly,bsize)=thing	# for poly
             (x,z)=self.latlon2m(lat,lon)
             height=self.vertexcache.height(self.tile,self.options,x,z)
             objects=self.currentobjects()
@@ -1203,7 +1203,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.navaids=navaids
         self.vertexcache.flushObjs(objectmap, terrain, dsfdirs)
         self.trashlists(True, True)
-        self.sizecache={}
         self.tile=[0,999]	# force reload
 
         for key in self.runways.keys():	# need to re-layout runways
@@ -1289,6 +1288,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.options=options
 
             # Limit progress dialog to 10 updates
+            #clock=time.clock()	# Processor time
             objects=self.currentobjects()
             p=len(objects)/10+1
             n=0
@@ -1303,6 +1303,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if obj.height==None:
                     (x,z)=self.latlon2m(obj.lat, obj.lon)
                     obj.height=self.vertexcache.height(newtile,options,x,z)
+            #print "%s CPU time" % (time.clock()-clock)
 
             progress.Update(13, 'Polygons')
             polygons=self.currentpolygons()
@@ -1515,7 +1516,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 for (i, lat, lon, hdg) in self.navaids:
                     if [int(floor(lat)),int(floor(lon))]==newtile and i in objs:
                         name=objs[i]
-                        (base,culled,nocull,texno,poly)=self.vertexcache.get(name)
+                        (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(name)
                         coshdg=cos(d2r*hdg)
                         sinhdg=sin(d2r*hdg)
                         (x,z)=self.latlon2m(lat,lon)
@@ -1651,18 +1652,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         self.vertexcache.realize(self)
-        (base,culled,nocull,texno,poly)=self.vertexcache.get(name)
-        if name in self.sizecache:
-            maxsize=self.sizecache[name]
-        else:
-            maxsize=0.1	# mustn't be 0
-            for i in range(base, base+culled+nocull):
-                maxsize=max(maxsize, fabs(self.vertexcache.varray[i][0]), 0.55*self.vertexcache.varray[i][1], fabs(self.vertexcache.varray[i][2]))	# ad-hoc
-            self.sizecache[name]=maxsize
+        (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(name)
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
         glLoadIdentity()
-        maxsize=1.2*maxsize
+        maxsize=1.2*bsize
         glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
         glMatrixMode(GL_MODELVIEW)
         glPushMatrix()

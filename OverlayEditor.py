@@ -540,17 +540,24 @@ class Palette(wx.SplitterWindow):
                 except:
                     pass
             else:
-                # Look for library screenshot
+                # Look for library screenshot - object.jpg or screenshot.jpg
                 if not self.previewkey in self.frame.canvas.vertexcache.obj:
                     self.preview.SetBackgroundColour(wx.NullColour)
                     self.preview.ClearBackground()
                     return	# unknown object - can't do anything
-                newfile=join(dirname(self.frame.canvas.vertexcache.obj[self.previewkey]), 'screenshot.jpg')
+                newfile=self.frame.canvas.vertexcache.obj[self.previewkey][:-3]+'jpg'
                 if exists(newfile):
                     try:
                         self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
                     except:
                         pass
+                else:
+                    newfile=join(dirname(newfile), 'screenshot.jpg')
+                    if exists(newfile):
+                        try:
+                            self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
+                        except:
+                            pass
 
             if not self.previewimg and self.previewkey.endswith('.obj'):
                 # Display object data

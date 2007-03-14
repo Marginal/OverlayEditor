@@ -6,7 +6,7 @@ try:
 except:	# not in 2.0.0.44
     def glInitTextureNonPowerOfTwoARB(): return False
 from glob import glob
-from math import cos, log, pi
+from math import cos, log, pi, fabs
 from os import getenv, listdir, mkdir
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
@@ -237,7 +237,9 @@ def readLib(filename, objects, terrain):
         for line in h:
             c=line.split()
             if not c: continue
-            if c[0]=='EXPORT' and len(c)>=3 and c[1][-4:].lower() in ['.obj', '.fac', '.for', '.ter']:
+            if c[0] in ['EXPORT', 'EXPORT_RATIO', 'EXPORT_EXTEND']:
+                if c[0]=='EXPORT_RATIO': c.pop(1)
+                if len(c)<3 or c[1][-4:].lower() not in ['.obj', '.fac', '.for', '.ter']: continue
                 c.pop(0)
                 name=c[0]
                 name=name.replace(':','/')
@@ -559,14 +561,14 @@ class VertexCache:
 
         if path in self.geo:
             # Object geometry is loaded, but not in the array
-            (culled, nocull, tculled, tnocull, texture, maxpoly)=self.geo[path]
+            (culled, nocull, tculled, tnocull, texture, maxpoly, maxsize)=self.geo[path]
             base=len(self.varray)
             self.varray.extend(culled)
             self.varray.extend(nocull)
             self.tarray.extend(tculled)
             self.tarray.extend(tnocull)
             texno=self.texcache.get(texture)
-            self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly)
+            self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly, maxsize)
             self.valid=False	# new geometry -> need to update OpenGL
             return retval
             
@@ -586,7 +588,7 @@ class VertexCache:
             return retval
 
         # Physical object has not yet been read
-        try:
+        if 1:#XXXtry:
             h=None
             culled=[]
             nocull=[]
@@ -595,6 +597,7 @@ class VertexCache:
             tnocull=[]
             tcurrent=tculled
             texture=None
+            maxsize=0.1	# mustn't be 0
             maxpoly=0
             co=sep+'custom objects'+sep
             if co in path.lower():
@@ -651,6 +654,7 @@ class VertexCache:
                         for i in range(3):
                             c=h.readline().split()
                             v.append([float(c[0]), float(c[1]), float(c[2])])
+                            maxsize=max(maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
                         current.append(v[0])
                         tcurrent.append([uv[0],uv[3]])
                         current.append(v[1])
@@ -663,6 +667,7 @@ class VertexCache:
                         for i in range(4):
                             c=h.readline().split()
                             v.append([float(c[0]), float(c[1]), float(c[2])])
+                            maxsize=max(maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
                         current.append(v[0])
                         tcurrent.append([uv[1],uv[3]])
                         current.append(v[1])
@@ -729,6 +734,7 @@ class VertexCache:
                         while i<count:
                             c=h.readline().split()
                             v.append([float(c[0]), float(c[1]), float(c[2])])
+                            maxsize=max(maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
                             t.append([float(c[3]), float(c[4])])
                             if len(c)>5:	# Two per line
                                 v.append([float(c[5]), float(c[6]), float(c[7])])
@@ -764,6 +770,7 @@ class VertexCache:
                     elif c[0]=='VT':
                         vt.append([float(c[1]), float(c[2]), float(c[3]),
                                    float(c[7]), float(c[8])])
+                        maxsize=max(maxsize, fabs(vt[-1][0]), 0.55*vt[-1][1], fabs(vt[-1][2]))	# ad-hoc
                     elif c[0]=='IDX':
                         idx.append(int(c[1]))
                     elif c[0]=='IDX10':
@@ -802,16 +809,16 @@ class VertexCache:
                 else:
                     return False
             else:
-                self.geo[path]=(culled, nocull, tculled, tnocull, texture, maxpoly)
+                self.geo[path]=(culled, nocull, tculled, tnocull, texture, maxpoly, maxsize)
                 base=len(self.varray)
                 self.varray.extend(culled)
                 self.varray.extend(nocull)
                 self.tarray.extend(tculled)
                 self.tarray.extend(tnocull)
                 texno=self.texcache.get(texture)
-                self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly)
+                self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly, maxsize)
                 self.valid=False	# new geometry -> need to update OpenGL
-        except:
+        else:#except:
             if debug: print 'Failed to load object "%s"' % path
             if usefallback:
                 self.load('*default.obj')
