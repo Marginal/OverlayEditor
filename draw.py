@@ -398,7 +398,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if not self.meshlist:
             self.meshlist=glGenLists(1)
             glNewList(self.meshlist, GL_COMPILE)
-            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)	# XXX
             glEnable(GL_DEPTH_TEST)
             glEnable(GL_CULL_FACE)
             glDepthMask(GL_TRUE)
@@ -425,7 +425,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glDepthMask(GL_TRUE)
             if not self.options&Prefs.ELEVATION:
                 glPopMatrix()
-            if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
+            if debugapt: glPolygonMode(GL_FRONT, GL_FILL)	# XXX
             glEndList()
         glCallList(self.meshlist)
 
@@ -1483,7 +1483,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                         cpoints.append((2*edge[(j+1)%n][0]-edge[(j+1)%n][2],2*edge[(j+1)%n][1]-edge[(j+1)%n][3]))
                                             
                                     cpoints.append((edge[(j+1)%n][0],edge[(j+1)%n][1]))
-                                    points=[self.bez(cpoints, u/8.0) for u in range(8)]	# X-Plane stops at or before 8
+                                    points=[self.bez(cpoints, u/4.0) for u in range(4)]	# X-Plane stops at or before 8 XXX
                                 for pt in points:
                                     if pt==last: continue
                                     last=pt

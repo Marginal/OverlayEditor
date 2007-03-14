@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Actually executed by user's default shell (ignoring previous line), so don't do anything fancy
 
 # Force default Python 2.3

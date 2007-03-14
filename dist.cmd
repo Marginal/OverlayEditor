@@ -6,7 +6,7 @@ if %DEBUG%==1 (
     echo Debug version you fool
     goto end
 )
-set RELEASE=1
+set RELEASE=2
 set RPM=%TMP%\overlayeditor
 
 @if exist OverlayEditor_%VER%_src.zip del OverlayEditor_%VER%_src.zip
