@@ -14,9 +14,9 @@ del /s /q dist  >nul: 2>&1
 del /s /q *.bak >nul: 2>&1
 del /s /q *.pyc >nul: 2>&1
 
-@set PY=OverlayEditor.py draw.py files.py
+@set PY=OverlayEditor.py draw.py files.py DSFLib.py
 @set DATA=OverlayEditor.html
-@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/OverlayEditor.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.obj Resources/screenshot.png
+@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/OverlayEditor.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.obj Resources/Sea01.png Resources/screenshot.png
 
 @REM source
 zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% %DATA% %RSRC% linux MacOS win32 |findstr -vc:"adding:"

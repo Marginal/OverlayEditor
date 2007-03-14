@@ -2,10 +2,11 @@ from math import cos, sin, floor, pi
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from os.path import join
-from sys import platform
+from struct import unpack
+from sys import platform, maxint
 import wx.glcanvas
 
-from files import appname, ObjCache, sortfolded
+from files import appname, VertexCache, sortfolded
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
@@ -32,15 +33,19 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.movecursor=wx.StockCursor(wx.CURSOR_HAND)
         self.dragcursor=wx.StockCursor(wx.CURSOR_CROSS)
 
-        self.tile=[999,999]	# [lat,lon] of SW
+        self.valid=False	# do we have valid data for a redraw?
+        self.tile=[0,999]	# [lat,lon] of SW
         self.centre=None	# [lat,lon] of centre
-        self.runways={}		# (lat,lon,hdg,length,width) by code
+        self.airports={}	# (lat,lon,hdg,length,width) by code
+        self.runways={}		# (bbox,  [points], xwidth, zwidth) by tile
         self.runwayslist=0
-        self.placements={}	# [(name,lat,lon,hdg)] by tile
+        self.placements={}	# [(name,lat,lon,hdg,height)] by tile
         self.objectslist=0
         self.baggage={}		# (props, other) by tile
         self.background=None
-
+        self.meshlist=0
+        self.meshpicklist=0
+        
         self.selected=[]	# Indices into placements[self.tile]
         self.selections=[]	# List for picking
         self.selectlist=0
@@ -53,6 +58,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Values during startup
         self.x=0
+        self.y=0
         self.z=0
         self.h=0
         self.e=90
@@ -74,7 +80,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             clampmode=0x812F	# GL_CLAMP_TO_EDGE
         else:
             clampmode=GL_REPEAT
-        self.objcache=ObjCache(clampmode)	# member so can free resources
+        self.vertexcache=VertexCache(clampmode)	# member so can free resources
 
         wx.EVT_PAINT(self, self.OnPaint)
         wx.EVT_ERASE_BACKGROUND(self, self.OnEraseBackground)
@@ -89,15 +95,15 @@ class MyGL(wx.glcanvas.GLCanvas):
         wx.EVT_TIMER(self, self.timer.GetId(), self.OnTimer)
 
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
-        glClearDepth(1.0)
+        #glClearDepth(1.0)
         glDepthFunc(GL_LESS)
         glEnable(GL_DEPTH_TEST)
         glFrontFace(GL_CW)
         glShadeModel(GL_FLAT)
         #glLineStipple(1, 0x0f0f)	# for selection drag
         glCullFace(GL_BACK)
-        glPolygonOffset(0, -5)
         glPixelStorei(GL_UNPACK_ALIGNMENT,1)
+        #glPixelStorei(GL_UNPACK_LSB_FIRST,1)
         glEnable(GL_TEXTURE_2D)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glEnable(GL_BLEND)
@@ -147,13 +153,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             self.select()
 
-    def OnKill(self, event):
-        if event.GetWindow():
-            print "kill -> %s" % event.GetWindow().GetId(),
-        else:
-            print "kill -> None"
-        self.OnLeftUp(event)
-        
     def OnLeftUp(self, event):
         if self.HasCapture(): self.ReleaseMouse()
         if self.selectanchor:
@@ -203,91 +202,107 @@ class MyGL(wx.glcanvas.GLCanvas):
         size = self.GetClientSize()
         glViewport(0, 0, size.width, size.height)
         glLoadIdentity()
+	# try to minimise near offset to improve clipping
         glOrtho(-self.d, self.d,
                 -self.d*size.y/size.x, self.d*size.y/size.x,
-                -onedeg, onedeg)
+                -max(10000,onedeg*(self.d/3333.25)), onedeg)
         
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
         glRotatef(self.e, 1.0,0.0,0.0)
         glRotatef(self.h, 0.0,1.0,0.0)
-        glTranslatef(-self.x, 0.0, -self.z)
+        glTranslatef(-self.x, -self.y, -self.z)
 
-        placement=self.currentplacements()
+        glEnable(GL_TEXTURE_2D)
+        glEnable(GL_CULL_FACE)
+        glDisable(GL_DEPTH_TEST)
 
-        # Ground
-        if not self.runwayslist:
-            self.runwayslist=glGenLists(1)
-            glNewList(self.runwayslist, GL_COMPILE)
-            glDisable(GL_TEXTURE_2D)
-            glDisable(GL_DEPTH_TEST)
-            glEnable(GL_CULL_FACE)
-            # Ground
-            glColor3f(0.25, 0.5, 0.25)
+        if not self.valid:
+            # Sea
+            glColor3f(0.25, 0.25, 0.50)
+            glBindTexture(GL_TEXTURE_2D, 0)
             glBegin(GL_QUADS)
             glVertex3f( onedeg*cos(d2r*(1+self.tile[0]))/2, 0, -onedeg/2)
             glVertex3f( onedeg*cos(d2r*self.tile[0])/2, 0,  onedeg/2)
             glVertex3f(-onedeg*cos(d2r*self.tile[0])/2, 0,  onedeg/2)
             glVertex3f(-onedeg*cos(d2r*(1+self.tile[0]))/2, 0, -onedeg/2)
             glEnd()
+            self.SwapBuffers()
+            return
+
+        placement=self.currentplacements()
+
+        #glPolygonMode(GL_FRONT, GL_LINE)	# XXX
+        #glDisable(GL_CULL_FACE)	# XXX
+        
+        # Ground
+        if not self.meshlist:
+            self.vertexcache.realize()
+            self.meshlist=glGenLists(1)
+            glNewList(self.meshlist, GL_COMPILE)
+            glEnable(GL_DEPTH_TEST)
+            glColor3f(0.75, 0.75, 0.75)	# Unpainted
+            for (base,culled,texno) in self.vertexcache.getMesh(self.tile):
+                glBindTexture(GL_TEXTURE_2D, texno)
+                glDrawArrays(GL_TRIANGLES, base, culled)
+            glEndList()
+        glCallList(self.meshlist)
+
+        # Runways
+        if not self.runwayslist:
+            self.runwayslist=glGenLists(1)
+            glNewList(self.runwayslist, GL_COMPILE)
+            glDisable(GL_TEXTURE_2D)
+            glPolygonOffset(-10, -100)	# Stupid value cos not co-planar
+            glEnable(GL_POLYGON_OFFSET_FILL)
+            glDepthMask(GL_FALSE)	# Don't let poly offset update depth
             # Runways
             glColor3f(0.333,0.333,0.333)
-            glBegin(GL_QUADS)
-            for apt in self.runways.values():
-                (lat,lon,hdg,length,width)=apt[0]
-                if [int(floor(lat)),int(floor(lon))]==self.tile:
-                    for (lat,lon,hdg,length,width) in apt:
-                        #print (lat,lon,hdg,length,width)
-                        #glColor3f(hdg/360,hdg/360,hdg/360)	# test
-                        (cx,cz)=self.latlon2m(lat,lon)
-                        hdg=d2r*hdg
-                        coshdg=cos(hdg)
-                        sinhdg=sin(hdg)
-                        length=f2m*length/2
-                        width=f2m*width/2
-                        glVertex3f(cx+width*coshdg-length*sinhdg, 0,
-                                   cz+width*sinhdg+length*coshdg)
-                        glVertex3f(cx-width*coshdg-length*sinhdg, 0,
-                                   cz-width*sinhdg+length*coshdg)
-                        glVertex3f(cx-width*coshdg+length*sinhdg, 0,
-                                   cz-width*sinhdg-length*coshdg)
-                        glVertex3f(cx+width*coshdg+length*sinhdg, 0,
-                                   cz+width*sinhdg-length*coshdg)
-            glEnd()
+            for (runway, xinc, zinc) in self.runways[(self.tile[0],self.tile[1])]:
+                glBegin(GL_QUAD_STRIP)
+                for p in runway:
+                    glVertex3f(p[0]+xinc, p[1], p[2]+zinc)
+                    glVertex3f(p[0]-xinc, p[1], p[2]-zinc)
+                glEnd()
             glEndList()
         glCallList(self.runwayslist)
 
         # Objects
         if not self.objectslist:
-            self.objcache.realize()
+            self.vertexcache.realize()
             self.objectslist=glGenLists(1)
             glNewList(self.objectslist, GL_COMPILE)
             glColor3f(0.75, 0.75, 0.75)	# Unpainted
             glEnable(GL_TEXTURE_2D)
-            glEnable(GL_DEPTH_TEST)
             glEnable(GL_CULL_FACE)
+            glEnable(GL_DEPTH_TEST)
+            glDepthMask(GL_TRUE)
             glDisable(GL_POLYGON_OFFSET_FILL)
             cullstate=True
-            lat=lon=hdg=999
+            polystate=0
             for i in range(len(placement)):
-                (obj, lat, lon, hdg)=placement[i]
-                glLoadName(i)
+                (obj, lat, lon, hdg,height)=placement[i]
                 (x,z)=self.latlon2m(lat, lon)
-                (base,culled,nocull,texno,poly)=self.objcache.get(obj)
-                #print obj, lat, lon, hdg, x, z, base,culled,nocull,texno,poly
+                (base,culled,nocull,texno,poly)=self.vertexcache.getObj(obj)
+                if poly:
+                    if polystate!=poly:
+                        glPolygonOffset(-1*poly, -1*poly)
+                        glEnable(GL_POLYGON_OFFSET_FILL)
+                    polystate=poly
+                else:
+                    if polystate: glDisable(GL_POLYGON_OFFSET_FILL)
+                    polystate=0
                 glPushMatrix()
-                glTranslatef(x, 0.0, z)
+                glTranslatef(x, height, z)
                 glRotatef(-hdg, 0.0,1.0,0.0)
                 glBindTexture(GL_TEXTURE_2D, texno)
                 if culled:
-                    if not cullstate:
-                        glEnable(GL_CULL_FACE)
-                        cullstate=True
+                    if not cullstate: glEnable(GL_CULL_FACE)
+                    cullstate=True
                     glDrawArrays(GL_TRIANGLES, base, culled)
                 if nocull:
-                    if cullstate:
-                        glDisable(GL_CULL_FACE)
-                        cullstate=False
+                    if cullstate: glDisable(GL_CULL_FACE)
+                    cullstate=False
                     glDrawArrays(GL_TRIANGLES, base+culled, nocull)
                 glPopMatrix()
             glEndList()
@@ -295,40 +310,39 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Overlays
         glDisable(GL_DEPTH_TEST)
-        glEnable(GL_POLYGON_OFFSET_FILL)
-        glEnable(GL_POLYGON_OFFSET_LINE)
 
         # Background
         if self.background:
-            (image, lat, lon, hdg, width, length, opacity)=self.background
-            texno=self.objcache.texcache.get(image)
-            (x,z)=self.latlon2m(lat, lon)
-            glPushMatrix()
-            glTranslatef(x, 0.0, z)
-            glRotatef(-hdg, 0.0,1.0,0.0)
-            glColor4f(1.0, 1.0, 1.0, opacity/100.0)
-            glBindTexture(GL_TEXTURE_2D, texno)
-            glBegin(GL_QUADS)
-            glTexCoord2f(0,0)
-            glVertex3f(-width/2, 0, length/2)
-            glTexCoord2f(0,1)
-            glVertex3f(-width/2, 0,-length/2)
-            glTexCoord2f(1,1)
-            glVertex3f( width/2, 0,-length/2)
-            glTexCoord2f(1,0)
-            glVertex3f( width/2, 0, length/2)
-            glEnd()
-            if self.frame.bkgd:
-                # Setting background image
-                glColor3f(1.0, 0.5, 1.0)
-                glBindTexture(GL_TEXTURE_2D, 0)
-                glBegin(GL_LINE_LOOP)
+            (image, lat, lon, hdg, width, length, opacity, height)=self.background
+            if [int(floor(lat)),int(floor(lon))]==self.tile:
+                texno=self.vertexcache.texcache.get(image)
+                (x,z)=self.latlon2m(lat, lon)
+                glPushMatrix()
+                glTranslatef(x, height, z)
+                glRotatef(-hdg, 0.0,1.0,0.0)
+                glColor4f(1.0, 1.0, 1.0, opacity/100.0)
+                glBindTexture(GL_TEXTURE_2D, texno)
+                glBegin(GL_QUADS)
+                glTexCoord2f(0,0)
                 glVertex3f(-width/2, 0, length/2)
+                glTexCoord2f(0,1)
                 glVertex3f(-width/2, 0,-length/2)
+                glTexCoord2f(1,1)
                 glVertex3f( width/2, 0,-length/2)
+                glTexCoord2f(1,0)
                 glVertex3f( width/2, 0, length/2)
                 glEnd()
-            glPopMatrix()
+                if self.frame.bkgd:
+                    # Setting background image
+                    glColor3f(1.0, 0.5, 1.0)
+                    glBindTexture(GL_TEXTURE_2D, 0)
+                    glBegin(GL_LINE_LOOP)
+                    glVertex3f(-width/2, 0, length/2)
+                    glVertex3f(-width/2, 0,-length/2)
+                    glVertex3f( width/2, 0,-length/2)
+                    glVertex3f( width/2, 0, length/2)
+                    glEnd()
+                glPopMatrix()
 
         # Position centre
         glColor3f(1.0, 0.25, 0.25)	# Cursor
@@ -355,13 +369,15 @@ class MyGL(wx.glcanvas.GLCanvas):
             glColor3f(1.0, 0.5, 1.0)
             glDisable(GL_CULL_FACE)
             glEnable(GL_DEPTH_TEST)
+            glEnable(GL_POLYGON_OFFSET_FILL)
+            glPolygonOffset(-5, -5)
             for i in self.selected:
                 # assumes cache is already properly set up
-                (obj, lat, lon, hdg)=placement[i]
+                (obj, lat, lon, hdg, height)=placement[i]
                 (x,z)=self.latlon2m(lat, lon)
-                (base,culled,nocull,texno,poly)=self.objcache.get(obj)
+                (base,culled,nocull,texno,poly)=self.vertexcache.getObj(obj)
                 glPushMatrix()
-                glTranslatef(x, 0.0, z)
+                glTranslatef(x, height, z)
                 glRotatef(-hdg, 0.0,1.0,0.0)
                 glBindTexture(GL_TEXTURE_2D, texno)
                 glDrawArrays(GL_TRIANGLES, base, culled+nocull)
@@ -414,23 +430,21 @@ class MyGL(wx.glcanvas.GLCanvas):
             glDisable(GL_DEPTH_TEST)
             glDisable(GL_CULL_FACE)
             for i in range(len(placement)):
-                (obj, lat, lon, hdg)=placement[i]
+                (obj, lat, lon, hdg, height)=placement[i]
                 glLoadName(i)
                 (x,z)=self.latlon2m(lat, lon)
-                (base,culled,nocull,texno,poly)=self.objcache.get(obj)
+                (base,culled,nocull,texno,poly)=self.vertexcache.getObj(obj)
                 glPushMatrix()
-                glTranslatef(x, 0.0, z)
+                glTranslatef(x, height, z)
                 glRotatef(-hdg, 0.0,1.0,0.0)
                 glDrawArrays(GL_TRIANGLES, base, culled+nocull)
                 glPopMatrix()
             glEndList()
-
+        
 
     def select(self):
-        placement=self.currentplacements()
-        if not placement:
-            self.selections=[]
-            return
+        if not self.currentplacements():
+            self.selections=[]	# Can't remember
 
         glSelectBuffer(65536)	# number of objects appears to be this/4
         glRenderMode(GL_SELECT)
@@ -460,7 +474,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glLoadIdentity()
         glRotatef(self.e, 1.0,0.0,0.0)
         glRotatef(self.h, 0.0,1.0,0.0)
-        glTranslatef(-self.x, 0.0, -self.z)
+        glTranslatef(-self.x, -self.y, -self.z)
 
         glCallList(self.selectlist)
 
@@ -515,50 +529,37 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             return []
     
-    def reload(self, reload, runways, objects, placements, baggage,background):
-        self.runways=runways
-        self.objcache.flush(objects)
-        self.tile=[999,999]	# force reload
-        if placements!=None:
-            self.placements=placements
-            self.baggage=baggage
-        self.background=background
-        self.trashlists(True)
-        self.selected=[]	# may not have same indices in new list
-        if not reload:
-            self.undostack=[]
-
-        if 0:	# debug
-            print "Frame:\t%s"  % self.frame.GetId()
-            print "Toolb:\t%s"  % self.frame.toolbar.GetId()
-            print "Parent:\t%s" % self.parent.GetId()
-            print "Split:\t%s"  % self.frame.splitter.GetId()
-            print "MyGL:\t%s"   % self.GetId()
-            print "Palett:\t%s" % self.frame.palette.GetId()
-            if 'GetChoiceCtrl' in dir(self.frame.palette):
-                print "Choice:\t%s" %self.frame.palette.GetChoiceCtrl().GetId()
-
     def setbackground(self, background):
-        self.background=background
+        if background:
+            (image, lat, lon, hdg, width, length, opacity)=background
+            if [int(floor(lat)),int(floor(lon))]==self.tile:
+                (x,z)=self.latlon2m(lat,lon)
+                height=self.vertexcache.height(self.tile,x,z)
+            else:
+                height=None
+            self.background=(image, lat, lon, hdg, width, length, opacity, height)
+        else:
+            self.background=None
         self.Refresh()
 
     def add(self, obj, lat, lon, hdg):
-        if not self.objcache.load(obj):
+        if not self.vertexcache.loadObj(obj):
             if platform=='darwin':
                 wx.MessageBox("Can't read %s." % obj, 'Cannot add this object.', wx.ICON_QUESTION|wx.OK, self.frame)
             else:
                 wx.MessageBox("Cannot add this object.\n\nCan't read %s." % obj, appname, wx.ICON_HAND|wx.OK, self.frame)
             return False
         self.trashlists(False)
-        (base,culled,nocull,texno,poly)=self.objcache.get(obj)	# for poly
+        (base,culled,nocull,texno,poly)=self.vertexcache.getObj(obj)	# for poly
+        (x,z)=self.latlon2m(lat,lon)
+        height=self.vertexcache.height(self.tile,x,z)
         placement=self.currentplacements()
         if poly:
             self.selected=[0]
-            placement.insert(0, (obj, lat, lon, hdg))
+            placement.insert(0, (obj, lat, lon, hdg, height))
         else:
             self.selected=[len(placement)]
-            placement.append((obj, lat, lon, hdg))
-        self.placements[(self.tile[0],self.tile[1])]=placement
+            placement.append((obj, lat, lon, hdg, height))
         self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD,
                                         self.selected))
         self.Refresh()
@@ -573,11 +574,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         moved=[]
         for i in self.selected:
             moved.append((i, placement[i]))
-            (obj, lat, lon, hdg)=placement[i]
+            (obj, lat, lon, hdg, height)=placement[i]
             lat=round(lat+dlat,6)
             lon=round(lon+dlon,6)
             hdg=round(hdg+dhdg,0)%360
-            placement[i]=(obj, lat, lon, hdg)
+            (x,z)=self.latlon2m(lat,lon)
+            height=self.vertexcache.height(self.tile,x,z)
+            placement[i]=(obj, lat, lon, hdg, height)
         self.placements[(self.tile[0],self.tile[1])]=placement
         self.Refresh()
         self.frame.ShowSel()
@@ -630,11 +633,41 @@ class MyGL(wx.glcanvas.GLCanvas):
         lat=lon=0
         obj=[]
         for i in self.selected:
-            (obj1, lat1, lon1, hdg)=placement[i]
+            (obj1, lat1, lon1, hdg, height)=placement[i]
             obj.append(obj1)
             lat+=lat1
             lon+=lon1
-        return ((obj, lat/len(self.selected), lon/len(self.selected), hdg))
+        return ((obj, lat/len(self.selected), lon/len(self.selected), hdg, height))
+
+    def reload(self, reload, airports, objects, placements, baggage,
+               background, terrain, dsfdir):
+        self.valid=False
+        self.airports=airports
+        self.vertexcache.flushObjs(objects, terrain, dsfdir)
+        self.tile=[0,999]	# force reload
+        if placements!=None:
+            self.placements=placements
+            self.baggage=baggage
+        if background:
+            (image, lat, lon, hdg, width, length, opacity)=background
+            self.background=(image, lat, lon, hdg, width, length, opacity,None)
+        else:
+            self.background=None
+        self.trashlists(True)	# need to re-layout runways
+        self.runways={}
+        self.selected=[]	# may not have same indices in new list
+        if not reload:
+            self.undostack=[]
+
+        if 0:	# debug
+            print "Frame:\t%s"  % self.frame.GetId()
+            print "Toolb:\t%s"  % self.frame.toolbar.GetId()
+            print "Parent:\t%s" % self.parent.GetId()
+            print "Split:\t%s"  % self.frame.splitter.GetId()
+            print "MyGL:\t%s"   % self.GetId()
+            print "Palett:\t%s" % self.frame.palette.GetId()
+            if 'GetChoiceCtrl' in dir(self.frame.palette):
+                print "Choice:\t%s" %self.frame.palette.GetChoiceCtrl().GetId()
 
     def undo(self):
         # returns True if undostack still not empty
@@ -647,14 +680,14 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.selected=[]
         if undo.kind==UndoEntry.ADD:
             for i in undo.data:
-                (obj, lat, lon, hdg)=placement[i]
+                (obj, lat, lon, hdg, height)=placement[i]
                 avlat+=lat
                 avlon+=lon
                 placement.pop(i)
         elif undo.kind==UndoEntry.DEL:
             for (i, p) in undo.data:
-                (obj, lat, lon, hdg)=p
-                if not self.objcache.load(obj, True):	# may have reloaded
+                (obj, lat, lon, hdg, height)=p
+                if not self.vertexcache.loadObj(obj, True):	# may have reloaded
                     if platform=='darwin':
                         wx.MessageBox("Can't read %s." % obj, 'Using a placeholder object.', wx.ICON_QUESTION|wx.OK, self.frame)
                     else:
@@ -665,7 +698,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.selected.append(i)
         elif undo.kind==UndoEntry.MOVE:
             for (i, p) in undo.data:
-                (obj, lat, lon, hdg)=p
+                (obj, lat, lon, hdg, height)=p
                 avlat+=lat
                 avlon+=lon
                 placement[i]=p
@@ -681,32 +714,128 @@ class MyGL(wx.glcanvas.GLCanvas):
     def goto(self, loc, hdg=None, elev=None, dist=None):
         errobjs=[]
         newtile=[int(floor(loc[0])),int(floor(loc[1]))]
-        if newtile!=self.tile:
-            self.frame.ShowSel()
-            key=(newtile[0],newtile[1])
-            if key in self.placements:
-                # Limit progress dialog to 10 updates
-                progress=wx.ProgressDialog('Loading', 'Objects', 2+len(self.placements[key]), self, wx.PD_APP_MODAL)
-                p=int(len(self.placements[key])/10)
-                n=p
-                i=0
-                for (obj, lat, lon, h) in self.placements[key]:
-                    if i==n:
-                        progress.Update(i)
-                        n+=p
-                    i+=1
-                    if not self.objcache.load(obj, True) and not obj in errobjs:
-                        errobjs.append(obj)
-                progress.Destroy()
-            self.tile=newtile
-            self.centre=[self.tile[0]+0.5, self.tile[1]+0.5]
-            self.trashlists(True)
-            self.selected=[]
-
+        self.centre=[newtile[0]+0.5, newtile[1]+0.5]
         (self.x, self.z)=self.latlon2m(loc[0],loc[1])
         if hdg!=None: self.h=hdg
         if elev!=None: self.e=elev
         if dist!=None: self.d=dist
+
+        if newtile!=self.tile:
+            self.frame.ShowSel()
+            self.valid=False
+            self.tile=newtile
+            self.vertexcache.flush()
+            self.trashlists(True, True)
+            self.selected=[]
+            key=(newtile[0],newtile[1])
+            progress=wx.ProgressDialog('Loading', 'Terrain', 17, self, wx.PD_APP_MODAL)
+            self.vertexcache.loadMesh(newtile)
+
+            progress.Update(1, 'Terrain textures')
+            self.vertexcache.getMesh(newtile)	# allocates into array
+
+            progress.Update(2, 'Mesh')
+            self.vertexcache.getMeshdata(newtile)
+                
+            # Limit progress dialog to 10 updates
+            placement=self.currentplacements()
+            p=len(placement)/10+1
+            n=0
+            i=0
+            for i in range(len(placement)):
+                if i==n:
+                    progress.Update(3+i/p, 'Objects')
+                    n+=p
+                (obj, lat, lon, h, height)=placement[i]
+                if not self.vertexcache.loadObj(obj,True) and not obj in errobjs:
+                    errobjs.append(obj)
+                if height==None:
+                    (x,z)=self.latlon2m(lat,lon)
+                    placement[i]=(obj, lat, lon, h,
+                                  self.vertexcache.height(newtile,x,z))
+
+            # Lay out runways
+            progress.Update(13, 'Placing runways')
+            if key not in self.runways:
+                airports=[]
+                for apt in self.airports.values():
+                    (lat,lon,h,length,width)=apt[0]
+                    if [int(floor(lat)),int(floor(lon))]!=newtile: continue
+                    minx=minz=maxint
+                    maxx=maxz=-maxint
+                    runways=[]
+                    for (lat,lon,h,length,width) in apt:
+                        (cx,cz)=self.latlon2m(lat,lon)
+                        length=f2m*length/2
+                        width=f2m*width/2
+                        h=d2r*h
+                        coshdg=cos(h)
+                        sinhdg=sin(h)
+                        p1=[cx-length*sinhdg, 0, cz+length*coshdg]
+                        p2=[cx+length*sinhdg, 0, cz-length*coshdg]
+                        minx=min(minx, p1[0], p2[0])
+                        maxx=max(maxx, p1[0], p2[0])
+                        minz=min(minz, p1[2], p2[2])
+                        maxz=max(maxz, p1[2], p2[2])
+                        runways.append((p1,p2, width*coshdg,width*sinhdg, {}))
+                    airports.append(([minx, maxx, minz, maxz], runways))
+    
+                for (bbox, tris) in self.vertexcache.getMeshdata(newtile):
+                    for (abox, runways) in airports:
+                        if (bbox[0] >= abox[1] or bbox[2] >= abox[3] or bbox[1] <= abox[0] or bbox[3] <= abox[2]):
+                            continue
+                        for tri in tris:
+                            for (p1, p2, xinc, zinc, cuts) in runways:
+                                (pt, coeffs)=tri
+                                i1=i2=False
+                                for j in range(3):
+                                    #http://astronomy.swin.edu.au/~pbourke/geometry/lineline2d
+                                    p3=pt[j]
+                                    p4=pt[(j+1)%3]
+                                    d=(p4[2]-p3[2])*(p2[0]-p1[0])-(p4[0]-p3[0])*(p2[2]-p1[2])
+                                    if d==0: continue	# parallel
+                                    b=((p2[0]-p1[0])*(p1[2]-p3[2])-(p2[2]-p1[2])*(p1[0]-p3[0]))/d
+                                    if b<=0 or b>=1: continue	# no intersect
+                                    a=((p4[0]-p3[0])*(p1[2]-p3[2])-(p4[2]-p3[2])*(p1[0]-p3[0]))/d
+                                    if a>=0: i1 = not i1
+                                    if a<=1: i2 = not i2
+                                    if a<0 or a>1: continue	# no intersection
+                                    cuts[a]=([p1[0]+a*(p2[0]-p1[0]),
+                                              p3[1]+b*(p4[1]-p3[1]),
+                                              p1[2]+a*(p2[2]-p1[2])])
+                                    
+                                if i1:	# p1 is enclosed by this tri
+                                    p1[1]=self.vertexcache.height(newtile,p1[0],p1[2],tri)
+                                if i2:	# p2 is enclosed by this tri
+                                    p2[1]=self.vertexcache.height(newtile,p2[0],p2[2],tri)
+                # strip out bounding box and add cuts
+                points=[]
+                for (abox, runways) in airports:
+                    for (p1, p2, xinc, zinc, cuts) in runways:
+                        a=cuts.keys()
+                        a.sort()
+                        r=[p1]
+                        if len(a) and a[0]>0.01: r.append(cuts[a[0]])
+                        for i in range(1, len(a)):
+                            if a[i]-a[i-1]>0.01: r.append(cuts[a[i]])
+                        r.append(p2)
+                        points.append((r, xinc, zinc))
+                self.runways[key]=points
+            
+            # Done
+            if self.background:
+                (image, lat, lon, hdg, width, length, opacity, height)=self.background
+                if [int(floor(lat)),int(floor(lon))]==self.tile:
+                    (x,z)=self.latlon2m(lat,lon)
+                    height=self.vertexcache.height(self.tile,x,z)
+                else:
+                    height=None
+                self.background=(image, lat, lon, hdg, width, length, opacity, height)
+            progress.Destroy()
+            self.valid=True
+
+        # cursor position
+        self.y=self.vertexcache.height(self.tile,self.x,self.z)
 
         # Redraw can happen under MessageBox, so do this last
         if errobjs:
@@ -718,7 +847,10 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.Refresh()
 
-    def trashlists(self, runwaystoo):
+    def trashlists(self, runwaystoo, terraintoo=False):
+        if terraintoo:
+            if self.meshpicklist: glDeleteLists(self.meshpicklist, 1)
+            self.meshpicklist=0
         if runwaystoo:
             if self.runwayslist: glDeleteLists(self.runwayslist, 1)
             self.runwayslist=0
@@ -726,3 +858,5 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.objectslist=0
         if self.selectlist: glDeleteLists(self.selectlist, 1)
         self.selectlist=0
+        if self.meshlist: glDeleteLists(self.meshlist, 1)
+        self.meshlist=0

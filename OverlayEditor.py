@@ -5,9 +5,16 @@ from math import cos, sin, pi
 import os	# for startfile
 from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep
-from sys import exit, argv, platform
-import wx
-from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
+from sys import exit, argv, platform, version
+try:
+    import wx
+    from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
+except:
+    import Tkinter
+    import tkMessageBox
+    Tkinter.Tk().withdraw()	# make and suppress top-level window
+    tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\nwxPython 2.5.3 (py%s) or later." % version[:3], icon="question", type="ok")
+    exit(1)
 
 from draw import MyGL
 from files import appname, appversion, importObj, Prefs, readApt, readLib, readDsf, writeDsfs, sortfolded
@@ -36,6 +43,8 @@ aptdat='apt.dat'
 mainaptdat=join('Resources',navdata,aptdat)
 library='library.txt'
 default=join('Resources','default scenery')
+dsfdir=join(default,'DSF 820 Earth',navdata)
+
 
 global prefs
 
@@ -518,19 +527,21 @@ class BackgroundDialog(wx.Dialog):
             return
         cursors=[ord('W'), ord('D'), ord('S'), ord('A')]
         if event.m_keyCode in cursors:
-            incr=self.parent.dist/10000000
-            if incr<0.00001: incr=0.00001
             if event.m_shiftDown:
-                incr=0.000001
-            elif event.m_controlDown or event.m_metaDown:
-                incr*=10
+                xinc=zinc=0.000001
+            else:
+                zinc=self.parent.dist/10000000
+                if zinc<0.00001: zinc=0.00001
+                if event.m_controlDown or event.m_metaDown:
+                    zinc*=10
+                xinc=zinc/cos(d2r*self.lat.GetValue())
             hr=d2r*((self.parent.hdg + [0,90,180,270][cursors.index(event.m_keyCode)])%360)
             try:
-                self.lat.SetValue(self.lat.GetValue()+incr*cos(hr))
+                self.lat.SetValue(self.lat.GetValue()+zinc*cos(hr))
             except:
                 pass
             try:
-                self.lon.SetValue(self.lon.GetValue()+incr*sin(hr))
+                self.lon.SetValue(self.lon.GetValue()+xinc*sin(hr))
             except:
                 pass
         elif event.m_keyCode==ord('Q'):
@@ -718,7 +729,7 @@ class MainWindow(wx.Frame):
                                   wx.Bitmap("Resources/import.png",
                                             wx.BITMAP_TYPE_PNG),
                                   wx.NullBitmap, 0,
-                                  'Import object from another package')
+                                  'Import objects from another package')
         wx.EVT_TOOL(self.toolbar, wx.ID_PASTE, self.OnImport)
         self.toolbar.AddLabelTool(wx.ID_FORWARD, 'Go To',
                                   wx.Bitmap("Resources/goto.png",
@@ -807,7 +818,7 @@ class MainWindow(wx.Frame):
             self.statusbar.SetStatusText("", 2)
             self.toolbar.EnableTool(wx.ID_DELETE, False)
         else:
-            (obj, lat, lon, hdg)=selection
+            (obj, lat, lon, hdg, height)=selection
             if len(obj)==1:
                 self.palette.set(obj[0])
                 self.statusbar.SetStatusText("Lat: %11.6f  Lon: %11.6f  Hdg: %3.0f" % (lat, lon, hdg), 2)
@@ -830,43 +841,45 @@ class MainWindow(wx.Frame):
         cursors=[wx.WXK_UP, wx.WXK_RIGHT, wx.WXK_DOWN, wx.WXK_LEFT,
                  ord('W'), ord('D'), ord('S'), ord('A')]
         if event.m_keyCode in cursors:
-            incr=self.dist/10000000
-            if incr<0.00001: incr=0.00001
             if event.m_shiftDown:
-                incr=0.000001
-            elif event.m_controlDown or event.m_metaDown:
-                incr*=10
+                xinc=zinc=0.000001
+            else:
+                zinc=self.dist/10000000
+                if zinc<0.00001: zinc=0.00001
+                if event.m_controlDown or event.m_metaDown:
+                    zinc*=10
+                xinc=zinc/cos(d2r*self.loc[0])
             hr=d2r*((self.hdg + [0,90,180,270,0,90,180,270][cursors.index(event.m_keyCode)])%360)
             if cursors.index(event.m_keyCode)<4:
-                self.loc=[round(self.loc[0]+incr*cos(hr),6),
-                          round(self.loc[1]+incr*sin(hr),6)]
+                self.loc=[round(self.loc[0]+zinc*cos(hr),6),
+                          round(self.loc[1]+xinc*sin(hr),6)]
             else:
-                changed=self.canvas.movesel(incr*cos(hr), incr*sin(hr), 0)
+                changed=self.canvas.movesel(zinc*cos(hr), xinc*sin(hr), 0)
         elif event.m_keyCode==ord('C'):
             details=self.canvas.getsel()
             if not details: return
-            (obj,lat,lon,hdg)=details
+            (obj,lat,lon,hdg,height)=details
             self.loc=[lat,lon]
             if len(obj)==1 and (event.m_controlDown or event.m_metaDown):
                 self.hdg=round(hdg,0)
         elif event.m_keyCode==ord('Q'):
             if event.m_controlDown or event.m_metaDown:
-                changed=self.canvas.movesel(0, 0, -10)
+                changed=self.canvas.movesel(0, 0, -5)
             else:
                 changed=self.canvas.movesel(0, 0, -1)
         elif event.m_keyCode==ord('E'):
             if event.m_controlDown or event.m_metaDown:
-                changed=self.canvas.movesel(0, 0, 10)
+                changed=self.canvas.movesel(0, 0, 5)
             else:
                 changed=self.canvas.movesel(0, 0, 1)
         elif event.m_keyCode==wx.WXK_END:
             if event.m_controlDown or event.m_metaDown:
-                self.hdg=(self.hdg-10)%360
+                self.hdg=(self.hdg-5)%360
             else:
                 self.hdg=(self.hdg-1)%360
         elif event.m_keyCode==wx.WXK_HOME:
             if event.m_controlDown or event.m_metaDown:
-                self.hdg=(self.hdg+10)%360
+                self.hdg=(self.hdg+5)%360
             else:
                 self.hdg=(self.hdg+1)%360
         elif event.m_keyCode in [ord('+'), ord('='), ord('5')]:	# +
@@ -1044,8 +1057,6 @@ class MainWindow(wx.Frame):
         self.palette.flush()
         pkgnavdata=None
         if prefs.package:
-            self.toolbar.EnableTool(wx.ID_PREVIEW, True)
-            self.toolbar.EnableTool(wx.ID_PASTE, True)
             pkgdir=join(prefs.xplane,custom,prefs.package)
             for f in listdir(pkgdir):
                 if f.lower()=='earth nav data':
@@ -1057,7 +1068,7 @@ class MainWindow(wx.Frame):
         progress.Update(0, 'Global nav data')
         if not self.aptname:	# Default apt.dat
             (self.aptname,self.aptcode,self.aptrunways)=readApt(join(prefs.xplane,mainaptdat))
-        progress.Update(1, 'DSFs')
+        progress.Update(1, 'Overlay DSFs')
         if not self.loc:
             # Load, not reload
             placements={}
@@ -1071,6 +1082,7 @@ class MainWindow(wx.Frame):
                 except:	# Bad DSF - restore to unloaded state
                     self.SetTitle("%s" % appname)
                     self.toolbar.EnableTool(wx.ID_PREVIEW, False)
+                    self.toolbar.EnableTool(wx.ID_PASTE, False)
                     prefs.package=None
                     pkgnavdata=None
                     placements={}
@@ -1116,6 +1128,7 @@ class MainWindow(wx.Frame):
         self.palette.load('Objects', objects)
 
         objectsbylib={}	# (name, path) by libname
+        terrain={}	# path by name
         for path in [join(prefs.xplane,custom),
                      join(prefs.xplane,default)]:
             for d in listdir(path):
@@ -1124,7 +1137,7 @@ class MainWindow(wx.Frame):
                 if isdir(pkg):
                     for f in listdir(pkg):
                         if f.lower()==library:
-                            readLib(join(pkg,f), objectsbylib)
+                            readLib(join(pkg,f), objectsbylib, terrain)
                             break
         libobjs={}
         libs=objectsbylib.keys()
@@ -1143,7 +1156,8 @@ class MainWindow(wx.Frame):
             background=None
         self.canvas.reload(self.loc!=None,
                            aptrunways, objects, placements, baggage,
-                           background)
+                           background,
+                           terrain, join(prefs.xplane,dsfdir))
         if not self.loc:
             # Load, not reload
             if pkgaptname:	# go to first airport by name
@@ -1151,13 +1165,15 @@ class MainWindow(wx.Frame):
             else:		# go to random object
                 for p in placements.values():
                     if p:
-                        (obj,lat,lon,hdg)=p[0]
+                        (obj,lat,lon,hdg,height)=p[0]
                         self.loc=[lat,lon]
                         break
         if not self.loc:	# Fallback
             self.loc=[34.096694,-117.248376]	# KSBD
         progress.Destroy()
         
+        self.toolbar.EnableTool(wx.ID_PREVIEW, True)
+        self.toolbar.EnableTool(wx.ID_PASTE, True)
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
         self.ShowLoc()
 
@@ -1165,33 +1181,34 @@ class MainWindow(wx.Frame):
         self.Refresh()
 
     def OnImport(self, event):
-        dlg=wx.FileDialog(self, "Import object file:", join(prefs.xplane,custom), '', "Object files (*.obj)|*.obj", wx.OPEN|wx.HIDE_READONLY)
+        dlg=wx.FileDialog(self, "Import object files:", join(prefs.xplane,custom), '', "Object files|*.obj", wx.OPEN|wx.MULTIPLE|wx.HIDE_READONLY)
         if dlg.ShowModal()!=wx.ID_OK:
             dlg.Destroy()
             return
-        path=dlg.GetPath()
+        paths=dlg.GetPaths()
         dlg.Destroy()
         
-        try:
-            pkgpath=join(prefs.xplane,custom,prefs.package)
-            newpath=importObj(pkgpath, path)
-        except IOError, e:
-            msg=e.strerror
-        except:
-            msg=''
-        else:
-            name=newpath[len(pkgpath)+1:-4].replace(sep, '/')
-            if name.lower().startswith('custom objects'): name=name[15:]
-            self.palette.add(name)
-            self.canvas.objcache.add(name, newpath)
-            return
+        pkgpath=join(prefs.xplane,custom,prefs.package)
+        for path in paths:
+            try:
+                newpath=importObj(pkgpath, path)
+            except IOError, e:
+                msg=e.strerror
+            except:
+                msg=''
+            else:
+                name=newpath[len(pkgpath)+1:-4].replace(sep, '/')
+                if name.lower().startswith('custom objects'): name=name[15:]
+                self.palette.add(name)
+                self.canvas.vertexcache.addObj(name, newpath)
+                continue
         
-        if platform=='darwin':
-            wx.MessageBox(msg, "Can't import %s." % basename(path),
-                          wx.ICON_QUESTION|wx.OK, self)
-        else:
-            wx.MessageBox("Can't import %s.\n\n%s"  % (basename(path), msg),
-                          appname, wx.ICON_EXCLAMATION|wx.OK, self)
+            if platform=='darwin':
+                wx.MessageBox(msg, "Can't import %s." % path,
+                              wx.ICON_QUESTION|wx.OK, self)
+            else:
+                wx.MessageBox("Can't import %s.\n\n%s" % (path,msg),
+                              appname, wx.ICON_EXCLAMATION|wx.OK, self)
 
     def OnGoto(self, event):
         self.goto.CenterOnParent()	# Otherwise is centred on screen
@@ -1208,15 +1225,16 @@ class MainWindow(wx.Frame):
             path=prefs.xplane
         elif platform=='win32' and isdir('C:\\X-Plane\\Custom Scenery'):
             path='C:\\X-Plane'
+        else:
+            path=''
         while 1:
-            dlg=wx.DirDialog(self, "Please locate the X-Plane folder:",
-                             path)
+            dlg=wx.DirDialog(self, "Please locate the X-Plane folder:", path)
             if (dlg.ShowModal()!=wx.ID_OK and
                 (not prefs.xplane or not isdir(join(prefs.xplane, custom)))):
                 exit(1)		# Can't proceed without an X-Plane folder
             path=dlg.GetPath()
             dlg.Destroy()
-            if isdir(join(path, custom)):
+            if isdir(join(path, custom)) and exists(join(path, mainaptdat)):
                 prefs.xplane=path
                 if prefs.package and not isdir(join(prefs.xplane, custom, prefs.package)):
                     prefs.package=None
@@ -1275,8 +1293,8 @@ app.SetTopWindow(frame)
 prefs=Prefs()
 if not prefs.xplane or not isdir(join(prefs.xplane,custom)):
     if platform=='darwin':	# prompt is not displayed on Mac
-        wx.MessageBox("", "Please locate the X-Plane folder",
-                      wx.ICON_EXCLAMATION|wx.OK, frame)
+        wx.MessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder",
+                      wx.ICON_QUESTION|wx.OK, frame)
     frame.OnPrefs(None)
 if prefs.package and not isdir(join(prefs.xplane, custom, prefs.package)):
     prefs.package=None
