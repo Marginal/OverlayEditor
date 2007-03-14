@@ -16,7 +16,7 @@ del /s /q *.pyc >nul: 2>&1
 
 @set PY=OverlayEditor.py draw.py files.py
 @set DATA=OverlayEditor.html
-@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/help.png Resources/goto.png Resources/new.png Resources/open.png Resources/OverlayEditor.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.obj Resources/screenshot.png
+@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/OverlayEditor.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.obj Resources/screenshot.png
 
 @REM source
 zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% %DATA% %RSRC% linux MacOS win32 |findstr -vc:"adding:"
@@ -40,11 +40,11 @@ zip -r OverlayEditor_%VER%_mac.zip OverlayEditor.app |findstr -vc:"adding:"
 
 @REM win32
 win32\setup.py -q py2exe
-@set cwd="%CD%"
+REM @set cwd="%CD%"
 REM cd dist
 REM zip -r ..\OverlayEditor_%VER%_win32.zip * |findstr -vc:"adding:"
 "C:\Program Files\NSIS\makensis.exe" /nocd /v2 win32\OverlayEditor.nsi
-@cd %cwd%
+REM @cd %cwd%
 rd  /s /q build
 
 :end

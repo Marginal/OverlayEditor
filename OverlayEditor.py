@@ -10,7 +10,7 @@ import wx
 from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
 
 from draw import MyGL
-from files import appname, appversion, Prefs, readApt, readLib, readDsf, writeDsfs, sortfolded
+from files import appname, appversion, importObj, Prefs, readApt, readLib, readDsf, writeDsfs, sortfolded
 
 if not 'startfile' in dir(os):
     import types
@@ -316,6 +316,18 @@ class Palette(wx.Choicebook):
         wx.EVT_KEY_DOWN(l, self.OnKeyDown)
         wx.EVT_MOUSEWHEEL(l, self.OnMouseWheel)
     
+    def add(self, name):
+        # Add to objects tab - assumes that this is first tab
+        choices=self.choices[0]
+        choices.append(name)
+        sortfolded(choices)
+        self.lists[0].Set(choices)
+        self.set(name)
+        self.frame.canvas.clearsel()
+        self.frame.toolbar.EnableTool(wx.ID_DELETE, False)
+        self.frame.statusbar.SetStatusText("", 2)
+        self.last=(0,name)
+
     def get(self):
         (tab,sel)=self.last
         if tab<0: return None
@@ -702,6 +714,12 @@ class MainWindow(wx.Frame):
                                   wx.NullBitmap, 0,
                                   "Reload package's objects, textures and airports")
         wx.EVT_TOOL(self.toolbar, wx.ID_REFRESH, self.OnReload)
+        self.toolbar.AddLabelTool(wx.ID_PASTE, 'Import',
+                                  wx.Bitmap("Resources/import.png",
+                                            wx.BITMAP_TYPE_PNG),
+                                  wx.NullBitmap, 0,
+                                  'Import object from another package')
+        wx.EVT_TOOL(self.toolbar, wx.ID_PASTE, self.OnImport)
         self.toolbar.AddLabelTool(wx.ID_FORWARD, 'Go To',
                                   wx.Bitmap("Resources/goto.png",
                                             wx.BITMAP_TYPE_PNG),
@@ -728,6 +746,7 @@ class MainWindow(wx.Frame):
         self.toolbar.EnableTool(wx.ID_ADD, False)
         self.toolbar.EnableTool(wx.ID_DELETE, False)
         self.toolbar.EnableTool(wx.ID_UNDO, False)
+        self.toolbar.EnableTool(wx.ID_PASTE, False)
         self.toolbar.EnableTool(wx.ID_PREVIEW, False)            
 
         # Hack: Use zero-sized first field to hide toolbar button long help
@@ -1026,6 +1045,7 @@ class MainWindow(wx.Frame):
         pkgnavdata=None
         if prefs.package:
             self.toolbar.EnableTool(wx.ID_PREVIEW, True)
+            self.toolbar.EnableTool(wx.ID_PASTE, True)
             pkgdir=join(prefs.xplane,custom,prefs.package)
             for f in listdir(pkgdir):
                 if f.lower()=='earth nav data':
@@ -1033,6 +1053,7 @@ class MainWindow(wx.Frame):
                     break
         else:
             self.toolbar.EnableTool(wx.ID_PREVIEW, False)            
+            self.toolbar.EnableTool(wx.ID_PASTE, False)
         progress.Update(0, 'Global nav data')
         if not self.aptname:	# Default apt.dat
             (self.aptname,self.aptcode,self.aptrunways)=readApt(join(prefs.xplane,mainaptdat))
@@ -1056,7 +1077,7 @@ class MainWindow(wx.Frame):
                     baggage={}
         else:
             placements=baggage=None	# keep existing
-        progress.Update(1, 'Airports')
+        progress.Update(2, 'Airports')
         aptname=self.aptname
         aptcode=self.aptcode
         aptrunways=self.aptrunways
@@ -1079,9 +1100,9 @@ class MainWindow(wx.Frame):
         if self.goto:
             self.goto.Close()	# Needed on wxMac 2.5
         self.goto=GotoDialog(self, aptname, aptcode)	# build only
-        progress.Update(2, 'Libraries')
         # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
         # search order is: custom libraries, default libraries, scenery package
+        progress.Update(3, 'Libraries')
         objects={}
         if prefs.package:
             for path, dirs, files in walk(pkgdir):
@@ -1114,7 +1135,6 @@ class MainWindow(wx.Frame):
             libobjs.update(objs)
         objects.update(libobjs)	# libs take precedence
 
-        progress.Update(3, 'Objects')
         if prefs.package and prefs.package in prefs.packageprops:
             (image, lat, lon, hdg, width, length, opacity)=prefs.packageprops[prefs.package]
             if image[0]==curdir: image=join(prefs.xplane,custom,prefs.package, normpath(image))
@@ -1136,16 +1156,42 @@ class MainWindow(wx.Frame):
                         break
         if not self.loc:	# Fallback
             self.loc=[34.096694,-117.248376]	# KSBD
+        progress.Destroy()
+        
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
         self.ShowLoc()
 
         # redraw
-        progress.Destroy()
         self.Refresh()
 
     def OnImport(self, event):
-        #print "import"
-        pass
+        dlg=wx.FileDialog(self, "Import object file:", join(prefs.xplane,custom), '', "Object files (*.obj)|*.obj", wx.OPEN|wx.HIDE_READONLY)
+        if dlg.ShowModal()!=wx.ID_OK:
+            dlg.Destroy()
+            return
+        path=dlg.GetPath()
+        dlg.Destroy()
+        
+        try:
+            pkgpath=join(prefs.xplane,custom,prefs.package)
+            newpath=importObj(pkgpath, path)
+        except IOError, e:
+            msg=e.strerror
+        except:
+            msg=''
+        else:
+            name=newpath[len(pkgpath)+1:-4].replace(sep, '/')
+            if name.lower().startswith('custom objects'): name=name[15:]
+            self.palette.add(name)
+            self.canvas.objcache.add(name, newpath)
+            return
+        
+        if platform=='darwin':
+            wx.MessageBox(msg, "Can't import %s." % basename(path),
+                          wx.ICON_QUESTION|wx.OK, self)
+        else:
+            wx.MessageBox("Can't import %s.\n\n%s"  % (basename(path), msg),
+                          appname, wx.ICON_EXCLAMATION|wx.OK, self)
 
     def OnGoto(self, event):
         self.goto.CenterOnParent()	# Otherwise is centred on screen
@@ -1160,16 +1206,10 @@ class MainWindow(wx.Frame):
     def OnPrefs(self, event):
         if prefs.xplane:
             path=prefs.xplane
-        elif platform=='win32':
-            if isdir('C:\\X-Plane\\Custom Scenery'):
-                path='C:\\X-Plane'
-            else:
-                path=''
-        else:
-            # prompt is not displayed on Mac
-            path='location of top-level X-Plane folder'
+        elif platform=='win32' and isdir('C:\\X-Plane\\Custom Scenery'):
+            path='C:\\X-Plane'
         while 1:
-            dlg=wx.DirDialog(self, "Please locate the X-Plane's folder:",
+            dlg=wx.DirDialog(self, "Please locate the X-Plane folder:",
                              path)
             if (dlg.ShowModal()!=wx.ID_OK and
                 (not prefs.xplane or not isdir(join(prefs.xplane, custom)))):
@@ -1212,7 +1252,7 @@ class MainWindow(wx.Frame):
                                 wx.ICON_QUESTION|style, self)
             else:
                 r=wx.MessageBox('"%s" has been modified.\n\nDo you want to save the changes?' % prefs.package, appname,
-                                wx.ICON_EXCLAMATION|style, self)
+                                wx.ICON_QUESTION|style, self)
             if r==wx.YES:
                 self.OnSave(None)
             elif r==wx.CANCEL:
@@ -1234,6 +1274,9 @@ app.SetTopWindow(frame)
 # user prefs
 prefs=Prefs()
 if not prefs.xplane or not isdir(join(prefs.xplane,custom)):
+    if platform=='darwin':	# prompt is not displayed on Mac
+        wx.MessageBox("", "Please locate the X-Plane folder",
+                      wx.ICON_EXCLAMATION|wx.OK, frame)
     frame.OnPrefs(None)
 if prefs.package and not isdir(join(prefs.xplane, custom, prefs.package)):
     prefs.package=None

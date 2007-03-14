@@ -51,11 +51,12 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.undostack=[]
 
+        # Values during startup
         self.x=0
         self.z=0
         self.h=0
-        self.e=1
-        self.d=1
+        self.e=90
+        self.d=3333.25
 
         # Must specify min sizes for glX - see glXChooseVisual and GLXFBConfig
         wx.glcanvas.GLCanvas.__init__(self, parent,
@@ -72,7 +73,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if glGetString(GL_VERSION) >= '1.2':
             clampmode=0x812F	# GL_CLAMP_TO_EDGE
         else:
-            clampmode=GL_CLAMP            
+            clampmode=GL_REPEAT
         self.objcache=ObjCache(clampmode)	# member so can free resources
 
         wx.EVT_PAINT(self, self.OnPaint)
@@ -517,38 +518,15 @@ class MyGL(wx.glcanvas.GLCanvas):
     def reload(self, reload, runways, objects, placements, baggage,background):
         self.runways=runways
         self.objcache.flush(objects)
+        self.tile=[999,999]	# force reload
         if placements!=None:
             self.placements=placements
             self.baggage=baggage
         self.background=background
-
-        missing=[]
-        errobjs=[]
-        for placement in self.placements.values():
-            for (obj, lat, lon, hdg) in placement:
-                if not self.objcache.load(obj, True):
-                    if not obj in objects:
-                        if not obj in missing: missing.append(obj)
-                    else: 
-                        errobjs.append(obj)
         self.trashlists(True)
         self.selected=[]	# may not have same indices in new list
         if not reload:
             self.undostack=[]
-
-        # Redraw can happen under MessageBox, so do this last
-        if errobjs:
-            sortfolded(errobjs)
-            if platform=='darwin':
-                wx.MessageBox(str('\n'.join(errobjs)), 'One or more objects could not be read.', wx.ICON_QUESTION|wx.OK, self.frame)
-            else:
-                wx.MessageBox("One or more objects could not be read:\n\n  %s" % '\n  '.join(errobjs), appname, wx.ICON_EXCLAMATION|wx.OK, self.frame)
-        if missing:
-            sortfolded(missing)
-            if platform=='darwin':
-                wx.MessageBox(str('\n'.join(missing)), 'Package references missing objects.', wx.ICON_QUESTION|wx.OK, self.frame)
-            else:
-                wx.MessageBox("Package references missing objects:\n\n%s" % '\n'.join(missing), appname, wx.ICON_EXCLAMATION|wx.OK, self.frame)
 
         if 0:	# debug
             print "Frame:\t%s"  % self.frame.GetId()
@@ -567,9 +545,9 @@ class MyGL(wx.glcanvas.GLCanvas):
     def add(self, obj, lat, lon, hdg):
         if not self.objcache.load(obj):
             if platform=='darwin':
-                wx.MessageBox('%s cannot be read.' % obj, 'Cannot add this object.', wx.ICON_QUESTION|wx.OK, self.frame)
+                wx.MessageBox("Can't read %s." % obj, 'Cannot add this object.', wx.ICON_QUESTION|wx.OK, self.frame)
             else:
-                wx.MessageBox("Cannot add this object.\n\n%s cannot be read." % obj, appname, wx.ICON_HAND|wx.OK, self.frame)
+                wx.MessageBox("Cannot add this object.\n\nCan't read %s." % obj, appname, wx.ICON_HAND|wx.OK, self.frame)
             return False
         self.trashlists(False)
         (base,culled,nocull,texno,poly)=self.objcache.get(obj)	# for poly
@@ -676,6 +654,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         elif undo.kind==UndoEntry.DEL:
             for (i, p) in undo.data:
                 (obj, lat, lon, hdg)=p
+                if not self.objcache.load(obj, True):	# may have reloaded
+                    if platform=='darwin':
+                        wx.MessageBox("Can't read %s." % obj, 'Using a placeholder object.', wx.ICON_QUESTION|wx.OK, self.frame)
+                    else:
+                        wx.MessageBox("Using a placeholder object.\n\nCan't read %s." % obj, appname, wx.ICON_EXCLAMATION|wx.OK, self.frame)
                 avlat+=lat
                 avlon+=lon
                 placement.insert(i, p)
@@ -696,17 +679,43 @@ class MyGL(wx.glcanvas.GLCanvas):
         return self.undostack!=[]
         
     def goto(self, loc, hdg=None, elev=None, dist=None):
+        errobjs=[]
         newtile=[int(floor(loc[0])),int(floor(loc[1]))]
         if newtile!=self.tile:
+            self.frame.ShowSel()
+            key=(newtile[0],newtile[1])
+            if key in self.placements:
+                # Limit progress dialog to 10 updates
+                progress=wx.ProgressDialog('Loading', 'Objects', 2+len(self.placements[key]), self, wx.PD_APP_MODAL)
+                p=int(len(self.placements[key])/10)
+                n=p
+                i=0
+                for (obj, lat, lon, h) in self.placements[key]:
+                    if i==n:
+                        progress.Update(i)
+                        n+=p
+                    i+=1
+                    if not self.objcache.load(obj, True) and not obj in errobjs:
+                        errobjs.append(obj)
+                progress.Destroy()
+            self.tile=newtile
+            self.centre=[self.tile[0]+0.5, self.tile[1]+0.5]
             self.trashlists(True)
             self.selected=[]
-            self.frame.ShowSel()
-        self.tile=newtile
-        self.centre=[self.tile[0]+0.5, self.tile[1]+0.5]
+
         (self.x, self.z)=self.latlon2m(loc[0],loc[1])
         if hdg!=None: self.h=hdg
         if elev!=None: self.e=elev
         if dist!=None: self.d=dist
+
+        # Redraw can happen under MessageBox, so do this last
+        if errobjs:
+            sortfolded(errobjs)
+            if platform=='darwin':
+                wx.MessageBox(str('\n'.join(errobjs)), "Can't read one or more objects.", wx.ICON_QUESTION|wx.OK, self.frame)
+            else:
+                wx.MessageBox("Can't read one or more objects:\n\n  %s" % '\n  '.join(errobjs), appname, wx.ICON_EXCLAMATION|wx.OK, self.frame)
+
         self.Refresh()
 
     def trashlists(self, runwaystoo):

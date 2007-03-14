@@ -3,7 +3,8 @@ from PIL.Image import open
 import PIL.BmpImagePlugin, PIL.JpegImagePlugin, PIL.PngImagePlugin	# force for py2exe
 from OpenGL.GL import *
 from os import getenv, listdir, mkdir, makedirs, popen3, rename, unlink
-from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
+from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
+from shutil import copyfile
 from sys import platform
 from tempfile import gettempdir
 import wx
@@ -12,7 +13,7 @@ if platform!='win32':
     import codecs
 
 appname='OverlayEditor'
-appversion='1.34'	# Must be numeric
+appversion='1.35'	# Must be numeric
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
@@ -325,8 +326,8 @@ class TexCache:
                 image=image.convert('RGBA')
             data = image.tostring("raw", 'RGBA', 0, -1)
             glBindTexture(GL_TEXTURE_2D, id)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, self.clampmode)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, self.clampmode)
+            #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, self.clampmode)
+            #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, self.clampmode)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.size[0], image.size[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
@@ -361,6 +362,10 @@ class ObjCache:
         self.tarray=list(self.deftarray)
         self.valid=False
 
+    def add(self, name, path):
+        # Import a new object
+        self.tlb[name]=path
+        
     def load(self, name, usefallback=False):
         # read object into cache, but don't update OpenGL arrays
         # returns False if error reading object
@@ -616,3 +621,139 @@ def readObj(path, texcache):
     h.close()
     return (culled, nocull, tculled, tnocull, texno, maxpoly)
 
+
+def importObj(pkgpath, path):
+    if path.startswith(pkgpath):
+        raise IOError, (0, "This object is already in the package")
+
+    # find base texture location
+    if sep+'custom objects'+sep in path.lower():
+        oldtexpath=path[:path.lower().index(sep+'custom objects'+sep)]
+        for t in listdir(oldtexpath):
+            if t.lower()=='custom object textures': break
+        else:
+            t='custom object textures'
+        oldtexpath=join(oldtexpath, t)
+    else:
+        oldtexpath=dirname(path)
+        
+    # find destination
+    for o in listdir(pkgpath):
+        if o.lower()=='custom objects':
+            newpath=join(pkgpath, o)
+            for t in listdir(pkgpath):
+                if t.lower()=='custom object textures': break
+            else:
+                t='custom object textures'
+            newtexpath=join(pkgpath, t)
+            newtexprefix=''
+            break
+    else:
+        for o in listdir(pkgpath):
+            if o.lower()=='objects':
+                newpath=join(pkgpath, o)
+                for t in listdir(pkgpath):
+                    if t.lower()=='textures': break
+                else:
+                    t='textures'
+                newtexpath=join(pkgpath, t)
+                newtexprefix='../'+t+'/'
+                break
+        else:
+            newpath=newtexpath=pkgpath
+            newtexprefix=''
+    for f in listdir(newpath):
+        if f.lower()==basename(path).lower():
+            raise IOError, (0, "An object with this name already exists in this package")
+    badobj=(0, "This is not an X-Plane v6, v7 or v8 object")
+    h=file(path, 'rU')
+    # Preserve comments, copyrights etc
+    line=h.readline().strip()
+    if not line[0] in ['I','A']:
+        raise IOError, badobj
+    if platform=='darwin':
+        header='A'+line[1:]+'\n'
+    else:
+        header='I'+line[1:]+'\n'
+    line=h.readline().strip()
+    header+=line+'\n'
+    c=line.split()
+    if not c or not c[0] in ['2', '700','800']:
+        raise IOError, badobj
+    version=c[0]
+    if version!='2':
+        line=h.readline().strip()
+        header+=line+'\n'
+        c=line.split()
+        if not c or not c[0]=='OBJ':
+            raise IOError, badobj
+    if version in ['2','700']:
+        while 1:
+            line=h.readline()
+            if not line: raise IOError, badobj
+            line=line.strip()
+            if not line:
+                header+='\n'
+            else:
+                if '//' in line:
+                    tex=line[:line.index('//')].strip()
+                    rest='\t'+line[line.index('//'):]+'\n'
+                else:
+                    tex=line
+                    rest='\n'
+                tex=tex.replace(':', sep)
+                tex=tex.replace('/', sep)
+                (tex, ext)=splitext(tex)
+                header+=newtexprefix+basename(tex)+rest
+                for e in [ext, '.png', '.PNG', '.bmp', '.BMP']:
+                    if exists(join(oldtexpath, tex+e)):
+                        if not isdir(newtexpath): mkdir(newtexpath)
+                        if not exists(join(newtexpath, basename(tex)+e)):
+                            copyfile(join(oldtexpath, tex+e),
+                                     join(newtexpath, basename(tex)+e))
+                        break
+                for lit in [tex+'_LIT', tex+'_lit', tex+'LIT', tex+'lit']:
+                    for e in [ext, '.png', '.PNG', '.bmp', '.BMP']:
+                        if exists(join(oldtexpath, lit+e)):
+                            if not isdir(newtexpath): mkdir(newtexpath)
+                            if not exists(join(newtexpath, basename(tex)+'_LIT'+e)):
+                                copyfile(join(oldtexpath, lit+e),
+                                         join(newtexpath, basename(tex)+'_LIT'+e))
+                            break
+                    else:
+                        continue	# next lit
+                    break
+                break
+    else: # v8
+        while 1:
+            line=h.readline()
+            if not line: raise IOError, badobj
+            line=line.strip()
+            if not line or line[0]=='#':
+                header+=line+'\n'
+            elif line.split()[0] in ['TEXTURE', 'TEXTURE_LIT']:
+                c=line.split()
+                if len(c)==1:
+                    header+=c[0]+'\t\n'
+                else:
+                    tex=line[len(c[0]):].strip()
+                    tex=tex.replace(':', sep)
+                    tex=tex.replace('/', sep)
+                    header+=c[0]+'\t'+newtexprefix+basename(tex)+'\n'
+                    if not isdir(newtexpath): mkdir(newtexpath)
+                    if not exists(join(newtexpath, basename(tex))):
+                        copyfile(join(oldtexpath, tex),
+                                 join(newtexpath, basename(tex)))
+            else:
+                header+=line+'\n'
+                break	# Stop at first non-texture statement
+    
+    # Write new OBJ
+    newfile=join(newpath,basename(path))
+    w=file(newfile, 'wU')
+    w.write(header)
+    for line in h:
+        w.write(line.strip()+'\n')
+    w.close()
+    h.close()
+    return newfile
