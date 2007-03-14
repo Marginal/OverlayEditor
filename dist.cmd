@@ -22,7 +22,7 @@ del /s /q *.pyc >nul: 2>&1
 zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% setup.py %DATA% %RSRC% linux MacOS win32/*.exe win32/*.ico |findstr -vc:"adding:"
 
 @REM linux
-tar -zcf OverlayEditor_%VER%_linux.tar.gz %PY% %DATA% %RSRC% linux win32/DSFTool.exe
+REM tar -zcf OverlayEditor_%VER%_linux.tar.gz %PY% %DATA% %RSRC% linux win32/DSFTool.exe
 
 @REM mac
 mkdir OverlayEditor.app\Contents

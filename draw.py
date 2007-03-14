@@ -97,22 +97,17 @@ class MyGL(wx.glcanvas.GLCanvas):
     def OnTimer(self, event):
         # mouse scroll - fake up a key event and pass it up
         size=self.GetClientSize()
-        #if platform=='darwin':
-        #    pos=self.ScreenToClient(wx.GetMousePosition())
-        #else:
-        #    pos=self.parent.ScreenToClient(wx.GetMousePosition())
         posx=self.mousenow[0]
         posy=self.mousenow[1]
         if posx<sband or posy<sband or size.x-posx<sband or size.y-posy<sband:
             keyevent=wx.KeyEvent()
+            keyevent.m_controlDown=keyevent.m_metaDown=self.selectctrl
             if platform!='darwin':
                 state=wx.GetMouseState()	# not in wxMac 2.5
                 if not state.LeftDown():
                     self.timer.Stop()
                     return
                 keyevent.m_shiftDown=state.shiftDown
-                keyevent.m_controlDown=state.controlDown
-                keyevent.m_metaDown=state.metaDown
             if posx<sband:
                 keyevent.m_keyCode=wx.WXK_LEFT
             elif posy<sband:
@@ -128,12 +123,12 @@ class MyGL(wx.glcanvas.GLCanvas):
     def OnLeftDown(self, event):
         event.Skip()	# do focus change
         self.mousenow=[event.m_x,event.m_y]
+        self.selectctrl=event.m_controlDown or event.m_metaDown
         size = self.GetClientSize()
         if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
             # mouse scroll
             self.timer.Start(50)
         else:
-            self.selectctrl=event.m_controlDown or event.m_metaDown
             self.select(event)
 
     def OnLeftUp(self, event):
