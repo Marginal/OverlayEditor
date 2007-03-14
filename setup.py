@@ -1,8 +1,7 @@
 #!/usr/bin/python
 
-from files import appname, appversion
+from files import appversion
 from distutils.core import setup
-from glob import glob
 from os import listdir, name
 from sys import platform
 
@@ -11,9 +10,9 @@ from sys import platform
 manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
           '<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">\n'+
           '<assemblyIdentity\n'+
-          '    version="%4.2f.0.0"\n' % appversion +
+          '    version="%s.0.0"\n' % appversion +
           '    processorArchitecture="X86"\n'+
-          '    name="%s"\n' % appname +
+          '    name="OverlayEditor"\n'+
           '    type="win32"\n'+
           '/>\n'+
           '<description>DSF overlay editor.</description>\n'+
@@ -55,7 +54,7 @@ elif platform.lower().startswith('darwin'):
               ]
 
 setup(name='OverlayEditor',
-      version=("%4.2f" % appversion),
+      version=appversion,
       description='DSF overlay editor',
       author='Jonathan Harris',
       author_email='x-plane@marginal.org.uk',
@@ -65,42 +64,24 @@ setup(name='OverlayEditor',
                     ]),
                   ('Resources',
                    ['Resources/add.png',
-                    'Resources/background.png',
                     'Resources/delete.png',
                     'Resources/goto.png',
-                    'Resources/help.png',
                     'Resources/import.png',
                     'Resources/new.png',
                     'Resources/open.png',
+                    'Resources/OverlayEditor.png',
                     'Resources/prefs.png',
                     'Resources/reload.png',
                     'Resources/save.png',
-                    'Resources/undo.png',
-                    'Resources/default.fac',
-                    'Resources/default.for',
                     'Resources/default.obj',
-                    'Resources/windsock.obj',
-                    'Resources/windsock.png',
-                    'Resources/exc.png',
-                    'Resources/fac.png',
-                    'Resources/obj.png',
-                    'Resources/airport0_000.png',
-                    'Resources/Sea01.png',
-                    'Resources/OverlayEditor.png',
-                    'Resources/screenshot.jpg',
-                    'Resources/800library.txt',
+                    'Resources/screenshot.png',
                     ]),
-                  ('Resources/previews',
-                   glob('Resources/previews/*.jpg')
-                   ),
                   ] + platdata,
 
-      options = {'py2exe': {'ascii':True,	# suppresss encodings?
-                            'dll_excludes':['w9xpopen.exe'],
+      options = {'py2exe': {'dll_excludes':['w9xpopen.exe'],
                             'bundle_files':True,
                             'compressed':True,
-                            'excludes':['tcl', 'Tkinter', 'mx','socket','urllib','webbrowser'],
-                            'packages':['encodings.mbcs','encodings.utf_8','encodings.latin_1'],	# latin_1 for wx.lib.masked.NumCtrl
+                            'excludes':['socket', 'urllib', 'webbrowser'],
                             'optimize':2,
                             },
                  'py2app': {'argv_emulation':False,
