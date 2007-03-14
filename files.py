@@ -12,7 +12,7 @@ if platform!='win32':
     import codecs
 
 appname='OverlayEditor'
-appversion='1.12'	# Must be numeric
+appversion='1.20'	# Must be numeric
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
@@ -251,6 +251,15 @@ def writeDsfs(path, placements, baggage):
         unlink(tmp)
     
 def readObj(path, texcache):
+    h=None
+    culled=[]
+    nocull=[]
+    current=culled
+    tculled=[]
+    tnocull=[]
+    tcurrent=tculled
+    texno=0
+    maxpoly=0
     co=sep+'custom objects'+sep
     if co in path.lower():
         texpath=path[:path.lower().index(co)]
@@ -260,7 +269,6 @@ def readObj(path, texcache):
                 break
     else:
         texpath=dirname(path)
-    
     try:
         h=file(path, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
@@ -268,17 +276,9 @@ def readObj(path, texcache):
         version=h.readline().split()[0]
         if not version in ['700','800']:
             raise IOError
-        if not h.readline().split()[0]=='OBJ':
+        if version!='2' and not h.readline().split()[0]=='OBJ':
             raise IOError
-        culled=[]
-        nocull=[]
-        current=culled
-        tculled=[]
-        tnocull=[]
-        tcurrent=tculled
-        texno=0
-        maxpoly=0
-        if version=='700':
+        if version in ['2','700']:
             while 1:
                 tex=h.readline().strip()
                 if tex:
@@ -296,7 +296,7 @@ def readObj(path, texcache):
                 if not line: break
                 c=line.split()
                 if not c: continue
-                if c[0]=='end':
+                if c[0] in ['end', '99']:
                     break
                 elif c[0]=='ATTR_LOD':
                     if float(c[1])!=0: break
@@ -308,10 +308,18 @@ def readObj(path, texcache):
                 elif c[0]=='ATTR_no_cull':
                     current=nocull
                     tcurrent=tnocull
-                elif c[0] in ['tri', 'quad', 'quad_hard', 'polygon',
-                              'quad_strip', 'tri_strip', 'tri_fan']:
+                elif c[0] in ['tri', 'quad', 'quad_hard', 'polygon', 
+                              'quad_strip', 'tri_strip', 'tri_fan',
+                              'quad_movie',
+                              '1', '2', '3', '4', '5', '6', '7', '8']:
+                    count=0
                     seq=[]
-                    if c[0]=='tri':
+                    if c[0] in ['1']:
+                        h.readline()
+                    elif c[0] in ['2']:
+                        h.readline()
+                        h.readline()
+                    elif c[0] in ['3', 'tri']:
                         count=3
                         seq=[0,1,2]
                     elif c[0]=='polygon':
@@ -324,7 +332,7 @@ def readObj(path, texcache):
                             seq.extend([i,i+1,i+2,i+3,i+2,i+1])
                     elif c[0]=='tri_strip':
                         count=int(c[1])
-                        seq=[]	# fixme
+                        seq=[]	# XXX implement me
                     elif c[0]=='tri_fan':
                         count=int(c[1])
                         for i in range(1,count-1):
@@ -346,8 +354,8 @@ def readObj(path, texcache):
                         else:
                             i+=1
                     for i in seq:
-                        current.append(v[i])
                         tcurrent.append(t[i])
+                        current.append(v[i])
         elif version=='800':
             vt=[]
             idx=[]
@@ -395,13 +403,14 @@ def readObj(path, texcache):
                 elif c[0]=='TRIS':
                     for i in range(int(c[1]), int(c[1])+int(c[2])):
                         v=vt[idx[i]]
+                        tcurrent.append([v[3], v[4]])
                         current.append([anim[-1][0]+v[0],
                                         anim[-1][1]+v[1],
                                         anim[-1][2]+v[2]])
-                        tcurrent.append([v[3], v[4]])
     except:
-        pass
-    if h: h.close()
+        if h: h.close()
+        raise IOError
+    h.close()
     return (culled, nocull, tculled, tnocull, texno, maxpoly)
 
 

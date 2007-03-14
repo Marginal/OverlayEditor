@@ -209,6 +209,7 @@ class Palette(wx.ListBox):
                             style=wx.LB_SINGLE|wx.LB_ALWAYS_SB|wx.LB_HSCROLL)
         wx.EVT_LISTBOX(self, self.GetId(), self.OnChoice)
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)
+        wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
         if objects:
             self.reload(objects)
 
@@ -223,6 +224,11 @@ class Palette(wx.ListBox):
     def OnKeyDown(self, event):
         # Override & manually propagate
         self.parent.GetParent().OnKeyDown(event)
+        event.Skip(False)
+
+    def OnMouseWheel(self, event):
+        # Override & manually propagate
+        self.parent.GetParent().OnMouseWheel(event)
         event.Skip(False)
 
     def reload(self, objects):
@@ -276,6 +282,7 @@ class MainWindow(wx.Frame):
         wx.Frame.__init__(self, parent, id, title)
         wx.EVT_CLOSE(self, self.OnClose)
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)
+        wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
         
         if platform=='win32':
             self.SetIcon(wx.Icon('win32/%s.ico' % appname, wx.BITMAP_TYPE_ICO))
@@ -386,7 +393,8 @@ class MainWindow(wx.Frame):
         self.statusbar.SetStatusText("Lat: %11.6f  Lon: %11.6f  Hdg: %3.0f" %(
             self.loc[0], self.loc[1], self.hdg), 1)
 
-    def ShowSel(self, selection):
+    def ShowSel(self):
+        selection=self.canvas.getsel()
         if selection==None:
             self.palette.set(None)
             self.statusbar.SetStatusText("", 2)
@@ -418,7 +426,7 @@ class MainWindow(wx.Frame):
             if not details: return
             (obj,lat,lon,hdg)=details
             self.loc=[lat,lon]
-            if event.m_shiftDown or event.m_controlDown or event.m_metaDown:
+            if event.m_controlDown or event.m_metaDown:
                 self.hdg=round(hdg,0)
         elif event.m_keyCode==ord('Q'):
             if event.m_controlDown or event.m_metaDown:
@@ -475,6 +483,29 @@ class MainWindow(wx.Frame):
         self.ShowLoc()
         event.Skip(True)
     
+    def OnMouseWheel(self, event):
+        if event.m_wheelRotation>0:
+            if event.m_controlDown or event.m_metaDown:
+                self.dist/=2
+            else:
+                self.dist/=1.4142
+            if self.dist<1.0: self.dist=1.0
+        elif event.m_wheelRotation<0:
+            if event.m_controlDown or event.m_metaDown:
+                self.dist*=2
+            else:
+                self.dist*=1.4142
+            if self.dist>25312.0: self.dist=25312.0
+        else:
+            print event.m_wheelRotation, event.m_shiftDown, event.m_controlDown, event.m_metaDown
+            event.Skip(True)
+            return
+        self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
+        self.Update()		# Let window draw first
+        self.ShowLoc()
+        event.Skip(True)
+        
+        
     def OnNew(self, event):
         dlg=wx.TextEntryDialog(self, "Name of new scenery package folder:",
                                "New scenery package")
@@ -561,7 +592,7 @@ class MainWindow(wx.Frame):
                 try:
                     for path, dirs, files in walk(pkgnavdata):
                         for f in files:
-                            if f.lower()[-4:]=='.dsf':
+                            if f[0] in '+-' and f[-4:].lower()=='.dsf':
                                 (tile,data,props,other)=readDsf(join(path,f))
                                 placements[tile]=data
                                 baggage[tile]=(props,other)

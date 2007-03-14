@@ -1,6 +1,7 @@
 from math import cos, sin, floor, pi
 from OpenGL.GL import *
 from OpenGL.GLU import *
+from sys import platform
 import wx.glcanvas
 
 from files import readObj, TexCache
@@ -9,6 +10,7 @@ onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
 f2m=0.3048	# 1 foot [m]
 
+sband=12	# width of mouse scroll band around edge of window
 
 
 # OpenGL Window
@@ -16,6 +18,7 @@ class MyGL(wx.glcanvas.GLCanvas):
     def __init__(self, parent):
 
         self.parent=parent
+        self.movecursor=wx.StockCursor(wx.CURSOR_HAND)
 
         self.tile=[0,0]		# [lat,lon] of SW
         self.centre=None	# [lat,lon] of centre
@@ -30,9 +33,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.varray=[]
         self.tarray=[]
 
-        self.selections=[]
-        self.selected=None
-        
+        self.selected=[]	# Indices into placements[self.tile]
+        self.selections=[]	# List for picking
+
         self.x=0
         self.z=0
         self.h=0
@@ -43,7 +46,15 @@ class MyGL(wx.glcanvas.GLCanvas):
         wx.EVT_PAINT(self, self.OnPaint)
         wx.EVT_ERASE_BACKGROUND(self, self.OnEraseBackground)
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)
+        wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
+        wx.EVT_MOTION(self, self.OnMouseMotion)
         wx.EVT_LEFT_DOWN(self, self.OnLeftDown)
+        wx.EVT_LEFT_UP(self, self.OnLeftUp)
+        wx.EVT_LEAVE_WINDOW(self, self.OnLeftUp)
+        wx.EVT_KILL_FOCUS(self, self.OnLeftUp)        
+        
+        self.timer=wx.Timer(self, wx.ID_ANY)
+        wx.EVT_TIMER(self, self.timer.GetId(), self.OnTimer)
         
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClearDepth(1.0)
@@ -67,8 +78,59 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Manually propagate
         self.parent.OnKeyDown(event)
 
+    def OnMouseWheel(self, event):
+        # Manually propagate
+        self.parent.OnMouseWheel(event)
+
+    def OnMouseMotion(self, event):
+        size = self.GetClientSize()
+        if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
+            self.SetCursor(self.movecursor)
+        else:
+            self.SetCursor(wx.NullCursor)
+
+    def OnTimer(self, event):
+        # mouse scroll - fake up a key event and pass it up
+        size=self.GetClientSize()
+        if platform=='darwin':
+            pos=self.ScreenToClient(wx.GetMousePosition())
+        else:
+            pos=self.parent.ScreenToClient(wx.GetMousePosition())
+        if pos.x<sband or pos.y<sband or size.x-pos.x<sband or size.y-pos.y<sband:
+            keyevent=wx.KeyEvent()
+            if platform!='darwin':
+                state=wx.GetMouseState()	# not in wxMac 2.5
+                if not state.LeftDown():
+                    self.timer.Stop()
+                    return
+                keyevent.m_shiftDown=state.shiftDown
+                keyevent.m_controlDown=state.controlDown
+                keyevent.m_metaDown=state.metaDown
+            if pos.x<sband:
+                keyevent.m_keyCode=wx.WXK_LEFT
+            elif pos.y<sband:
+                keyevent.m_keyCode=wx.WXK_UP
+            elif size.x-pos.x<sband:
+                keyevent.m_keyCode=wx.WXK_RIGHT
+            elif size.y-pos.y<sband:
+                keyevent.m_keyCode=wx.WXK_DOWN
+            self.parent.OnKeyDown(keyevent)
+        else:
+            self.timer.Stop()
+        
+    def OnLeftUp(self, event):
+        self.timer.Stop()
+            
     def OnLeftDown(self, event):
-        event.Skip()	# focus change
+        event.Skip()	# do focus change
+
+        size = self.GetClientSize()
+        if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
+            # mouse scroll
+            self.timer.Start(50)
+            #self.OnTimer(None)	# Do one now
+            return
+        
         glSelectBuffer(64)
         glRenderMode(GL_SELECT)
         self.redraw(GL_SELECT, event)
@@ -79,20 +141,28 @@ class MyGL(wx.glcanvas.GLCanvas):
         except:	# overflow
             pass
 
-        if not selections:
-            self.selected=None
-        elif selections==self.selections and self.selected!=None and self.selected in self.selections:
-            # cycle through selections
-            self.selected=selections[(selections.index(self.selected)+1)%len(selections)]
+        if event.m_controlDown or event.m_metaDown:
+            for i in selections:
+                if not i in self.selected:
+                    self.selected.append(i)
+                    break
+            else:	# all selected - remove one
+                for i in self.selected:
+                    if i in selections:
+                        self.selected.remove(i)
+                        break
         else:
-            self.selected=selections[0]
+            if not selections:
+                self.selected=[]
+            elif selections==self.selections and len(self.selected)==1 and self.selected[0] in self.selections:
+                # cycle through selections
+                self.selected=[selections[(selections.index(self.selected[0])+1)%len(selections)]]
+            else:
+                self.selected=[selections[0]]
         self.selections=selections
 
-        if self.selected!=None:
-            self.parent.ShowSel(self.currentplacements()[self.selected])
-        else:
-            self.parent.ShowSel(None)
         self.Refresh()
+        self.parent.ShowSel()
         
     def OnPaint(self, event):
         dc = wx.PaintDC(self)	# Tell the window system that we're on the case
@@ -167,7 +237,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             # Cursor
             glPushMatrix()
             glLoadIdentity()
-            glRotatef(self.e, 1.0,0.0,0.0)	#self.e
+            glRotatef(self.e, 1.0,0.0,0.0)
             glRotatef(self.h, 0.0,1.0,0.0)
             glColor3f(1.0, 0.25, 0.25)	# Cursor
             glBegin(GL_LINES)
@@ -178,13 +248,13 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnd()
             glPopMatrix()
 
-            if self.selected!=None:
-                (obj, lat, lon, hdg)=placement[self.selected]
+            glColor3f(1.0, 0.5, 1.0)
+            for i in self.selected:
+                (obj, lat, lon, hdg)=placement[i]
                 (x,z)=self.latlon2m(lat, lon)
                 glPushMatrix()
                 glTranslatef(x, 0.0, z)
                 glRotatef(-hdg, 0.0,1.0,0.0)
-                glColor3f(1.0, 0.5, 1.0)
                 glBegin(GL_LINES)
                 glVertex3f(-0.5,0,0)
                 glVertex3f( 0.5,0,0)
@@ -242,16 +312,18 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.objectslist:
             glCallList(self.objectslist)
 
-        if self.selected!=None:
-            (obj, lat, lon, hdg)=placement[self.selected]
+        glColor3f(1.0, 0.5, 1.0)
+        glPolygonOffset(0, -10)
+        glEnable(GL_POLYGON_OFFSET_FILL)
+        #glEnable(GL_POLYGON_OFFSET_LINE)
+        for i in self.selected:
+            (obj, lat, lon, hdg)=placement[i]
             (x,z)=self.latlon2m(lat, lon)
             (base,culled,nocull,texno,poly)=self.objects[obj]
+            glPushMatrix()
             glTranslatef(x, 0.0, z)
             glRotatef(-hdg, 0.0,1.0,0.0)
             glBindTexture(GL_TEXTURE_2D, texno)
-            glColor3f(1.0, 0.5, 1.0)
-            glPolygonOffset(0, -10)
-            glEnable(GL_POLYGON_OFFSET_FILL)
             if culled:
                 glEnable(GL_CULL_FACE)
                 glDrawArrays(GL_TRIANGLES, base, culled)
@@ -259,9 +331,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glDisable(GL_CULL_FACE)
                 cullstate=False
                 glDrawArrays(GL_TRIANGLES, base+culled, nocull)
-            glDisable(GL_POLYGON_OFFSET_FILL)
+            glPopMatrix()
             # Also show as line in case object has poly_os
-            #glEnable(GL_POLYGON_OFFSET_LINE)
             #glPolygonMode(GL_FRONT, GL_LINE)
             #if culled:
             #    glEnable(GL_CULL_FACE)
@@ -271,7 +342,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             #    cullstate=False
             #    glDrawArrays(GL_TRIANGLES, base+culled, nocull)
             #glPolygonMode(GL_FRONT, GL_FILL)
-            #glDisable(GL_POLYGON_OFFSET_LINE)
+        glDisable(GL_POLYGON_OFFSET_FILL)
+        #glDisable(GL_POLYGON_OFFSET_LINE)
             
         glFlush()
         self.SwapBuffers()
@@ -294,14 +366,22 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.objects={}
         self.varray=[]
         self.tarray=[]
+        errobjs=[]
         for name, path in objects.iteritems():
-            (culled, nocull, tculled, tnocull, texno, poly)=readObj(path, self.texcache)
+            try:
+                (culled, nocull, tculled, tnocull, texno, poly)=readObj(path, self.texcache)
+            except:
+                errobjs.append(name)
+                (culled, nocull, tculled, tnocull, texno, poly)=([],[],[],[],0,0)
             base=len(self.varray)
             self.varray.extend(culled)
             self.varray.extend(nocull)
             self.tarray.extend(tculled)
             self.tarray.extend(tnocull)
             self.objects[name]=(base, len(culled), len(nocull), texno, poly)
+        if errobjs:
+            wx.MessageBox("One or more objects could not be read and will not be displayed:\n%s" % '\n'.join(errobjs), 'Warning', wx.ICON_EXCLAMATION|wx.OK, self.parent)
+
         if self.varray:
             glVertexPointerf(self.varray)
             glTexCoordPointerf(self.tarray)
@@ -327,50 +407,57 @@ class MyGL(wx.glcanvas.GLCanvas):
         placement=self.currentplacements()
         if poly:
             placement.insert(0, (obj, lat, lon, hdg))
-            self.selected=0
+            self.selected=[0]
         else:
-            self.selected=len(placement)
+            self.selected=[len(placement)]
             placement.append((obj, lat, lon, hdg))
         self.placements[(self.tile[0],self.tile[1])]=placement
         self.Refresh()
-        self.parent.ShowSel((obj, lat, lon, hdg))
+        self.parent.ShowSel()
 
     def movesel(self, dlat, dlon, dhdg):
-        if self.selected==None:
-            return
+        if not self.selected: return
         if self.objectslist: glDeleteLists(self.objectslist, 1)
         self.objectslist=0
         placement=self.currentplacements()
-        (obj, lat, lon, hdg)=placement[self.selected]
-        lat=round(lat+dlat,6)
-        lon=round(lon+dlon,6)
-        hdg=round(hdg+dhdg,0)%360
-        placement[self.selected]=(obj, lat, lon, hdg)
+        for i in self.selected:
+            (obj, lat, lon, hdg)=placement[i]
+            lat=round(lat+dlat,6)
+            lon=round(lon+dlon,6)
+            hdg=round(hdg+dhdg,0)%360
+            placement[i]=(obj, lat, lon, hdg)
         self.placements[(self.tile[0],self.tile[1])]=placement
         self.Refresh()
-        self.parent.ShowSel((obj, lat, lon, hdg))
+        self.parent.ShowSel()
 
     def clearsel(self):
-        if self.selected!=None:
-            self.selected=None
+        if self.selected:
+            self.selected=[]
             self.Refresh()
 
     def delsel(self):
-        if self.selected==None: return None
+        if not self.selected: return
         if self.objectslist: glDeleteLists(self.objectslist, 1)
         self.objectslist=0
         placement=self.currentplacements()
-        placement.pop(self.selected)
+        for i in self.selected:
+            placement.pop(i)
         self.placements[(self.tile[0],self.tile[1])]=placement
-        self.selected=None
+        self.selected=[]
         self.Refresh()
-        self.parent.ShowSel(None)
+        self.parent.ShowSel()
 
     def getsel(self):
-        if self.selected==None: return None
+        # return current selection, or average
+        if not self.selected: return None
         placement=self.currentplacements()
-        (obj, lat, lon, hdg)=placement[self.selected]
-        return ((obj, lat, lon, hdg))
+        lat=lon=0
+        for i in self.selected:
+            (obj, lat1, lon1, hdg)=placement[i]
+            lat+=lat1
+            lon+=lon1
+        if len(self.selected)>1: obj=None
+        return ((obj, lat/len(self.selected), lon/len(self.selected), hdg))
 
     def goto(self, loc, hdg, elev, dist):
         newtile=[int(floor(loc[0])),int(floor(loc[1]))]
@@ -379,9 +466,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.runwayslist=0
             if self.objectslist: glDeleteLists(self.objectslist, 1)
             self.objectslist=0
-            if self.selected!=None:
-                self.selected=None	# May not be the same index in new list
-                self.parent.ShowSel(None)
+            self.selected=[]	# May not be the same index in new list
+            self.parent.ShowSel()
         self.tile=newtile
         self.centre=[self.tile[0]+0.5, self.tile[1]+0.5]
         (self.x, self.z)=self.latlon2m(loc[0],loc[1])
