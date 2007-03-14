@@ -3,19 +3,30 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from os.path import join
 from struct import unpack
-from sys import platform, maxint
+from sys import exit, platform, maxint, version
 import wx.glcanvas
 
 from files import VertexCache, sortfolded, Prefs, ExcludeDef, FacadeDef, ForestDef
-from DSFLib import Object, Polygon
+from DSFLib import Object, Polygon, resolution, maxres, round2res
 from MessageBox import myMessageBox
 from version import appname, dofacades
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
-f2m=0.3048	# 1 foot [m]
+f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 sband=12	# width of mouse scroll band around edge of window
+
+# Handle int/long change between 2.3 & 2.4
+if version>'2.4':
+    MSKSEL =0x40000000
+    MSKNODE=0x20000000
+    MSKPOLY=0x0fffffff
+else:
+    MSKSEL =0x40000000L
+    MSKNODE=0x20000000L
+    MSKPOLY=0x0fffffffL
+
 
 class UndoEntry:
     ADD=0
@@ -71,17 +82,30 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.h=0
         self.e=90
         self.d=3333.25
+        self.cliprat=1000
 
-        # Must specify min sizes for glX - see glXChooseVisual and GLXFBConfig
+        # Must specify min sizes for glX? - see glXChooseVisual and GLXFBConfig
         wx.glcanvas.GLCanvas.__init__(self, parent,
-                                      style=GL_RGBA|GL_DOUBLEBUFFER|GL_DEPTH|wx.FULL_REPAINT_ON_RESIZE, attribList=[
+                                      style=GL_RGBA|GL_DOUBLEBUFFER|GL_DEPTH|wx.FULL_REPAINT_ON_RESIZE,
+                                      attribList=[
             wx.glcanvas.WX_GL_RGBA,
             wx.glcanvas.WX_GL_DOUBLEBUFFER,
-            wx.glcanvas.WX_GL_MIN_RED, 4,
-            wx.glcanvas.WX_GL_MIN_GREEN, 4,
-            wx.glcanvas.WX_GL_MIN_BLUE, 4,
-            wx.glcanvas.WX_GL_MIN_ALPHA, 4,
-            wx.glcanvas.WX_GL_DEPTH_SIZE, 32])	# 32bit depth buffer must be specified for ATI on Mac 
+            #wx.glcanvas.WX_GL_MIN_RED, 4,
+            #wx.glcanvas.WX_GL_MIN_GREEN, 4,
+            #wx.glcanvas.WX_GL_MIN_BLUE, 4,
+            #wx.glcanvas.WX_GL_MIN_ALPHA, 4,
+            wx.glcanvas.WX_GL_DEPTH_SIZE, 24])	# ATI on Mac defaults to 16
+        if self.GetId()==-1:
+            # Failed - try with smaller depth buffer
+            wx.glcanvas.GLCanvas.__init__(self, parent,
+                                          style=GL_RGBA|GL_DOUBLEBUFFER|GL_DEPTH|wx.FULL_REPAINT_ON_RESIZE,
+                                          attribList=[wx.glcanvas.WX_GL_RGBA,wx.glcanvas.WX_GL_DOUBLEBUFFER])
+            self.cliprat=100
+        if self.GetId()==-1:
+            myMessageBox('Try updating the drivers for your graphics card.',
+                         "Can't initialise OpenGL.",
+                         wx.ICON_ERROR|wx.OK, self)
+            exit(1)
 
         self.vertexcache=VertexCache()	# member so can free resources
 
@@ -98,14 +122,17 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.timer=wx.Timer(self, wx.ID_ANY)
         wx.EVT_TIMER(self, self.timer.GetId(), self.OnTimer)
 
+    def glInit(self):
+        # Setup state. Under X must be called after window is shown
+        self.SetCurrent()
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         #glClearDepth(1.0)
         glDepthFunc(GL_LESS)
         glEnable(GL_DEPTH_TEST)
-        glFrontFace(GL_CW)
         glShadeModel(GL_FLAT)
         #glLineStipple(1, 0x0f0f)	# for selection drag
         glPointSize(3.0)		# for nodes
+        glFrontFace(GL_CW)
         glCullFace(GL_BACK)
         glPixelStorei(GL_UNPACK_ALIGNMENT,1)
         glReadBuffer(GL_BACK)	# for unproject
@@ -113,9 +140,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_TEXTURE_2D)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glEnable(GL_BLEND)
-	glEnableClientState(GL_VERTEX_ARRAY)
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY)
-        glLoadIdentity()
+        glEnableClientState(GL_VERTEX_ARRAY)
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY)
 
 
     def OnEraseBackground(self, event):
@@ -162,7 +188,7 @@ class MyGL(wx.glcanvas.GLCanvas):
     def OnLeftUp(self, event):
         if self.HasCapture(): self.ReleaseMouse()
         if self.selectnode:
-            self.updatepoly(self.currentpolygons()[self.selected[0]&0xffffff])
+            self.updatepoly(self.currentpolygons()[self.selected[0]&MSKPOLY])
         self.trashlists(True)	# recompute obj and select lists
         self.selectanchor=None
         self.selectnode=None
@@ -174,7 +200,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             
     def OnIdle(self, event):
         if self.selectnode:
-            self.updatepoly(self.currentpolygons()[self.selected[0]&0xffffff])
+            self.updatepoly(self.currentpolygons()[self.selected[0]&MSKPOLY])
             self.Refresh()
         event.Skip()
 
@@ -196,10 +222,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                 # Start/continue node drag
                 self.SetCursor(self.dragcursor)
                 self.selectnode=True
-                poly=self.currentpolygons()[self.selected[0]&0xffffff]
-                (lat,lon,x,z)=self.getworldloc(event.m_x, event.m_y)
-                lat=max(self.tile[0], min(self.tile[0]+0.999999, lat))
-                lon=max(self.tile[1], min(self.tile[1]+0.999999, lon))
+                poly=self.currentpolygons()[self.selected[0]&MSKPOLY]
+                (lat,lon)=self.getworldloc(event.m_x, event.m_y)
+                lat=max(self.tile[0], min(self.tile[0]+maxres, lat))
+                lon=max(self.tile[1], min(self.tile[1]+maxres, lon))
                 if not (self.undostack and self.undostack[-1].kind==UndoEntry.MOVE and self.undostack[-1].tile==self.tile and len(self.undostack[-1].data)==1 and self.undostack[-1].data[0][0]==self.selected[0]):
                     self.undostack.append(UndoEntry(self.tile, UndoEntry.MOVE, [(self.selected[0], poly.clone())]))
                     self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
@@ -235,9 +261,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             
         if self.selectmove:
             # Continue move drag
-            (lat,lon,x,z)=self.getworldloc(event.m_x, event.m_y)
-            if (lat>self.tile[0] and lat<self.tile[0]+0.999999 and
-                lon>self.tile[1] and lon<self.tile[1]+0.999999):
+            (lat,lon)=self.getworldloc(event.m_x, event.m_y)
+            if (lat>self.tile[0] and lat<self.tile[0]+maxres and
+                lon>self.tile[1] and lon<self.tile[1]+maxres):
                 self.movesel(lat-self.selectmove[0], lon-self.selectmove[1], 0)
                 self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
                 self.frame.toolbar.EnableTool(wx.ID_UNDO, True)
@@ -260,6 +286,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         #print "paint", self.selected
         dc = wx.PaintDC(self)	# Tell the window system that we're on the case
         self.SetCurrent()
+        self.SetFocus()		# required for GTK
         #glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
 
         glMatrixMode(GL_PROJECTION)
@@ -267,9 +294,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         glViewport(0, 0, size.width, size.height)
         glLoadIdentity()
 	# try to minimise near offset to improve clipping
-        glOrtho(-self.d, self.d,
-                -self.d*size.y/size.x, self.d*size.y/size.x,
-                -max(10000,onedeg*(self.d/3333.25)), onedeg)
+        if size.x:	# may be 0 on startup
+            glOrtho(-self.d, self.d,
+                    -self.d*size.y/size.x, self.d*size.y/size.x,
+                    -self.d*self.cliprat, self.d*self.cliprat)
         
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
@@ -344,7 +372,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnable(GL_TEXTURE_2D)
             glDisable(GL_POLYGON_OFFSET_FILL)
             for i in range(len(polygons)):
-                if (i|0x80000000L) in self.selected and not self.selectanchor:
+                if (i|MSKSEL) in self.selected and not self.selectanchor:
                     continue	# don't have to recompute on move
                 poly=polygons[i]
                 if poly.kind==Polygon.FACADE and dofacades:
@@ -484,8 +512,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         glPolygonOffset(-3, -3)
         glEnable(GL_POLYGON_OFFSET_FILL)
         for i in self.selected:
-            if i&0x80000000L:
-                poly=polygons[i&0xffffff]
+            if i&MSKSEL:
+                poly=polygons[i&MSKPOLY]
                 if poly.kind==Polygon.FACADE:
                     if not dofacades: continue
                     fac=self.vertexcache.get(poly.name)
@@ -531,8 +559,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glVertex3f(-0.125,0,-0.375)
                 glEnd()
                 glPopMatrix()
-        if len(self.selected)==1 and self.selected[0]&0x80000000L:
-            poly=polygons[self.selected[0]&0xffffff]
+        if len(self.selected)==1 and self.selected[0]&MSKSEL:
+            poly=polygons[self.selected[0]&MSKPOLY]
             glDisable(GL_DEPTH_TEST)
             glBindTexture(GL_TEXTURE_2D, 0)
             glBegin(GL_LINE_LOOP)
@@ -602,7 +630,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             for i in range(len(polygons)):
                 poly=polygons[i]
                 if poly.kind not in [Polygon.EXCLUDE, Polygon.FACADE, Polygon.FOREST]: continue
-                glLoadName(i|0x80000000L)
+                glLoadName(i|MSKSEL)
                 glBegin(GL_LINE_LOOP)
                 for p in poly.points:
                     glVertex3f(p[0],p[1],p[2])
@@ -651,16 +679,16 @@ class MyGL(wx.glcanvas.GLCanvas):
                           (0, 0, size[0], size[1]))
         glOrtho(-self.d, self.d,
                 -self.d*size.y/size.x, self.d*size.y/size.x,
-                -onedeg, onedeg)
+                -self.d*self.cliprat, self.d*self.cliprat)
         glMatrixMode(GL_MODELVIEW)
         
         glCallList(self.selectlist)
 
         # Select poly node?
-        if not self.selectanchor and len(self.selected)==1 and self.selected[0]&0x80000000L:
-            poly=self.currentpolygons()[self.selected[0]&0xffffff]
+        if not self.selectanchor and len(self.selected)==1 and self.selected[0]&MSKSEL:
+            poly=self.currentpolygons()[self.selected[0]&MSKPOLY]
             for i in range(len(poly.points)):
-                glLoadName(i|0x40000000L)
+                glLoadName(i|MSKNODE)
                 glBegin(GL_POINTS)
                 glVertex3f(poly.points[i][0], poly.points[i][1], poly.points[i][2])
                 glEnd()
@@ -677,7 +705,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glMatrixMode(GL_MODELVIEW)
 
         # Select poly node?
-        if not self.selectanchor and len(selections)==1 and selections[0]&0x80000000L and self.selected!=selections:
+        if not self.selectanchor and len(selections)==1 and selections[0]&MSKSEL and self.selected!=selections:
             # selected a poly, now try again for a node
             self.selected=[selections[0]]
             self.select()
@@ -685,8 +713,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.Refresh()
             return
         for i in selections:
-            if i&0x40000000L:
-                self.selectednode=i&0xffffff
+            if i&MSKNODE:
+                self.selectednode=i&MSKPOLY
                 self.frame.ShowSel()
                 return
         else:
@@ -730,6 +758,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         return(((lon-self.centre[1])*onedeg*cos(d2r*lat),
                 (self.centre[0]-lat)*onedeg))
 
+    def aptlatlon2m(self, lat, lon):
+        # version of the above with fudge factors for runways/taxiways
+        return(((lon-self.centre[1])*(onedeg+8)*cos(d2r*lat),
+                (self.centre[0]-lat)*(onedeg-2)))
+
     def currentobjects(self):
         key=(self.tile[0],self.tile[1])
         if key in self.objects:
@@ -765,7 +798,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         thing=self.vertexcache.get(name)
         if self.selectednode!=None:
             #print "node"
-            poly=self.currentpolygons()[self.selected[0]&0xffffff]
+            poly=self.currentpolygons()[self.selected[0]&MSKPOLY]
             if poly.kind==Polygon.EXCLUDE: return False
             if not (self.undostack and self.undostack[-1].kind==UndoEntry.MOVE and self.undostack[-1].tile==self.tile and len(self.undostack[-1].data)==1 and self.undostack[-1].data[0][0]==self.selected[0]):
                 self.undostack.append(UndoEntry(self.tile, UndoEntry.MOVE, [(self.selected[0], poly.clone())]))
@@ -773,8 +806,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.selectednode+=1
             poly.nodes=[poly.nodes[0]]	# Destroy other windings
             poly.nodes[0].insert(self.selectednode,
-                                 ((poly.nodes[0][self.selectednode-1][0]+poly.nodes[0][(self.selectednode)%n][0])/2,
-                                  (poly.nodes[0][self.selectednode-1][1]+poly.nodes[0][(self.selectednode)%n][1])/2))
+                                 (round2res((poly.nodes[0][self.selectednode-1][0]+poly.nodes[0][(self.selectednode)%n][0])/2),
+                                  round2res((poly.nodes[0][self.selectednode-1][1]+poly.nodes[0][(self.selectednode)%n][1])/2)))
             self.updatepoly(poly)
         elif isinstance(thing,ExcludeDef):
             #print "polygon"
@@ -783,7 +816,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                          [[(lon-0.001,lat-0.001), (lon+0.001,lat-0.001),
                            (lon+0.001,lat+0.001), (lon-0.001,lat+0.001)]])
             self.updatepoly(poly)
-            self.selected=[0x80000000L]
+            self.selected=[MSKSEL]
             self.selectednode=None
             polygons.insert(0, poly)
             self.polygons[(self.tile[0],self.tile[1])]=polygons
@@ -795,10 +828,10 @@ class MyGL(wx.glcanvas.GLCanvas):
             poly=Polygon(name, Polygon.FACADE, 10, [[]])
             h=d2r*hdg
             for i in [h+5*pi/4, h+3*pi/4, h+pi/4, h+7*pi/4]:
-                poly.nodes[0].append((round(lon+sin(i)*0.00014142,6),
-                                      round(lat+cos(i)*0.00014142,6)))
+                poly.nodes[0].append((round2res(lon+sin(i)*0.00014142),
+                                      round2res(lat+cos(i)*0.00014142)))
             self.updatepoly(poly)
-            self.selected=[len(polygons)|0x80000000L]
+            self.selected=[len(polygons)|MSKSEL]
             self.selectednode=None
             polygons.append(poly)
             self.polygons[(self.tile[0],self.tile[1])]=polygons
@@ -810,10 +843,10 @@ class MyGL(wx.glcanvas.GLCanvas):
             poly=Polygon(name, Polygon.FOREST, 128, [[]])
             h=d2r*hdg
             for i in [h+5*pi/4, h+3*pi/4, h+pi/4, h+7*pi/4]:
-                poly.nodes[0].append((round(lon+sin(i)*0.0014142,6),
-                                      round(lat+cos(i)*0.0014142,6)))
+                poly.nodes[0].append((round2res(lon+sin(i)*0.0014142),
+                                      round2res(lat+cos(i)*0.0014142)))
             self.updatepoly(poly)
-            self.selected=[len(polygons)|0x80000000L]
+            self.selected=[len(polygons)|MSKSEL]
             self.selectednode=None
             polygons.append(poly)
             self.polygons[(self.tile[0],self.tile[1])]=polygons
@@ -846,8 +879,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         polygons=self.currentpolygons()
         moved=[]
         for i in self.selected:
-            if i&0x80000000L:
-                thing=polygons[i&0xffffff]
+            if i&MSKSEL:
+                thing=polygons[i&MSKPOLY]
                 moved.append((i, thing.clone()))
                 thing.param+=dheight
                 if thing.param<1: thing.param=1
@@ -857,8 +890,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                     thing.param=255
                 thing.nodes=[thing.nodes[0]]	# Destroy other windings
                 if self.selectednode!=None:
-                    thing.nodes[0][self.selectednode]=(max(self.tile[1], min(self.tile[1]+0.999999, round(thing.nodes[0][self.selectednode][0]+dlon,6))),
-                                                       max(self.tile[0], min(self.tile[0]+0.999999, round(thing.nodes[0][self.selectednode][1]+dlat,6))))
+                    thing.nodes[0][self.selectednode]=(max(self.tile[1], min(self.tile[1]+maxres, thing.nodes[0][self.selectednode][0]+dlon)),
+                                                       max(self.tile[0], min(self.tile[0]+maxres, thing.nodes[0][self.selectednode][1]+dlat)))
                     
                     if thing.kind==Polygon.EXCLUDE:
                         if self.selectednode&1:
@@ -874,17 +907,17 @@ class MyGL(wx.glcanvas.GLCanvas):
                                     thing.nodes[0][n][1]-thing.lat)+d2r*dhdg
                             l=hypot(thing.nodes[0][n][0]-thing.lon,
                                     thing.nodes[0][n][1]-thing.lat)
-                            thing.nodes[0][n]=(thing.lon+sin(h)*l,
-                                               thing.lat+cos(h)*l)
-                        thing.nodes[0][n]=(max(self.tile[1], min(self.tile[1]+0.999999, round(thing.nodes[0][n][0]+dlon,6))),
-                                           max(self.tile[0], min(self.tile[0]+0.999999, round(thing.nodes[0][n][1]+dlat,6))))
+                            thing.nodes[0][n]=(round2res(thing.lon+sin(h)*l),
+                                               round2res(thing.lat+cos(h)*l))
+                        thing.nodes[0][n]=(max(self.tile[1], min(self.tile[1]+maxres, thing.nodes[0][n][0]+dlon)),
+                                           max(self.tile[0], min(self.tile[0]+maxres, thing.nodes[0][n][1]+dlat)))
                 self.updatepoly(thing)
             else:
                 thing=objects[i]
                 moved.append((i, thing.clone()))
-                thing.lat=max(self.tile[0], min(self.tile[0]+0.999999, round(thing.lat+dlat,6)))
-                thing.lon=max(self.tile[1], min(self.tile[1]+0.999999, round(thing.lon+dlon,6)))
-                thing.hdg=round(thing.hdg+dhdg,0)%360
+                thing.lat=max(self.tile[0], min(self.tile[0]+maxres, thing.lat+dlat))
+                thing.lon=max(self.tile[1], min(self.tile[1]+maxres, thing.lon+dlon))
+                thing.hdg=(thing.hdg+dhdg)%360
                 (x,z)=self.latlon2m(thing.lat,thing.lon)
                 thing.height=self.vertexcache.height(self.tile,self.options,x,z)
         self.Refresh()
@@ -906,7 +939,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         polygons=self.currentpolygons()
         if self.selectednode!=None:
             #print "node"
-            poly=polygons[self.selected[0]&0xffffff]
+            poly=polygons[self.selected[0]&MSKPOLY]
             if poly.kind==Polygon.EXCLUDE or len(poly.nodes[0])<=2:
                 return False
             if not (self.undostack and self.undostack[-1].kind==UndoEntry.MOVE and self.undostack[-1].tile==self.tile and len(self.undostack[-1].data)==1 and self.undostack[-1].data[0][0]==self.selected[0]):
@@ -924,14 +957,14 @@ class MyGL(wx.glcanvas.GLCanvas):
                     newobjects.append(objects[i])
                 else:
                     deleted.append((i, objects[i]))
-            self.objects[(self.tile[0],self.tile[1])]=newobjects
             for i in range(len(polygons)):
-                if not i|0x80000000L in self.selected:
+                if not i|MSKSEL in self.selected:
                     newpolygons.append(polygons[i])
                 else:
-                    deleted.append((i|0x80000000L, polygons[i]))
-                self.polygons[(self.tile[0],self.tile[1])]=newpolygons
-                self.undostack.append(UndoEntry(self.tile, UndoEntry.DEL, deleted))
+                    deleted.append((i|MSKSEL, polygons[i]))
+            self.objects[(self.tile[0],self.tile[1])]=newobjects
+            self.polygons[(self.tile[0],self.tile[1])]=newpolygons
+            self.undostack.append(UndoEntry(self.tile, UndoEntry.DEL, deleted))
             self.selected=[]
         self.trashlists()
         self.Refresh()
@@ -951,9 +984,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.selectednode=None
         if undo.kind==UndoEntry.ADD:
             for i in undo.data:
-                if i&0x80000000L:
-                    thing=polygons[i&0xffffff]
-                    polygons.pop(i&0xffffff)	# Only works if just one item
+                if i&MSKSEL:
+                    thing=polygons[i&MSKPOLY]
+                    polygons.pop(i&MSKPOLY)	# Only works if just one item
                 else:
                     thing=objects[i]
                     objects.pop(i)		# Only works if just one item
@@ -963,9 +996,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             for (i, thing) in undo.data:
                 if not self.vertexcache.load(thing.name, True):	# may have reloaded
                     myMessageBox("Can't read %s." % thing.name, 'Using a placeholder.', wx.ICON_EXCLAMATION|wx.OK, self.frame)
-                if i&0x80000000L:
+                if i&MSKSEL:
                     self.updatepoly(thing)
-                    polygons.insert(i&0xffffff, thing)
+                    polygons.insert(i&MSKPOLY, thing)
                 else:
                     (x,z)=self.latlon2m(thing.lat, thing.lon)
                     thing.height=self.vertexcache.height(self.tile,self.options,x,z)
@@ -975,9 +1008,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.selected.append(i)
         elif undo.kind==UndoEntry.MOVE:
             for (i, thing) in undo.data:
-                if i&0x80000000L:
+                if i&MSKSEL:
                     self.updatepoly(thing)
-                    polygons[i&0xffffff]=thing
+                    polygons[i&MSKPOLY]=thing
                 else:
                     (x,z)=self.latlon2m(thing.lat, thing.lon)
                     thing.height=self.vertexcache.height(self.tile,self.options,x,z)
@@ -1017,8 +1050,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         lat=lon=0
         names=[]
         for i in self.selected:
-            if i&0x80000000L:
-                thing=polygons[i&0xffffff]
+            if i&MSKSEL:
+                thing=polygons[i&MSKPOLY]
             else:
                 thing=objects[i]
             names.append(thing.name)
@@ -1026,7 +1059,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             lon+=thing.lon
 
         if len(self.selected)==1:
-            if self.selected[0]&0x80000000L:
+            if self.selected[0]&MSKSEL:
                 if self.selectednode!=None:
                     (lon,lat)=thing.nodes[0][self.selectednode]
                     if self.options&Prefs.ELEVATION and thing.kind!=Polygon.EXCLUDE:
@@ -1037,7 +1070,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     if thing.kind==Polygon.FACADE:
                         return (names, 'Lat: %-10.6f  Lon: %-11.6f  Height: %-4d  (%d nodes)' % (lat, lon, thing.param, len(thing.points)), lat, lon, None)
                     elif thing.kind==Polygon.FOREST:
-                        return (names, 'Lat: %-10.6f  Lon: %-11.6f  Density: %-4.1f  (%d nodes)' % (lat, lon, thing.param/2.55, len(thing.points)), lat, lon, None)
+                        return (names, 'Lat: %-10.6f  Lon: %-11.6f  Density: %-4.1f%%  (%d nodes)' % (lat, lon, thing.param/2.55, len(thing.points)), lat, lon, None)
                     else:
                         return (names, 'Lat: %-10.6f  Lon: %-11.6f  (%d nodes)' % (lat, lon, len(thing.points)), lat, lon, None)
             else:
@@ -1153,8 +1186,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             progress.Update(13, 'Polygons')
             polygons=self.currentpolygons()
             for poly in polygons:
-                if not self.vertexcache.load(poly.name,True) and not poly.name in errobjs:
-                    errobjs.append(poly.name)
+                if poly.kind in [Polygon.EXCLUDE, Polygon.FACADE, Polygon.FOREST]:
+                    if not self.vertexcache.load(poly.name,True) and not poly.name in errobjs:
+                        errobjs.append(poly.name)
                 if not poly.points:
                     self.updatepoly(poly)
 
@@ -1164,20 +1198,22 @@ class MyGL(wx.glcanvas.GLCanvas):
             if key not in self.runways:
                 airports=[]
                 for apt in self.airports.values():
-                    (lat,lon,h,length,width)=apt[0]
+                    (lat,lon,h,length,width,stop0,stop1)=apt[0]
                     if [int(floor(lat)),int(floor(lon))]!=newtile: continue
                     minx=minz=maxint
                     maxx=maxz=-maxint
                     runways=[]
-                    for (lat,lon,h,length,width) in apt:
-                        (cx,cz)=self.latlon2m(lat,lon)
-                        length=f2m*length/2
+                    for (lat,lon,h,length,width,stop0,stop1) in apt:
+                        #print lat,lon,h,length,width
+                        (cx,cz)=self.aptlatlon2m(lat,lon)
+                        length0=f2m*(length/2.0+stop0)
+                        length1=f2m*(length/2.0+stop1)
                         width=f2m*width/2
                         h=d2r*h
                         coshdg=cos(h)
                         sinhdg=sin(h)
-                        p1=[cx-length*sinhdg, 0, cz+length*coshdg]
-                        p2=[cx+length*sinhdg, 0, cz-length*coshdg]
+                        p1=[cx-length0*sinhdg, 0, cz+length0*coshdg]
+                        p2=[cx+length1*sinhdg, 0, cz-length1*coshdg]
                         minx=min(minx, p1[0], p2[0])
                         maxx=max(maxx, p1[0], p2[0])
                         minz=min(minz, p1[2], p2[2])
@@ -1232,17 +1268,17 @@ class MyGL(wx.glcanvas.GLCanvas):
                 nav=[]
                 for (id, lat, lon, hdg) in self.navaids:
                     if [int(floor(lat)),int(floor(lon))]!=newtile: continue
-                    if id==18:   name='lib/airport/landscape/beacon2'
+                    if id==18:   name='lib/airport/landscape/beacon2.obj'
                     elif id==19: name='*windsock.obj'
                     else: name=[None, None,
-                                'lib/airport/NAVAIDS/NDB_3',	# 2
-                                'lib/airport/NAVAIDS/VOR',	# 3
-                                'lib/airport/NAVAIDS/ILS',	# 4
-                                'lib/airport/NAVAIDS/ILS',	# 5
-                                'lib/airport/NAVAIDS/glideslope',# 6
-                                'lib/airport/NAVAIDS/Marker1',	# 7
-                                'lib/airport/NAVAIDS/Marker2',	# 8
-                                'lib/airport/NAVAIDS/Marker2',	# 9
+                                'lib/airport/NAVAIDS/NDB_3.obj',	# 2
+                                'lib/airport/NAVAIDS/VOR.obj',		# 3
+                                'lib/airport/NAVAIDS/ILS.obj',		# 4
+                                'lib/airport/NAVAIDS/ILS.obj',		# 5
+                                'lib/airport/NAVAIDS/glideslope.obj',	# 6
+                                'lib/airport/NAVAIDS/Marker1.obj',	# 7
+                                'lib/airport/NAVAIDS/Marker2.obj',	# 8
+                                'lib/airport/NAVAIDS/Marker2.obj',	# 9
                                 ][id]
                     (x,z)=self.latlon2m(lat,lon)
                     nav.append(Object(name, lat, lon, hdg, self.vertexcache.height(newtile,options,x,z)))
@@ -1310,10 +1346,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                              (0, 0, size[0], size[1]))
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
         glClear(GL_DEPTH_BUFFER_BIT)
-        lat=self.centre[0]-z/onedeg
-        lon=self.centre[1]+x/(onedeg*cos(d2r*lat))
+        lat=round2res(self.centre[0]-z/onedeg)
+        lon=round2res(self.centre[1]+x/(onedeg*cos(d2r*lat)))
         #print "%3d %3d %5.3f, %5d %5.1f %5d, %10.6f %11.6f" % (mx,my,mz, x,y,z, lat,lon)
-        return (lat,lon,x,z)
+        return (lat,lon)
 
 
     def updatepoly(self, poly, bailearly=False):
@@ -1361,19 +1397,35 @@ class MyGL(wx.glcanvas.GLCanvas):
         poly.lat=poly.lon=count=0
         poly.points=[]
 
-        for n in poly.nodes[0]:
-            (x,z)=self.latlon2m(n[1], n[0])
+        n=len(poly.nodes[0])
+        a=0
+        for i in range(n):
+            (x,z)=self.latlon2m(poly.nodes[0][i][1], poly.nodes[0][i][0])
             y=self.vertexcache.height(self.tile,self.options,x,z)
             poly.points.append((x,y,z))
-            poly.lat+=n[1]
-            poly.lon+=n[0]
-        poly.lat/=len(poly.nodes[0])
-        poly.lon/=len(poly.nodes[0])
-        
-        if poly.kind!=Polygon.FACADE: return
+            poly.lon+=poly.nodes[0][i][0]
+            poly.lat+=poly.nodes[0][i][1]
+            a+=poly.nodes[0][i][0]*poly.nodes[0][(i+1)%n][1]-poly.nodes[0][(i+1)%n][0]*poly.nodes[0][i][1]
+        poly.lat=round2res(poly.lat/len(poly.nodes[0]))
+        poly.lon=round2res(poly.lon/len(poly.nodes[0]))
 
+        if a<0:
+            # Nodes are clockwise, should be ccw
+            poly.nodes[0].reverse()
+            poly.points.reverse()
+            if self.selectednode!=None: self.selectednode=n-1-self.selectednode
+
+        # Show secondary windings
+        for j in range(1,len(poly.nodes)):
+            for i in range(len(poly.nodes[j])):
+                (x,z)=self.latlon2m(poly.nodes[j][i][1], poly.nodes[j][i][0])
+                y=self.vertexcache.height(self.tile,self.options,x,z)
+                poly.points.append((x,y,z))
+
+        if poly.kind!=Polygon.FACADE: return
         fac=self.vertexcache.get(poly.name)
         if not isinstance(fac, FacadeDef): return	# unknown
+
         n=len(poly.points)
 
         if bailearly:

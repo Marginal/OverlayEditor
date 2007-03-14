@@ -1,31 +1,41 @@
-#!/usr/bin/pythonw
+#!/usr/bin/python
 
 from glob import glob
 from math import cos, sin, pi
 import os	# for startfile
 from os import chdir, getenv, listdir, mkdir, walk
-from os.path import abspath, basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep
+from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 from sys import exit, argv, platform, version
+
 try:
     import wx
     from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
-    from wx.gizmos import TreeListCtrl
 except:
     import Tkinter
     import tkMessageBox
     Tkinter.Tk().withdraw()	# make and suppress top-level window
-    tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\nwxPython 2.5.3 (py%s) or later." % version[:3], icon="question", type="ok")
+    if platform=='darwin':
+        tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\nwxPython 2.5.3 (py%s) or later." % version[:3], icon="question", type="ok")
+    else:	# linux
+        tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\npython wxgtk2.5.3 or later.", icon="error", type="ok")
     exit(1)
 
-#import warnings
-#warnings.filterwarnings('ignore', 'hex/oct.*', FutureWarning)
+try:
+    import OpenGL
+except:
+    import Tkinter
+    import tkMessageBox
+    Tkinter.Tk().withdraw()	# make and suppress top-level window
+    tkMessageBox._show("Error", "PyOpenGL is not installed.\nThis application requires\npyopengl2 or later.", icon="error", type="ok")
+    exit(1)
 
 from draw import MyGL
 from files import importObj, Prefs, readApt, readNav,readLib, sortfolded
-from DSFLib import readDSF, writeDSF, Polygon
+from DSFLib import readDSF, writeDSF, Polygon, round2res, minres
 from MessageBox import myMessageBox
 from version import appname, appversion, dofacades
 
+    
 if not 'startfile' in dir(os):
     import types
     # Causes problems under py2exe & not needed
@@ -281,26 +291,20 @@ class PaletteListBox(wx.VListBox):
 
     def __init__(self, parent, id, style, objects, imgs):
         wx.VListBox.__init__(self, parent, id, style=style)
-        if platform=='win32':
-            self.font=wx.SystemSettings_GetFont(wx.SYS_DEFAULT_GUI_FONT)
-        elif platform=='darwin':	# Default is too big on Mac
+        self.font=wx.SystemSettings_GetFont(wx.SYS_DEFAULT_GUI_FONT)
+        if platform!='win32':	# Default is too big on Mac & Linux
             self.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
+        if platform.startswith('linux'):
+            self.font.SetPointSize(8)
         self.choices=objects.keys()
         sortfolded(self.choices)
-        self.types=[]
-        for choice in self.choices:
-            if choice.startswith('Exclude:'):
-                self.types.append(2)
-            elif objects[choice][-4:].lower()=='.obj':
-                self.types.append(0)
-            else:
-                self.types.append(1)
         self.imgs=imgs
         self.actfg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHTTEXT)
         self.actbg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHT)
         self.inafg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
         self.inabg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENU)
         (x,self.height)=self.GetTextExtent("Mq")
+        self.height=max(13,self.height)
         self.indent=4
         self.SetItemCount(len(self.choices))
 
@@ -308,14 +312,21 @@ class PaletteListBox(wx.VListBox):
         return self.height
 
     def OnDrawItem(self, dc, rect, n):
-        if platform=='win32': dc.SetFont(self.font)	# wtf?
+        if platform!='darwin':
+            dc.SetFont(self.font)	# wtf?
         if self.GetSelection()==n:
             dc.SetTextForeground(self.actfg)
         else:
             dc.SetTextForeground(self.inafg)
-        self.imgs.Draw(self.types[n], dc, rect.x+self.indent, rect.y,
+        if self.choices[n].startswith('Exclude:'):
+            imgno=2
+        elif self.choices[n][-4:].lower()=='.obj':
+            imgno=0
+        else:
+            imgno=1
+        self.imgs.Draw(imgno, dc, rect.x+self.indent, rect.y,
                        wx.IMAGELIST_DRAW_TRANSPARENT, True)
-        dc.DrawText(self.choices[n], rect.x+12+2*self.indent, rect.y)
+        dc.DrawText(self.choices[n][:-4], rect.x+12+2*self.indent, rect.y)
 
 class Palette(wx.Choicebook):
     
@@ -335,12 +346,14 @@ class Palette(wx.Choicebook):
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)	# appears to do nowt on Windows
         wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
         if 'GetChoiceCtrl' in dir(self):	# not available on Mac
-            self.GetChoiceCtrl().SetWindowVariant(wx.WINDOW_VARIANT_LARGE)
+            if platform=='win32':
+                self.GetChoiceCtrl().SetWindowVariant(wx.WINDOW_VARIANT_LARGE)
             wx.EVT_KEY_DOWN(self.GetChoiceCtrl(), self.OnKeyDown)
             wx.EVT_MOUSEWHEEL(self.GetChoiceCtrl(), self.OnMouseWheel)
 
     def OnKeyDown(self, event):
         # Override & manually propagate
+        print event
         self.frame.OnKeyDown(event)
         event.Skip(False)
 
@@ -376,16 +389,11 @@ class Palette(wx.Choicebook):
     def add(self, name, path):
         # Add to objects tab - assumes that this is first tab
         l=self.lists[0]
-        if path[-4:].lower()=='.obj':
-            imgno=0
-        else:
-            imgno=1
         for i in range(len(l.choices)):
             if l.choices[i].lower()>name.lower(): break
         else:
             i=len(l.choices)
         l.choices.insert(i, name)
-        l.types.insert(i, imgno)
         l.SetItemCount(len(l.choices))
         l.Refresh()
         self.set(name)
@@ -875,7 +883,7 @@ class MainWindow(wx.Frame):
         (x,y)=self.statusbar.GetTextExtent("  Lat: 999.999999  Lon: 9999.999999  Hdg: 999  Elv: 9999.9  ")
         self.statusbar.SetStatusWidths([0, x+50,-1])
 
-        if platform.lower().startswith('linux'):
+        if 0:#platform.lower().startswith('linux'):
             # Don't know why SplitterWindow doesn't work under wxGTK
             self.splitter=wx.Panel(self)            
             self.canvas = MyGL(self.splitter, self)
@@ -909,13 +917,15 @@ class MainWindow(wx.Frame):
         if 'SplitVertically' in dir(self.splitter):	# SplitterWindow?
             if 'SetSashGravity' in dir(self.splitter):
                 self.splitter.SetSashGravity(1.0)
-            else:		# not on WxMac 2.5
+            else:		# not on 2.5
                 self.splitter.SetSashPosition(534, True)	# force resize
                 self.lastwidth=self.GetSize().x
                 wx.EVT_SIZE(self, self.OnSize)
-        
+
         self.Show(True)
+        self.canvas.glInit()
         self.Update()
+
 
     def ShowLoc(self):
         if prefs.options&Prefs.ELEVATION:
@@ -951,25 +961,25 @@ class MainWindow(wx.Frame):
                  ord('W'), ord('D'), ord('S'), ord('A')]
         if event.m_keyCode in cursors:
             if event.m_shiftDown:
-                xinc=zinc=0.000001
+                xinc=zinc=minres
             else:
                 zinc=self.dist/10000000
-                if zinc<0.00001: zinc=0.00001
-                if event.m_controlDown or event.m_metaDown:
-                    zinc*=10
+                if zinc<minres: zinc=minres
+                if event.m_controlDown or event.m_metaDown: zinc*=10
                 xinc=zinc/cos(d2r*self.loc[0])
             hr=d2r*((self.hdg + [0,90,180,270,0,90,180,270][cursors.index(event.m_keyCode)])%360)
             if cursors.index(event.m_keyCode)<4:
-                self.loc=[round(self.loc[0]+zinc*cos(hr),6),
-                          round(self.loc[1]+xinc*sin(hr),6)]
+                self.loc=[round2res(self.loc[0]+zinc*cos(hr)),
+                          round2res(self.loc[1]+xinc*sin(hr))]
             else:
-                changed=self.canvas.movesel(zinc*cos(hr), xinc*sin(hr))
+                changed=self.canvas.movesel(round2res(zinc*cos(hr)),
+                                            round2res(xinc*sin(hr)))
         elif event.m_keyCode==ord('C'):
             (names,string,lat,lon,hdg)=self.canvas.getsel()
             if lat==None: return
-            self.loc=[lat,lon]
+            self.loc=[round2res(lat),round2res(lon)]
             if hdg!=None and (event.m_controlDown or event.m_metaDown):
-                self.hdg=round(hdg,0)
+                self.hdg=hdg
         elif event.m_keyCode==ord('Q'):
             if event.m_controlDown or event.m_metaDown:
                 changed=self.canvas.movesel(0, 0, -5)
@@ -1017,7 +1027,7 @@ class MainWindow(wx.Frame):
                 self.elev-=5
             else:
                 self.elev-=1
-            if self.elev<1: self.elev=1
+            if self.elev<2: self.elev=2	# not 1 cos clipping
         elif event.m_keyCode in [wx.WXK_PAGEUP, wx.WXK_PRIOR]:
             if event.m_controlDown or event.m_metaDown:
                 self.elev+=5
@@ -1298,8 +1308,8 @@ class MainWindow(wx.Frame):
                         seq=['.obj','.fac','.for']
                     else:
                         seq=['.obj']
-                    if f.lower()[-4:] in seq:
-                        name=join(path,f)[len(pkgdir)+1:-4].replace('\\','/')
+                    if f[-4:].lower() in seq:
+                        name=join(path,f)[len(pkgdir)+1:].replace('\\','/')
                         if name.lower().startswith('custom objects'):
                             name=name[15:]
                         if not name in objects:	# library takes precedence
@@ -1343,12 +1353,20 @@ class MainWindow(wx.Frame):
             # Load, not reload
             if pkgaptname:	# go to first airport by name
                 self.loc=pkgaptname[pkgaptname.keys()[0]]
-            else:		# go to random object
-                for p in placements.values() + polygons.values():
-                    self.loc=[p[0].lat,p[0].lon]
-                    break
-        if not self.loc:	# Fallback
-            self.loc=[34.096694,-117.248376]	# KSBD
+            else:
+                for p in placements.values():
+                    if p:
+                        self.loc=[p[0].lat,p[0].lon]
+                        break
+                else:
+                    for p in polygons.values():
+                        if p:
+                            self.loc=[p[0].nodes[0][0][1],p[0].nodes[0][0][0]]
+                            print self.loc
+                            break
+                    else:	# Fallback
+                        self.loc=[34.096694,-117.248376]	# KSBD
+        self.loc=(round2res(self.loc[0]),round2res(self.loc[1]))
         progress.Destroy()
         
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
@@ -1378,19 +1396,19 @@ class MainWindow(wx.Frame):
             except:
                 msg=''
             else:
-                name=newpath[len(pkgpath)+1:-4].replace(sep, '/')
+                name=newpath[len(pkgpath)+1:].replace(sep, '/')
                 if name.lower().startswith('custom objects'): name=name[15:]
                 self.palette.add(name, newpath)
                 self.canvas.vertexcache.add(name, newpath)
                 continue
-        
             myMessageBox(msg, "Can't import %s." % path,
                          wx.ICON_ERROR|wx.OK, self)
 
     def OnGoto(self, event):
         self.goto.CenterOnParent()	# Otherwise is centred on screen
         if self.goto.ShowModal()==wx.ID_OK and self.goto.choice:
-            self.loc=self.goto.choice
+            self.loc=(round2res(self.goto.choice[0]),
+                      round2res(self.goto.choice[1]))
             #self.hdg=0
             #self.elev=45
             #self.dist=3000
@@ -1447,13 +1465,13 @@ class MainWindow(wx.Frame):
         style=wx.YES_NO
         if cancancel: style|=wx.CANCEL
         if self.toolbar.GetToolEnabled(wx.ID_SAVE):
-            if platform=='darwin':
-                r=myMessageBox("If you don't save, your changes will be lost.",
-                               'Save scenery package?',
-                               wx.ICON_QUESTION|style, self)
-            else:
+            if platform=='win32':
                 r=myMessageBox('Do you want to save the changes?',
                                '"%s" has been modified.' % prefs.package,
+                               wx.ICON_EXCLAMATION|style, self)
+            else:
+                r=myMessageBox("If you don't save, your changes will be lost.",
+                               'Save scenery package "%s"?' % prefs.package,
                                wx.ICON_EXCLAMATION|style, self)
             if r==wx.YES:
                 self.OnSave(None)
@@ -1476,12 +1494,16 @@ app.SetTopWindow(frame)
 # user prefs
 prefs=Prefs()
 if not prefs.xplane or not isdir(join(prefs.xplane,custom)):
-    if platform=='darwin':	# prompt is not displayed on Mac
+    if platform!='win32':	# prompt is not displayed on Mac
         myMessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder", wx.ICON_INFORMATION|wx.OK, frame)
-    elif platform=='win32' and isdir(join('C:\\X-Plane', custom)) and exists(join('C:\\X-Plane', mainaptdat)):
+    if platform=='win32' and isdir(join('C:\\X-Plane', custom)) and exists(join('C:\\X-Plane', mainaptdat)):
         prefs.xplane='C:\\X-Plane'
     elif platform=='win32':
         prefs.xplane='C:\\'
+    elif platform.startswith('linux') and isdir(join(expanduser('~'), 'X-Plane')):
+        prefs.xplane=join(expanduser('~'), 'X-Plane')
+    elif platform.startswith('linux'):
+        prefs.xplane=expanduser('~')
     dlg=PreferencesDialog(frame, wx.ID_ANY, '')
     if dlg.OnBrowse(None)!=wx.ID_OK: exit(1)	# User cancelled
     prefs.xplane=dlg.path.GetValue()

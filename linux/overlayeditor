@@ -1,0 +1,2 @@
+#!/bin/sh
+exec -a overlayeditor python -OO `dirname $0`/../lib/overlayeditor/OverlayEditor.py

@@ -104,9 +104,3 @@ def myMessageBox(message, caption, style=wx.OK, parent=None):
     dlg.Destroy()
 
     return retval
-
-
-def foo():
-    box1=wx.BoxSizer(wx.HORIZONTAL)
-    box1.Add([24,0])
-    box1.Add(cap)

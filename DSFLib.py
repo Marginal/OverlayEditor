@@ -1,4 +1,4 @@
-from math import cos, pi
+from math import cos, floor, pi
 from md5 import md5
 from os import listdir, mkdir, popen3, rename, unlink
 from os.path import abspath, curdir, dirname, exists, isdir, join, sep
@@ -10,6 +10,9 @@ from version import appname, appversion
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
+resolution=8*65535
+minres=1.0/resolution
+maxres=1-minres
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
@@ -17,6 +20,12 @@ elif platform.lower().startswith('linux'):
     dsftool=join(curdir,'linux','DSFTool')
 else:	# Mac
     dsftool=join(curdir,'MacOS','DSFTool')
+
+
+def round2res(x):
+    i=floor(x)
+    return i+round((x-i)*resolution,0)*minres
+
 
 class Object:
 
@@ -117,27 +126,23 @@ def readDSF(path, terrains={}):
         if l==8:
             pass	# empty
         elif c=='TRET':
-            terrain=h.read(l-9).split('\0')
+            terrain=h.read(l-9).replace('\\','/').replace(':','/').split('\0')
             h.read(1)
         elif c=='TJBO':
-            objects=h.read(l-9).split('\0')
+            objects=h.read(l-9).replace('\\','/').replace(':','/').split('\0')
             h.read(1)
         elif c=='YLOP':
-            polygons=h.read(l-9).split('\0')
+            polygons=h.read(l-9).replace('\\','/').replace(':','/').split('\0')
             h.read(1)
         elif c=='WTEN':
-            networks=h.read(l-9).split('\0')
+            networks=h.read(l-9).replace('\\','/').replace(':','/').split('\0')
             h.read(1)
         else:
             h.seek(l-8, 1)
 
-    for i in range(len(objects)):
-        objects[i]=objects[i][:-4]
-
     polykind=[]
     for i in range(len(polygons)):
         polykind.append(polygons[i][-4:].lower())
-        polygons[i]=polygons[i][:-4]
     
     # Geodata Atom
     if h.read(4)!='DOEG':
@@ -241,12 +246,14 @@ def readDSF(path, terrains={}):
         elif c==7:
             (d,)=unpack('<H', h.read(2))
             p=pool[curpool][d]
-            placements.append(Object(objects[idx], p[1], p[0], int(p[2])))
+            if not terrains:
+                placements.append(Object(objects[idx], p[1], p[0], int(round(p[2],0))))
         elif c==8:
             (first,last)=unpack('<HH', h.read(4))
-            for d in range(first, last):
-                p=pool[curpool][d]
-                placements.append(Object(objects[idx], p[1], p[0], int(p[2])))
+            if not terrains:
+                for d in range(first, last):
+                    p=pool[curpool][d]
+                    placements.append(Object(objects[idx], p[1], p[0], int(round(p[2],0))))
         elif c==9:
             # not implemented
             (l,)=unpack('<B', h.read(1))
@@ -290,15 +297,15 @@ def readDSF(path, terrains={}):
                 windings.append(winding)
             if not terrains and n>0 and len(windings[0])>=2:
                 polyplace.append(Polygon(polygons[idx], polykind[idx], param, windings))
-        elif c==15:
+        elif c==15:	# DSF2Text uses this for multiple windings
             (param,n)=unpack('<HB', h.read(3))
             i=[]
-            for j in range(n):
+            for j in range(n+1):
                 (l,)=unpack('<H', h.read(2))
                 i.append(l)
             if terrains: continue
             windings=[]
-            for j in range(len(i)-1):
+            for j in range(n):
                 winding=[]
                 for d in range(i[j],i[j+1]):
                     p=pool[curpool][d]
@@ -390,7 +397,7 @@ def readDSF(path, terrains={}):
             (l,)=unpack('<I', h.read(4))
             h.read(l)
         else:
-            raise IOError, (c, "Unrecognised command", path)
+            raise IOError, (c, "Unrecognised command (%d)" % c, path)
 
     # Last one
     if curpatch:
@@ -518,38 +525,35 @@ def writeDSF(dsfdir, key, objects, polygons):
     for obj in objects:
         if not obj.name in objdefs:
             objdefs.append(obj.name)
-            h.write('OBJECT_DEF\t%s.obj\n' % obj.name)
+            h.write('OBJECT_DEF\t%s\n' % obj.name)
     if objdefs: h.write('\n')
 
     polydefs=[]
     for poly in polygons:
         if poly.kind!=Polygon.EXCLUDE:
-            name=poly.name+poly.kind
-            if not name in polydefs:
-                polydefs.append(name)
-                h.write('POLYGON_DEF\t%s\n' % name)
+            if not poly.name in polydefs:
+                polydefs.append(poly.name)
+                h.write('POLYGON_DEF\t%s\n' % poly.name)
     if polydefs: h.write('\n')
 
     for obj in objects:
-        h.write('OBJECT\t\t%d %11.6f %10.6f %3.0f\n' % (
-            objdefs.index(obj.name), obj.lon, obj.lat, obj.hdg))
+        h.write('OBJECT\t\t%d %12.7f %12.7f %3.0f\n' % (
+            objdefs.index(obj.name), obj.lon+minres/2, obj.lat+minres/2, obj.hdg))
     if objdefs: h.write('\n')
     
     for poly in polygons:
         if poly.kind==Polygon.EXCLUDE:
             continue
-        name=poly.name+poly.kind
-        # XXX h.write('BEGIN_POLYGON\t%d %d %d\n' % (
-        #    polydefs.index(name), poly.param, len(poly.nodes[0][0])))
         h.write('BEGIN_POLYGON\t%d %d %d\n' % (
-            polydefs.index(name), poly.param, 2))
+            polydefs.index(poly.name), poly.param, len(poly.nodes[0][0])))
+            #polydefs.index(poly.name), poly.param, 2))
         for w in poly.nodes:
             h.write('BEGIN_WINDING\n')
             for p in w:
                 h.write('POLYGON_POINT\t')
-                # XXX for n in p:
-                for n in [p[0], p[1]]:
-                    h.write('%11.6f ' % n)
+                #for n in [p[0], p[1]]:
+                for n in p:
+                    h.write('%12.7f ' % (n+minres/2))
                 h.write('\n')
             h.write('END_WINDING\n')
         h.write('END_POLYGON\n')

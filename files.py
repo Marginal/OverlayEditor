@@ -20,6 +20,7 @@ if platform!='win32':
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
+f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 GL_CLAMP_TO_EDGE=0x812F	# Not defined in PyOpenGL 2.x
 
@@ -104,7 +105,7 @@ class Prefs:
 def readApt(filename):
     byname={}
     bycode={}
-    runways={}	# (lat,lon,hdg,length,width) by code
+    runways={}	# (lat,lon,hdg,length,width,stop,stop) by code
     nav=[]	# (type,lat,lon,hdg)
     if platform=='win32':
         h=file(filename,'rU')
@@ -112,7 +113,7 @@ def readApt(filename):
         h=codecs.open(filename, 'rU', 'latin1')
     if not h.readline().strip() in ['A','I']:
         raise IOError
-    if not h.readline().split()[0] in ['715','810']:
+    if not h.readline().split()[0] in ['715','810','850']:
         raise IOError
     loc=None
     name=None
@@ -132,12 +133,16 @@ def readApt(filename):
         if id in [1,16,17]:	# Airport/Seaport/Heliport
             code=c[4]
             name=' '.join(c[5:])
-        elif id==10:	# Runway / taxiway
-            if not loc: loc=[float(c[1]),float(c[2])]
-            stop=c[7].split('.')
+        elif id==10: # in [10,100,102]:	# Runway / taxiway
+            if id==10:
+                lat=float(c[1])
+                lon=float(c[2])
+                if not loc: loc=[lat,lon]
+                stop=c[7].split('.')
+                
             if len(stop)<2: stop.append(0)
             run.append((float(c[1]),float(c[2]), float(c[4]),
-                        float(c[5])+float(stop[0])+float(stop[1]),float(c[8])))
+                        float(c[5]),float(c[8]),float(stop[0]),float(stop[1])))
         elif id==14:	# Prefer tower location
             loc=[float(c[1]),float(c[2])]
         elif id in [18,19]:	# Beacon & Windsock - goes in nav
@@ -217,12 +222,12 @@ def readLib(filename, objects, terrain):
                     continue	# no point adding placeholders
                 obj=join(path, normpath(obj))
                 if not exists(obj):
-                    continue
+                    continue	# no point adding missing objects
                 if name[-4:]=='.ter':
                     if name in terrain: continue
                     terrain[name]=obj
                 else:
-                    name=name[:-4]
+                    name=name
                     if lib in objects:
                         if name in objects[lib]: continue
                     else:
@@ -469,19 +474,21 @@ class VertexCache:
     def load(self, name, usefallback=False):
         # read object or facade into cache, but don't update OpenGL arrays
         # returns False if error reading object or facade
-
+        retval=True
+        
         if name in self.objcache:
             # Already loaded (or fallbacked)
             return True
         
         if not name in self.obj:
             # Physical object is missing
-            if name.startswith('Exclude:'):
-                return True
+            if name.startswith('Exclude:') or name[-4:].lower() not in ['.obj', '.fac', '.for']:
+                return True	# Don't need a physical object
             if name[0]=='*':	# this application's resource
                 self.obj[name]=join('Resources', name[1:])
             elif usefallback:
-                self.obj[name]=join('Resources','default.obj')
+                self.obj[name]=join('Resources','default'+name[-4:].lower())
+                retval=False
             else:
                 return False
         
@@ -489,10 +496,10 @@ class VertexCache:
         if path in self.idx:
             # Object is already in the array under another name
             self.objcache[name]=self.idx[path]
-            return True
+            return retval
         if path in self.poly:
             # Facade already loaded
-            return True
+            return retval
 
         if path in self.geo:
             # Object geometry is loaded, but not in the array
@@ -505,13 +512,13 @@ class VertexCache:
             texno=self.texcache.get(texture)
             self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly)
             self.valid=False	# new geometry -> need to update OpenGL
-            return True
+            return retval
             
         # Physical poly has not yet been read
         if path[-4:].lower()=='.fac':
             try:
                 self.poly[path]=FacadeDef(path, self.texcache)
-                return True
+                return retval
             except:
                 if usefallback:
                     self.poly[path]=FacadeDef(join('Resources','default.fac'),
@@ -519,10 +526,10 @@ class VertexCache:
                 return False
         elif path[-4:].lower()=='.for':
             self.poly[path]=ForestDef(path, self.texcache)
-            return True
+            return retval
 
         # Physical object has not yet been read
-        try:
+        if 1:#XXXtry:
             h=None
             culled=[]
             nocull=[]
@@ -740,12 +747,12 @@ class VertexCache:
                 texno=self.texcache.get(texture)
                 self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly)
                 self.valid=False	# new geometry -> need to update OpenGL
-        except:
-            if usefallback:
-                self.load('*default.obj')
-                self.objcache[name]=self.idx[path]=self.get('*default.obj')
-            return False
-        return True
+        #except:
+        #    if usefallback:
+        #        self.load('*default.obj')
+        #        self.objcache[name]=self.idx[path]=self.get('*default.obj')
+        #    return False
+        return retval
 
 
     def loadMesh(self, tile, options):
@@ -871,9 +878,6 @@ class VertexCache:
 
 
 def importObj(pkgpath, path):
-    if path.startswith(pkgpath):
-        raise IOError, (0, "This object is already in the package")
-
     # find base texture location
     if sep+'custom objects'+sep in path.lower():
         oldtexpath=path[:path.lower().index(sep+'custom objects'+sep)]
@@ -993,9 +997,8 @@ def importObj(pkgpath, path):
                     tex=tex.replace('/', sep)
                     header+=c[0]+'\t'+newtexprefix+basename(tex)+'\n'
                     if not isdir(newtexpath): mkdir(newtexpath)
-                    if not exists(join(newtexpath, basename(tex))):
-                        copyfile(join(oldtexpath, tex),
-                                 join(newtexpath, basename(tex)))
+                    if exists(join(oldtexpath, tex)) and not exists(join(newtexpath, basename(tex))):
+                        copyfile(join(oldtexpath, tex), join(newtexpath, basename(tex)))
             else:
                 header+=line+'\n'
                 break	# Stop at first non-texture statement

@@ -41,12 +41,12 @@ identify X-Plane's top-level folder (<i>ie</i> the folder which
 contains the X-Plane, Plane-Maker etc applications).<p>
 <h3>The application window</h3>
 <p>The application window consists of four parts:</p>
-<img style="border: 0px solid ; width: 682px; height: 491px;" alt="main window" src="Resources/screenshot.png">
+<img style="border: 0px solid ; width: 706px; height: 491px;" alt="main window" src="Resources/screenshot.png">
 <h4>Main window</h4>
 <p>This shows the objects in the loaded scenery package.
 By default terrain is displayed as "flattened" - you can change this with <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Preferences" src="Resources/prefs.png"></a>.
-Runways and taxiways are displayed in simplified form.
-"Autogen" scenery objects (other than navaids) are not displayed.<p>
+Runways, taxiways and navaids are displayed in simplified form and cannot be edited. 
+"Autogen" scenery objects are not displayed.<p>
 <p>Navigate with the cursor keys or mouse. Hold down
 <samp>Ctrl</samp> or <samp>Cmd</samp>
 for bigger steps, or <samp>Shift</samp> for tiny steps:</p>
@@ -69,12 +69,8 @@ for bigger steps, or <samp>Shift</samp> for tiny steps:</p>
       <td>Change elevation</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>=</samp>, <samp>-</samp>, Mouse wheel</td>
+      <td style="width: 33%;">Mouse wheel, <samp>-</samp>, <samp>=</samp></td>
       <td>Zoom</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
-      <td>Add new object</td>
     </tr>
   </tbody>
 </table>
@@ -96,7 +92,7 @@ To select objects:</p>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Space</samp></td>
-      <td>Select all objects in the main window (even if they're too small to see).</td>
+      <td>Select all objects in the main window <small>(even if they're too small to see)</small>.</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Ctrl</samp> or <samp>Cmd</samp> and <samp>Space</samp></td>
@@ -104,17 +100,21 @@ To select objects:</p>
     </tr>
   </tbody>
 </table>
-<p>These keys affect the selected objects. Hold down <samp>Ctrl</samp> or
-<samp>Cmd</samp> for bigger steps or <samp>Shift</samp> for tiny steps:</p>
+<p>If you select a single polygon (facade, forest or exclusion region)
+you can click on an individual node (<i>ie</i> corner) to select it.
+The selected node is highlighted in white.</p>
+<p>These keys affect the selected objects or the selected node.
+Hold down <samp>Ctrl</samp> or <samp>Cmd</samp> for bigger steps
+or <samp>Shift</samp> for tiny steps:</p>
 <table style="margin-left: 40px; width: 100%;" border="0">
   <tbody>
     <tr>
       <td style="width: 33%;">Mouse click and drag</td>
-      <td>Move object</td>
+      <td>Move object or node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
-      <td>Move selected objects</td>
+      <td>Move selected objects or node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Q</samp>, <samp>E</samp></td>
@@ -122,58 +122,28 @@ To select objects:</p>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>R</samp>, <samp>F</samp></td>
-      <td>Increase/decrease height (facades only)</td>
+      <td>Increase/decrease facade height or forest density</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>C</samp></td>
-      <td>Centre on selected objects</td>
-    </tr>
-    <tr>
-    <tr>
-      <td style="width: 33%;"><samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
-      <td>Delete selected objects</td>
-    </tr>
-  </tbody>
-</table>
-<p>If the selected object is a facade or exclusion region you can click
-on an individual node (<i>ie</i> corner) to select it.
-The selected node is highlighted in white.</p>
-<p>These keys affect the selected node. Hold down <samp>Ctrl</samp> or
-<samp>Cmd</samp> for bigger steps or <samp>Shift</samp> for tiny steps:</p>
-<table style="margin-left: 40px; width: 100%;" border="0">
-  <tbody>
-    <tr>
-      <td style="width: 33%;">Mouse click and drag</td>
-      <td>Move node</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
-      <td>Move selected node</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>R</samp>, <samp>F</samp></td>
-      <td>Increase/decrease height (facades only)</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>C</samp></td>
-      <td>Centre on selected node</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
-      <td>Delete selected node (facades only)</td>
+      <td>Centre on selected objects or node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
-      <td>Add new node (facades only)</td>
+      <td>Add new node object or node</small></td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
+      <td>Delete selected objects or node</td>
     </tr>
   </tbody>
 </table>
 <p>You can't select or otherwise manipulate runways, taxiways or
 navaids (ILS, VOR, DME etc).</p>
 <h4>Status bar</h4>
-<p>This shows your current location and heading and, if you have
-selected an object, the object's location and heading (or average
-location if you have selected more than one object).</p>
+<p>This shows your current location, heading, elevation and, if you have
+selected an object or node, the object's location, heading and elevation
+(or average location if you have selected more than one object).</p>
 <h4>Tool bar</h4>
 <table style="width: 100%;" border="0">
   <tbody>
@@ -243,12 +213,18 @@ Do not change the location of X-Plane's top-level folder while you are editing a
   </tbody>
 </table>
 <h4><a name="objectlist">List of objects</a></h4>
-<p>All the objects in the scenery package folder are listed under
+<p>All the objects, facades etc in the scenery package folder are listed under
 the heading "Objects", including those that are present in the scenery
 package folder but are not used in the scenery. Objects that have been
-made available by scenery libraries are listed under further headings.</p>
-<p>You can only add objects that appear in these lists (think of this
-as your "palette"):</p>
+made available by scenery libraries are listed under further headings.
+The type of object is indicated by a symbol:</p>
+<ul>
+  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="obj" src="Resources/obj.png"></a> Object  (<code>.obj</code>)</li>
+  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="fac" src="Resources/fac.png"></a> Polygon - facade, forest etc</li>
+  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="exc" src="Resources/exc.png"></a> Exclusion region</li>
+</ul>
+<p>You can only add objects to your scenery that appear in these lists
+(think of this as your "palette"):</p>
 <ul>
   <li>Use <a href="#import"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Import" src="Resources/import.png"></a> to copy objects from another scenery package.</li>
   <li>Use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have otherwise added or modified objects in the scenery package folder, or if you have installed a new scenery library.</li>
@@ -258,9 +234,14 @@ as your "palette"):</p>
 and in a simplified form. <i>ie</i>:
 <ul>
   <li>No lights, lines, shading or animation. 
-Objects that do not contain any polygons are displayed as small
+Objects that only contain lights or lines are displayed as small
 "placeholder" cubes so that they can be edited.</li>
-  <li>Simplified terrain textures. No beaches or overlay textures.</li>
+  <li>Forests are just displayed as an outline polygon. X-Plane allows
+forests to contain holes, however this application does not. If you edit
+a forest any hole will be deleted.</li>
+  <li>Other polygons (lines, strings etc) are just displayed as an outline
+and cannot be edited.</li>
+  <li>Terrain textures are simplified - no beaches or overlay textures.</li>
   <li>No flattening of terrain around airports. Terrain is displayed as if the
 X-Plane "allow sloped runways" rendering option is turned on.</li>
 </ul>
@@ -285,7 +266,6 @@ version, but X-Plane will display one of the eight versions chosen at random.<p>
   <li>Does not display autogen scenery.</li>
   <li>Does not display lights or lines.</li>
   <li>Does not convert or edit <code>.env</code> files.</li>
-  <li>Does not edit vectors (exclusion areas, forests etc).</li>
   <li>Does not edit runways, taxiways, navaids etc.</li>
   <li>There is a limit to the number of objects that you can select at once. The number depends on your graphics hardware.</li>
   <li>Palletised or interlaced PNG files appear plain grey. (X-Plane can't read the former either).</li>
@@ -294,7 +274,7 @@ version, but X-Plane will display one of the eight versions chosen at random.<p>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 1.45 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 1.44 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px; vertical-align: text-bottom;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
       </td>
     </tr>
