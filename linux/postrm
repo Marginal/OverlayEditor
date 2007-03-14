@@ -1,3 +1,0 @@
-#!/bin/sh
-gtk-update-icon-cache -q -t /usr/share/icons/hicolor &>/dev/null
-exit 0	# ignore errors from updating icon cache
