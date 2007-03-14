@@ -33,7 +33,7 @@ from draw import MyGL
 from files import importObj, Prefs, readApt, readNav,readLib, sortfolded
 from DSFLib import readDSF, writeDSF, Polygon, round2res, minres
 from MessageBox import myMessageBox
-from version import appname, appversion, dofacades
+from version import appname, appversion, debug
 
     
 if not 'startfile' in dir(os):
@@ -54,13 +54,15 @@ else:
 # constants
 d2r=pi/180.0
 maxzoom=50624.0
-custom='Custom Scenery'
-navdata='Earth nav data'
-aptdat='apt.dat'
-mainaptdat=join('Resources',navdata,aptdat)
-mainnavdat=join('Resources',navdata,'nav.dat')
-library='library.txt'
-default=join('Resources','default scenery')
+gresources='[rR][eE][sS][oO][uU][rR][cC][eE][sS]'
+gnavdata='[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]'
+gaptdat=join(gnavdata,'[aA][pP][tT].[dD][aA][tT]')
+gmainaptdat=join(gresources,gaptdat)
+gmainnavdat=join(gresources,gnavdata,'[nN][aA][vV].[dD][aA][tT]')
+gdefault=join(gresources,'[dD][eE][fF][aA][uU][lL][tT] [sS][cC][eE][nN][eE][rR][yY]')
+gcustom='[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]'
+glibrary='[lL][iI][bB][rR][aA][rR][yY].[tT][xX][tT]'
+
 
 global prefs
 
@@ -482,7 +484,7 @@ class PreferencesDialog(wx.Dialog):
                 return wx.ID_CANCEL
             path=dlg.GetPath()
             dlg.Destroy()
-            if isdir(join(path, custom)) and exists(join(path, mainaptdat)):
+            if glob(join(path, gcustom)) and glob(join(path, gmainaptdat)):
                 self.path.SetValue(path.strip())
                 self.FindWindowById(wx.ID_OK).Enable()
                 return wx.ID_OK
@@ -499,7 +501,7 @@ class BackgroundDialog(wx.Dialog):
         fg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
 
         self.parent=parent
-        self.prefix=join(prefs.xplane,custom,prefs.package)
+        self.prefix=glob(join(prefs.xplane,gcustom,prefs.package))[0]
         if prefs.package in prefs.packageprops:
             (self.image, plat, plon, phdg, pwidth, plength, popacity)=prefs.packageprops[prefs.package]
             if self.image[0]==curdir:
@@ -699,7 +701,7 @@ class BackgroundDialog(wx.Dialog):
         self.lat.SetFocus()	# So doesn't complain
         if self.image:
             if self.image[0]==curdir:
-                dir=dirname(join(prefix, normpath(self.image)))
+                dir=dirname(join(self.prefix, normpath(self.image)))
             else:
                 dir=dirname(self.image)
             f=basename(self.image)
@@ -1083,8 +1085,9 @@ class MainWindow(wx.Frame):
             if dlg.ShowModal()==wx.ID_OK:
                 v=dlg.GetValue().strip()
                 if not v: continue
-                for f in listdir(join(prefs.xplane,custom)):
-                    if f.lower()==v.lower():
+                base=glob(join(prefs.xplane,gcustom))[0]
+                for f in glob(join(base,'*')):
+                    if basename(f.lower())==v.lower():
                         myMessageBox("A package called %s already exists" % v,
                                      appname , wx.ICON_ERROR|wx.OK, self)
                         break
@@ -1092,10 +1095,8 @@ class MainWindow(wx.Frame):
                     self.toolbar.EnableTool(wx.ID_SAVE, False)
                     self.toolbar.EnableTool(wx.ID_ADD, False)
                     self.toolbar.EnableTool(wx.ID_UNDO, False)
-                    mkdir(join(prefs.xplane,custom,v))
-                    mkdir(join(prefs.xplane,custom,v,navdata))
-                    #mkdir(join(prefs.xplane,custom,v,'objects'))
-                    #mkdir(join(prefs.xplane,custom,v,'textures'))
+                    mkdir(join(base,v))
+                    mkdir(join(base,v,'Earth nav data'))
                     prefs.package=v
                     #self.loc=None
                     #self.hdg=0
@@ -1113,16 +1114,12 @@ class MainWindow(wx.Frame):
     def OnOpen(self, event):
         if not self.SaveDialog(): return
         dlg=wx.Dialog(self, wx.ID_ANY, "Open scenery package")
-        choices=listdir(join(prefs.xplane,custom))
+        dirs=glob(join(prefs.xplane,gcustom,'*'))
+        choices=[basename(d) for d in dirs if isdir(d)]
         sortfolded(choices)
         i=0
         x=150
         y=12
-        while i<len(choices):
-            if choices[i][0]=='.' or not isdir(join(prefs.xplane,custom,choices[i])):
-                choices.pop(i)
-            else:
-                i+=1
         list1=wx.ListBox(dlg, wx.ID_ANY, style=wx.LB_SINGLE, choices=choices)
         for d in choices:
             (x1,y)=list1.GetTextExtent(d)
@@ -1156,15 +1153,13 @@ class MainWindow(wx.Frame):
         list1.GetParent().EndModal(wx.ID_OK)
 
     def OnSave(self, event):
-        dsfdir=join(prefs.xplane,custom,prefs.package)
-        if not isdir(dsfdir): mkdir(dsfdir)
-        for f in listdir(dsfdir):
-            if f.lower()=='earth nav data':
-                dsfdir=join(dsfdir,f)
-                break
-        else:
-            dsfdir=join(dsfdir,navdata)
-            mkdir(dsfdir)
+        base=glob(join(prefs.xplane,gcustom))[0]
+        if not glob(join(base,prefs.package)):
+            mkdir(join(base,prefs.package))
+        base=glob(join(prefs.xplane,gcustom,prefs.package))[0]
+        if not glob(join(base,gnavdata)):
+            mkdir(join(base,'Earth nav data'))
+        dsfdir=glob(join(prefs.xplane,gcustom,prefs.package,gnavdata))[0]
 
         stuff=dict(self.canvas.objects)
         stuff.update(self.canvas.polygons)
@@ -1216,19 +1211,17 @@ class MainWindow(wx.Frame):
         self.palette.flush()
         pkgnavdata=None
         if prefs.package:
-            pkgdir=join(prefs.xplane,custom,prefs.package)
-            for f in listdir(pkgdir):
-                if f.lower()=='earth nav data':
-                    pkgnavdata=join(pkgdir,f)
-                    break
+            pkgdir=glob(join(prefs.xplane,gcustom,prefs.package))[0]
+            if glob(join(pkgdir, gnavdata)):
+                pkgnavdata=glob(join(pkgdir, gnavdata))[0]
         else:
             self.toolbar.EnableTool(wx.ID_PREVIEW, False)
             self.toolbar.EnableTool(wx.ID_REFRESH, False)
             self.toolbar.EnableTool(wx.ID_PASTE, False)
         progress.Update(0, 'Global nav data')
         if not self.airports:	# Default apt.dat
-            (self.airports,self.nav)=readApt(join(prefs.xplane,mainaptdat))
-            self.nav.extend(readNav(join(prefs.xplane,mainnavdat)))
+            (self.airports,self.nav)=readApt(glob(join(prefs.xplane, gmainaptdat))[0])
+            self.nav.extend(readNav(glob(join(prefs.xplane,gmainnavdat))[0]))
         progress.Update(1, 'Overlay DSFs')
         if not event:
             # Load, not reload
@@ -1284,7 +1277,7 @@ class MainWindow(wx.Frame):
         nav=list(self.nav)
         runways={}
         pkgloc=None
-        apts=glob(join(prefs.xplane, custom, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', '[aA][pP][tT].[dD][aA][tT]'))
+        apts=glob(join(prefs.xplane, gcustom, '*', gaptdat))
         for apt in apts:
             # Package-specific apt.dat
             try:
@@ -1306,7 +1299,7 @@ class MainWindow(wx.Frame):
                     pkgloc=[round2res(loc[0]),round2res(loc[1])]
             except:
                 if prefs.package and apt[:-23].endswith(prefs.package):
-                    myMessageBox("The %s file in this package is invalid." % aptdat, "Can't load airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
+                    myMessageBox("The apt.dat file in this package is invalid.", "Can't load airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
         for code, stuff in airports.iteritems():
             (name, (lat,lon), run)=stuff
             if not run: continue
@@ -1325,12 +1318,9 @@ class MainWindow(wx.Frame):
         if prefs.package:
             for path, dirs, files in walk(pkgdir):
                 for f in files:
-                    if dofacades:
-                        seq=['.obj','.fac','.for']
-                    else:
-                        seq=['.obj']
-                    if f[-4:].lower() in seq:
-                        name=join(path,f)[len(pkgdir)+1:].replace('\\','/')
+                    seq=['.obj','.fac','.for']
+                    if f[-4:].lower() in seq and f[0]!='.':
+                        name=join(path,f)[len(pkgdir)+1:-4].replace('\\','/')+f[-4:].lower()
                         if name.lower().startswith('custom objects'):
                             name=name[15:]
                         if not name in objects:	# library takes precedence
@@ -1339,7 +1329,7 @@ class MainWindow(wx.Frame):
 
         objectsbylib={}	# (name, path) by libname
         terrain={}	# path by name
-        libs=glob(join(prefs.xplane, custom, '*', '[lL][iI][bB][rR][aA][rR][yY].[tT][xX][tT]'))+glob(join(prefs.xplane, default, '*', '[lL][iI][bB][rR][aA][rR][yY].[tT][xX][tT]'))
+        libs=glob(join(prefs.xplane, gcustom, '*', glibrary))+glob(join(prefs.xplane, gdefault, '*', glibrary))
         libs.sort()	# asciibetical
         for lib in libs: readLib(lib, objectsbylib, terrain)
         libobjs={}
@@ -1355,15 +1345,19 @@ class MainWindow(wx.Frame):
 
         if prefs.package and prefs.package in prefs.packageprops:
             (image, lat, lon, hdg, width, length, opacity)=prefs.packageprops[prefs.package]
-            if image[0]==curdir: image=join(prefs.xplane,custom,prefs.package, normpath(image))
+            if image[0]==curdir:
+                if glob(join(prefs.xplane,gcustom,prefs.package,normpath(image))):
+                    image=glob(join(prefs.xplane,gcustom,prefs.package,normpath(image)))[0]
+                else:
+                    image=None
             background=(image, lat, lon, hdg, width, length, opacity)
         else:
             background=None
         self.canvas.reload(event!=None, prefs.options,
                            runways, nav, objects, placements, polygons,
                            background, terrain,
-                           [join(prefs.xplane, custom),
-                            join(prefs.xplane, default)])
+                           [join(prefs.xplane, gcustom),
+                            join(prefs.xplane, gdefault)])
         if not self.loc:
             # Load, not reload
             if pkgloc:	# go to first airport by name
@@ -1377,7 +1371,6 @@ class MainWindow(wx.Frame):
                     for p in polygons.values():
                         if p:
                             self.loc=[p[0].nodes[0][0][1],p[0].nodes[0][0][0]]
-                            print self.loc
                             break
                     else:	# Fallback
                         self.loc=[34.096694,-117.248376]	# KSBD
@@ -1395,14 +1388,14 @@ class MainWindow(wx.Frame):
         self.Refresh()
 
     def OnImport(self, event):
-        dlg=wx.FileDialog(self, "Import files:", join(prefs.xplane,custom), '', "Objects, Facades and Forests|*.obj;*.fac;*.for|Object files (*.obj)|*.obj|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|All files|*.*", wx.OPEN|wx.MULTIPLE|wx.HIDE_READONLY)
+        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Facades and Forests|*.obj;*.fac;*.for|Object files (*.obj)|*.obj|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|All files|*.*", wx.OPEN|wx.MULTIPLE|wx.HIDE_READONLY)
         if dlg.ShowModal()!=wx.ID_OK:
             dlg.Destroy()
             return
         paths=dlg.GetPaths()
         dlg.Destroy()
         
-        pkgpath=join(prefs.xplane,custom,prefs.package)
+        pkgpath=glob(join(prefs.xplane,gcustom,prefs.package))[0]
         for path in paths:
             try:
                 newpath=importObj(pkgpath, path)
@@ -1508,10 +1501,10 @@ app.SetTopWindow(frame)
 
 # user prefs
 prefs=Prefs()
-if not prefs.xplane or not isdir(join(prefs.xplane,custom)):
+if not prefs.xplane or not glob(join(prefs.xplane,gcustom)):
     if platform!='win32':	# prompt is not displayed on Mac
         myMessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder", wx.ICON_INFORMATION|wx.OK, frame)
-    if platform=='win32' and isdir(join('C:\\X-Plane', custom)) and exists(join('C:\\X-Plane', mainaptdat)):
+    if platform=='win32' and glob(join('C:\\X-Plane', gcustom)) and glob(join('C:\\X-Plane', gmainaptdat)):
         prefs.xplane='C:\\X-Plane'
     elif platform=='win32':
         prefs.xplane='C:\\'
@@ -1523,7 +1516,7 @@ if not prefs.xplane or not isdir(join(prefs.xplane,custom)):
     if dlg.OnBrowse(None)!=wx.ID_OK: exit(1)	# User cancelled
     prefs.xplane=dlg.path.GetValue()
     dlg.Destroy()
-if prefs.package and not isdir(join(prefs.xplane, custom, prefs.package)):
+if prefs.package and not glob(join(prefs.xplane, gcustom, prefs.package)):
     prefs.package=None
 
 # Load data files

@@ -6,15 +6,16 @@ try:
 except:	# not in 2.0.0.44
     def glInitTextureNonPowerOfTwoARB(): return False
 from glob import glob
-from math import cos, pi
+from math import cos, log, pi
 from os import getenv, listdir, mkdir
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
+import sys	# for version
 from sys import platform, maxint
 import wx
 
 from DSFLib import readDSF
-from version import appname, appversion, dofacades
+from version import appname, appversion, debug
 
 if platform!='win32':
     import codecs
@@ -112,7 +113,10 @@ def readApt(filename):
         h=codecs.open(filename, 'rU', 'latin1')
     if not h.readline().strip() in ['A','I']:
         raise IOError
-    ver=h.readline().split()[0]
+    while 1:	# NYEXPRO has a blank line here
+        c=h.readline().split()
+        if c: break
+    ver=c[0]
     if not ver in ['600','715','810','850']:
         raise IOError
     ver=int(ver)
@@ -216,11 +220,8 @@ def readLib(filename, objects, terrain):
     h=None
     path=dirname(filename)
     if basename(dirname(filename))=='800 objects':
-        if dofacades:
-            filename=join('Resources','800library.txt')
-            builtinhack=True
-        else:
-            return
+        filename=join('Resources','800library.txt')
+        builtinhack=True
     else:
         builtinhack=False
     try:
@@ -275,8 +276,6 @@ def readLib(filename, objects, terrain):
 class TexCache:
     
     def __init__(self):
-        self.blank=0
-        self.texs={}
         self.blank=0	#self.get(join('Resources','blank.png'))
         self.texs={}
         # Must be after init
@@ -287,11 +286,15 @@ class TexCache:
             self.clampmode=GL_REPEAT
 
     def flush(self):
-        if self.texs:
-            glDeleteTextures(self.texs.values())
-        self.texs={}
+        if 'SUSE' in sys.version:
+            # Hack round suspected memory leak causing SegFault on SUSE
+            pass
+        else:
+            if self.texs:
+                glDeleteTextures(self.texs.values())
+            self.texs={}
 
-    def get(self, path, isterrain=False, fixsize=False):
+    def get(self, path, isbaseterrain=False, fixsize=False):
         if not path: return 0
         if path in self.texs:
             return self.texs[path]
@@ -307,7 +310,7 @@ class TexCache:
                         size[i]=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
                 if size!=[image.size[0],image.size[1]]:
                     image=image.resize((size[0], size[1]), BILINEAR)
-            if not isterrain:
+            if not isbaseterrain:
                 if image.mode=='RGBA':
                     data = image.tostring("raw", 'RGBA', 0, -1)
                     format=GL_RGBA
@@ -316,7 +319,7 @@ class TexCache:
                     format=GL_RGB
             else:
                 if image.mode!='RGB': image=image.convert('RGB')
-                image=image.resize((image.size[0]/2,image.size[1]/2), BILINEAR)
+                image=image.resize((image.size[0]/4,image.size[1]/4), BILINEAR)
                 data = image.tostring("raw", 'RGB', 0, -1)
                 format=GL_RGB
             glBindTexture(GL_TEXTURE_2D, id)
@@ -329,6 +332,7 @@ class TexCache:
             self.texs[path]=id
             return id
         except:
+            if debug: print 'Failed to load texture "%s"' % path
             return self.blank
 
 
@@ -450,7 +454,7 @@ class VertexCache:
 
         # indices = (base, #culled, texno)
         self.ter={}		# name -> physical ter
-        self.mesh={}		# tile -> [patches] where patch=(texture, v, t)
+        self.mesh={}		# tile -> [patches] where patch=(texture,f,v,t)
         self.meshdata={}	# tile->[(bbox, [(points, plane coeffs)])]
         self.meshcache=[]	# [indices] of current tile
         self.lasttri=None	# take advantage of locality of reference
@@ -797,6 +801,8 @@ class VertexCache:
         if options&Prefs.TERRAIN:
             for path in self.dsfdirs:
                 dsfs+=glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1])))
+            #print join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))
+            #print dsfs
             dsfs.sort()	# asciibetical, custom first
         for dsf in dsfs:
             try:
@@ -812,7 +818,7 @@ class VertexCache:
                 tex=join('Resources','airport0_000.png')
             else:
                 tex=join('Resources','Sea01.png')
-            self.mesh[key]=[(tex,
+            self.mesh[key]=[(tex, 1,
                              [[-onedeg*cos(d2r*(tile[0]+1))/2, 0, -onedeg/2],
                               [ onedeg*cos(d2r* tile[0]   )/2, 0,  onedeg/2],
                               [-onedeg*cos(d2r* tile[0]   )/2, 0,  onedeg/2],
@@ -827,20 +833,25 @@ class VertexCache:
             return self.meshcache
         # merge patches that use same texture
         bytex={}
-        for texture, v, t in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
-            if texture in bytex:
-                (v2,t2)=bytex[texture]
+        for texture, flags, v, t in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
+            #if options&Prefs.ELEVATION:
+            #    # Transfrom from lat,lon,e to curved surface in cartesian space
+            #    (x,y,z)=v
+            #    xxx
+            
+            if (texture,flags) in bytex:
+                (v2,t2)=bytex[(texture,flags)]
                 v2.extend(v)
                 t2.extend(t)
             else:
-                bytex[texture]=(list(v), list(t))
+                bytex[(texture,flags)]=(list(v), list(t))
         # add into array
-        for texture, (v, t) in bytex.iteritems():
+        for (texture, flags), (v, t) in bytex.iteritems():
             base=len(self.varray)
             self.varray.extend(v)
             self.tarray.extend(t)
-            texno=self.texcache.get(texture, True)
-            self.meshcache.append((base, len(v), texno))
+            texno=self.texcache.get(texture, flags&1)
+            self.meshcache.append((base, len(v), texno, flags/2))
         self.valid=False	# new geometry -> need to update OpenGL
         return self.meshcache
 
@@ -858,7 +869,7 @@ class VertexCache:
             return meshdata
         meshdata=[]
         tot=0
-        for (texture, v, t) in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
+        for (texture, flags, v, t) in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
             minx=minz=maxint
             maxx=maxz=-maxint
             tris=[]
@@ -883,7 +894,7 @@ class VertexCache:
         if likely:
             h=self.heighttest([likely], x, z)
             if h!=None: return h
-        if self.lasttri:
+        if self.lasttri and (not likely or self.lasttri!=likely):
             h=self.heighttest([self.lasttri], x, z)
             if h!=None: return h
 

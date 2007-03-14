@@ -1,12 +1,12 @@
 from math import cos, floor, pi
 from md5 import md5
-from os import listdir, mkdir, popen3, rename, unlink
-from os.path import abspath, curdir, dirname, exists, isdir, join, sep
+from os import listdir, mkdir, popen3, popen4, rename, unlink
+from os.path import abspath, curdir, dirname, exists, isdir, join, pardir, sep
 from struct import pack, unpack
 from sys import platform, maxint
 from tempfile import gettempdir
 
-from version import appname, appversion
+from version import appname, appversion, debug
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
@@ -78,7 +78,8 @@ class Polygon:
 #   properties = [(property, string value)]
 #   placements
 #   polygons
-#   mesh = [(texture name, [point], [st])], where
+#   mesh = [(texture name, flags, [point], [st])], where
+#     flags=patch flags: 1=hard, 2=overlay
 #     point = [x, y, z]
 #     st = [s, t]
 # Exceptions:
@@ -231,41 +232,51 @@ def readDSF(path, terrains={}):
     tercache={'terrain_Water':(join('Resources','Sea01.png'), 0, 0.001,0.001)}
     while h.tell()<cmdsend:
         (c,)=unpack('<B', h.read(1))
-        if c==1:
+        if c==1:	# Coordinate Pool Select
             (curpool,)=unpack('<H', h.read(2))
-        elif c==2:
-            h.read(4)
-        elif c==3:
+            
+        elif c==2:	# Junction Offset Select
+            h.read(4)	# not implemented
+            
+        elif c==3:	# Set Definition
             (idx,)=unpack('<B', h.read(1))
-        elif c==4:
+            
+        elif c==4:	# Set Definition
             (idx,)=unpack('<H', h.read(2))
-        elif c==5:
+            
+        elif c==5:	# Set Definition
             (idx,)=unpack('<I', h.read(4))
-        elif c==6:
-            h.read(1)
-        elif c==7:
+            
+        elif c==6:	# Set Road Subtype
+            h.read(1)	# not implemented
+            
+        elif c==7:	# Object
             (d,)=unpack('<H', h.read(2))
             p=pool[curpool][d]
             if not terrains:
-                placements.append(Object(objects[idx], p[1], p[0], int(round(p[2],0))))
-        elif c==8:
+                placements.append(Object(objects[idx],
+                                         p[1], p[0], int(round(p[2],0))))
+                
+        elif c==8:	# Object Range
             (first,last)=unpack('<HH', h.read(4))
             if not terrains:
                 for d in range(first, last):
                     p=pool[curpool][d]
-                    placements.append(Object(objects[idx], p[1], p[0], int(round(p[2],0))))
-        elif c==9:
-            # not implemented
+                    placements.append(Object(objects[idx],
+                                             p[1], p[0], int(round(p[2],0))))
+                    
+        elif c==9:	# Network Chain
             (l,)=unpack('<B', h.read(1))
-            h.read(l*2)
-        elif c==10:
-            # not implemented
-            h.read(4)
-        elif c==11:
-            # not implemented
+            h.read(l*2)	# not implemented
+            
+        elif c==10:	# Network Chain Range
+            h.read(4)	# not implemented
+            
+        elif c==11:	# Network Chain
             (l,)=unpack('<B', h.read(1))
-            h.read(l*4)
-        elif c==12:
+            h.read(l*4)	# not implemented
+            
+        elif c==12:	# Polygon
             (param,l)=unpack('<HB', h.read(3))
             if terrains or l<2:
                 h.read(l*2)
@@ -275,16 +286,20 @@ def readDSF(path, terrains={}):
                 (d,)=unpack('<H', h.read(2))
                 p=pool[curpool][d]
                 winding.append(tuple(p))
-            polyplace.append(Polygon(polygons[idx], polykind[idx], param, [winding]))
-        elif c==13:	# DSF2Text uses this
+            polyplace.append(Polygon(polygons[idx], polykind[idx],
+                                     param, [winding]))
+            
+        elif c==13:	# Polygon Range (DSF2Text uses this one)
             (param,first,last)=unpack('<HHH', h.read(6))
             if terrains or last-first<2: continue
             winding=[]
             for d in range(first, last):
                 p=pool[curpool][d]
                 winding.append(tuple(p))
-            polyplace.append(Polygon(polygons[idx], polykind[idx], param, [winding]))
-        elif c==14:
+            polyplace.append(Polygon(polygons[idx], polykind[idx],
+                                     param, [winding]))
+            
+        elif c==14:	# Nested Polygon
             (param,n)=unpack('<HB', h.read(3))
             windings=[]
             for i in range(n):
@@ -296,8 +311,10 @@ def readDSF(path, terrains={}):
                     winding.append(tuple(p))
                 windings.append(winding)
             if not terrains and n>0 and len(windings[0])>=2:
-                polyplace.append(Polygon(polygons[idx], polykind[idx], param, windings))
-        elif c==15:	# DSF2Text uses this for multiple windings
+                polyplace.append(Polygon(polygons[idx], polykind[idx],
+                                         param, windings))
+                
+        elif c==15:	# Nested Polygon Range (DSF2Text uses this one too)
             (param,n)=unpack('<HB', h.read(3))
             i=[]
             for j in range(n+1):
@@ -311,97 +328,95 @@ def readDSF(path, terrains={}):
                     p=pool[curpool][d]
                     winding.append(tuple(p))
                 windings.append(winding)
-            polyplace.append(Polygon(polygons[idx], polykind[idx], param, windings))
-        elif c==16:
+            polyplace.append(Polygon(polygons[idx], polykind[idx],
+                                     param, windings))
+            
+        elif c==16:	# Terrain Patch
             if curpatch:
-                mesh.append(makemesh(curter,curpatch,centrelat,centrelon,terrains,tercache))
+                newmesh=makemesh(flags,path,curter,curpatch,centrelat,centrelon,terrains,tercache)
+                if newmesh: mesh.append(newmesh)
             curter=terrain[idx]
             curpatch=[]
-        elif c==17:
+            
+        elif c==17:	# Terrain Patch w/ flags
+            if curpatch:
+                newmesh=makemesh(flags,path,curter,curpatch,centrelat,centrelon,terrains,tercache)
+                if newmesh: mesh.append(newmesh)
             (flags,)=unpack('<B', h.read(1))
-            if curpatch:
-                mesh.append(makemesh(curter,curpatch,centrelat,centrelon,terrains,tercache))
             curter=terrain[idx]
             curpatch=[]
-        elif c==18:
+            
+        elif c==18:	# Terrain Patch w/ flags & LOD
+            if curpatch:
+                newmesh=makemesh(flags,path,curter,curpatch,centrelat,centrelon,terrains,tercache)
+                if newmesh: mesh.append(newmesh)
             (flags,near,far)=unpack('<Bff', h.read(9))
-            if curpatch:
-                mesh.append(makemesh(curter,curpatch,centrelat,centrelon,terrains,tercache))
             curter=terrain[idx]
             curpatch=[]
 
-        elif c==23:
+        elif c==23:	# Patch Triangle
             (l,)=unpack('<B', h.read(1))
-            if flags&1:
-                points=[]
-                for i in range(l):
-                    (d,)=unpack('<H', h.read(2))
-                    points.append(pool[curpool][d])
-                curpatch.extend(points)
-            else:
-                h.read(2*l)
+            points=[]
+            for i in range(l):
+                (d,)=unpack('<H', h.read(2))
+                points.append(pool[curpool][d])
+            curpatch.extend(points)
             
-        elif c==24:
+        elif c==24:	# Patch Triangle - cross-pool
             (l,)=unpack('<B', h.read(1))
-            if flags&1:
-                points=[]
-                for i in range(l):
-                    (p,d)=unpack('<HH', h.read(4))
-                    points.append(pool[p][d])
-                curpatch.extend(points)
-            else:
-                h.read(4*l)
+            points=[]
+            for i in range(l):
+                (p,d)=unpack('<HH', h.read(4))
+                points.append(pool[p][d])
+            curpatch.extend(points)
 
-        elif c==25:
+        elif c==25:	# Patch Triangle Range
             (first,last)=unpack('<HH', h.read(4))
-            if flags&1:
-                curpatch.extend(pool[curpool][first:last])
+            curpatch.extend(pool[curpool][first:last])
             
-        #elif c==26:
+        #elif c==26:	# Patch Triangle Strip (not used by DSF2Text)
         #elif c==27:
         #elif c==28:
-        elif c==29:
+        
+        elif c==29:	# Patch Triangle Fan
             (l,)=unpack('<B', h.read(1))
-            if flags&1:
-                points=[]
-                for i in range(l):
-                    (d,)=unpack('<H', h.read(2))
-                    points.append(pool[curpool][d])
-                curpatch.extend(meshfan(points))
-            else:
-                h.read(2*l)
+            points=[]
+            for i in range(l):
+                (d,)=unpack('<H', h.read(2))
+                points.append(pool[curpool][d])
+            curpatch.extend(meshfan(points))
             
-        elif c==30:
+        elif c==30:	# Patch Triangle Fan - cross-pool
             (l,)=unpack('<B', h.read(1))
-            if flags&1:
-                points=[]
-                for i in range(l):
-                    (p,d)=unpack('<HH', h.read(4))
-                    points.append(pool[p][d])
-                curpatch.extend(meshfan(points))
-            else:
-                h.read(4*l)
+            points=[]
+            for i in range(l):
+                (p,d)=unpack('<HH', h.read(4))
+                points.append(pool[p][d])
+            curpatch.extend(meshfan(points))
 
-        elif c==31:
+        elif c==31:	# Patch Triangle Fan Range
             (first,last)=unpack('<HH', h.read(4))
-            if flags&1:
-                curpatch.extend(meshfan(pool[curpool][first:last]))
+            curpatch.extend(meshfan(pool[curpool][first:last]))
 
-        elif c==32:
+        elif c==32:	# Comment
             (l,)=unpack('<B', h.read(1))
             h.read(l)
-        elif c==33:
+            
+        elif c==33:	# Comment
             (l,)=unpack('<H', h.read(2))
             h.read(l)
-        elif c==34:
+            
+        elif c==34:	# Comment
             (l,)=unpack('<I', h.read(4))
             h.read(l)
+            
         else:
             raise IOError, (c, "Unrecognised command (%d)" % c, path)
 
     # Last one
     if curpatch:
-        mesh.append(makemesh(curter,curpatch,centrelat,centrelon,terrains,tercache))
+        newmesh=makemesh(flags,path,curter,curpatch,centrelat,centrelon,terrains,tercache)
+        if newmesh: mesh.append(newmesh)
     
     h.close()
     return (properties, placements, polyplace, mesh)
@@ -414,16 +429,20 @@ def meshfan(points):
         tris.append(points[i+1])
     return tris
 
-def makemesh(ter, patch, centrelat, centrelon, terrains, tercache):
+def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
     # Get terrain info
     if ter in tercache:
         (texture, angle, xscale, zscale)=tercache[ter]
     else:
         texture=None
         angle=0
-        xscale=zscale=0.001
+        xscale=zscale=0
         try:
-            h=file(terrains[ter], 'rU')
+            if ter in terrains:	# Library terrain
+                phys=terrains[ter]
+            else:		# Package-specific terrain
+                phys=abspath(join(dirname(path), pardir, pardir, ter))
+            h=file(phys, 'rU')
             if not (h.readline().strip() in ['I','A'] and
                     h.readline().strip()=='800' and
                     h.readline().strip()=='TERRAIN'):
@@ -432,11 +451,11 @@ def makemesh(ter, patch, centrelat, centrelon, terrains, tercache):
                 line=line.strip()
                 c=line.split()
                 if not c: continue
-                if c[0]=='BASE_TEX':
-                    texture=line[8:].strip()
+                if c[0] in ['BASE_TEX', 'BASE_TEX_NOWRAP']:
+                    texture=line[len(c[0]):].strip()
                     texture=texture.replace(':', sep)
                     texture=texture.replace('/', sep)
-                    texture=abspath(join(dirname(terrains[ter]),texture))
+                    texture=abspath(join(dirname(phys), texture))
                 elif c[0]=='PROJECTED':
                     xscale=1/float(c[1])
                     zscale=1/float(c[2])
@@ -446,13 +465,13 @@ def makemesh(ter, patch, centrelat, centrelon, terrains, tercache):
                         angle=int(float(c[4]))
             h.close()
         except:
-            pass
+            if debug: print 'Failed to load terrain "%s"' % ter
         tercache[ter]=(texture, angle, xscale, zscale)
 
     # Make mesh
     v=[]
     t=[]
-    if len(patch[0])<7:	# no st coords (all? Laminar hard scenery)
+    if flags&1 and (len(patch[0])<7 or xscale):	# hard and no st coords
         for p in patch:
             x=(p[0]-centrelon)*onedeg*cos(d2r*p[1])
             z=(centrelat-p[1])*onedeg
@@ -465,19 +484,14 @@ def makemesh(ter, patch, centrelat, centrelon, terrains, tercache):
                 t.append([-z*zscale, -x*xscale])
             else: # angle==0 or not square
                 t.append([x*xscale, -z*zscale])
-    else: # untested
+    elif not (len(patch[0])<7 or xscale):	# st coords but not projected
         for p in patch:
             v.append([(p[0]-centrelon)*onedeg*cos(d2r*p[1]),
                       p[2], (centrelat-p[1])*onedeg])
-            if angle==90:
-                t.append([p[6],p[5]])
-            elif angle==180:
-                t.append([-p[5],p[6]])
-            elif angle==270:
-                t.append([-p[6],-p[5]])
-            else: # angle==0 or not square
-                t.append([p[5],-p[6]])
-    return (texture,v,t)
+            t.append([p[5],p[6]])
+    else:
+        return None
+    return (texture,flags,v,t)
 
 
 def writeDSF(dsfdir, key, objects, polygons):
@@ -560,6 +574,14 @@ def writeDSF(dsfdir, key, objects, polygons):
     if polydefs: h.write('\n')
     
     h.close()
+    if platform.lower().startswith('linux'):
+        # Force Wine to initialise font cache on first run
+        (i,o,e)=popen3('wine --version')
+        i.close()
+        o.read()
+        e.read()
+        o.close()
+        e.close()
     (i,o,e)=popen3('%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename))
     i.close()
     o.read()

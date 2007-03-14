@@ -16,7 +16,7 @@ import wx.glcanvas
 from files import VertexCache, sortfolded, Prefs, ExcludeDef, FacadeDef, ForestDef
 from DSFLib import Object, Polygon, resolution, maxres, round2res
 from MessageBox import myMessageBox
-from version import appname, dofacades
+from version import appname, debug
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
@@ -59,7 +59,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.options=0		# display options
         self.tile=[0,999]	# [lat,lon] of SW
         self.centre=None	# [lat,lon] of centre
-        self.airports={}	# (lat,lon,hdg,length,width) by code
+        self.airports={}	# [(lat,lon,hdg,length,width)] by code
         self.runways={}		# diplay list by tile
         self.navaids=[]		# (type, lat, lon, hdg)
         self.objects={}		# [(name,lat,lon,hdg,height)] by tile
@@ -338,14 +338,30 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.meshlist=glGenLists(1)
             glNewList(self.meshlist, GL_COMPILE)
             glEnable(GL_DEPTH_TEST)
-            glPushMatrix()
+            glDepthMask(GL_TRUE)
+            glDisable(GL_POLYGON_OFFSET_FILL)
             if not self.options&Prefs.ELEVATION:
+                glPushMatrix()
                 glScalef(1,0,1)		# Defeat elevation data
             glColor3f(0.75, 0.75, 0.75)	# Unpainted
-            for (base,culled,texno) in self.vertexcache.getMesh(self.tile,self.options):
+            polystate=0
+            for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
+                if poly:
+                    if polystate!=poly:
+                        glDepthMask(GL_FALSE)	# offset mustn't update depth
+                        glPolygonOffset(-10*poly, -10*poly)
+                        glEnable(GL_POLYGON_OFFSET_FILL)
+                    polystate=poly
+                else:
+                    if polystate:
+                        glDepthMask(GL_TRUE)
+                        glDisable(GL_POLYGON_OFFSET_FILL)
+                    polystate=0
                 glBindTexture(GL_TEXTURE_2D, texno)
-                glDrawArrays(GL_TRIANGLES, base, culled)
-            glPopMatrix()
+                glDrawArrays(GL_TRIANGLES, base, number)
+            glDepthMask(GL_TRUE)
+            if not self.options&Prefs.ELEVATION:
+                glPopMatrix()
             glEndList()
         glCallList(self.meshlist)
 
@@ -361,12 +377,13 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnable(GL_CULL_FACE)
             cullstate=True
             glEnable(GL_TEXTURE_2D)
+            glEnable(GL_DEPTH_TEST)
             glDisable(GL_POLYGON_OFFSET_FILL)
             for i in range(len(polygons)):
                 if (i|MSKSEL) in self.selected and not self.selectanchor:
                     continue	# don't have to recompute on move
                 poly=polygons[i]
-                if poly.kind==Polygon.FACADE and dofacades:
+                if poly.kind==Polygon.FACADE:
                     fac=self.vertexcache.get(poly.name)
                     glBindTexture(GL_TEXTURE_2D, fac.texture)
                     glColor3f(0.75, 0.75, 0.75)	# Unpainted
@@ -505,7 +522,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             if i&MSKSEL:
                 poly=polygons[i&MSKPOLY]
                 if poly.kind==Polygon.FACADE:
-                    if not dofacades: continue
                     fac=self.vertexcache.get(poly.name)
                     glBindTexture(GL_TEXTURE_2D, fac.texture)
                     glBegin(GL_QUADS)
@@ -625,7 +641,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 for p in poly.points:
                     glVertex3f(p[0],p[1],p[2])
                 glEnd()
-                if poly.kind==Polygon.FACADE and dofacades:
+                if poly.kind==Polygon.FACADE:
                     glBegin(GL_QUADS)
                     for p in poly.quads:
                         glTexCoord2f(p[3],p[4])
@@ -1087,6 +1103,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.vertexcache.flushObjs(objectmap, terrain, dsfdirs)
         self.trashlists(True, True)
         self.tile=[0,999]	# force reload
+
         for key in self.runways.keys():	# need to re-layout runways
             glDeleteLists(self.runways.pop(key), 1)
         if objects!=None:
@@ -1188,6 +1205,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 airports=[]
                 pavements=[]
                 # Find bounding boxes of airport runways in this tile
+                if not (newtile[0],newtile[1]) in self.airports:
+                    self.airports[(newtile[0],newtile[1])]=[]
                 for apt in self.airports[(newtile[0],newtile[1])]:
                     minx=minz=maxint
                     maxx=maxz=-maxint

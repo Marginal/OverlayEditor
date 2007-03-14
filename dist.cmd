@@ -1,11 +1,17 @@
 @echo off
 @setlocal
 
-for /f "usebackq tokens=1,2" %%I in (`c:\Progra~1\Python24\python.exe -c "from version import appversion; print '%%4.2f %%d'%%(appversion, appversion*100)"`) do (set VERSION=%%I&set VER=%%J)
+for /f "usebackq tokens=1,2,3" %%I in (`c:\Progra~1\Python24\python.exe -c "from version import appversion, debug; print '%%4.2f %%d %%d'%%(appversion, appversion*100, debug)"`) do (set VERSION=%%I&set VER=%%J&set DEBUG=%%K)
+if %DEBUG%==1 (
+    echo Debug version you fool
+    goto end
+)
+set RELEASE=2
 set RPM=%TMP%\overlayeditor
 
 @if exist OverlayEditor_%VER%_src.zip del OverlayEditor_%VER%_src.zip
-@if exist overlayeditor-%VERSION%-1.i386.rpm del overlayeditor-%VERSION%-1.i386.rpm
+@if exist overlayeditor-%VERSION%-%RELEASE%.i386.rpm del overlayeditor-%VERSION%-%RELEASE%.i386.rpm
+@if exist overlayeditor_%VERSION%-%RELEASE%_i386.deb del overlayeditor_%VERSION%-%RELEASE%_i386.deb
 @if exist OverlayEditor_%VER%_mac.zip del OverlayEditor_%VER%_mac.zip
 @if exist OverlayEditor_%VER%_win32.exe del OverlayEditor_%VER%_win32.exe
 
@@ -33,13 +39,11 @@ mkdir "%RPMRT%\usr\local\bin"
 mkdir "%RPMRT%\usr\local\lib\overlayeditor\Resources"
 mkdir "%RPMRT%\usr\local\lib\overlayeditor\linux"
 mkdir "%RPMRT%\usr\local\lib\overlayeditor\win32"
-mkdir "%RPMRT%\usr\share\applications"
-mkdir "%RPMRT%\usr\share\icons\hicolor\48x48\apps"
-copy linux\OverlayEditor.gif "%RPM%\SOURCES" |findstr -v "file(s) copied"
-copy linux\overlayeditor.desktop "%RPMRT%\usr\share\applications" |findstr -v "file(s) copied"
-copy Resources\OverlayEditor.png "%RPMRT%\usr\share\icons\hicolor\48x48\apps\overlayeditor.png" |findstr -v "file(s) copied"
-echo BuildRoot: /tmp/overlayeditor/root> "%RPM%\overlayeditor.spec"
-echo Version: %VERSION%>> "%RPM%\overlayeditor.spec"
+copy linux\overlayeditor.desktop "%RPMRT%\usr\local\lib\overlayeditor" |findstr -v "file(s) copied"
+copy linux\OverlayEditor.xpm "%RPM%\SOURCES" |findstr -v "file(s) copied"
+echo BuildRoot: /tmp/overlayeditor/root > "%RPM%\overlayeditor.spec"
+echo Version: %VERSION% >> "%RPM%\overlayeditor.spec"
+echo Release: %RELEASE% >> "%RPM%\overlayeditor.spec"
 type linux\overlayeditor.spec    >> "%RPM%\overlayeditor.spec"
 copy linux\overlayeditor "%RPMRT%\usr\local\bin" |findstr -v "file(s) copied"
 for %%I in (%DATA%) do (copy %%I "%RPMRT%\usr\local\lib\overlayeditor" |findstr -v "file(s) copied")
@@ -48,12 +52,21 @@ for %%I in (%RSRC%) do (copy Resources\%%~nxI "%RPMRT%\usr\local\lib\overlayedit
 for %%I in (linux\DSFTool) do (copy linux\%%~nxI "%RPMRT%\usr\local\lib\overlayeditor\linux" |findstr -v "file(s) copied")
 for %%I in (win32\DSFTool.exe) do (copy win32\%%~nxI "%RPMRT%\usr\local\lib\overlayeditor\win32" |findstr -v "file(s) copied")
 "C:\Program Files\cygwin\lib\rpm\rpmb.exe" --quiet -bb --target i386-pc-linux --define '_topdir /tmp/overlayeditor' /tmp/overlayeditor/overlayeditor.spec
-move "%RPM%\RPMS\i386\overlayeditor-%VERSION%-1.cygwin.i386.rpm" overlayeditor-%VERSION%-1.i386.rpm
+move "%RPM%\RPMS\i386\overlayeditor-%VERSION%-%RELEASE%.cygwin.i386.rpm" overlayeditor-%VERSION%-%RELEASE%.i386.rpm
+REM Debian/Ubuntu
 mkdir "%RPMRT%\DEBIAN"
-echo Version: %VERSION%-1> "%RPMRT%\DEBIAN\control"
+mkdir "%RPMRT%\usr\share\applications"
+mkdir "%RPMRT%\usr\share\icons\hicolor\48x48\apps"
+copy linux\overlayeditor.desktop "%RPMRT%\usr\share\applications" |findstr -v "file(s) copied"
+copy Resources\OverlayEditor.png "%RPMRT%\usr\share\icons\hicolor\48x48\apps\overlayeditor.png" |findstr -v "file(s) copied"
+echo Version: %VERSION%-%RELEASE% > "%RPMRT%\DEBIAN\control"
 type linux\control >> "%RPMRT%\DEBIAN\control"
+copy linux\postinst "%RPMRT%\DEBIAN" |findstr -v "file(s) copied"
+copy linux\postrm   "%RPMRT%\DEBIAN" |findstr -v "file(s) copied"
 chmod -R 755 "%RPMRT%"
 for /r "%RPMRT%" %%I in (*) do chmod 644 %%I
+chmod -R 755 "%RPMRT%\DEBIAN\postinst"
+chmod -R 755 "%RPMRT%\DEBIAN\postrm"
 chmod -R 755 "%RPMRT%\usr\local\bin\overlayeditor"
 chmod -R 755 "%RPMRT%\usr\local\lib\overlayeditor\linux"
 chmod -R 755 "%RPMRT%\usr\local\lib\overlayeditor\win32"
