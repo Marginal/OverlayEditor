@@ -338,6 +338,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.meshlist=glGenLists(1)
             glNewList(self.meshlist, GL_COMPILE)
             glEnable(GL_DEPTH_TEST)
+            glEnable(GL_CULL_FACE)
             glDepthMask(GL_TRUE)
             glDisable(GL_POLYGON_OFFSET_FILL)
             if not self.options&Prefs.ELEVATION:
@@ -1154,7 +1155,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.polygons=polygons
 
         # Silently correct case of missing object refs
-        for objs in objects.values():
+        for objs in self.objects.values():
             for obj in objs:
                 if obj.name not in objectmap:
                     for existing in objectmap.keys():
@@ -1302,6 +1303,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glDisable(GL_TEXTURE_2D)
                 glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
                 glEnable(GL_POLYGON_OFFSET_FILL)
+                #glEnable(GL_POLYGON_OFFSET_LINE)
+                #glPolygonMode(GL_BACK, GL_LINE)	# reverse of incorrect polygons
+                glEnable(GL_CULL_FACE)
                 glDepthMask(GL_FALSE)	# offset mustn't update depth
 
                 for (bbox, tris) in self.vertexcache.getMeshdata(newtile,options):
@@ -1413,7 +1417,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                     except GLUerror, e:
                         pass
                 gluDeleteTess(tessObj)
-                        
+                #glDisable(GL_POLYGON_OFFSET_LINE)
+                #glPolygonMode(GL_BACK, GL_FILL)
+                
                 progress.Update(15, 'Navaids')
                 objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
                       3:  'lib/airport/NAVAIDS/VOR.obj',
