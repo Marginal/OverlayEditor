@@ -1018,8 +1018,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         # returns True if undostack still not empty
         if not self.undostack: return False	# can't happen
         undo=self.undostack.pop()
-        objects=self.objects[undo.tile[0],undo.tile[1]]
-        polygons=self.polygons[undo.tile[0],undo.tile[1]]
+        if (undo.tile[0],undo.tile[1]) in self.objects:
+            objects=self.objects[undo.tile[0],undo.tile[1]]
+        if (undo.tile[0],undo.tile[1]) in self.polygons:
+            polygons=self.polygons[undo.tile[0],undo.tile[1]]
         avlat=0
         avlon=0
         self.trashlists(True)
