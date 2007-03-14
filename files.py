@@ -151,7 +151,7 @@ def readApt(filename):
             else: surface=int(c[10])
             run.append((lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]),
                         f2m*float(stop[0]),f2m*float(stop[1]),surface))
-        elif id==102 and int(c[7]) not in [13,15]: # 850 Helipad
+        elif id==102: # 850 Helipad
             # (lat,lon,h,length,width,stop1,stop2)
             lat=float(c[2])
             lon=float(c[3])
@@ -632,7 +632,7 @@ class VertexCache:
             return retval
 
         # Physical object has not yet been read
-        if True: #try:
+        try:
             h=None
             culled=[]
             nocull=[]
@@ -880,7 +880,7 @@ class VertexCache:
                 texno=self.texcache.get(texture)
                 self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly, maxsize)
                 self.valid=False	# new geometry -> need to update OpenGL
-        else:#except:
+        except:
             if debug: print 'Failed to load object "%s"' % path
             if usefallback:
                 self.load('*default.obj')
@@ -1145,7 +1145,7 @@ def importObj(pkgpath, path):
             line=line.strip()
             if not line or line[0]=='#':
                 header+=line+'\n'
-            elif line.split()[0] in ['TEXTURE', 'TEXTURE_LIT']:
+            elif line.split()[0] in ['TEXTURE', 'TEXTURE_LIT', 'TEXTURE_NOWRAP', 'TEXTURE_LIT_NOWRAP']:
                 c=line.split()
                 if len(c)==1:
                     header+=c[0]+'\t\n'

@@ -51,7 +51,7 @@ class Polygon:
     EXCLUDE='Exclude:'
     FACADE='.fac'
     FOREST='.for'
-    #POLYGON='.pol'	# XXX
+    POLYGON='.pol'
 
     EXCLUDE_NAME={'sim/exclude_bch': 'Exclude: Beaches',
                   'sim/exclude_pol': 'Exclude: Draped',
@@ -594,7 +594,11 @@ def writeDSF(dsfdir, key, objects, polygons):
         o.close()
         e.close()
         progress.Destroy()
-    cmds='%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename)
+    if platform=='win32':
+        quote='"'
+    else:
+        quote="'"
+    cmds='%s -text2dsf %s%s%s %s%s.dsf%s' % (dsftool, quote, tmp, quote, quote, tilename, quote)
     if platform=='win32' and type(cmds)==types.UnicodeType:
         # commands must be MBCS encoded
         cmds=cmds.encode("mbcs")
