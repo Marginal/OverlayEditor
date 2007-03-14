@@ -757,12 +757,13 @@ class MainWindow(wx.Frame):
         self.toolbar.EnableTool(wx.ID_ADD, False)
         self.toolbar.EnableTool(wx.ID_DELETE, False)
         self.toolbar.EnableTool(wx.ID_UNDO, False)
+        self.toolbar.EnableTool(wx.ID_PREVIEW, False)
+        self.toolbar.EnableTool(wx.ID_REFRESH, False)
         self.toolbar.EnableTool(wx.ID_PASTE, False)
-        self.toolbar.EnableTool(wx.ID_PREVIEW, False)            
 
         # Hack: Use zero-sized first field to hide toolbar button long help
         self.statusbar=self.CreateStatusBar(3, wx.ST_SIZEGRIP)
-        (x,y)=self.statusbar.GetTextExtent("Lat: 7777.777777  Lon: 7777.777777  Hdg: 777")
+        (x,y)=self.statusbar.GetTextExtent("  Lat: 999.999999  Lon: 9999.999999  Hdg: 999  Elv: 9999.9  ")
         self.statusbar.SetStatusWidths([0, x+50,-1])
 
         if platform.lower().startswith('linux'):
@@ -808,8 +809,7 @@ class MainWindow(wx.Frame):
         self.Update()
 
     def ShowLoc(self):
-        self.statusbar.SetStatusText("Lat: %11.6f  Lon: %11.6f  Hdg: %3.0f" %(
-            self.loc[0], self.loc[1], self.hdg), 1)
+        self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f  Elv: %-6.1f" %(self.loc[0], self.loc[1], self.hdg, self.canvas.getheight()), 1)
 
     def ShowSel(self):
         selection=self.canvas.getsel()
@@ -821,10 +821,10 @@ class MainWindow(wx.Frame):
             (obj, lat, lon, hdg, height)=selection
             if len(obj)==1:
                 self.palette.set(obj[0])
-                self.statusbar.SetStatusText("Lat: %11.6f  Lon: %11.6f  Hdg: %3.0f" % (lat, lon, hdg), 2)
+                self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f  Elv: %-6.1f" % (lat, lon, hdg, height), 2)
             else:
                 self.palette.set(None)
-                self.statusbar.SetStatusText("Lat: %11.6f  Lon: %11.6f  (%d objects)" % (lat, lon, len(obj)), 2)
+                self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  (%d objects)" % (lat, lon, len(obj)), 2)
             self.toolbar.EnableTool(wx.ID_DELETE, True)
 
     def OnSize(self, event):
@@ -967,8 +967,8 @@ class MainWindow(wx.Frame):
                     mkdir(join(prefs.xplane,custom,v,'objects'))
                     mkdir(join(prefs.xplane,custom,v,'textures'))
                     prefs.package=v
-                    self.loc=None
-                    self.hdg=0
+                    #self.loc=None
+                    #self.hdg=0
                     if platform=='darwin':
                         self.SetTitle("%s" % prefs.package)
                     else:
@@ -1051,7 +1051,7 @@ class MainWindow(wx.Frame):
         self.bkgd=None
         self.canvas.Refresh()
         
-    # Load (self.loc==None) or reload current package
+    # Load or reload current package
     def OnReload(self, event):
         progress=wx.ProgressDialog('Loading', '', 5, self, wx.PD_APP_MODAL)
         self.palette.flush()
@@ -1063,13 +1063,14 @@ class MainWindow(wx.Frame):
                     pkgnavdata=join(pkgdir,f)
                     break
         else:
-            self.toolbar.EnableTool(wx.ID_PREVIEW, False)            
+            self.toolbar.EnableTool(wx.ID_PREVIEW, False)
+            self.toolbar.EnableTool(wx.ID_REFRESH, False)
             self.toolbar.EnableTool(wx.ID_PASTE, False)
         progress.Update(0, 'Global nav data')
         if not self.aptname:	# Default apt.dat
             (self.aptname,self.aptcode,self.aptrunways)=readApt(join(prefs.xplane,mainaptdat))
         progress.Update(1, 'Overlay DSFs')
-        if not self.loc:
+        if not event:
             # Load, not reload
             placements={}
             baggage={}
@@ -1082,6 +1083,7 @@ class MainWindow(wx.Frame):
                 except:	# Bad DSF - restore to unloaded state
                     self.SetTitle("%s" % appname)
                     self.toolbar.EnableTool(wx.ID_PREVIEW, False)
+                    self.toolbar.EnableTool(wx.ID_REFRESH, False)
                     self.toolbar.EnableTool(wx.ID_PASTE, False)
                     prefs.package=None
                     pkgnavdata=None
@@ -1154,7 +1156,7 @@ class MainWindow(wx.Frame):
             background=(image, lat, lon, hdg, width, length, opacity)
         else:
             background=None
-        self.canvas.reload(self.loc!=None,
+        self.canvas.reload(event!=None,
                            aptrunways, objects, placements, baggage,
                            background,
                            terrain, join(prefs.xplane,dsfdir))
@@ -1172,9 +1174,10 @@ class MainWindow(wx.Frame):
             self.loc=[34.096694,-117.248376]	# KSBD
         progress.Destroy()
         
-        self.toolbar.EnableTool(wx.ID_PREVIEW, True)
-        self.toolbar.EnableTool(wx.ID_PASTE, True)
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
+        self.toolbar.EnableTool(wx.ID_PREVIEW, True)
+        self.toolbar.EnableTool(wx.ID_REFRESH, True)
+        self.toolbar.EnableTool(wx.ID_PASTE, True)
         self.ShowLoc()
 
         # redraw
@@ -1301,7 +1304,7 @@ if prefs.package and not isdir(join(prefs.xplane, custom, prefs.package)):
 
 # Load data files
 frame.Update()		# Let window draw first
-frame.OnReload(None)
+frame.OnReload(False)
 if prefs.package:
     if platform=='darwin':
         frame.SetTitle("%s" % prefs.package)

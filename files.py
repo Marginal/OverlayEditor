@@ -18,7 +18,7 @@ onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
 
 appname='OverlayEditor'
-appversion='1.40'	# Must be numeric
+appversion='1.41'	# Must be numeric
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
@@ -701,11 +701,12 @@ class VertexCache:
         centrelon=tile[1]+0.5
         for (ter, patch) in meshdata:
             texture=None
+            angle=0
             xscale=zscale=1000
             if ter=='terrain_Water':
                 texture=abspath(VertexCache.defSea)
             elif ter in terraincache:
-                (texture, xscale, zscale)=terraincache[ter]
+                (texture, angle, xscale, zscale)=terraincache[ter]
             else:
                 try:
                     h=file(self.ter[ter], 'rU')
@@ -723,23 +724,52 @@ class VertexCache:
                             texture=texture.replace('/', sep)
                             texture=abspath(join(dirname(self.ter[ter]),texture))
                         elif c[0]=='PROJECTED':
-                            xscale=int(c[1])
-                            zscale=int(c[2])
+                            xscale=1/float(c[1])
+                            zscale=1/float(c[2])
+                        elif c[0]=='PROJECT_ANGLE':
+                            if float(c[1])==0 and float(c[2])==1 and float(c[3])==0:
+                                # no idea what rotation about other axes means
+                                angle=int(float(c[4]))
                     h.close()
                 except:
                     pass
-                terraincache[ter]=(texture, xscale, zscale)
+                terraincache[ter]=(texture, angle, xscale, zscale)
 
             v=[]
             t=[]
-            for p in patch:
-                v.append([(p[0]-centrelon)*onedeg*cos(d2r*p[1]),
-                          p[2],
-                          (centrelat-p[1])*onedeg])
-                if len(p)<7:
-                    t.append([v[-1][0]/xscale, v[-1][2]/zscale])
-                else:
-                    t.append([p[5],p[6]])
+            if len(patch[0])<7:	# no st coords (all? Laminar hard scenery)
+                for p in patch:
+                    x=(p[0]-centrelon)*onedeg*cos(d2r*p[1])
+                    z=(centrelat-p[1])*onedeg
+                    v.append([x, p[2], z])
+                    if angle==90:
+                        t.append([z*zscale, x*xscale])
+                        #texture=join('Resources','FS2X-palette.png')
+                        #t.append([0.24,0])	# red
+                    elif angle==180:
+                        t.append([-x*xscale, z*zscale])
+                        #texture=join('Resources','FS2X-palette.png')
+                        #t.append([0,0.24])	# green
+                    elif angle==270:
+                        t.append([-z*zscale, -x*xscale])
+                        #texture=join('Resources','FS2X-palette.png')
+                        #t.append([0.75,0.75])	# blue
+                    else: # angle==0 or not square
+                        t.append([x*xscale, -z*zscale])
+                        #texture=join('Resources','FS2X-palette.png')
+                        #t.append([0.96,0.96])	# white
+            else: # untested
+                for p in patch:
+                    v.append([(p[0]-centrelon)*onedeg*cos(d2r*p[1]),
+                              p[2], (centrelat-p[1])*onedeg])
+                    if angle==90:
+                        t.append([p[6],p[5]])
+                    elif angle==180:
+                        t.append([-p[5],p[6]])
+                    elif angle==270:
+                        t.append([-p[6],-p[5]])
+                    else: # angle==0 or not square
+                        t.append([p[5],-p[6]])
             mesh.append((texture,v,t))
         self.mesh[key]=mesh
 

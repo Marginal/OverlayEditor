@@ -560,6 +560,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             self.selected=[len(placement)]
             placement.append((obj, lat, lon, hdg, height))
+        self.placements[(self.tile[0],self.tile[1])]=placement
         self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD,
                                         self.selected))
         self.Refresh()
@@ -638,6 +639,10 @@ class MyGL(wx.glcanvas.GLCanvas):
             lat+=lat1
             lon+=lon1
         return ((obj, lat/len(self.selected), lon/len(self.selected), hdg, height))
+
+    def getheight(self):
+        # return current height
+        return self.y
 
     def reload(self, reload, airports, objects, placements, baggage,
                background, terrain, dsfdir):
