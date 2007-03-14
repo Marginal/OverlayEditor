@@ -1,8 +1,7 @@
 #!/usr/bin/python
 
-from files import appname, appversion
+from files import appversion
 from distutils.core import setup
-from glob import glob
 from os import listdir, name
 from sys import platform
 
@@ -13,7 +12,7 @@ manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
           '<assemblyIdentity\n'+
           '    version="%4.2f.0.0"\n' % appversion +
           '    processorArchitecture="X86"\n'+
-          '    name="%s"\n' % appname +
+          '    name="OverlayEditor"\n'+
           '    type="win32"\n'+
           '/>\n'+
           '<description>DSF overlay editor.</description>\n'+
@@ -72,35 +71,22 @@ setup(name='OverlayEditor',
                     'Resources/import.png',
                     'Resources/new.png',
                     'Resources/open.png',
+                    'Resources/OverlayEditor.png',
                     'Resources/prefs.png',
                     'Resources/reload.png',
                     'Resources/save.png',
                     'Resources/undo.png',
-                    'Resources/default.fac',
-                    'Resources/default.for',
                     'Resources/default.obj',
-                    'Resources/windsock.obj',
-                    'Resources/windsock.png',
-                    'Resources/exc.png',
-                    'Resources/fac.png',
-                    'Resources/obj.png',
-                    'Resources/airport0_000.png',
                     'Resources/Sea01.png',
-                    'Resources/OverlayEditor.png',
-                    'Resources/screenshot.jpg',
-                    'Resources/800library.txt',
+                    'Resources/screenshot.png',
                     ]),
-                  ('Resources/previews',
-                   glob('Resources/previews/*.jpg')
-                   ),
                   ] + platdata,
 
-      options = {'py2exe': {'ascii':True,	# suppresss encodings?
+      options = {'py2exe': {'ascii':True,
                             'dll_excludes':['w9xpopen.exe'],
                             'bundle_files':True,
                             'compressed':True,
                             'excludes':['tcl', 'Tkinter', 'mx','socket','urllib','webbrowser'],
-                            'packages':['encodings.mbcs','encodings.utf_8','encodings.latin_1'],	# latin_1 for wx.lib.masked.NumCtrl
                             'optimize':2,
                             },
                  'py2app': {'argv_emulation':False,
