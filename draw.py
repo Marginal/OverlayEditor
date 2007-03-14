@@ -281,12 +281,52 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.selected=list(self.selectsaved)	# reset each time
             self.select()
             
-        else:
+        elif not self.selectnode:
+            # Change cursor if over a node or at window border
             size = self.GetClientSize()
             if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
                 self.SetCursor(self.movecursor)
-            else:
-                self.SetCursor(wx.NullCursor)
+                return
+            if not self.currentpolygons():
+                return
+
+            glSelectBuffer(65536)	# number of objects appears to be this/4
+            glRenderMode(GL_SELECT)
+            glViewport(0, 0, *size)
+            glMatrixMode(GL_PROJECTION)
+            glPushMatrix()
+            glLoadIdentity()
+            viewport=glGetIntegerv(GL_VIEWPORT)
+            gluPickMatrix(event.m_x,
+                          size[1]-1-event.m_y, 5,5,
+                          (0, 0, size[0], size[1]))
+            glOrtho(-self.d, self.d,
+                    -self.d*size.y/size.x, self.d*size.y/size.x,
+                    -self.d*self.cliprat, self.d*self.cliprat)
+            glMatrixMode(GL_MODELVIEW)
+
+            glInitNames()
+            glPushName(0)
+            for poly in self.currentpolygons():
+                for point in poly.points:
+                    glBegin(GL_POINTS)
+                    glVertex3f(point[0], point[1], point[2])
+                    glEnd()
+            try:
+                for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
+                    self.SetCursor(self.dragcursor)
+                    break
+                else:
+                    self.SetCursor(wx.NullCursor)
+            except:	# overflow
+                pass
+            # Restore state for unproject
+            glMatrixMode(GL_PROJECTION)
+            glPopMatrix()	
+            glMatrixMode(GL_MODELVIEW)
+
+        else:
+            self.SetCursor(wx.NullCursor)
 
     def OnPaint(self, event):
         #print "paint", self.selected
