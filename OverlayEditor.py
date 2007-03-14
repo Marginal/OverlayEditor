@@ -1290,9 +1290,10 @@ class MainWindow(wx.Frame):
             try:
                 (thisapt,thisnav)=readApt(apt)
                 # Merge lists - remove package airports from global
+                # But runways in custom scenery are cumulative
                 for code, stuff in thisapt.iteritems():
-                    airports.pop(code, None)
                     (name, (lat,lon), run)=stuff
+                    airports[code]=(name, (lat,lon), None)
                     tile=(int(floor(lat)),int(floor(lon)))
                     if not tile in runways:
                         runways[tile]=[run]
@@ -1308,6 +1309,7 @@ class MainWindow(wx.Frame):
                     myMessageBox("The %s file in this package is invalid." % aptdat, "Can't load airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
         for code, stuff in airports.iteritems():
             (name, (lat,lon), run)=stuff
+            if not run: continue
             tile=(int(floor(lat)),int(floor(lon)))
             if not tile in runways:
                 runways[tile]=[run]
