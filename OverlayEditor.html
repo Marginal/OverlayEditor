@@ -38,10 +38,10 @@ It runs on Windows 2000 or later and MacOS 10.3.9 or later.</p>
 install MacPython - it's already installed on 10.3)</small>.</p>
 <p>The first time that you run the application you are asked to
 identify X-Plane's top-level folder (<i>ie</i> the folder which
-contains X-Plane, PlaneMaker etc).<p>
+contains the X-Plane, Plane-Maker etc applications).<p>
 <h3>The application window</h3>
 <p>The application window consists of four parts:</p>
-<img style="border: 0px solid ; width: 743px; height: 527px;" alt="main window" src="Resources/screenshot.png">
+<img style="border: 0px solid ; width: 709px; height: 483px;" alt="main window" src="Resources/screenshot.png">
 <h4>Main window</h4>
 <p>This shows the objects in the loaded scenery package.
 Runways and taxiways are displayed in simplified form.
@@ -156,21 +156,34 @@ The object is added at the current location and with the current heading.</td>
       <td>Delete the selected objects.</td>
     </tr>
     <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Undo" src="Resources/undo.png"></td>
+      <td>Undo the last edit.</td>
+    </tr>
+    <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Background" src="Resources/background.png"></td>
+      <td>Set a background image.
+You can use the <samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp>, <samp>Q</samp>, <samp>E</samp> and <samp>C</samp> keys to adjust the background image.</td>
+    </tr>
+    <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><a name="reload"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Reload" src="Resources/reload.png"></a></td>
       <td>Reloads the object, texture and apt.dat files in the scenery package.
-The DSF files are not reloaded.
 Use this if you have modified any of these files outside of this application.
 Also use this if you have added new objects and you want these new objects
-to appear in the <a href="#objectlist">list of objects</a>.</td>
+to appear in the <a href="#objectlist">list of objects</a>.
+<small>(Note that the DSF files are not reloaded - just re-open the package if you want to revert to the last saved version)</small>.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Go To" src="Resources/goto.png"></td>
       <td>Go to an airport.</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="reload"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Preferences" src="Resources/prefs.png"></a></td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Preferences" src="Resources/prefs.png"></a></td>
       <td>Identify X-Plane's top-level folder. Do not change the location
 of X-Plane's top-level folder while you are editing a scenery package.</td>
+    </tr>
+    <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Help" src="Resources/help.png"></a></td>
+      <td>Show this help file.</td>
     </tr>
   </tbody>
 </table>
@@ -202,7 +215,6 @@ then this application will always display the same version, but X-Plane will
 display one of the eight versions chosen at random.<p>
 <h3>Limitations</h3>
 <ul>
-  <li>No undo.</li>
   <li>Does not display terrain or autogen scenery.</li>
   <li>Does not display lights or lines.</li>
   <li>Does not convert or edit <code>.env</code> files.</li>
@@ -213,7 +225,7 @@ display one of the eight versions chosen at random.<p>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 1.32 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 1.34 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
       </td>
     </tr>

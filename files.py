@@ -1,6 +1,6 @@
 from math import floor
 from PIL.Image import open
-import PIL.BmpImagePlugin, PIL.PngImagePlugin	# force for py2exe
+import PIL.BmpImagePlugin, PIL.JpegImagePlugin, PIL.PngImagePlugin	# force for py2exe
 from OpenGL.GL import *
 from os import getenv, listdir, mkdir, makedirs, popen3, rename, unlink
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
@@ -12,7 +12,7 @@ if platform!='win32':
     import codecs
 
 appname='OverlayEditor'
-appversion='1.32'	# Must be numeric
+appversion='1.34'	# Must be numeric
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
@@ -30,9 +30,10 @@ def sortfolded(seq):
 
 class Prefs:
     def __init__(self):
+        self.filename=None
         self.xplane=None
         self.package=None
-        self.filename=None
+        self.packageprops={}
 
         if platform=='win32':
             from _winreg import OpenKey, QueryValueEx, HKEY_CURRENT_USER, REG_SZ, REG_EXPAND_SZ
@@ -65,6 +66,13 @@ class Prefs:
             self.xplane=handle.readline().strip()
             self.package=handle.readline().strip()
             if self.package=='None': self.package=None
+            for line in handle:
+                if '=' in line:
+                    pkg=line[:line.index('=')]
+                    line=line[len(pkg)+2:]
+                    f=line[:line.index('"')]
+                    c=line[len(f)+1:].split()
+                    self.packageprops[pkg]=(f, float(c[0]), float(c[1]), int(c[2]), float(c[3]), float(c[4]), int(c[5]))
             handle.close()
         except:
             pass
@@ -76,6 +84,9 @@ class Prefs:
             else:
                 handle=codecs.open(self.filename, 'wt', 'utf-8')
             handle.write('%s\n%s\n' % (self.xplane, self.package))
+            for pkg, (f,lat,lon,hdg,w,h,o) in self.packageprops.iteritems():
+                handle.write('%s="%s" %10.6f %11.6f %3d %8.2f %8.2f %2d\n' % (
+                    pkg, f,lat,lon,hdg,w,h,o))
             handle.close()
         except:
             pass
@@ -85,8 +96,6 @@ def readApt(filename):
     byname={}
     bycode={}
     runways={}	# (lat,lon,hdg,length,width) by code
-    if not exists(filename):
-        return (byname, bycode, runways)
     if platform=='win32':
         h=file(filename,'rU')
     else:
@@ -294,11 +303,12 @@ def writeDsfs(path, placements, baggage):
 
     
 class TexCache:
-    def __init__(self):
+    def __init__(self, clampmode):
         self.blank=0
         self.texs={}
         self.blank=0	#self.get(join('Resources','blank.png'))
         self.texs={}
+        self.clampmode=clampmode
 
     def flush(self):
         if self.texs:
@@ -315,8 +325,8 @@ class TexCache:
                 image=image.convert('RGBA')
             data = image.tostring("raw", 'RGBA', 0, -1)
             glBindTexture(GL_TEXTURE_2D, id)
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, self.clampmode)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, self.clampmode)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.size[0], image.size[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
@@ -327,7 +337,7 @@ class TexCache:
 
 
 class ObjCache:
-    def __init__(self):
+    def __init__(self, clampmode):
         (culled, nocull, tculled, tnocull, texno, poly)=readObj(join('Resources','default.obj'), None)
         self.defgeo=(0, len(culled), len(nocull), texno, poly)
         self.defvarray=culled+nocull
@@ -337,7 +347,7 @@ class ObjCache:
         self.tlb={}		# name -> physical obj
         self.geo={}		# physical obj -> geo
         self.cache={}		# name -> geo
-        self.texcache=TexCache()
+        self.texcache=TexCache(clampmode)
         self.varray=list(self.defvarray)
         self.tarray=list(self.deftarray)
         self.valid=False
