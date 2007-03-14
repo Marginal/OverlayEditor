@@ -207,19 +207,19 @@ class Palette(wx.Choicebook):
         self.toolbar=toolbar
         self.statusbar=statusbar
         self.canvas=canvas
-        #wx.Notebook.__init__(self, parent, style=wx.NB_MULTILINE)
+        #wx.Notebook.__init__(self, parent)
         wx.Choicebook.__init__(self, parent, wx.ID_ANY, style=wx.CHB_TOP)
-        if platform=='darwin':	# Default too big
+        if platform=='darwin':	# Default is too big on Mac
             self.SetWindowVariant(wx.WINDOW_VARIANT_MINI)
         self.last=(-1,-1)
         self.choices=[]
         self.lists=[]
+        wx.EVT_KEY_DOWN(self, self.OnKeyDown)	# appears to do nowt on Windows
+        wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
         if 'GetChoiceCtrl' in dir(self):
             wx.EVT_KEY_DOWN(self.GetChoiceCtrl(), self.OnKeyDown)
             wx.EVT_MOUSEWHEEL(self.GetChoiceCtrl(), self.OnMouseWheel)
-        wx.EVT_KEY_DOWN(self, self.OnKeyDown)
-        wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
-        
+
     def OnChoice(self, event):
         l=event.GetEventObject()
         tab=l.GetParent().GetSelection()
@@ -285,7 +285,7 @@ class Palette(wx.Choicebook):
             # Setting causes EVT_NOTEBOOK_PAGE_*
             self.SetSelection(ontab)
             l=self.lists[ontab]
-            l.SetFocus()	# Required to get choice to show up
+            #l.SetFocus()	# Required to get choice to show up in Notebook
             # Setting causes EVT_LISTBOX event on wxMac 2.5
             l.SetStringSelection(key)
             self.toolbar.EnableTool(wx.ID_PASTE, True)
@@ -293,6 +293,7 @@ class Palette(wx.Choicebook):
         else:	# no key, or listed in DSF but not present!
             self.toolbar.EnableTool(wx.ID_PASTE, False)
             self.last=(-1, -1)
+            self.lists[self.GetSelection()].SetFocus()	# Required to get choice to show up in Notebook
 
 
 # The app
@@ -394,7 +395,9 @@ class MainWindow(wx.Frame):
         (x,y)=self.statusbar.GetTextExtent("Lat: 7777.777777  Lon: 7777.777777  Hdg: 777")
         self.statusbar.SetStatusWidths([0, x+50,-1])
 
-        self.splitter=wx.SplitterWindow(self, wx.SP_3DSASH|wx.SP_NOBORDER)
+        self.splitter=wx.SplitterWindow(self, wx.ID_ANY,
+                                        style=wx.SP_3DSASH|wx.SP_NOBORDER)
+        self.splitter.SetWindowStyle(self.splitter.GetWindowStyle() & ~wx.TAB_TRAVERSAL)	# fuckers set wx.TAB_TRAVERSAL behind our backs - this fucks up cursor keys
         self.canvas = MyGL(self.splitter, self)
         self.palette = Palette(self.splitter, self.toolbar, self.statusbar, self.canvas)
         self.splitter.SplitVertically(self.canvas, self.palette, -240)
@@ -574,7 +577,10 @@ class MainWindow(wx.Frame):
                     prefs.package=v
                     self.loc=None
                     self.hdg=0
-                    self.SetTitle("%s - %s" % (prefs.package, appname))
+                    if platform=='darwin':
+                        self.SetTitle("%s" % prefs.package)
+                    else:
+                        self.SetTitle("%s - %s" % (prefs.package, appname))
                     self.OnReload(None)
                     dlg.Destroy()
                     return
@@ -606,7 +612,10 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_SAVE, False)
             self.loc=None
             self.hdg=0
-            self.SetTitle("%s - %s" % (prefs.package, appname))
+            if platform=='darwin':
+                self.SetTitle("%s" % prefs.package)
+            else:
+                self.SetTitle("%s - %s" % (prefs.package, appname))
             self.OnReload(None)
 
     def OnOpened(self, event):
@@ -621,8 +630,8 @@ class MainWindow(wx.Frame):
         
     def OnAdd(self, event):
         # Assumes that only one object selected
-        self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg)
-        self.toolbar.EnableTool(wx.ID_SAVE, True)
+        if self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg):
+            self.toolbar.EnableTool(wx.ID_SAVE, True)
 
     def OnDelete(self, event):
         if self.canvas.delsel():
@@ -826,7 +835,10 @@ if prefs.package and not isdir(join(prefs.xplane, custom, prefs.package)):
 frame.Update()		# Let window draw first
 frame.OnReload(None)
 if prefs.package:
-    frame.SetTitle("%s - %s" % (prefs.package, appname))
+    if platform=='darwin':
+        frame.SetTitle("%s" % prefs.package)
+    else:
+        frame.SetTitle("%s - %s" % (prefs.package, appname))
 app.MainLoop()
 
 # Save prefs

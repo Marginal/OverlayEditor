@@ -2,9 +2,10 @@ from math import cos, sin, floor, pi
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from os.path import join
+from sys import platform
 import wx.glcanvas
 
-from files import readObj, TexCache, sortfolded
+from files import appname, ObjCache, sortfolded
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
@@ -30,14 +31,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.centre=None	# [lat,lon] of centre
         self.runways={}		# (lat,lon,hdg,length,width) by code
         self.runwayslist=0
-        self.objects={}		# (list, path, poly) by name
         self.placements={}	# [(name,lat,lon,hdg)] by tile
         self.objectslist=0
         self.baggage={}		# (props, other) by tile
-        self.texcache=TexCache()
 
-        self.varray=[]
-        self.tarray=[]
+        self.objcache=ObjCache()	# member so can free resources
 
         self.selected=[]	# Indices into placements[self.tile]
         self.selections=[]	# List for picking
@@ -62,20 +60,17 @@ class MyGL(wx.glcanvas.GLCanvas):
         wx.EVT_MOTION(self, self.OnMouseMotion)
         wx.EVT_LEFT_DOWN(self, self.OnLeftDown)
         wx.EVT_LEFT_UP(self, self.OnLeftUp)
-        #wx.EVT_KILL_FOCUS(self, self.OnLeftUp)        
-        if 'GetMouseState' not in dir(wx):
-            # needed cos we can't tell if mouse is down
-            wx.EVT_LEAVE_WINDOW(self, self.OnLeftUp)
+        #wx.EVT_KILL_FOCUS(self, self.OnKill)	# debug
         
         self.timer=wx.Timer(self, wx.ID_ANY)
         wx.EVT_TIMER(self, self.timer.GetId(), self.OnTimer)
-        
+
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClearDepth(1.0)
         glDepthFunc(GL_LESS)
         glFrontFace(GL_CW)
         glShadeModel(GL_FLAT)
-        glLoadIdentity()
+        #glLineStipple(1, 0x0f0f)	# for selection drag
         glCullFace(GL_BACK)
         glPixelStorei(GL_UNPACK_ALIGNMENT,1)
         glEnable(GL_TEXTURE_2D)
@@ -83,6 +78,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_BLEND)
 	glEnableClientState(GL_VERTEX_ARRAY)
 	glEnableClientState(GL_TEXTURE_COORD_ARRAY)
+        glLoadIdentity()
 
     def OnPaint(self, event):
         dc = wx.PaintDC(self)	# Tell the window system that we're on the case
@@ -106,59 +102,71 @@ class MyGL(wx.glcanvas.GLCanvas):
         size=self.GetClientSize()
         posx=self.mousenow[0]
         posy=self.mousenow[1]
-        if posx<sband or posy<sband or size.x-posx<sband or size.y-posy<sband:
-            keyevent=wx.KeyEvent()
-            keyevent.m_controlDown=keyevent.m_metaDown=self.selectctrl
-            if 'GetMouseState' in dir(wx):	# not in wxMac 2.5
-                state=wx.GetMouseState()
-                if not state.LeftDown():
-                    self.timer.Stop()
-                    return
-                keyevent.m_shiftDown=state.shiftDown
-            if posx<sband:
-                keyevent.m_keyCode=wx.WXK_LEFT
-            elif posy<sband:
-                keyevent.m_keyCode=wx.WXK_UP
-            elif size.x-posx<sband:
-                keyevent.m_keyCode=wx.WXK_RIGHT
-            elif size.y-posy<sband:
-                keyevent.m_keyCode=wx.WXK_DOWN
+        keyevent=wx.KeyEvent()
+        keyevent.m_controlDown=keyevent.m_metaDown=self.selectctrl
+        if posx<sband:
+            keyevent.m_keyCode=wx.WXK_LEFT
+        elif posy<sband:
+            keyevent.m_keyCode=wx.WXK_UP
+        elif size.x-posx<sband:
+            keyevent.m_keyCode=wx.WXK_RIGHT
+        elif size.y-posy<sband:
+            keyevent.m_keyCode=wx.WXK_DOWN
+        if keyevent.m_keyCode:
             self.frame.OnKeyDown(keyevent)
-        else:
-            self.timer.Stop()
         
     def OnLeftDown(self, event):
         event.Skip()	# do focus change
         self.mousenow=[event.m_x,event.m_y]
         self.selectctrl=event.m_controlDown or event.m_metaDown
+        self.CaptureMouse()
         size = self.GetClientSize()
         if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
             # mouse scroll
             self.timer.Start(50)
         else:
-            #self.CaptureMouse()	# prevent notebook stealing focus
-            self.select(event)
+            self.select()
 
+    def OnKill(self, event):
+        if event.GetWindow():
+            print "kill -> %s" % event.GetWindow().GetId(),
+        else:
+            print "kill -> None"
+        self.OnLeftUp(event)
+        
     def OnLeftUp(self, event):
+        if self.HasCapture(): self.ReleaseMouse()
         if self.selectanchor:
             self.selectanchor=None
-            self.SetCursor(wx.NullCursor)
-            #self.ReleaseMouse()
             self.Refresh()	# get rid of drag box
         else:
             self.timer.Stop()
+        self.SetCursor(wx.NullCursor)
+        event.Skip()
             
     def OnMouseMotion(self, event):
-        self.mousenow=[event.m_x,event.m_y]	# not known in timer and paint
+        if (self.timer.IsRunning() or self.selectanchor) and not event.LeftIsDown():
+            # Capture unreliable on Mac, so may have missed LeftUp event. See
+            # https://sourceforge.net/tracker/?func=detail&atid=109863&aid=1489131&group_id=9863
+            self.OnLeftUp(event)
+            return
+
+        if self.timer.IsRunning():
+            # Continue mouse scroll
+            self.mousenow=[event.m_x,event.m_y]	# not known in timer and paint
+            return
+
         if event.LeftIsDown() and not self.selectanchor:
             # Start selection drag
             self.SetCursor(self.dragcursor)
-            self.selectanchor=[event.m_x, event.m_y]
+            self.selectanchor=self.mousenow		# location of LeftDown
             self.selectsaved=self.selected
-        elif self.selectanchor:
+            
+        if self.selectanchor:
             # Continue selection drag            
+            self.mousenow=[event.m_x,event.m_y]	# not known in timer and paint
             self.selected=list(self.selectsaved)	# reset each time
-            self.select(event)
+            self.select()
         else:
             size = self.GetClientSize()
             if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
@@ -166,11 +174,12 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 self.SetCursor(wx.NullCursor)
 
-    def select(self, event):
-        glSelectBuffer(1024)
+
+    def select(self):
+        glSelectBuffer(65536)	# numer of objects appears to be this/4
         glRenderMode(GL_SELECT)
 
-        self.redraw(GL_SELECT, event)
+        self.redraw(GL_SELECT)
 
         selections=[]
         try:
@@ -212,7 +221,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.Refresh()
         self.frame.ShowSel()
         
-    def redraw(self, mode, event=None):
+    def redraw(self, mode):
         glMatrixMode(GL_PROJECTION)
         size = self.GetClientSize()
         glViewport(0, 0, *size)
@@ -220,14 +229,17 @@ class MyGL(wx.glcanvas.GLCanvas):
         if mode==GL_SELECT:
             viewport=glGetIntegerv(GL_VIEWPORT)
             if self.selectanchor:	# drag
-                if self.selectanchor[0]==event.m_x or self.selectanchor[1]==event.m_y:
-                    return	# maths goes wrong if zero-sized box
-                gluPickMatrix((self.selectanchor[0]+event.m_x)/2,
-                              viewport[3]-(self.selectanchor[1]+event.m_y)/2,
-                              abs(self.selectanchor[0]-event.m_x),
-                              abs(self.selectanchor[1]-event.m_y), viewport)
+                # maths goes wrong if zero-sized box
+                if self.selectanchor[0]==self.mousenow[0]: self.mousenow[0]+=1
+                if self.selectanchor[1]==self.mousenow[1]: self.mousenow[1]+=1
+                gluPickMatrix((self.selectanchor[0]+self.mousenow[0])/2,
+                              viewport[3]-(self.selectanchor[1]+self.mousenow[1])/2,
+                              abs(self.selectanchor[0]-self.mousenow[0]),
+                              abs(self.selectanchor[1]-self.mousenow[1]),
+                              viewport)
             else:	# click
-                gluPickMatrix(event.m_x, viewport[3]-event.m_y, 3,3, viewport)
+                gluPickMatrix(self.mousenow[0],
+                              viewport[3]-self.mousenow[1], 3,3, viewport)
         glOrtho(-self.d, self.d,
                 -self.d*size.y/size.x, self.d*size.y/size.x,
                 -onedeg, onedeg)
@@ -241,50 +253,49 @@ class MyGL(wx.glcanvas.GLCanvas):
         placement=self.currentplacements()
 
         # Ground
-        if mode!=GL_SELECT and not self.runwayslist:
-            self.runwayslist=glGenLists(1)
-            glNewList(self.runwayslist, GL_COMPILE)
-            # Ground
-            glBindTexture(GL_TEXTURE_2D, 0)
-            glDisable(GL_DEPTH_TEST)
-            glEnable(GL_CULL_FACE)
-            glColor3f(0.25, 0.5, 0.25)
-            glBegin(GL_QUADS)
-            glVertex3f( onedeg*cos(d2r*(1+self.tile[0]))/2, 0, -onedeg/2)
-            glVertex3f( onedeg*cos(d2r*self.tile[0])/2, 0,  onedeg/2)
-            glVertex3f(-onedeg*cos(d2r*self.tile[0])/2, 0,  onedeg/2)
-            glVertex3f(-onedeg*cos(d2r*(1+self.tile[0]))/2, 0, -onedeg/2)
-            glEnd()
-            # Runways
-            glColor3f(0.333,0.333,0.333)
-            glBegin(GL_QUADS)
-            for apt in self.runways.values():
-                (lat,lon,hdg,length,width)=apt[0]
-                if [int(floor(lat)),int(floor(lon))]==self.tile:
-                    for (lat,lon,hdg,length,width) in apt:
-                        #print (lat,lon,hdg,length,width)
-                        #glColor3f(hdg/360,hdg/360,hdg/360)	# test
-                        (cx,cz)=self.latlon2m(lat,lon)
-                        hdg=d2r*hdg
-                        coshdg=cos(hdg)
-                        sinhdg=sin(hdg)
-                        length=f2m*length/2
-                        width=f2m*width/2
-                        glVertex3f(cx+width*coshdg-length*sinhdg, 0,
-                                   cz+width*sinhdg+length*coshdg)
-                        glVertex3f(cx-width*coshdg-length*sinhdg, 0,
-                                   cz-width*sinhdg+length*coshdg)
-                        glVertex3f(cx-width*coshdg+length*sinhdg, 0,
-                                   cz-width*sinhdg-length*coshdg)
-                        glVertex3f(cx+width*coshdg+length*sinhdg, 0,
-                                   cz+width*sinhdg-length*coshdg)
-            glEnd()
-            glEndList()
-
         if mode!=GL_SELECT:
+            if not self.runwayslist:
+                self.runwayslist=glGenLists(1)
+                glNewList(self.runwayslist, GL_COMPILE)
+                # Ground
+                glBindTexture(GL_TEXTURE_2D, 0)
+                glDisable(GL_DEPTH_TEST)
+                glEnable(GL_CULL_FACE)
+                glColor3f(0.25, 0.5, 0.25)
+                glBegin(GL_QUADS)
+                glVertex3f( onedeg*cos(d2r*(1+self.tile[0]))/2, 0, -onedeg/2)
+                glVertex3f( onedeg*cos(d2r*self.tile[0])/2, 0,  onedeg/2)
+                glVertex3f(-onedeg*cos(d2r*self.tile[0])/2, 0,  onedeg/2)
+                glVertex3f(-onedeg*cos(d2r*(1+self.tile[0]))/2, 0, -onedeg/2)
+                glEnd()
+                # Runways
+                glColor3f(0.333,0.333,0.333)
+                glBegin(GL_QUADS)
+                for apt in self.runways.values():
+                    (lat,lon,hdg,length,width)=apt[0]
+                    if [int(floor(lat)),int(floor(lon))]==self.tile:
+                        for (lat,lon,hdg,length,width) in apt:
+                            #print (lat,lon,hdg,length,width)
+                            #glColor3f(hdg/360,hdg/360,hdg/360)	# test
+                            (cx,cz)=self.latlon2m(lat,lon)
+                            hdg=d2r*hdg
+                            coshdg=cos(hdg)
+                            sinhdg=sin(hdg)
+                            length=f2m*length/2
+                            width=f2m*width/2
+                            glVertex3f(cx+width*coshdg-length*sinhdg, 0,
+                                       cz+width*sinhdg+length*coshdg)
+                            glVertex3f(cx-width*coshdg-length*sinhdg, 0,
+                                       cz-width*sinhdg+length*coshdg)
+                            glVertex3f(cx-width*coshdg+length*sinhdg, 0,
+                                       cz-width*sinhdg-length*coshdg)
+                            glVertex3f(cx+width*coshdg+length*sinhdg, 0,
+                                       cz+width*sinhdg-length*coshdg)
+                glEnd()
+                glEndList()
             glCallList(self.runwayslist)
 
-            # Cursor
+            # Position centre
             glPushMatrix()
             glLoadIdentity()
             glRotatef(self.e, 1.0,0.0,0.0)
@@ -298,6 +309,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnd()
             glPopMatrix()
 
+            # Selection centres
             glColor3f(1.0, 0.5, 1.0)
             for i in self.selected:
                 (obj, lat, lon, hdg)=placement[i]
@@ -315,14 +327,15 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Objects
         if not placement:
+            # early exit
             glFlush()
             self.SwapBuffers()
             return
 
         if not self.objectslist:
-            if mode==GL_RENDER:
-                self.objectslist=glGenLists(1)
-                glNewList(self.objectslist, GL_COMPILE)
+            self.objcache.realize()
+            self.objectslist=glGenLists(1)
+            glNewList(self.objectslist, GL_COMPILE)
             glInitNames()
             glPushName(0)
             glColor3f(0.75, 0.75, 0.75)	# Unpainted
@@ -332,31 +345,27 @@ class MyGL(wx.glcanvas.GLCanvas):
             lat=lon=hdg=999
             for i in range(len(placement)):
                 (obj, lat, lon, hdg)=placement[i]
-                if obj in self.objects:
-                    glLoadName(i)
-                    (x,z)=self.latlon2m(lat, lon)
-                    (base,culled,nocull,texno,poly)=self.objects[obj]
-                    #print obj, lat, lon, hdg, x, z, base,culled,nocull,texno,poly
-                    glPushMatrix()
-                    glTranslatef(x, 0.0, z)
-                    glRotatef(-hdg, 0.0,1.0,0.0)
-                    glBindTexture(GL_TEXTURE_2D, texno)
-                    if culled:
-                        if not cullstate:
-                            glEnable(GL_CULL_FACE)
-                            cullstate=True
-                        glDrawArrays(GL_TRIANGLES, base, culled)
-                    if nocull:
-                        if cullstate:
-                            glDisable(GL_CULL_FACE)
-                            cullstate=False
-                        glDrawArrays(GL_TRIANGLES, base+culled, nocull)
-                    glPopMatrix()
-            if mode==GL_RENDER:
-                glEndList()   
-
-        if self.objectslist:
-            glCallList(self.objectslist)
+                glLoadName(i)
+                (x,z)=self.latlon2m(lat, lon)
+                (base,culled,nocull,texno,poly)=self.objcache.get(obj)
+                #print obj, lat, lon, hdg, x, z, base,culled,nocull,texno,poly
+                glPushMatrix()
+                glTranslatef(x, 0.0, z)
+                glRotatef(-hdg, 0.0,1.0,0.0)
+                glBindTexture(GL_TEXTURE_2D, texno)
+                if culled:
+                    if not cullstate:
+                        glEnable(GL_CULL_FACE)
+                        cullstate=True
+                    glDrawArrays(GL_TRIANGLES, base, culled)
+                if nocull:
+                    if cullstate:
+                        glDisable(GL_CULL_FACE)
+                        cullstate=False
+                    glDrawArrays(GL_TRIANGLES, base+culled, nocull)
+                glPopMatrix()
+            glEndList()
+        glCallList(self.objectslist)
 
         if mode==GL_SELECT:
             return
@@ -365,45 +374,40 @@ class MyGL(wx.glcanvas.GLCanvas):
         glColor3f(1.0, 0.5, 1.0)
         glPolygonOffset(0, -10)
         glEnable(GL_POLYGON_OFFSET_FILL)
-        #glEnable(GL_POLYGON_OFFSET_LINE)
+        glEnable(GL_CULL_FACE)
+        cullstate=True
         for i in self.selected:
+            # assumes cache is already properly set up
             (obj, lat, lon, hdg)=placement[i]
             (x,z)=self.latlon2m(lat, lon)
-            (base,culled,nocull,texno,poly)=self.objects[obj]
+            (base,culled,nocull,texno,poly)=self.objcache.get(obj)
             glPushMatrix()
             glTranslatef(x, 0.0, z)
             glRotatef(-hdg, 0.0,1.0,0.0)
             glBindTexture(GL_TEXTURE_2D, texno)
             if culled:
-                glEnable(GL_CULL_FACE)
+                if not cullstate:
+                    glEnable(GL_CULL_FACE)
+                    cullstate=True
                 glDrawArrays(GL_TRIANGLES, base, culled)
             if nocull:
-                glDisable(GL_CULL_FACE)
-                cullstate=False
+                if cullstate:
+                    glDisable(GL_CULL_FACE)
+                    cullstate=False
                 glDrawArrays(GL_TRIANGLES, base+culled, nocull)
             glPopMatrix()
-            # Also show as line in case object has poly_os
-            #glPolygonMode(GL_FRONT, GL_LINE)
-            #if culled:
-            #    glEnable(GL_CULL_FACE)
-            #    glDrawArrays(GL_TRIANGLES, base, culled)
-            #if nocull:
-            #    glDisable(GL_CULL_FACE)
-            #    cullstate=False
-            #    glDrawArrays(GL_TRIANGLES, base+culled, nocull)
-            #glPolygonMode(GL_FRONT, GL_FILL)
         glDisable(GL_POLYGON_OFFSET_FILL)
-        #glDisable(GL_POLYGON_OFFSET_LINE)
 
 	# drag box
         if self.selectanchor:
-            glColor3f(0, 0, 0)
+            glColor3f(0.25, 0.125, 0.25)
             glBindTexture(GL_TEXTURE_2D, 0)
             glMatrixMode(GL_PROJECTION)
             glLoadIdentity()
             glMatrixMode(GL_MODELVIEW)
             glLoadIdentity()
             glDisable(GL_CULL_FACE)
+            #glEnable(GL_LINE_STIPPLE)
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
             x0=float(self.selectanchor[0]*2)/size.x-1
             y0=1-float(self.selectanchor[1]*2)/size.y
@@ -415,7 +419,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glVertex3f(x1, y1, -0.9)
             glVertex3f(x1, y0, -0.9)
             glEnd()
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+            glPolygonMode(GL_FRONT, GL_FILL)
             
         glFlush()
         self.SwapBuffers()
@@ -433,62 +437,64 @@ class MyGL(wx.glcanvas.GLCanvas):
     
     def reload(self, runways, objects, placements, baggage):
         self.runways=runways
-        self.texcache.flush()
-        self.objects={}
-        errobjs=[]
-        (culled, nocull, tculled, tnocull, texno, poly)=readObj(join('Resources','default.obj'), self.texcache)
-        self.varray=culled+nocull
-        self.tarray=tculled+tnocull
-        default=(0, len(culled), len(nocull), texno, poly)
-        for name, path in objects.iteritems():
-            try:
-                (culled, nocull, tculled, tnocull, texno, poly)=readObj(path, self.texcache)
-                if not (len(culled)+len(nocull)):
-                    # show empty objects as placeholders otherwise can't edit
-                    self.objects[name]=default
-                else:
-                    base=len(self.varray)
-                    self.varray.extend(culled)
-                    self.varray.extend(nocull)
-                    self.tarray.extend(tculled)
-                    self.tarray.extend(tnocull)
-                    self.objects[name]=(base, len(culled), len(nocull), texno, poly)
-            except:
-                if name!='lib/airport/landscape/powerline_tower':
-                    errobjs.append(name)
-                self.objects[name]=default
-        if self.varray:
-            glVertexPointerf(self.varray)
-            glTexCoordPointerf(self.tarray)
-        else:	# need something or get conversion error
-            glVertexPointerf([[0,0,0],[0,0,0],[0,0,0]])
-            glTexCoordPointerf([[0,0],[0,0]])
+        self.objcache.flush(objects)
         if placements!=None:
             self.placements=placements
             self.baggage=baggage
+
+        missing=[]
+        errobjs=[]
+        for placement in self.placements.values():
+            for (obj, lat, lon, hdg) in placement:
+                if not self.objcache.load(obj, True):
+                    if not obj in objects:
+                        if not obj in missing: missing.append(obj)
+                    else: 
+                        errobjs.append(obj)
+
         if self.runwayslist: glDeleteLists(self.runwayslist, 1)
         self.runwayslist=0
         if self.objectslist: glDeleteLists(self.objectslist, 1)
         self.objectslist=0
+
         self.selected=[]	# may not have same indices in new list
         self.undostack=[]
-        missing=[]
-        for placement in self.placements.values():
-            for (obj, lat, lon, hdg) in placement:
-                if not obj in self.objects and not obj in missing:
-                    missing.append(obj)
+
         # Redraw can happen under MessageBox, so do this last
         if errobjs:
             sortfolded(errobjs)
-            wx.MessageBox("One or more objects could not be read and will be shown as placeholders:\n%s" % '\n'.join(errobjs), 'Warning', wx.ICON_EXCLAMATION|wx.OK, self.frame)
+            if platform=='darwin':
+                wx.MessageBox(str('\n'.join(errobjs)), 'One or more objects could not be read.', wx.ICON_QUESTION|wx.OK, self.frame)
+            else:
+                wx.MessageBox("One or more objects could not be read:\n\n  %s" % '\n  '.join(errobjs), appname, wx.ICON_EXCLAMATION|wx.OK, self.frame)
         if missing:
             sortfolded(missing)
-            wx.MessageBox("Package references missing objects:\n%s" % '\n'.join(missing), 'Warning', wx.ICON_EXCLAMATION|wx.OK, self.frame)
+            if platform=='darwin':
+                wx.MessageBox(str('\n'.join(missing)), 'Package references missing objects.', wx.ICON_QUESTION|wx.OK, self.frame)
+            else:
+                wx.MessageBox("Package references missing objects:\n\n  %s" % '  \n'.join(missing), appname, wx.ICON_EXCLAMATION|wx.OK, self.frame)
+
+        if 0:	# debug
+            print "Frame:\t%s"  % self.frame.GetId()
+            print "Toolb:\t%s"  % self.frame.toolbar.GetId()
+            print "Parent:\t%s" % self.parent.GetId()
+            print "Split:\t%s"  % self.frame.splitter.GetId()
+            print "MyGL:\t%s"   % self.GetId()
+            print "Palett:\t%s" % self.frame.palette.GetId()
+            if 'GetChoiceCtrl' in dir(self.frame.palette):
+                print "Choice:\t%s" %self.frame.palette.GetChoiceCtrl().GetId()
+
 
     def add(self, obj, lat, lon, hdg):
+        if not self.objcache.load(obj):
+            if platform=='darwin':
+                wx.MessageBox('%s cannot be read.' % obj, 'Cannot add this object.', wx.ICON_QUESTION|wx.OK, self.frame)
+            else:
+                wx.MessageBox("Cannot add this object.\n\n%s cannot be read." % obj, appname, wx.ICON_HAND|wx.OK, self.frame)
+            return False
         if self.objectslist: glDeleteLists(self.objectslist, 1)
         self.objectslist=0
-        (base,culled,nocull,texno,poly)=self.objects[obj]
+        (base,culled,nocull,texno,poly)=self.objcache.get(obj)
         placement=self.currentplacements()
         if poly:
             placement.insert(0, (obj, lat, lon, hdg))
@@ -499,6 +505,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.placements[(self.tile[0],self.tile[1])]=placement
         self.Refresh()
         self.frame.ShowSel()
+        return True
 
     def movesel(self, dlat, dlon, dhdg):
         # returns True if changed something
@@ -526,10 +533,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.selectanchor=[0,0]
         self.selectctrl=withctrl
         size=self.GetClientSize()
-        event=wx.MouseEvent()
-        event.m_x=size.x
-        event.m_y=size.y
-        self.select(event)
+        self.mousenow=[size.x,size.y]
+        self.select()
         self.selectanchor=None
 
     def delsel(self):

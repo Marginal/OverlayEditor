@@ -12,7 +12,7 @@ if platform!='win32':
     import codecs
 
 appname='OverlayEditor'
-appversion='1.30'	# Must be numeric
+appversion='1.32'	# Must be numeric
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
@@ -148,9 +148,10 @@ def readLib(filename, objects):
                 name=c[0][:-4]
                 name=name.replace(':','/')
                 name=name.replace('\\','/')
-                if name[0][0]=='/': name=name[1:]
+                #if name[0][0]=='/': name=name[1:]	# No! keep leading '/'
                 lib=name
-                if name.startswith('lib/'): lib=lib[4:]
+                if lib.startswith('/'): lib=lib[1:]
+                if lib.startswith('lib/'): lib=lib[4:]
                 if not '/' in lib:
                     lib="uncategorised"
                 else:
@@ -290,7 +291,120 @@ def writeDsfs(path, placements, baggage):
         o.close()
         e.close()
         unlink(tmp)
+
     
+class TexCache:
+    def __init__(self):
+        self.blank=0
+        self.texs={}
+        self.blank=0	#self.get(join('Resources','blank.png'))
+        self.texs={}
+
+    def flush(self):
+        if self.texs:
+            glDeleteTextures(self.texs.values())
+        self.texs={}
+
+    def get(self, path):
+        if path in self.texs:
+            return self.texs[path]
+        try:
+            id=glGenTextures(1)
+            image = open(path)
+            if image.mode!='RGBA':
+                image=image.convert('RGBA')
+            data = image.tostring("raw", 'RGBA', 0, -1)
+            glBindTexture(GL_TEXTURE_2D, id)
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.size[0], image.size[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
+            self.texs[path]=id
+            return id
+        except:
+            return self.blank
+
+
+class ObjCache:
+    def __init__(self):
+        (culled, nocull, tculled, tnocull, texno, poly)=readObj(join('Resources','default.obj'), None)
+        self.defgeo=(0, len(culled), len(nocull), texno, poly)
+        self.defvarray=culled+nocull
+        self.deftarray=tculled+tnocull
+
+        # geo = (base, #culled, #nocull, texno, poly)
+        self.tlb={}		# name -> physical obj
+        self.geo={}		# physical obj -> geo
+        self.cache={}		# name -> geo
+        self.texcache=TexCache()
+        self.varray=list(self.defvarray)
+        self.tarray=list(self.deftarray)
+        self.valid=False
+
+    def flush(self, tlb):
+        self.tlb=tlb
+        self.geo={}
+        self.cache={}
+        self.texcache.flush()
+        self.varray=list(self.defvarray)
+        self.tarray=list(self.deftarray)
+        self.valid=False
+
+    def load(self, name, usefallback=False):
+        # read object into cache, but don't update OpenGL arrays
+        # returns False if error reading object
+
+        if name in self.cache:
+            # Already loaded (or errored)
+            return True
+        
+        if not name in self.tlb:
+            # Physical object is missing
+            if usefallback: self.cache[name]=self.defgeo
+            return False
+        
+        path=self.tlb[name]
+        if path in self.geo:
+            # Object exists under another name
+            self.cache[name]=self.geo[path]
+            return True
+        
+        try:
+            (culled, nocull, tculled, tnocull, texno, poly)=readObj(path, self.texcache)
+            if not (len(culled)+len(nocull)):
+                # show empty objects as placeholders otherwise can't edit
+                self.cache[name]=self.geo[path]=self.defgeo
+            else:
+                base=len(self.varray)
+                self.varray.extend(culled)
+                self.varray.extend(nocull)
+                self.tarray.extend(tculled)
+                self.tarray.extend(tnocull)
+                self.cache[name]=self.geo[path]=(base, len(culled), len(nocull), texno, poly)
+                self.valid=False	# new geometry -> need to update OpenGL
+        except:
+            self.cache[name]=self.geo[path]=self.defgeo
+            #if name!='lib/airport/landscape/powerline_tower':
+            return False
+        return True
+
+    def realize(self):
+        # need to call this before drawing
+        if not self.valid:
+            if self.varray:
+                glVertexPointerf(self.varray)
+                glTexCoordPointerf(self.tarray)
+            else:	# need something or get conversion error
+                glVertexPointerf([[0,0,0],[0,0,0],[0,0,0]])
+                glTexCoordPointerf([[0,0],[0,0]])
+            self.valid=True
+            
+    def get(self, name):
+        # object better be in cache or we go bang
+        return self.cache[name]
+
+        
 def readObj(path, texcache):
     h=None
     culled=[]
@@ -492,35 +606,3 @@ def readObj(path, texcache):
     h.close()
     return (culled, nocull, tculled, tnocull, texno, maxpoly)
 
-
-class TexCache:
-    def __init__(self):
-        self.blank=0
-        self.texs={}
-        self.blank=0	#self.get(join('Resources','blank.png'))
-        self.texs={}
-
-    def flush(self):
-        for i in self.texs.values():
-            glDeleteTextures([i])
-        self.texs={}
-
-    def get(self, path):
-        if path in self.texs:
-            return self.texs[path]
-        try:
-            id=glGenTextures(1)
-            image = open(path)
-            if image.mode!='RGBA':
-                image=image.convert('RGBA')
-            data = image.tostring("raw", 'RGBA', 0, -1)
-            glBindTexture(GL_TEXTURE_2D, id)
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.size[0], image.size[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
-            self.texs[path]=id
-            return id
-        except:
-            return self.blank
