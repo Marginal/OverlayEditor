@@ -24,10 +24,11 @@ del /s /q *.pyc >nul: 2>&1
 
 @set PY=OverlayEditor.py draw.py files.py DSFLib.py MessageBox.py version.py
 @set DATA=OverlayEditor.html
-@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.fac Resources/default.for Resources/default.obj Resources/windsock.obj Resources/windsock.png Resources/exc.png Resources/fac.png Resources/obj.png Resources/airport0_000.png Resources/Sea01.png Resources/OverlayEditor.png Resources/screenshot.png Resources/800library.txt
+@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.fac Resources/default.for Resources/default.obj Resources/windsock.obj Resources/windsock.png Resources/exc.png Resources/fac.png Resources/obj.png Resources/airport0_000.png Resources/Sea01.png Resources/OverlayEditor.png Resources/screenshot.jpg Resources/800library.txt
+@set PREV=Resources/previews
 
 @REM source
-zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% %DATA% %RSRC% linux MacOS win32 |findstr -vc:"adding:"
+zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% %DATA% %RSRC% %PREV% linux MacOS win32 |findstr -vc:"adding:"
 
 @REM linux
 REM tar -zcf OverlayEditor_%VER%_linux.tar.gz %PY% %DATA% %RSRC% linux win32/DSFTool.exe
@@ -37,6 +38,7 @@ mkdir "%RPM%\SOURCES"
 mkdir "%RPM%\RPMS\i386"
 mkdir "%RPMRT%\usr\local\bin"
 mkdir "%RPMRT%\usr\local\lib\overlayeditor\Resources"
+mkdir "%RPMRT%\usr\local\lib\overlayeditor\Resources\previews"
 mkdir "%RPMRT%\usr\local\lib\overlayeditor\linux"
 mkdir "%RPMRT%\usr\local\lib\overlayeditor\win32"
 copy linux\overlayeditor.desktop "%RPMRT%\usr\local\lib\overlayeditor" |findstr -v "file(s) copied"
@@ -48,7 +50,8 @@ type linux\overlayeditor.spec    >> "%RPM%\overlayeditor.spec"
 copy linux\overlayeditor "%RPMRT%\usr\local\bin" |findstr -v "file(s) copied"
 for %%I in (%DATA%) do (copy %%I "%RPMRT%\usr\local\lib\overlayeditor" |findstr -v "file(s) copied")
 for %%I in (%PY%) do (copy %%I "%RPMRT%\usr\local\lib\overlayeditor" |findstr -v "file(s) copied")
-for %%I in (%RSRC%) do (copy Resources\%%~nxI "%RPMRT%\usr\local\lib\overlayeditor\Resources" |findstr -v "file(s) copied")
+for %%I in (%RSRC%) do (copy Resources\%%~nxI "%RPMRT%\usr\local\lib\overlayeditor\Resources\" |findstr -v "file(s) copied")
+for %%I in (%PREV%\*.jpg) do (copy Resources\previews\%%~nxI "%RPMRT%\usr\local\lib\overlayeditor\Resources\previews\" |findstr -v "file(s) copied")
 for %%I in (linux\DSFTool) do (copy linux\%%~nxI "%RPMRT%\usr\local\lib\overlayeditor\linux" |findstr -v "file(s) copied")
 for %%I in (win32\DSFTool.exe) do (copy win32\%%~nxI "%RPMRT%\usr\local\lib\overlayeditor\win32" |findstr -v "file(s) copied")
 "C:\Program Files\cygwin\lib\rpm\rpmb.exe" --quiet -bb --target i386-pc-linux --define '_topdir /tmp/overlayeditor' /tmp/overlayeditor/overlayeditor.spec
@@ -81,6 +84,8 @@ xcopy /q /e MacOS OverlayEditor.app\Contents\MacOS\|findstr -v "file(s) copied"
 for %%I in (%PY%) do (copy %%I OverlayEditor.app\Contents\MacOS\ |findstr -v "file(s) copied")
 mkdir OverlayEditor.app\Contents\Resources
 for %%I in (%RSRC%) do (copy Resources\%%~nxI OverlayEditor.app\Contents\Resources\ |findstr -v "file(s) copied")
+mkdir OverlayEditor.app\Contents\Resources\previews
+for %%I in (%PREV%\*.jpg) do (copy Resources\previews\%%~nxI OverlayEditor.app\Contents\Resources\previews |findstr -v "file(s) copied")
 del  OverlayEditor.app\Contents\MacOS\OverlayEditor.html
 move OverlayEditor.app\Contents\MacOS\Info.plist OverlayEditor.app\Contents\
 move OverlayEditor.app\Contents\MacOS\OverlayEditor.icns OverlayEditor.app\Contents\Resources\

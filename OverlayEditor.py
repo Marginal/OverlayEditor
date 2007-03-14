@@ -334,7 +334,7 @@ class PaletteListBox(wx.VListBox):
         else:
             dc.DrawText(self.choices[n][:-4], rect.x+12+2*self.indent, rect.y)
 
-class Palette(wx.Choicebook):
+class PaletteChoicebook(wx.Choicebook):
     
     def __init__(self, parent, frame):
         self.frame=frame
@@ -367,6 +367,15 @@ class Palette(wx.Choicebook):
         self.frame.OnMouseWheel(event)
         event.Skip(False)
 
+    def OnChoice(self, event):
+        #print "choice"
+        l=event.GetEventObject()
+        self.frame.palette.set(l.choices[l.GetSelection()])
+        self.frame.canvas.clearsel()
+        self.frame.statusbar.SetStatusText("", 2)
+        self.frame.toolbar.EnableTool(wx.ID_DELETE, False)
+        event.Skip()
+
     def flush(self):
         if len(self.lists): self.SetSelection(0)	# reduce flicker
         for i in range(len(self.lists)-1,-1,-1):
@@ -382,15 +391,6 @@ class Palette(wx.Choicebook):
         wx.EVT_KEY_DOWN(l, self.OnKeyDown)
         wx.EVT_MOUSEWHEEL(l, self.OnMouseWheel)
     
-    def OnChoice(self, event):
-        #print "choice"
-        l=event.GetEventObject()
-        self.set(l.choices[l.GetSelection()])
-        self.frame.canvas.clearsel()
-        self.frame.statusbar.SetStatusText("", 2)
-        self.frame.toolbar.EnableTool(wx.ID_DELETE, False)
-        event.Skip()
-
     def add(self, name, path):
         # Add to objects tab - assumes that this is first tab
         l=self.lists[0]
@@ -415,6 +415,7 @@ class Palette(wx.Choicebook):
         return None
 
     def set(self, key):
+        # Called from parent Palette or from OnChoice
         #print "set", key
         ontab=-1
         for tab in range(len(self.lists)):
@@ -432,6 +433,153 @@ class Palette(wx.Choicebook):
                 self.frame.toolbar.EnableTool(wx.ID_ADD, True)
         else:	# no key, or listed in DSF but not present!
             self.frame.toolbar.EnableTool(wx.ID_ADD, False)
+
+class Palette(wx.SplitterWindow):
+    
+    def __init__(self, parent, frame):
+        self.frame=frame
+        self.lastkey=None
+        self.previewkey=self.previewbmp=self.previewimg=self.previewsize=None
+        self.sashsize=4
+        wx.SplitterWindow.__init__(self, parent, wx.ID_ANY,
+                                   style=wx.SP_3DSASH|wx.SP_NOBORDER|wx.SP_LIVE_UPDATE)
+        self.SetWindowStyle(self.GetWindowStyle() & ~wx.TAB_TRAVERSAL)	# wx.TAB_TRAVERSAL is set behind our backs - this fucks up cursor keys
+        self.cb=PaletteChoicebook(self, frame)
+        self.preview=wx.Panel(self, wx.ID_ANY, style=wx.FULL_REPAINT_ON_RESIZE)
+        self.SplitHorizontally(self.cb, self.preview, 300)
+        if not platform.startswith('linux'):
+            self.SetMinimumPaneSize(240)	# Not really: force resize
+        else:
+            self.SetMinimumPaneSize(1)
+            self.SetSashPosition(300, True)	# force resize
+            self.UpdateSize()        
+        self.lastheight=self.GetSize().y
+        wx.EVT_SIZE(self, self.OnSize)
+        wx.EVT_KEY_DOWN(self.preview, self.OnKeyDown)
+        wx.EVT_MOUSEWHEEL(self.preview, self.OnMouseWheel)
+        wx.EVT_SPLITTER_SASH_POS_CHANGING(self, self.GetId(), self.OnSashPositionChanging)
+        wx.EVT_PAINT(self.preview, self.OnPaint)
+
+    def OnSize(self, event):
+        # emulate sash gravity = 1.0
+        delta=event.GetSize().y-self.lastheight
+        pos=self.GetSashPosition()+delta
+        if pos<100: pos=100
+        self.SetSashPosition(pos, False)
+        self.lastheight=event.GetSize().y
+        event.Skip()
+
+    def OnKeyDown(self, event):
+        # Override & manually propagate
+        self.frame.OnKeyDown(event)
+        event.Skip(False)
+
+    def OnMouseWheel(self, event):
+        # Override & manually propagate
+        self.frame.OnMouseWheel(event)
+        event.Skip(False)
+
+    def OnSashPositionChanging(self, event):
+        if event.GetSashPosition()<100:
+            # One-way minimum pane size
+            event.SetSashPosition(100)
+        elif event.GetEventObject().GetClientSize()[1]-event.GetSashPosition()-self.sashsize<16:
+            # Spring shut
+            event.SetSashPosition(event.GetEventObject().GetClientSize()[1]-self.sashsize)
+
+    def flush(self):
+        self.SetMinimumPaneSize(1)
+        self.sashsize=self.GetClientSize()[1]-(self.cb.GetClientSize()[1]+self.preview.GetClientSize()[1])
+        self.cb.flush()
+        self.lastkey=None
+        self.preview.SetBackgroundColour(wx.NullColour)
+        self.preview.ClearBackground()
+            
+    def load(self, tabname, objects):
+        self.cb.load(tabname, objects)
+    
+    def add(self, name, path):
+        # Add to objects tab - assumes that this is first tab
+        self.cb.add(name, path)
+
+    def get(self):
+        return self.cb.get()
+    
+    def set(self, key):
+        if key!=self.lastkey:
+            self.cb.set(key)
+            self.lastkey=key
+            self.preview.Refresh()
+
+    def OnPaint(self, event):
+        dc = wx.PaintDC(self.preview)
+        if dc.GetSize().y<16:
+            if self.previewkey:
+                self.previewimg=None
+                self.preview.SetBackgroundColour(wx.NullColour)
+                self.preview.ClearBackground()
+            self.previewkey=None
+            return
+
+        if self.previewkey!=self.lastkey:
+            # New
+
+            self.previewkey=self.lastkey
+            if not self.previewkey:
+                self.previewimg=None
+                self.preview.SetBackgroundColour(wx.NullColour)
+                self.preview.ClearBackground()
+                return
+
+            self.previewimg=self.previewbmp=None
+            
+            # Look for built-in screenshot
+            newfile=self.previewkey.replace('/', '_')[:-3]+'jpg'
+            if newfile[0]=='_': newfile=newfile[1:]
+            newfile=join('Resources', 'previews', newfile)
+            if exists(newfile):
+                try:
+                    self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
+                except:
+                    pass
+            else:
+                # Look for library screenshot
+                if self.previewkey in self.frame.canvas.vertexcache.obj:
+                    newfile=join(dirname(self.frame.canvas.vertexcache.obj[self.previewkey]), 'screenshot.jpg')
+                    if exists(newfile):
+                        try:
+                            self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
+                        except:
+                            pass
+            if self.previewimg:
+                self.preview.SetBackgroundColour(wx.Colour(self.previewimg.GetRed(0,0), self.previewimg.GetGreen(0,0), self.previewimg.GetBlue(0,0)))
+            else:
+                self.preview.SetBackgroundColour(wx.NullColour)
+            self.preview.ClearBackground()
+
+        if not self.previewimg:
+            return
+
+        # rescale if necessary
+        if (dc.GetSize().x >= self.previewimg.GetWidth() and
+            dc.GetSize().y >= self.previewimg.GetHeight()):
+            scale=None
+            newsize=(self.previewimg.GetWidth(), self.previewimg.GetHeight())
+        else:
+            scale=min(float(dc.GetSize().x)/self.previewimg.GetWidth(),
+                      float(dc.GetSize().y)/self.previewimg.GetHeight())
+            newsize=(int(scale*self.previewimg.GetWidth()),
+                     int(scale*self.previewimg.GetHeight()))
+        if not self.previewbmp or newsize!=self.previewsize:
+            self.previewsize=newsize
+            if scale:
+                self.previewbmp=wx.BitmapFromImage(self.previewimg.Scale(newsize[0], newsize[1]))
+            else:
+                self.previewbmp=wx.BitmapFromImage(self.previewimg)
+            
+        dc.DrawBitmap(self.previewbmp,
+                      (dc.GetSize().x-self.previewsize[0])/2,
+                      (dc.GetSize().y-self.previewsize[1])/2, True)
 
 
 class PreferencesDialog(wx.Dialog):

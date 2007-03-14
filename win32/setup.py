@@ -2,6 +2,7 @@
 
 from files import appname, appversion
 from distutils.core import setup
+from glob import glob
 from os import listdir, name
 from sys import platform
 
@@ -86,9 +87,12 @@ setup(name='OverlayEditor',
                     'Resources/airport0_000.png',
                     'Resources/Sea01.png',
                     'Resources/OverlayEditor.png',
-                    'Resources/screenshot.png',
+                    'Resources/screenshot.jpg',
                     'Resources/800library.txt',
                     ]),
+                  ('Resources/previews',
+                   glob('Resources/previews/*.jpg')
+                   ),
                   ] + platdata,
 
       options = {'py2exe': {'ascii':True,

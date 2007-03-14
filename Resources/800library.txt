@@ -12,7 +12,6 @@ EXPORT ind/truckstop.obj xp7:gas station chevron_new.obj
 EXPORT ins/church.obj xp7:church_new.obj
 EXPORT ins/medicalcomplex.obj skyscrapers:wide1.obj
 EXPORT res/singlehouse.obj xp7:house small stucco_new.obj
-EXPORT res/bighouse.obj xp7:house big stucco_new.obj
 EXPORT trans/truckstop.obj xp7:gas station texaco_new.obj
 
 EXPORT com/lowoffice.fac skyscrapers:sky2_1.fac
