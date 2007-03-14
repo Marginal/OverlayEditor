@@ -6,7 +6,7 @@ URL: http://marginal.org.uk/x-planescenery
 Icon: overlayeditor.xpm
 Vendor: Jonathan Harris <x-plane@marginal.org.uk>
 Prefix: /usr/local
-Requires: python >= 2.4, python < 2.5, wxPython >= 2.6, python-imaging >= 1.1.4, python-opengl >= 2.0.1, wine
+Requires: bash, python >= 2.4, python < 2.5, wxPython >= 2.6, python-imaging >= 1.1.4, python-opengl >= 2.0.1, wine
 #Suse: python-wxGTK provides wxPython, PyOpenGL=python-opengl
 
 %description

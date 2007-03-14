@@ -1,5 +1,5 @@
 #!/bin/bash
-# This is executed by user's default shell, ignoring previous line
+# Actually executed by user's default shell (ignoring previous line), so don't do anything fancy
 
 # Force default Python 2.3
 /usr/bin/pythonw2.3 -OO "$0.py"

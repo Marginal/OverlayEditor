@@ -1489,7 +1489,7 @@ class MainWindow(wx.Frame):
         if prefs.package:
             for path, dirs, files in walk(pkgdir):
                 for f in files:
-                    seq=['.obj','.fac','.for','.pol']
+                    seq=['.obj','.fac','.for']	# ,'.pol' XXX
                     if f[-4:].lower() in seq and f[0]!='.':
                         name=join(path,f)[len(pkgdir)+1:-4].replace('\\','/')+f[-4:].lower()
                         if name.lower().startswith('custom objects'):

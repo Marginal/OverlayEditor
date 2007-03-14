@@ -572,7 +572,9 @@ def writeDSF(dsfdir, key, objects, polygons):
             for p in w:
                 h.write('POLYGON_POINT\t')
                 for n in range(len(p)):
-                    if n&1:	# lat
+                    if poly.param==65535 and len(p)-n<=2:
+                        h.write('%12.7f ' % p[n]) # don't adjust UV coords
+                    elif n&1:	# lat
                         h.write('%12.7f ' % min(south+1, p[n]+minres/2))
                     else:	# lon
                         h.write('%12.7f ' % min(west+1, p[n]+minres/2))
@@ -603,7 +605,7 @@ def writeDSF(dsfdir, key, objects, polygons):
     o.close()
     e.close()
     #unlink(tmp)
-    if err:
+    if err or not exists(tilename+'.dsf'):
         if exists(tilename+'.dsf.bak'):
             rename(tilename+'.dsf.bak', tilename+'.dsf')
         elif exists(tilename+'.DSF.BAK'):

@@ -26,6 +26,10 @@ f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 sband=12	# width of mouse scroll band around edge of window
 
+runwaycolour=(0.333,0.333,0.333)
+
+debugapt=False	# XXX
+
 # Handle int/long change between 2.3 & 2.4
 if version>'2.4':
     MSKSEL =0x40000000
@@ -138,10 +142,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         #glClearDepth(1.0)
         glDepthFunc(GL_LESS)
         glEnable(GL_DEPTH_TEST)
-        glShadeModel(GL_FLAT)
-        #glLineStipple(1, 0x0f0f)	# for selection drag
+        glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
-        #glLineWidth(3.0)	# XXX
+        #glLineStipple(1, 0x0f0f)	# for selection drag
+        if debugapt: glLineWidth(2.0)
         glPointSize(3.0)		# for nodes
         glFrontFace(GL_CW)
         glCullFace(GL_BACK)
@@ -229,7 +233,10 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.mousenow=[event.m_x,event.m_y]		# not known in timer
             return
 
-        if event.LeftIsDown() and self.mousenow and (abs(event.m_x-self.mousenow[0])>1 or abs(event.m_y-self.mousenow[1])>1):
+        if event.LeftIsDown():
+            #if not abs(event.m_x-self.mousenow[0]) or not abs(event.m_y-self.mousenow[1]):
+            #    return
+
             # Drag/node/move
             if self.selectednode!=None:
                 # Start/continue node drag
@@ -261,6 +268,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     
                 self.Refresh()	# show updated node
                 self.frame.ShowSel()
+                return
                     
             elif not self.selectanchor and not self.selectmove and self.selected and not self.selectctrl:
                 # Start move drag
@@ -289,14 +297,10 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.select()
             
         elif not self.selectnode and not self.selectanchor and len(self.selected)==1 and self.selected[0]&MSKSEL:
-            # Change cursor if over a node or at window border
-            size = self.GetClientSize()
-            if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
-                self.SetCursor(self.movecursor)
-                return
-            if not self.currentpolygons():
-                return
+            #if not self.currentpolygons():
+            #    return
 
+            size = self.GetClientSize()
             glSelectBuffer(65536)	# number of objects appears to be this/4
             glRenderMode(GL_SELECT)
             glViewport(0, 0, *size)
@@ -321,9 +325,13 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glEnd()
             try:
                 if glRenderMode(GL_RENDER):
-                    self.SetCursor(self.dragcursor)
-                else:
-                    self.SetCursor(wx.NullCursor)
+                    self.SetCursor(self.dragcursor)	# hovering over node
+                else:	# not over node
+                    # Change cursor if over a node or at window border
+                    if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
+                        self.SetCursor(self.movecursor)
+                    else:
+                        self.SetCursor(wx.NullCursor)
             except:	# overflow
                 pass
             # Restore state for unproject
@@ -332,7 +340,12 @@ class MyGL(wx.glcanvas.GLCanvas):
             glMatrixMode(GL_MODELVIEW)
 
         else:
-            self.SetCursor(wx.NullCursor)
+            # Change cursor if over a node or at window border
+            size = self.GetClientSize()
+            if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
+                self.SetCursor(self.movecursor)
+            else:
+                self.SetCursor(wx.NullCursor)
 
     def OnPaint(self, event):
         #print "Canvas Paint"
@@ -385,7 +398,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if not self.meshlist:
             self.meshlist=glGenLists(1)
             glNewList(self.meshlist, GL_COMPILE)
-            #glPolygonMode(GL_FRONT, GL_LINE)	# XXX
+            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)	# XXX
             glEnable(GL_DEPTH_TEST)
             glEnable(GL_CULL_FACE)
             glDepthMask(GL_TRUE)
@@ -412,7 +425,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glDepthMask(GL_TRUE)
             if not self.options&Prefs.ELEVATION:
                 glPopMatrix()
-            #glPolygonMode(GL_FRONT, GL_FILL)	# XXX
+            if debugapt: glPolygonMode(GL_FRONT, GL_FILL)	# XXX
             glEndList()
         glCallList(self.meshlist)
 
@@ -1362,11 +1375,14 @@ class MyGL(wx.glcanvas.GLCanvas):
     
                 self.runways[key]=glGenLists(1)
                 glNewList(self.runways[key], GL_COMPILE)
-                glColor3f(0.333,0.333,0.333)
+                if debugapt:
+                    glColor3f(0.5,0.5,0.5)
+                else:
+                    glColor3f(*runwaycolour)
                 glDisable(GL_TEXTURE_2D)
                 glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
                 glEnable(GL_POLYGON_OFFSET_FILL)
-                #glPolygonMode(GL_BACK, GL_LINE)	# reverse of incorrect polygons
+                if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
                 glEnable(GL_CULL_FACE)
                 glDepthMask(GL_FALSE)	# offset mustn't update depth
 
@@ -1434,7 +1450,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 else:
                     gluTessNormal(tessObj, 0, -1, 0)
                     # gluTessProperty(tessObj, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)	# XXX
-                    # gluTessProperty(tessObj,GLU_TESS_BOUNDARY_ONLY,GL_TRUE)	# XXX
+                    #if debugapt: gluTessProperty(tessObj,GLU_TESS_BOUNDARY_ONLY,GL_TRUE)
                     gluTessCallback(tessObj, GLU_TESS_BEGIN,  self.tessbegin)
                     gluTessCallback(tessObj, GLU_TESS_VERTEX, self.tessvertex)
                     gluTessCallback(tessObj, GLU_TESS_END,    self.tessend)
@@ -1455,6 +1471,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 gluTessBeginContour(tessObj)
                             edge=pave[i]
                             n=len(edge)
+                            last=None
                             for j in range(n):
                                 if len(edge[j])==len(edge[(j+1)%n])==2:
                                     points=[edge[j]]
@@ -1466,12 +1483,19 @@ class MyGL(wx.glcanvas.GLCanvas):
                                         cpoints.append((2*edge[(j+1)%n][0]-edge[(j+1)%n][2],2*edge[(j+1)%n][1]-edge[(j+1)%n][3]))
                                             
                                     cpoints.append((edge[(j+1)%n][0],edge[(j+1)%n][1]))
-                                    points=[self.bez(cpoints, u/8.0) for u in range(8)]	# X-Plane stops at or before 8
-                                for (lat,lon) in points:
-                                    (x,z)=self.latlon2m(lat,lon)
+                                    points=[self.bez(cpoints, u/4.0) for u in range(4)]	# X-Plane stops at or before 8 XXX
+                                for pt in points:
+                                    if pt==last: continue
+                                    last=pt
+                                    (x,z)=self.latlon2m(*pt)
                                     y=self.vertexcache.height(newtile,options,x,z)
                                     pt3=[x,y,z]
-                                    gluTessVertex(tessObj, pt3, pt3)
+                                    if debugapt and i:
+                                        gluTessVertex(tessObj, pt3,
+                                                      (pt3, (0,0,0)))
+                                    else:
+                                        gluTessVertex(tessObj, pt3,
+                                                      (pt3, runwaycolour))
                             if not oldtess:
                                 gluTessEndContour(tessObj)
                         if oldtess:
@@ -1482,7 +1506,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         pass
                 gluDeleteTess(tessObj)
                 glDisable(GL_POLYGON_OFFSET_FILL)
-                #glPolygonMode(GL_BACK, GL_FILL)
+                if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
                 
                 progress.Update(15, 'Navaids')
                 objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
@@ -1584,19 +1608,37 @@ class MyGL(wx.glcanvas.GLCanvas):
     def tessbegin(self, datatype):
         glBegin(datatype)
     
-    def tessvertex(self, vertex):
-        glVertex3f(*vertex)
+    def tessvertex(self, (vertex, colour)):
+        glColor3f(*colour)
+        if debugapt:
+            glVertex3f(vertex[0], vertex[1]+0.1, vertex[2])
+        else:
+            glVertex3f(*vertex)
 
     def tesscombine(self, coords, vertex, weight):
-        if False: # XXX
-            if weight[2] or vertex[0][0]!=vertex[1][0] or vertex[0][2]!=vertex[1][2]:
-                print "Combine"
+        # vertex = array of (coords),(colour)
+        #if not debugapt:
+        #    return ((coords[0], coords[1], coords[2]), runwaycolour)
+
+        if weight[2] or vertex[0][0][0]!=vertex[1][0][0] or vertex[0][0][2]!=vertex[1][0][2]:
+            if debugapt:
+                lat=self.centre[0]-coords[2]/onedeg
+                lon=self.centre[1]+coords[0]/(onedeg*cos(d2r*lat))
+                print "Combine %.6f %.6f" % (lat, lon)
                 for i in range(len(weight)):
                     if not weight[i]: break
-                    lat=self.centre[0]-vertex[i][2]/onedeg
-                    lon=self.centre[1]+vertex[i][0]/(onedeg*cos(d2r*lat))
-                    print "%.6f %.6f" % (lat, lon)
-        return (coords[0], coords[1], coords[2])
+                    lat=self.centre[0]-vertex[i][0][2]/onedeg
+                    lon=self.centre[1]+vertex[i][0][0]/(onedeg*cos(d2r*lat))
+                    print "%.6f %.6f %5.3f" % (lat, lon, weight[i])
+            return ((coords[0], coords[1], coords[2]),(1,0.333,0.333))
+        else:	# Same point
+            colour=[0,0,0]
+            for i in range(len(weight)):
+                if not weight[i]: break
+                colour[0]+=vertex[i][1][0]*weight[i]
+                colour[1]+=vertex[i][1][1]*weight[i]
+                colour[2]+=vertex[i][1][2]*weight[i]
+            return ((coords[0], coords[1], coords[2]),tuple(colour))
 
     def tessend(self):
         glEnd()
@@ -1607,13 +1649,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         if len(p)==3:
             mu2  = mu*mu
             mum12= mum1*mum1
-            return (p[0][0]*mum12 + 2*p[1][0]*mum1*mu + p[2][0]*mu2,
-                    p[0][1]*mum12 + 2*p[1][1]*mum1*mu + p[2][1]*mu2)
+            return (round(p[0][0]*mum12 + 2*p[1][0]*mum1*mu + p[2][0]*mu2,6),
+                    round(p[0][1]*mum12 + 2*p[1][1]*mum1*mu + p[2][1]*mu2,6))
         elif len(p)==4:
             mu3  = mu*mu*mu
             mum13= mum1*mum1*mum1
-            return (p[0][0]*mum13 + 3*p[1][0]*mu*mum1*mum1 + 3*p[2][0]*mu*mu*mum1 + p[3][0]*mu3,
-                    p[0][1]*mum13 + 3*p[1][1]*mu*mum1*mum1 + 3*p[2][1]*mu*mu*mum1 + p[3][1]*mu3)
+            return (round(p[0][0]*mum13 + 3*p[1][0]*mu*mum1*mum1 + 3*p[2][0]*mu*mu*mum1 + p[3][0]*mu3,6),
+                    round(p[0][1]*mum13 + 3*p[1][1]*mu*mum1*mum1 + 3*p[2][1]*mu*mu*mum1 + p[3][1]*mu3,6))
         else:
             raise ArithmeticError
         
