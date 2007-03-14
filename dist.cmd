@@ -1,7 +1,7 @@
 @echo off
 @setlocal
 
-for /f "usebackq tokens=1,2" %%I in (`c:\Progra~1\Python24\python.exe -c "from files import appversion; print '%%s %%03d'%%(appversion, float(appversion)*100)"`) do (set VERSION=%%I&set VER=%%J)
+for /f "usebackq tokens=1,2" %%I in (`c:\Progra~1\Python24\python.exe -c "from files import appversion; print '%%4.2f %%d'%%(appversion, appversion*100)"`) do (set VERSION=%%I&set VER=%%J)
 
 @if exist OverlayEditor_%VER%_src.zip del OverlayEditor_%VER%_src.zip
 @if exist OverlayEditor_%VER%_linux.tar.gz del OverlayEditor_%VER%_linux.tar.gz

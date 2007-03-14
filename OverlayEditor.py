@@ -71,19 +71,19 @@ class myCreateStdDialogButtonSizer(wx.BoxSizer):
         if platform=='win32':
             if ok: buttonok=wx.Button(parent, wx.ID_OK)
             if no: buttonno=wx.Button(parent, wx.ID_CANCEL)
-            self.Add([0,0], 1)	# push following buttons to right
+            self.Add([0,0], 1)		# push following buttons to right
             if ok: self.Add(buttonok, 0, wx.ALL, pad)
-            if no:
-                self.Add([6,0], 0)	# cosmetic
-                self.Add(buttonno, 0, wx.ALL, pad)
+            if ok and no: self.Add([6,0], 0)	# cosmetic
+            if no: self.Add(buttonno, 0, wx.ALL, pad)
         else:
             if no: buttonno=wx.Button(parent, wx.ID_CANCEL)
             if ok: buttonok=wx.Button(parent, wx.ID_OK)
-            self.Add([0,0], 1)	# push following buttons to right
+            self.Add([0,0], 1)		# push following buttons to right
             if no: self.Add(buttonno, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, pad)
             if ok and no: self.Add([6,0], 0)	# cosmetic
             if ok: self.Add(buttonok, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, pad)
-            self.Add([0,0], 1)	# push following buttons to right
+            if platform=='darwin':
+                self.Add([0,0], 1)	# centre
         if ok: buttonok.SetDefault()
 
 
@@ -248,6 +248,7 @@ class GotoDialog(wx.Dialog):
         self.list2.SetMinSize((x,16*y))
         wx.EVT_LISTBOX(self, self.list2.GetId(), self.OnCode)
         box1=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
+        self.FindWindowById(wx.ID_OK).Disable()
         box0=wx.BoxSizer(wx.VERTICAL)
         box0.Add(grid1, 1, wx.ALL|wx.EXPAND, 14)
         box0.Add(box1, 0, wx.ALL|wx.EXPAND, 14)
@@ -261,9 +262,11 @@ class GotoDialog(wx.Dialog):
 
     def OnName(self, event):
         self.choice=self.aptname[event.GetEventObject().GetStringSelection()]
+        self.FindWindowById(wx.ID_OK).Enable()
 
     def OnCode(self, event):
         self.choice=self.aptcode[event.GetEventObject().GetStringSelection()]
+        self.FindWindowById(wx.ID_OK).Enable()
 
 
 class Palette(wx.Choicebook):
@@ -367,9 +370,64 @@ class Palette(wx.Choicebook):
             self.last=(-1, -1)
 
 
-class BackgroundDialog(wx.Dialog):
+class PreferencesDialog(wx.Dialog):
+
     def __init__(self, parent, id, title):
-        
+        wx.Dialog.__init__(self, parent, id, title)
+        if platform=='darwin':	# Default is too big on Mac
+            self.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
+            
+        panel1 = wx.Panel(self,-1)
+        panel2 = wx.Panel(self,-1)
+        panel3 = wx.Panel(self,-1)
+
+        box1 = wx.StaticBoxSizer(wx.StaticBox(panel1, -1, 'X-Plane location'),
+                                 wx.VERTICAL)
+        self.path = wx.TextCtrl(panel1, -1, style=wx.TE_READONLY)
+        self.path.SetMinSize((300, -1))
+        if prefs.xplane: self.path.SetValue(prefs.xplane)
+        browsebtn=wx.Button(panel1, -1, browse)
+        box1.Add(self.path, 1, wx.ALIGN_CENTER|wx.ALL, 4)
+        box1.Add(browsebtn, 0, wx.ALIGN_RIGHT|wx.ALL, 4)
+        panel1.SetSizer(box1)
+
+        self.display = wx.RadioBox(panel2, -1, "Display", style=wx.VERTICAL,
+                                   choices=["No terrain", "Show terrain", "Show terrain and elevation"])
+        if prefs.options&Prefs.TERRAIN:
+            if prefs.options&Prefs.ELEVATION:
+                self.display.SetSelection(2)
+            else:
+                self.display.SetSelection(1)
+        box2 = wx.BoxSizer()
+        box2.Add(self.display, 1)
+        panel2.SetSizer(box2)
+
+        box3=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
+
+        box0 = wx.BoxSizer(wx.VERTICAL)
+        box0.Add(panel1, 0, wx.ALL|wx.EXPAND, 10)
+        box0.Add(panel2, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, 10)
+        box0.Add(box3, 0, wx.ALL|wx.EXPAND, 10)
+
+        wx.EVT_BUTTON(self, browsebtn.GetId(), self.OnBrowse)
+        self.SetSizerAndFit(box0)
+
+    def OnBrowse(self, event):
+        while 1:
+            dlg=wx.DirDialog(self, "Please locate the X-Plane folder:", self.path.GetValue())
+            if dlg.ShowModal()!=wx.ID_OK:
+                dlg.Destroy()
+                return wx.ID_CANCEL
+            path=dlg.GetPath()
+            dlg.Destroy()
+            if isdir(join(path, custom)) and exists(join(path, mainaptdat)):
+                self.path.SetValue(path.strip())
+                self.FindWindowById(wx.ID_OK).Enable()
+                return wx.ID_OK
+
+class BackgroundDialog(wx.Dialog):
+
+    def __init__(self, parent, id, title):
         wx.Dialog.__init__(self, parent, id, title)
         if platform=='darwin':	# Default is too big on Mac
             self.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
@@ -809,7 +867,10 @@ class MainWindow(wx.Frame):
         self.Update()
 
     def ShowLoc(self):
-        self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f  Elv: %-6.1f" %(self.loc[0], self.loc[1], self.hdg, self.canvas.getheight()), 1)
+        if prefs.options&Prefs.ELEVATION:
+            self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f  Elv: %-6.1f" %(self.loc[0], self.loc[1], self.hdg, self.canvas.getheight()), 1)
+        else:
+            self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f" %(self.loc[0], self.loc[1], self.hdg), 1)
 
     def ShowSel(self):
         selection=self.canvas.getsel()
@@ -821,7 +882,10 @@ class MainWindow(wx.Frame):
             (obj, lat, lon, hdg, height)=selection
             if len(obj)==1:
                 self.palette.set(obj[0])
-                self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f  Elv: %-6.1f" % (lat, lon, hdg, height), 2)
+                if prefs.options&Prefs.ELEVATION:
+                    self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f  Elv: %-6.1f" % (lat, lon, hdg, height), 2)
+                else:
+                    self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f" % (lat, lon, hdg), 2)
             else:
                 self.palette.set(None)
                 self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  (%d objects)" % (lat, lon, len(obj)), 2)
@@ -1081,7 +1145,7 @@ class MainWindow(wx.Frame):
                         placements[tile]=data
                         baggage[tile]=(props,other)
                 except:	# Bad DSF - restore to unloaded state
-                    self.SetTitle("%s" % appname)
+                    self.SetTitle(appname)
                     self.toolbar.EnableTool(wx.ID_PREVIEW, False)
                     self.toolbar.EnableTool(wx.ID_REFRESH, False)
                     self.toolbar.EnableTool(wx.ID_PASTE, False)
@@ -1111,8 +1175,7 @@ class MainWindow(wx.Frame):
                 wx.MessageBox("The %s file in this package is invalid" %aptdat,
                               'Invalid %s' % aptdat,
                               wx.ICON_WARNING|wx.OK, self)
-        if self.goto:
-            self.goto.Close()	# Needed on wxMac 2.5
+        if self.goto: self.goto.Close()	# Needed on wxMac 2.5
         self.goto=GotoDialog(self, aptname, aptcode)	# build only
         # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
         # search order is: custom libraries, default libraries, scenery package
@@ -1156,7 +1219,7 @@ class MainWindow(wx.Frame):
             background=(image, lat, lon, hdg, width, length, opacity)
         else:
             background=None
-        self.canvas.reload(event!=None,
+        self.canvas.reload(event!=None, prefs.options,
                            aptrunways, objects, placements, baggage,
                            background,
                            terrain, join(prefs.xplane,dsfdir))
@@ -1175,10 +1238,11 @@ class MainWindow(wx.Frame):
         progress.Destroy()
         
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
-        self.toolbar.EnableTool(wx.ID_PREVIEW, True)
-        self.toolbar.EnableTool(wx.ID_REFRESH, True)
-        self.toolbar.EnableTool(wx.ID_PASTE, True)
         self.ShowLoc()
+        if prefs.package:
+            self.toolbar.EnableTool(wx.ID_PREVIEW, True)
+            self.toolbar.EnableTool(wx.ID_REFRESH, True)
+            self.toolbar.EnableTool(wx.ID_PASTE, True)
 
         # redraw
         self.Refresh()
@@ -1224,25 +1288,30 @@ class MainWindow(wx.Frame):
             self.ShowLoc()
 
     def OnPrefs(self, event):
-        if prefs.xplane:
-            path=prefs.xplane
-        elif platform=='win32' and isdir('C:\\X-Plane\\Custom Scenery'):
-            path='C:\\X-Plane'
-        else:
-            path=''
-        while 1:
-            dlg=wx.DirDialog(self, "Please locate the X-Plane folder:", path)
-            if (dlg.ShowModal()!=wx.ID_OK and
-                (not prefs.xplane or not isdir(join(prefs.xplane, custom)))):
-                exit(1)		# Can't proceed without an X-Plane folder
-            path=dlg.GetPath()
+        dlg=PreferencesDialog(self, wx.ID_ANY, "Preferences")
+        if dlg.ShowModal()!=wx.ID_OK:
             dlg.Destroy()
-            if isdir(join(path, custom)) and exists(join(path, mainaptdat)):
-                prefs.xplane=path
-                if prefs.package and not isdir(join(prefs.xplane, custom, prefs.package)):
-                    prefs.package=None
-                prefs.write()
-                return
+            return
+        if dlg.display.GetSelection()==1:
+            prefs.options=Prefs.TERRAIN
+        elif dlg.display.GetSelection()==2:
+            prefs.options=Prefs.TERRAIN|Prefs.ELEVATION
+        else:
+            prefs.options=0
+        if dlg.path.GetValue()!=prefs.xplane:
+            prefs.xplane=dlg.path.GetValue()
+            prefs.package=None
+            self.toolbar.EnableTool(wx.ID_SAVE, False)
+            self.toolbar.EnableTool(wx.ID_ADD, False)
+            self.toolbar.EnableTool(wx.ID_DELETE, False)
+            self.toolbar.EnableTool(wx.ID_UNDO, False)
+            self.SetTitle(appname)
+            dlg.Destroy()
+            self.aptname=self.aptcode=self.aptrunways={}
+            prefs.write()
+            self.OnReload(None)
+        else:
+            self.canvas.setopts(prefs.options)
 
     def OnHelp(self, evt):
         filename=abspath(appname+'.html')
@@ -1298,7 +1367,14 @@ if not prefs.xplane or not isdir(join(prefs.xplane,custom)):
     if platform=='darwin':	# prompt is not displayed on Mac
         wx.MessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder",
                       wx.ICON_QUESTION|wx.OK, frame)
-    frame.OnPrefs(None)
+    elif platform=='win32' and isdir(join('C:\\X-Plane', custom)) and exists(join('C:\\X-Plane', mainaptdat)):
+        prefs.xplane='C:\\X-Plane'
+    elif platform=='win32':
+        prefs.xplane='C:\\'
+    dlg=PreferencesDialog(frame, wx.ID_ANY, '')
+    if dlg.OnBrowse(None)!=wx.ID_OK: exit(1)	# User cancelled
+    prefs.xplane=dlg.path.GetValue()
+    dlg.Destroy()
 if prefs.package and not isdir(join(prefs.xplane, custom, prefs.package)):
     prefs.package=None
 

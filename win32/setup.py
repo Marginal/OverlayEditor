@@ -10,7 +10,7 @@ from sys import platform
 manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
           '<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">\n'+
           '<assemblyIdentity\n'+
-          '    version="%s.0.0"\n' % appversion +
+          '    version="%4.2f.0.0"\n' % appversion +
           '    processorArchitecture="X86"\n'+
           '    name="OverlayEditor"\n'+
           '    type="win32"\n'+
@@ -54,7 +54,7 @@ elif platform.lower().startswith('darwin'):
               ]
 
 setup(name='OverlayEditor',
-      version=appversion,
+      version=("%4.2f" % appversion),
       description='DSF overlay editor',
       author='Jonathan Harris',
       author_email='x-plane@marginal.org.uk',

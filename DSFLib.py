@@ -2,10 +2,10 @@ from struct import unpack
 
 # Takes a DSF path name.
 # Returns (properties, placements, mesh), where:
-#   properties = dictionary {property: string value}
-#   placements = array of [object name, lon, lat, hdg, ...]
+#   properties = [(property, string value)]
+#   placements = [object name, lon, lat, hdg, ...]
 #   mesh = [(terrain name, list of points)], where
-#     point = [lon, lat, height, ...]
+#     point = [lon, lat, height, optional other parameters]
 # Exceptions:
 #   IOError, IndexError
 
@@ -20,12 +20,15 @@ def read(path):
     if h.read(4)!='PORP':
         raise IOError, baddsf
     (l,)=unpack('<I', h.read(4))
-    properties={}
+    properties=[]
+    tile=[None,None]
     c=h.read(l-9).split('\0')
     h.read(1)
     for i in range(0, len(c)-1, 2):
-        properties[c[i]]=c[i+1]
-    tile=[int(properties['sim/south']), int(properties[('sim/west')])]    
+        if c[i]=='sim/south': tile[0]=int(c[i+1])
+        elif c[i]=='sim/west': tile[1]=int(c[i+1])
+        properties.append((c[i],c[i+1]))
+    if tile[0]==None or tile[1]==None: raise IOError, baddsf
     centre=[tile[0]+0.5, tile[1]+0.5]
     h.seek(headend)
 

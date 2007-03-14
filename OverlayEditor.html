@@ -184,8 +184,8 @@ The texture path names in the imported objects are fixed up as required.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Preferences" src="Resources/prefs.png"></a></td>
-      <td>Identify X-Plane's top-level folder. Do not change the location
-of X-Plane's top-level folder while you are editing a scenery package.</td>
+      <td>Change X-Plane's top-level folder and whether to show terrain and elevation data.<br>
+Do not change the location of X-Plane's top-level folder while you are editing a scenery package.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Help" src="Resources/help.png"></a></td>
@@ -201,10 +201,16 @@ made available by scenery libraries are listed under further headings.</p>
 <p>You can only add objects that appear in these lists - use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have added new objects to the scenery package folder or if you have installed a new scenery library.</p>
 <h3>Differences between this application and X-Plane</h3>
 <p>This application displays terrain and objects in orthogonal projection
-and in a simplified form - <i>ie</i> no lights, lines, shading or animation,
-and simplified terrain textures.
+and in a simplified form. <i>ie</i>:
+<ul>
+  <li>No lights, lines, shading or animation. 
 Objects that do not contain any polygons are displayed as small
-"placeholder" cubes so that they can be edited.<p>
+"placeholder" cubes so that they can be edited.</li>
+  <li>Simplified terrain textures. No beaches or overlay textures.</li>
+  <li>No flattening of terrain around airports. Terrain is displayed as if the
+X-Plane "allow sloped runways" rendering option is turned on.</li>
+</ul>
+</p>
 <p>When you open or reload a scenery package this application warns about any
 objects that it can't read or that are missing, but lets you edit and save
 the scenery package anyway. The unreadable or missing objects are displayed
@@ -218,8 +224,8 @@ always displays the first version of an object that it comes across.
 Many objects in the <code>global8</code> library exist in multiple versions
 - <i>eg</i> the library object <code>/lib/global8/us/in_sq_90_30r.obj</code>
 exists in eight different versions in X-Plane 8.40; if you use that object
-then this application will always display the same version, but X-Plane will
-display one of the eight versions chosen at random.<p>
+in your scenery package then this application will always display the same
+version, but X-Plane will display one of the eight versions chosen at random.<p>
 <h3>Limitations</h3>
 <ul>
   <li>Does not display autogen scenery.</li>
@@ -228,13 +234,13 @@ display one of the eight versions chosen at random.<p>
   <li>Does not edit vectors (exclusion areas, forests etc).</li>
   <li>Does not edit <code>apt.dat</code> files.</li>
   <li>There is a limit to the number of objects that you can select at once. The number depends on your graphics hardware.</li>
-  <li>Cannot read palettised or interlaced PNG files (X-Plane can't read the former either).</li>
+  <li>Palletised or interlaced PNG files appear plain grey. (X-Plane can't read the former either).</li>
 </ul>
 <hr>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 1.41 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 1.42 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px; vertical-align: text-bottom;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
       </td>
     </tr>

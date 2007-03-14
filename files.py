@@ -18,7 +18,7 @@ onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
 
 appname='OverlayEditor'
-appversion='1.41'	# Must be numeric
+appversion=1.42	# Must be numeric
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
@@ -35,10 +35,14 @@ def sortfolded(seq):
 
 
 class Prefs:
+    TERRAIN=1
+    ELEVATION=2
+    
     def __init__(self):
         self.filename=None
         self.xplane=None
         self.package=None
+        self.options=Prefs.TERRAIN
         self.packageprops={}
 
         if platform=='win32':
@@ -75,10 +79,13 @@ class Prefs:
             for line in handle:
                 if '=' in line:
                     pkg=line[:line.index('=')]
-                    line=line[len(pkg)+2:]
-                    f=line[:line.index('"')]
-                    c=line[len(f)+1:].split()
-                    self.packageprops[pkg]=(f, float(c[0]), float(c[1]), int(c[2]), float(c[3]), float(c[4]), int(c[5]))
+                    if pkg=='*options':
+                        self.options=int(line[9:])
+                    else:
+                        line=line[len(pkg)+2:]
+                        f=line[:line.index('"')]
+                        c=line[len(f)+1:].split()
+                        self.packageprops[pkg]=(f, float(c[0]), float(c[1]), int(c[2]), float(c[3]), float(c[4]), int(c[5]))
             handle.close()
         except:
             pass
@@ -89,7 +96,8 @@ class Prefs:
                 handle=file(self.filename,'wt')
             else:
                 handle=codecs.open(self.filename, 'wt', 'utf-8')
-            handle.write('%s\n%s\n' % (self.xplane, self.package))
+            handle.write('%s\n%s\n*options=%d\n' % (
+                self.xplane, self.package, self.options))
             for pkg, (f,lat,lon,hdg,w,h,o) in self.packageprops.iteritems():
                 handle.write('%s="%s" %10.6f %11.6f %3d %8.2f %8.2f %2d\n' % (
                     pkg, f,lat,lon,hdg,w,h,o))
@@ -284,7 +292,7 @@ def writeDsfs(path, placements, baggage):
         h.write('PROPERTY sim/planet\tearth\n')
         h.write('PROPERTY sim/overlay\t1\n')
         h.write('PROPERTY sim/require_object\t1/0\n')
-        h.write('PROPERTY sim/creation_agent\t%s %s\n' % (
+        h.write('PROPERTY sim/creation_agent\t%s %4.2f\n' % (
             appname, appversion))
         h.write(props)
         h.write('PROPERTY sim/west\t%d\n' %  west)
@@ -677,11 +685,11 @@ class VertexCache:
         return True
 
 
-    def loadMesh(self, tile):
-        key=(tile[0],tile[1])
+    def loadMesh(self, tile, options):
+        key=(tile[0],tile[1],options&Prefs.TERRAIN)
         if key in self.mesh: return	# don't reload
-        
         try:
+            if not options&Prefs.TERRAIN: raise IOError
             (properties, placements, meshdata)=DSFLib.read(join(self.dsfdir, "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.dsf" % (tile[0], tile[1])))
         except:
             if exists(join(self.dsfdir, "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.dsf" % (tile[0], tile[1]))) or exists(join(self.dsfdir, pardir, pardir, pardir, 'Earth nav data', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.env" % (tile[0], tile[1]))):
@@ -702,7 +710,7 @@ class VertexCache:
         for (ter, patch) in meshdata:
             texture=None
             angle=0
-            xscale=zscale=1000
+            xscale=zscale=0.001
             if ter=='terrain_Water':
                 texture=abspath(VertexCache.defSea)
             elif ter in terraincache:
@@ -774,18 +782,18 @@ class VertexCache:
         self.mesh[key]=mesh
 
 
-    def getMesh(self, tile):
+    def getMesh(self, tile, options):
         if self.meshcache:
             return self.meshcache
         # merge patches that use same texture
         bytex={}
-        for texture, v, t in self.mesh[(tile[0],tile[1])]:
+        for texture, v, t in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
             if texture in bytex:
-                (v1,t1)=bytex[texture]
-                v1.extend(v)
-                t1.extend(t)
+                (v2,t2)=bytex[texture]
+                v2.extend(v)
+                t2.extend(t)
             else:
-                bytex[texture]=(list(v),list(t))
+                bytex[texture]=(list(v), list(t))
         # add into array
         for texture, (v, t) in bytex.iteritems():
             base=len(self.varray)
@@ -797,13 +805,20 @@ class VertexCache:
         return self.meshcache
 
 
-    def getMeshdata(self, tile):
-        key=(tile[0],tile[1])
+    def getMeshdata(self, tile, options):
+        key=(tile[0],tile[1],options&Prefs.ELEVATION)
         if key in self.meshdata:
             return self.meshdata[key]	# don't reload
+        if not options&Prefs.ELEVATION:
+            meshdata=[([-maxint,maxint,-maxint,maxint],
+                       [([[-maxint,0,-maxint],
+                          [-maxint,0, maxint],
+                          [ maxint,0,-maxint]],[0,0,0,0])])]
+            self.meshdata[key]=meshdata
+            return meshdata
         meshdata=[]
         tot=0
-        for (texture, v, t) in self.mesh[key]:
+        for (texture, v, t) in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
             minx=minz=maxint
             maxx=maxz=-maxint
             tris=[]
@@ -820,8 +835,9 @@ class VertexCache:
         return meshdata
             
 
-    def height(self, tile, x, z, likely=None):
+    def height(self, tile, options, x, z, likely=None):
         # returns height of mesh at (x,z) using tri if supplied
+        if not options&Prefs.ELEVATION: return 0
 
         # first test candidates
         if likely:
@@ -832,7 +848,7 @@ class VertexCache:
             if h!=None: return h
 
         # test all patches then
-        for (bbox, tris) in self.getMeshdata(tile):
+        for (bbox, tris) in self.getMeshdata(tile,options):
             if x<bbox[0] or x>bbox[1] or z<bbox[2] or z>bbox[3]: continue
             h=self.heighttest(tris, x, z)
             if h!=None: return h
