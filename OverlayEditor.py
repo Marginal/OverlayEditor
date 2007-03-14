@@ -7,27 +7,30 @@ from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 from sys import exit, argv, platform, version
 
-try:
+if platform=='win32':
     import wx
-    from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
-except:
-    import Tkinter
-    import tkMessageBox
-    Tkinter.Tk().withdraw()	# make and suppress top-level window
-    if platform=='darwin':
-        tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\nwxPython 2.5.3 (py%s) or later." % version[:3], icon="question", type="ok")
-    else:	# linux
-        tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\npython wxgtk2.5.3 or later.", icon="error", type="ok")
-    exit(1)
+else:
+    try:
+        import wx
+    except:
+        import Tkinter
+        import tkMessageBox
+        Tkinter.Tk().withdraw()	# make and suppress top-level window
+        if platform=='darwin':
+            tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\nwxPython 2.5.3 (py%s) or later." % version[:3], icon="question", type="ok")
+        else:	# linux
+            tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\npython wxgtk2.5.3 or later.", icon="error", type="ok")
+        exit(1)
+    try:
+        import OpenGL
+    except:
+        import Tkinter
+        import tkMessageBox
+        Tkinter.Tk().withdraw()	# make and suppress top-level window
+        tkMessageBox._show("Error", "PyOpenGL is not installed.\nThis application requires\npyopengl2 or later.", icon="error", type="ok")
+        exit(1)
 
-try:
-    import OpenGL
-except:
-    import Tkinter
-    import tkMessageBox
-    Tkinter.Tk().withdraw()	# make and suppress top-level window
-    tkMessageBox._show("Error", "PyOpenGL is not installed.\nThis application requires\npyopengl2 or later.", icon="error", type="ok")
-    exit(1)
+from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
 from OpenGL.GL import *
 
 from draw import MyGL
@@ -394,6 +397,7 @@ class PaletteChoicebook(wx.Choicebook):
         wx.EVT_MOUSEWHEEL(l, self.OnMouseWheel)
     
     def add(self, name, path):
+        #print "cbadd", name
         # Add to objects tab - assumes that this is first tab
         l=self.lists[0]
         for i in range(len(l.choices)):
@@ -418,7 +422,7 @@ class PaletteChoicebook(wx.Choicebook):
 
     def set(self, key):
         # Called from parent Palette or from OnChoice
-        #print "set", key
+        #print "cbset", key
         ontab=-1
         for tab in range(len(self.lists)):
             l=self.lists[tab]
@@ -497,13 +501,17 @@ class Palette(wx.SplitterWindow):
         self.cb.load(tabname, objects)
     
     def add(self, name, path):
+        #print "add", name
         # Add to objects tab - assumes that this is first tab
+        self.lastkey=name
         self.cb.add(name, path)
+        self.preview.Refresh()
 
     def get(self):
         return self.cb.get()
     
     def set(self, key):
+        #print "set", key, self.lastkey
         if key!=self.lastkey:
             self.cb.set(key)
             self.lastkey=key
@@ -818,8 +826,7 @@ class BackgroundDialog(wx.Dialog):
             else:
                 zinc=self.parent.dist/10000000
                 if zinc<0.00001: zinc=0.00001
-                if event.m_controlDown or event.m_metaDown:
-                    zinc*=10
+                if event.CmdDown(): zinc*=10
                 xinc=zinc/cos(d2r*self.lat.GetValue())
             hr=d2r*((self.parent.hdg + [0,90,180,270][cursors.index(event.m_keyCode)])%360)
             try:
@@ -831,18 +838,18 @@ class BackgroundDialog(wx.Dialog):
             except:
                 pass
         elif event.m_keyCode==ord('Q'):
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 self.hdg.SetValue((self.hdg.GetValue()-10)%360)
             else:
                 self.hdg.SetValue((self.hdg.GetValue()-1)%360)
         elif event.m_keyCode==ord('E'):
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 self.hdg.SetValue((self.hdg.GetValue()+10)%360)
             else:
                 self.hdg.SetValue((self.hdg.GetValue()+1)%360)
         elif event.m_keyCode==ord('C'):
             self.parent.loc=[self.lat.GetValue(),self.lon.GetValue()]
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 self.parent.hdg=self.hdg.GetValue()
             self.parent.canvas.goto(self.parent.loc, self.parent.hdg, self.parent.elev, self.parent.dist)
         else:
@@ -1122,7 +1129,7 @@ class MainWindow(wx.Frame):
             else:
                 zinc=self.dist/10000000
                 if zinc<minres: zinc=minres
-                if event.m_controlDown or event.m_metaDown: zinc*=10
+                if event.CmdDown(): zinc*=10
                 xinc=zinc/cos(d2r*self.loc[0])
             hr=d2r*((self.hdg + [0,90,180,270,0,90,180,270][cursors.index(event.m_keyCode)])%360)
             if cursors.index(event.m_keyCode)<4:
@@ -1135,71 +1142,79 @@ class MainWindow(wx.Frame):
             (names,string,lat,lon,hdg)=self.canvas.getsel()
             if lat==None: return
             self.loc=[round2res(lat),round2res(lon)]
-            if hdg!=None and (event.m_controlDown or event.m_metaDown):
+            if hdg!=None and event.CmdDown():
                 self.hdg=hdg
         elif event.m_keyCode==ord('Q'):
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 changed=self.canvas.movesel(0, 0, -5)
             else:
                 changed=self.canvas.movesel(0, 0, -1)
         elif event.m_keyCode==ord('E'):
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 changed=self.canvas.movesel(0, 0, 5)
             else:
                 changed=self.canvas.movesel(0, 0, 1)
         elif event.m_keyCode==ord('R'):
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 changed=self.canvas.movesel(0, 0, 0, 5)
             else:
                 changed=self.canvas.movesel(0, 0, 0, 1)
         elif event.m_keyCode==ord('F'):
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 changed=self.canvas.movesel(0, 0, 0, -5)
             else:
                 changed=self.canvas.movesel(0, 0, 0, -1)
         elif event.m_keyCode==wx.WXK_END:
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 self.hdg=(self.hdg-5)%360
             else:
                 self.hdg=(self.hdg-1)%360
         elif event.m_keyCode==wx.WXK_HOME:
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 self.hdg=(self.hdg+5)%360
             else:
                 self.hdg=(self.hdg+1)%360
         elif event.m_keyCode in [ord('+'), ord('='), ord('5')]:	# +
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 self.dist/=2
             else:
                 self.dist/=1.4142
             if self.dist<1.0: self.dist=1.0
         elif event.m_keyCode==45:	# -
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 self.dist*=2
             else:
                 self.dist*=1.4142
             if self.dist>maxzoom: self.dist=maxzoom
         elif event.m_keyCode in [wx.WXK_PAGEDOWN, wx.WXK_NEXT]:
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 self.elev-=5
             else:
                 self.elev-=1
             if self.elev<2: self.elev=2	# not 1 cos clipping
         elif event.m_keyCode in [wx.WXK_PAGEUP, wx.WXK_PRIOR]:
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 self.elev+=5
             else:
                 self.elev+=1
             if self.elev>90: self.elev=90
+        elif event.m_keyCode==wx.WXK_INSERT:
+            name=self.palette.get()
+            if prefs.package and name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg):
+                changed=True
         elif event.m_keyCode==wx.WXK_DELETE:
             changed=self.canvas.delsel()
         elif event.m_keyCode==wx.WXK_SPACE:
-            self.canvas.allsel(event.m_controlDown or event.m_metaDown)
+            self.canvas.allsel(event.CmdDown())
         elif event.m_keyCode==ord('N'):
             name=self.palette.get()
             if name:
-                loc=self.canvas.nextsel(name, event.m_controlDown or event.m_metaDown)
+                loc=self.canvas.nextsel(name, event.CmdDown())
                 if loc: self.loc=loc
+        elif event.m_keyCode==ord('Z') and (event.CmdDown()):
+            if prefs.package:
+                if not self.canvas.undo():
+                    self.toolbar.EnableTool(wx.ID_UNDO, False)
         else:
             event.Skip(True)
             return
@@ -1213,13 +1228,13 @@ class MainWindow(wx.Frame):
     
     def OnMouseWheel(self, event):
         if event.m_wheelRotation>0:
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 self.dist/=2
             else:
                 self.dist/=1.4142
             if self.dist<1.0: self.dist=1.0
         elif event.m_wheelRotation<0:
-            if event.m_controlDown or event.m_metaDown:
+            if event.CmdDown():
                 self.dist*=2
             else:
                 self.dist*=1.4142
@@ -1237,7 +1252,7 @@ class MainWindow(wx.Frame):
         if not self.SaveDialog(): return
         dlg=wx.TextEntryDialog(self, "Name of new scenery package folder:",
                                "New scenery package")
-        while 1:
+        while True:
             if dlg.ShowModal()==wx.ID_OK:
                 v=dlg.GetValue().strip()
                 if not v: continue
@@ -1332,7 +1347,7 @@ class MainWindow(wx.Frame):
                              wx.ICON_ERROR|wx.OK, None)
                 return
             except:
-                myMessageBox(''
+                myMessageBox('',
                              "Can't save %+03d%+04d.dsf." % (key[0], key[1]),
                              wx.ICON_ERROR|wx.OK, None)
                 return
@@ -1474,7 +1489,7 @@ class MainWindow(wx.Frame):
         if prefs.package:
             for path, dirs, files in walk(pkgdir):
                 for f in files:
-                    seq=['.obj','.fac','.for']
+                    seq=['.obj','.fac','.for','.pol']
                     if f[-4:].lower() in seq and f[0]!='.':
                         name=join(path,f)[len(pkgdir)+1:-4].replace('\\','/')+f[-4:].lower()
                         if name.lower().startswith('custom objects'):
@@ -1544,11 +1559,12 @@ class MainWindow(wx.Frame):
         self.Refresh()
 
     def OnImport(self, event):
-        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Facades and Forests|*.obj;*.fac;*.for|Object files (*.obj)|*.obj|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|All files|*.*", wx.OPEN|wx.MULTIPLE|wx.HIDE_READONLY)
+        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Facades, Forests and Polygons|*.obj;*.fac;*.for;*.pol|Object files (*.obj)|*.obj|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|Draped polygon files (*.pol)|*.pol|All files|*.*", wx.OPEN|wx.MULTIPLE|wx.HIDE_READONLY)
         if dlg.ShowModal()!=wx.ID_OK:
             dlg.Destroy()
             return
         paths=dlg.GetPaths()
+        sortfolded(paths)	# why not
         dlg.Destroy()
         
         pkgpath=glob(join(prefs.xplane,gcustom,prefs.package))[0]
@@ -1562,8 +1578,8 @@ class MainWindow(wx.Frame):
             else:
                 name=newpath[len(pkgpath)+1:].replace(sep, '/')
                 if name.lower().startswith('custom objects'): name=name[15:]
-                self.palette.add(name, newpath)
                 self.canvas.vertexcache.add(name, newpath)
+                self.palette.add(name, newpath)
                 continue
             myMessageBox(msg, "Can't import %s." % path,
                          wx.ICON_ERROR|wx.OK, self)

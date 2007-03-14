@@ -140,6 +140,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_DEPTH_TEST)
         glShadeModel(GL_FLAT)
         #glLineStipple(1, 0x0f0f)	# for selection drag
+        glEnable(GL_LINE_SMOOTH)
+        #glLineWidth(3.0)	# XXX
         glPointSize(3.0)		# for nodes
         glFrontFace(GL_CW)
         glCullFace(GL_BACK)
@@ -185,7 +187,7 @@ class MyGL(wx.glcanvas.GLCanvas):
     def OnLeftDown(self, event):
         #event.Skip(False)	# don't change focus
         self.mousenow=[event.m_x,event.m_y]
-        self.selectctrl=event.m_controlDown or event.m_metaDown
+        self.selectctrl=event.CmdDown()
         self.CaptureMouse()
         size = self.GetClientSize()
         if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
@@ -208,10 +210,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         event.Skip()
             
     def OnIdle(self, event):
-        if self.selectnode:
-            self.updatepoly(self.currentpolygons()[self.selected[0]&MSKPOLY])
-            self.Refresh()
-        if not self.selectlist: self.prepareselect()
+        if self.valid:	# can get Idles during reload under X
+            if self.selectnode:
+                self.updatepoly(self.currentpolygons()[self.selected[0]&MSKPOLY])
+                self.Refresh()
+            if not self.selectlist: self.prepareselect()
         event.Skip()
 
     def OnMouseMotion(self, event):
@@ -382,6 +385,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if not self.meshlist:
             self.meshlist=glGenLists(1)
             glNewList(self.meshlist, GL_COMPILE)
+            #glPolygonMode(GL_FRONT, GL_LINE)	# XXX
             glEnable(GL_DEPTH_TEST)
             glEnable(GL_CULL_FACE)
             glDepthMask(GL_TRUE)
@@ -408,6 +412,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glDepthMask(GL_TRUE)
             if not self.options&Prefs.ELEVATION:
                 glPopMatrix()
+            #glPolygonMode(GL_FRONT, GL_FILL)	# XXX
             glEndList()
         glCallList(self.meshlist)
 
@@ -559,7 +564,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             glColor3f(1.0, 0.5, 1.0)
 
-        #glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)	# XXX
         glDisable(GL_CULL_FACE)
         glEnable(GL_DEPTH_TEST)
         glPolygonOffset(-3, -3)
@@ -628,7 +632,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glVertex3f(poly.points[i][0], poly.points[i][1], poly.points[i][2])
             glEnd()
         glDisable(GL_POLYGON_OFFSET_FILL)
-        #glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)	# XXX
 
 	# drag box
         if self.selectanchor:
@@ -1363,7 +1366,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glDisable(GL_TEXTURE_2D)
                 glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
                 glEnable(GL_POLYGON_OFFSET_FILL)
-                #glEnable(GL_POLYGON_OFFSET_LINE)
                 #glPolygonMode(GL_BACK, GL_LINE)	# reverse of incorrect polygons
                 glEnable(GL_CULL_FACE)
                 glDepthMask(GL_FALSE)	# offset mustn't update depth
@@ -1431,6 +1433,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                     gluTessCallback(tessObj, GLU_END,    self.tessend)
                 else:
                     gluTessNormal(tessObj, 0, -1, 0)
+                    # gluTessProperty(tessObj, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)	# XXX
+                    # gluTessProperty(tessObj,GLU_TESS_BOUNDARY_ONLY,GL_TRUE)	# XXX
                     gluTessCallback(tessObj, GLU_TESS_BEGIN,  self.tessbegin)
                     gluTessCallback(tessObj, GLU_TESS_VERTEX, self.tessvertex)
                     gluTessCallback(tessObj, GLU_TESS_END,    self.tessend)
@@ -1462,7 +1466,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                         cpoints.append((2*edge[(j+1)%n][0]-edge[(j+1)%n][2],2*edge[(j+1)%n][1]-edge[(j+1)%n][3]))
                                             
                                     cpoints.append((edge[(j+1)%n][0],edge[(j+1)%n][1]))
-                                    points=[self.bez(cpoints, u/10.0) for u in range(10)]
+                                    points=[self.bez(cpoints, u/8.0) for u in range(8)]	# X-Plane stops at or before 8
                                 for (lat,lon) in points:
                                     (x,z)=self.latlon2m(lat,lon)
                                     y=self.vertexcache.height(newtile,options,x,z)
@@ -1477,7 +1481,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     except GLUerror, e:
                         pass
                 gluDeleteTess(tessObj)
-                #glDisable(GL_POLYGON_OFFSET_LINE)
+                glDisable(GL_POLYGON_OFFSET_FILL)
                 #glPolygonMode(GL_BACK, GL_FILL)
                 
                 progress.Update(15, 'Navaids')
@@ -1511,7 +1515,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                 cullstate=True
                 glColor3f(0.8, 0.8, 0.8)	# Unpainted
                 glEnable(GL_TEXTURE_2D)
-                glDisable(GL_POLYGON_OFFSET_FILL)
                 polystate=0
                 for (i, lat, lon, hdg) in self.navaids:
                     if [int(floor(lat)),int(floor(lon))]==newtile and i in objs:
@@ -1585,6 +1588,14 @@ class MyGL(wx.glcanvas.GLCanvas):
         glVertex3f(*vertex)
 
     def tesscombine(self, coords, vertex, weight):
+        if False: # XXX
+            if weight[2] or vertex[0][0]!=vertex[1][0] or vertex[0][2]!=vertex[1][2]:
+                print "Combine"
+                for i in range(len(weight)):
+                    if not weight[i]: break
+                    lat=self.centre[0]-vertex[i][2]/onedeg
+                    lon=self.centre[1]+vertex[i][0]/(onedeg*cos(d2r*lat))
+                    print "%.6f %.6f" % (lat, lon)
         return (coords[0], coords[1], coords[2])
 
     def tessend(self):
@@ -1697,6 +1708,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if ends[0]+ends[1]>=len(divs):
                 points=range(len(divs))
                 for i in points: cumsize+=divs[i][1]-divs[i][0]
+                if cumsize==0: return (points,1)
                 return (points,size/cumsize)
 
             if isvert:

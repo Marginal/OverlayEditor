@@ -5,6 +5,7 @@ from os.path import abspath, curdir, dirname, exists, expanduser, isdir, join, p
 from struct import pack, unpack
 from sys import platform, maxint
 from tempfile import gettempdir
+import types
 
 import wx
 
@@ -50,12 +51,15 @@ class Polygon:
     EXCLUDE='Exclude:'
     FACADE='.fac'
     FOREST='.for'
+    #POLYGON='.pol'	# XXX
 
-    EXCLUDE_NAME={'sim/exclude_obj': 'Exclude: Objects',
+    EXCLUDE_NAME={'sim/exclude_bch': 'Exclude: Beaches',
+                  'sim/exclude_pol': 'Exclude: Draped',
                   'sim/exclude_fac': 'Exclude: Facades',
                   'sim/exclude_for': 'Exclude: Forests',
-                  'sim/exclude_bch': 'Exclude: Beaches',
-                  'sim/exclude_net': 'Exclude: Roads'}
+                  'sim/exclude_obj': 'Exclude: Objects',
+                  'sim/exclude_net': 'Exclude: Roads',
+                  'sim/exclude_str': 'Exclude: Strings'}
 
     def __init__(self, name, kind, param, nodes):
         self.name=name
@@ -497,7 +501,6 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
 
 
 def writeDSF(dsfdir, key, objects, polygons):
-    if not (objects or polygons): return
     (south,west)=key
     tiledir=join(dsfdir, "%+02d0%+03d0" % (int(south/10), int(west/10)))
     if not isdir(tiledir): mkdir(tiledir)
@@ -508,6 +511,7 @@ def writeDSF(dsfdir, key, objects, polygons):
     if exists(tilename+'.DSF'):
         if exists(tilename+'.DSF.BAK'): unlink(tilename+'.DSF.BAK')
         rename(tilename+'.DSF', tilename+'.DSF.BAK')
+    if not (objects or polygons): return
 
     tmp=join(gettempdir(), "%+03d%+04d.txt" % (south,west))
     h=file(tmp, 'wt')
@@ -554,7 +558,7 @@ def writeDSF(dsfdir, key, objects, polygons):
 
     for obj in objects:
         h.write('OBJECT\t\t%d %12.7f %12.7f %3.0f\n' % (
-            objdefs.index(obj.name), obj.lon+minres/2, obj.lat+minres/2, obj.hdg))
+            objdefs.index(obj.name), min(west+1, obj.lon+minres/2), min(south+1, obj.lat+minres/2), obj.hdg))
     if objects: h.write('\n')
     
     for poly in polygons:
@@ -567,9 +571,11 @@ def writeDSF(dsfdir, key, objects, polygons):
             h.write('BEGIN_WINDING\n')
             for p in w:
                 h.write('POLYGON_POINT\t')
-                #for n in [p[0], p[1]]:
-                for n in p:
-                    h.write('%12.7f ' % (n+minres/2))
+                for n in range(len(p)):
+                    if n&1:	# lat
+                        h.write('%12.7f ' % min(south+1, p[n]+minres/2))
+                    else:	# lon
+                        h.write('%12.7f ' % min(west+1, p[n]+minres/2))
                 h.write('\n')
             h.write('END_WINDING\n')
         h.write('END_POLYGON\n')
@@ -586,7 +592,11 @@ def writeDSF(dsfdir, key, objects, polygons):
         o.close()
         e.close()
         progress.Destroy()
-    (i,o,e)=popen3('%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename))
+    cmds='%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename)
+    if platform=='win32' and type(cmds)==types.UnicodeType:
+        # commands must be MBCS encoded
+        cmds=cmds.encode("mbcs")
+    (i,o,e)=popen3(cmds)
     i.close()
     o.read()
     err=e.read()
@@ -594,6 +604,10 @@ def writeDSF(dsfdir, key, objects, polygons):
     e.close()
     #unlink(tmp)
     if err:
+        if exists(tilename+'.dsf.bak'):
+            rename(tilename+'.dsf.bak', tilename+'.dsf')
+        elif exists(tilename+'.DSF.BAK'):
+            rename(tilename+'.DSF.BAK', tilename+'.DSF')
         raise IOError, (0, err.strip().replace('\n', ', '))
 
     
@@ -675,7 +689,7 @@ def NEWwriteDSF(dsfdir, key, objects, polygons):
     contents+=md5(contents).digest()
 
     tilename=join(tiledir, "%+03d%+04d" % (south,west))
-    if exists(tilename+'.dsf'):
+    if exists(tilename+'.dsf'): 
         if exists(tilename+'.dsf.bak'): unlink(tilename+'.dsf.bak')
         rename(tilename+'.dsf', tilename+'.dsf.bak')
     if exists(tilename+'.DSF'):

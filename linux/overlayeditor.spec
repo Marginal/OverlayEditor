@@ -6,7 +6,7 @@ URL: http://marginal.org.uk/x-planescenery
 Icon: overlayeditor.xpm
 Vendor: Jonathan Harris <x-plane@marginal.org.uk>
 Prefix: /usr/local
-Requires: python >= 2.4, python < 2.5, wxPython >= 2.6, python-imaging >= 1.1.4, python-opengl >= 2.0, wine
+Requires: python >= 2.4, python < 2.5, wxPython >= 2.6, python-imaging >= 1.1.4, python-opengl >= 2.0.1, wine
 #Suse: python-wxGTK provides wxPython, PyOpenGL=python-opengl
 
 %description
@@ -45,7 +45,7 @@ else
 fi
 mkdir -p "$ICONDIR/48x48/apps"
 cp -f "$RPM_INSTALL_PREFIX/lib/overlayeditor/Resources/OverlayEditor.png" "$ICONDIR/48x48/apps/overlayeditor.png"
-gtk-update-icon-cache -q -t $ICONDIR &>/dev/null
+gtk-update-icon-cache -f -q -t $ICONDIR &>/dev/null
 exit 0	# ignore errors from updating icon cache
 
 
@@ -57,10 +57,10 @@ rm -f /usr/share/applications/overlayeditor.desktop
 
 if [ -f /opt/kde3/share/icons/hicolor/48x48/apps/overlayeditor.png ]; then
     rm -f /opt/kde3/share/icons/hicolor/48x48/apps/overlayeditor.png
-    gtk-update-icon-cache -q -t /opt/kde3/share/icons/hicolor &>/dev/null;
+#    gtk-update-icon-cache -q -t /opt/kde3/share/icons/hicolor &>/dev/null;
 fi
 if [ -f /usr/share/icons/hicolor/48x48/apps/overlayeditor.png ]; then
     rm -f /usr/share/icons/hicolor/48x48/apps/overlayeditor.png
-    gtk-update-icon-cache -q -t /usr/share/icons/hicolor &>/dev/null;
+#    gtk-update-icon-cache -q -t /usr/share/icons/hicolor &>/dev/null;
 fi
 exit 0	# ignore errors from updating icon cache

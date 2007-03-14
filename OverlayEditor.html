@@ -103,7 +103,7 @@ To select objects:</p>
     </tr>
   </tbody>
 </table>
-<p>If you select a single polygon (facade, forest or exclusion region)
+<p>If you select a single polygon (draped, facade, forest or exclusion region)
 you can click on an individual node (<i>ie</i> corner) to select it.
 The selected node is highlighted in white.</p>
 <p>These keys affect the selected objects or the selected node.
@@ -136,12 +136,16 @@ or <samp>Shift</samp> for tiny steps:</p>
       <td>Centre on and select the next use of this object</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
+      <td style="width: 33%;"><samp>Insert</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
       <td>Add new node object or node</small></td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
       <td>Delete selected objects or node</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Ctrl</samp> or <samp>Cmd</samp> and <samp>Z</samp>, or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
+      <td>Undo the last edit.</td>
     </tr>
   </tbody>
 </table>
@@ -157,12 +161,12 @@ elevation (or average location if you have selected more than one object).</p>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="New" src="Resources/new.png"></td>
       <td>Create a new scenery package. This just creates a new folder
-in X-Plane's <code>Custom Scenery</code> folder.</td>
+in X-Plane's<code> Custom&nbsp;Scenery </code>folder.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Open" src="Resources/open.png"></td>
       <td>Open an existing scenery package. All the packages in
-X-Plane's <code>Custom Scenery</code> folder are listed but you
+X-Plane's<code> Custom&nbsp;Scenery </code>folder are listed but you
 can only actually edit those that use DSF overlays (rather than
 ENVs or "full" DSFs).</td>
     </tr>
@@ -201,8 +205,11 @@ to appear in the <a href="#objectlist">list of objects</a>.
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><a name="import"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Go To" src="Resources/import.png"></td>
       <td>Import objects and their textures from another scenery package and add them to the <a href="#objectlist">list of objects</a>.
-The imported objects are placed in <code>custom objects</code> or <code>objects</code> if either of these folders exist, otherwise in the package's top-level folder.
-The texture path names in the imported objects are fixed up as required.</td>
+The imported objects are placed in<code> custom&nbsp;objects </code>or<code> objects </code>if either of these folders exist, otherwise in the package's top-level folder. 
+The texture path names in the imported objects are fixed up as required.<br>
+Before you import objects from another scenery package you should first check
+the licensing terms; these often prohibit re-distribution of individual
+objects.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Go To" src="Resources/goto.png"></td>
@@ -226,7 +233,7 @@ package folder but are not used in the scenery.
 The type of object is indicated by a symbol:</p>
 <ul>
   <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="obj" src="Resources/obj.png"></a> Object  (<code>.obj</code>)</li>
-  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="fac" src="Resources/fac.png"></a> Polygon - facade, forest etc</li>
+  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="fac" src="Resources/fac.png"></a> Polygon - draped, facade, forest</li>
   <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="exc" src="Resources/exc.png"></a> Exclusion region</li>
 </ul>
 <p>Objects that have been made available by scenery libraries, including
@@ -239,7 +246,8 @@ with.
 <p>You can only add objects that appear in these lists to your scenery
 (think of this as your "palette"):</p>
 <ul>
-  <li>Use <a href="#import"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Import" src="Resources/import.png"></a> to copy objects from another scenery package.</li>
+  <li>Use <a href="#import"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Import" src="Resources/import.png"></a> to copy objects from another scenery <u>package</u>. (Don't use this to copy objects from a scenery
+<u>library</u>; just select the object from the appropriate list).</li>
   <li>Use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have otherwise added or modified objects in the scenery package folder, or if you have installed a new scenery library.</li>
 </ul>
 <h4>Preview picture</h4>
@@ -257,22 +265,28 @@ and in a simplified form. <i>ie</i>:</p>
   <li>No lights, lines, shading or animation. 
 Objects that only contain lights or lines are displayed as small
 "placeholder" cubes so that they can be edited.</li>
-  <li>Forests are just displayed as an outline polygon. X-Plane allows
-forests to contain holes (glades), however this application does not. If you
-edit a forest any hole will be deleted.</li>
-  <li>Other polygons (lines, strings etc) are just displayed as an outline
+  <li>Forests are just displayed as an outline.</li>
+  <li>X-Plane allows forests and draped polygons to contain holes (glades),
+however this application does not. If you edit a forest or draped polygon
+any hole will be deleted.</li>
+  <li>This application only understands facades and forests.
+Other types of polygons (lines, strings etc) are displayed as an outline
 and cannot be edited.</li>
   <li>Terrain textures are simplified - no beaches or overlay textures.</li>
   <li>No flattening of terrain around airports. Terrain is displayed as if the
 X-Plane "allow sloped runways" rendering option is turned on.</li>
 </ul>
-<p>X-Plane looks for scenery packages in alphabetical order in the
-<code>Custom&nbsp;Scenery</code> folder, and stops looking once it finds a
-"full" DSF for the required area. So an overlay scenery package will not be
-displayed if it has a name later in the alphabet than a "full" scenery
-package for the same area.
+<a name="priority">    
+<p>X-Plane prioritises scenery packages; and it doesn't load scenery from
+lower priority packages once it has found a "full" DSF for the required area.
+A package's priority is determined by its <a href="http://en.wikipedia.org/wiki/ASCIIbetical">ASCIIbetical</a> order in
+the<code> Custom&nbsp;Scenery </code>folder.
+So an overlay scenery package will not be displayed if it has a name later
+in the alphabet than a "full" scenery package for the same area.</a><br>
 This application lets you edit the overlay scenery package and does not
-warn you about this problem.</p>
+warn you about this problem.
+You can see the order in which X-Plane prioritises your packages
+by looking at the file <code>Log.txt</code> in X-Plane's top-level folder.</p>
 <p>When you open or reload a scenery package this application warns about any
 objects that it can't read or that are missing, but lets you edit and save
 the scenery package anyway. The unreadable or missing objects are displayed
@@ -288,20 +302,86 @@ Many objects in the <code>global8</code> library exist in multiple versions
 exists in eight different versions in X-Plane 8.40; if you use that object
 in your scenery package then this application will always display the same
 version, but X-Plane will display one of the eight versions chosen at random.<p>
+<h3>Troubleshooting</h3>
+<h4>OverlayEditor complains that it "Can't read one or more objects"</h4>
+Neither X-Plane nor OverlayEditor can read objects designed for X-Plane v5.
+You can identify objects by looking at them in a text editor;
+the second line should start with <code>2</code>, <code>700</code> or a larger
+number and the third line should start with <code>OBJ</code>.
+Otherwise this is either an X-Plane v5 object or it is not an X-Plane
+object at all.<br>
+If the object looks OK then please report the problem to the
+<a href="mailto:x-plane@marginal.org.uk">author</a>.
+
+<h4>My scenery object just appears as a grey blob in OverlayEditor</h4>
+OverlayEditor doesn't draw lights or lines - objects that only contain
+lights or lines are displayed as small "placeholder" cubes.
+This is a limitation of the application.
+    
+<h4>My scenery object has the right shape, but appears grey in OverlayEditor</h4>
+This happens when OverlayEditor fails to find the texture file listed in your
+object.<br>
+OverlayEditor expects the texture filename to have the correct case.
+Edit your object to correct the texture filename.
+Then press <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> to tell OverlayEditor to re-read your object.
+
+<h4>My scenery objects don't show up in X-Plane</h4>
+<dl>
+  <dt>Check that OverlayEditor saved your package correctly:</dt>
+  <dd>Run OverlayEditor again, open your scenery package and check that
+it looks OK.</dd>
+  <dt>&nbsp;</dt>
+  <dt>Check that OverlayEditor saved your package in the correct copy of X-Plane:</dt>
+  <dd>Press <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
+and check that the "X-Plane location" points to the copy of X-Plane
+that you're running.<br>
+If it doesn't, change the "X-Plane location" setting.
+Then, in Explorer or the Finder, move your scenery package folder to the
+copy of X-Plane that you're running.</dd>
+  <dt>&nbsp;</dt>
+  <dt>Check your X-Plane settings:</dt>
+  <dd>Run X-Plane and choose <samp>Settings &raquo; Rendering&nbsp;Options</samp>.<br>
+Check that "number of objects" is not set to "None".</dd>
+  <dt>&nbsp;</dt>
+  <dt>Check that X-Plane found your scenery package:</dt>
+  <dd>Quit X-Plane. Open the file <code>Log.txt</code> in the top-level
+X-Plane folder.
+Your scenery package should be listed at least twice in this file;
+firstly in the list of scenery packages, eg:<br>
+<code>&nbsp;4 Custom Scenery\<i>My package</i>\</code><br>
+and secondly when the X-Plane loads the DSF(s) from your scenery package, eg:<br>
+<code>&nbsp;DSF load time: 28488 for file Custom Scenery\<i>My package</i>\Earth nav data:+50-010\+51-001.dsf</code><br>
+If X-Plane is loading DSFs from another package in
+the<code> Custom&nbsp;Scenery </code>folder this is because the other package
+has a <a href="#priority">higher priority</a> than your package.
+Rename one or both of the packages to change their relative priority.</dd>
+</dl>
+
 <h3>Limitations</h3>
 <ul>
   <li>Does not display autogen scenery.</li>
   <li>Does not display lights or lines in objects.</li>
   <li>Does not convert or edit <code>.env</code> files.</li>
   <li>Does not edit runways, taxiways, navaids etc.</li>
+  <li>Cannot save packages that contain draped polygons.<li>
   <li>There is a limit to the number of objects that you can select at once. The number depends on your graphics hardware.</li>
   <li>Palletised or interlaced PNG files appear plain grey (X-Plane can't read the former either).</li>
 </ul>
+<h3>License</h3>
+<p>These tools are licensed under the Creative Commons <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/">Attribution-ShareAlike</a> license.</p>
+<p>Use of these tools does not impose any requirement on you to license
+your work under a Creative Commons license. For the avoidance of doubt,
+this means that you can license any scenery that you make using these
+tools under commercial terms (subject to any licensing restrictions on
+any imported or library objects that you use).</p>
+<p>The author would appreciate a courtesy copy of any commercial
+scenery or planes that you make using these tools, but you are under
+no obligation.</p>
 <hr>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 1.55 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 1.57 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px; vertical-align: text-bottom;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
       </td>
     </tr>

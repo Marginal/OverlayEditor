@@ -95,11 +95,12 @@ setup(name='OverlayEditor',
                    ),
                   ] + platdata,
 
-      options = {'py2exe': {'ascii':True,
+      options = {'py2exe': {'ascii':True,	# suppresss encodings?
                             'dll_excludes':['w9xpopen.exe'],
                             'bundle_files':True,
                             'compressed':True,
                             'excludes':['tcl', 'Tkinter', 'mx','socket','urllib','webbrowser'],
+                            'packages':['encodings.mbcs','encodings.utf_8'],
                             'optimize':2,
                             },
                  'py2app': {'argv_emulation':False,

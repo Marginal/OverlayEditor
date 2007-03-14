@@ -5,6 +5,7 @@ try:
     from OpenGL.GL.ARB.texture_non_power_of_two import glInitTextureNonPowerOfTwoARB
 except:	# not in 2.0.0.44
     def glInitTextureNonPowerOfTwoARB(): return False
+import codecs
 from glob import glob
 from math import cos, log, pi, fabs
 from os import getenv, listdir, mkdir
@@ -17,8 +18,11 @@ import wx
 from DSFLib import readDSF
 from version import appname, appversion, debug
 
-if platform!='win32':
-    import codecs
+#if platform!='win32':
+#    import codecs
+
+# memory leak? causing SegFault on Linux - Ubuntu seems OK for some reason
+cantreleasetexs=(platform.startswith('linux') and 'ubuntu' not in sys.version.lower())
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
@@ -67,10 +71,7 @@ class Prefs:
 
     def read(self):
         try:
-            if platform=='win32':
-                handle=file(self.filename,'rU')
-            else:
-                handle=codecs.open(self.filename, 'rU', 'utf-8')
+            handle=codecs.open(self.filename, 'rU', 'utf-8')
             self.xplane=handle.readline().strip()
             self.package=handle.readline().strip()
             if self.package=='None': self.package=None
@@ -90,10 +91,7 @@ class Prefs:
 
     def write(self):
         try:
-            if platform=='win32':
-                handle=file(self.filename,'wt')
-            else:
-                handle=codecs.open(self.filename, 'wt', 'utf-8')
+            handle=codecs.open(self.filename, 'wt', 'utf-8')
             handle.write('%s\n%s\n*options=%d\n' % (
                 self.xplane, self.package, self.options))
             for pkg, (f,lat,lon,hdg,w,h,o) in self.packageprops.iteritems():
@@ -114,7 +112,7 @@ def readApt(filename):
         h=codecs.open(filename, 'rU', 'latin1')
     if not h.readline().strip() in ['A','I']:
         raise IOError
-    while 1:	# NYEXPRO has a blank line here
+    while True:	# NYEXPRO has a blank line here
         c=h.readline().split()
         if c: break
     ver=c[0]
@@ -126,7 +124,7 @@ def readApt(filename):
     pavement=[]
     for line in h:
         c=line.split()
-        if not c: continue
+        if not c or c[0][0]=='#': continue
         id=int(c[0])
         if pavement and id not in range(111,120):
             run.append(pavement[:-1])
@@ -160,7 +158,7 @@ def readApt(filename):
             if not loc: loc=[lat,lon]
             run.append((lat, lon, float(c[4]), float(c[5]),float(c[6]),
                         0,0, float(c[7])))
-        elif id==100 and int(c[2]) not in [13,15]: # 850 Runway
+        elif id==100: # and int(c[2]) not in [13,15]: # 850 Runway
             # ((lat1,lon1),(lat2,lon2),width,stop1,stop2)
             if not loc:
                 loc=[(float(c[9])+float(c[18]))/2,
@@ -239,7 +237,7 @@ def readLib(filename, objects, terrain):
             if not c: continue
             if c[0] in ['EXPORT', 'EXPORT_RATIO', 'EXPORT_EXTEND']:
                 if c[0]=='EXPORT_RATIO': c.pop(1)
-                if len(c)<3 or c[1][-4:].lower() not in ['.obj', '.fac', '.for', '.ter']: continue
+                if len(c)<3 or c[1][-4:].lower() not in ['.obj', '.fac', '.for', '.pol', '.ter']: continue
                 c.pop(0)
                 name=c[0]
                 name=name.replace(':','/')
@@ -290,7 +288,7 @@ class TexCache:
             self.clampmode=GL_REPEAT
 
     def flush(self):
-        if 'SUSE' in sys.version:
+        if cantreleasetexs:
             # Hack round suspected memory leak causing SegFault on SUSE
             pass
         else:
@@ -380,34 +378,30 @@ class FacadeDef:
         h=file(path, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
-        if not h.readline().strip() in ['800']:
+        if not h.readline().split('#')[0].strip() in ['800']:
             raise IOError
         if not h.readline().strip() in ['FACADE']:
             raise IOError
-        while 1:
+        while True:
             line=h.readline()
             if not line: break
             c=line.split('#')[0].split()
             if not c: continue
-            if c[0]=='TEXTURE':
-                if len(c)>1:
-                    tex=line[7:].strip()
-                    tex=tex.replace(':', sep)
-                    tex=tex.replace('/', sep)
-                    tex=abspath(join(texpath,tex))
-                    for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
-                        if exists(tex+ext):
-                            self.texture=texcache.get(tex+ext)
-                            break
-                    else:
-                        if debug: print 'Failed to find texture "%s"' % tex
+            if c[0]=='TEXTURE' and len(c)>1:
+                tex=line[7:].strip()
+                tex=tex.replace(':', sep)
+                tex=tex.replace('/', sep)
+                tex=abspath(join(texpath,tex))
+                if exists(tex):
+                    self.texture=texcache.get(tex)
+                elif debug: print 'Failed to find texture "%s"' % tex
             elif c[0]=='RING':
                 if int(c[1]): self.ring=1
             elif c[0]=='TWO_SIDED': self.two_sided=(int(c[1])!=0)
             elif c[0]=='LOD':
                 # LOD
                 roof=[]
-                while 1:
+                while True:
                     line=h.readline()
                     if not line: break
                     c=line.split('#')[0].split()
@@ -421,7 +415,7 @@ class FacadeDef:
                             self.roof=roof
                         else:
                             self.roof=[roof[0], roof[0], roof[0], roof[0]]
-                        while 1:
+                        while True:
                             line=h.readline()
                             if not line: break
                             c=line.split('#')[0].split()
@@ -449,6 +443,8 @@ class FacadeDef:
                         raise IOError
                 break	# stop after first LOD
         h.close()
+        if not self.horiz or not self.vert:
+            raise IOError
 
 
 class ExcludeDef:
@@ -457,6 +453,51 @@ class ExcludeDef:
 class ForestDef:
     def __init__(self, path, texcache):
         pass
+
+class DrapedDef:
+
+    def __init__(self, path, texcache):
+        self.texture=0
+        self.ortho=False
+        self.hscale=100
+        self.vscale=100
+        self.layer=None
+    
+        co=sep+'custom objects'+sep
+        if co in path.lower():
+            texpath=path[:path.lower().index(co)]
+            for f in listdir(texpath):
+                if f.lower()=='custom object textures':
+                    texpath=join(texpath,f)
+                    break
+        else:
+            texpath=dirname(path)
+        h=file(path, 'rU')
+        if not h.readline().strip()[0] in ['I','A']:
+            raise IOError
+        if not h.readline().split('#')[0].strip() in ['850']:
+            raise IOError
+        if not h.readline().strip() in ['DRAPED_POLYGON']:
+            raise IOError
+        while True:
+            line=h.readline()
+            if not line: break
+            c=line.split('#')[0].split()
+            if not c: continue
+            if c[0] in ['TEXTURE', 'TEXTURE_NOWRAP'] and len(c)>1:
+                if c[0]=='TEXTURE_NOWRAP':
+                    self.ortho=True
+                tex=line[7:].strip()
+                tex=tex.replace(':', sep)
+                tex=tex.replace('/', sep)
+                tex=abspath(join(texpath,tex))
+                if exists(tex):
+                    self.texture=texcache.get(tex)
+                elif debug: print 'Failed to find texture "%s"' % tex
+            elif c[0]=='SCALE':
+                self.hscale=float(c[1])
+                self.vscale=float(c[2])
+        h.close()
 
 
 class VertexCache:
@@ -538,7 +579,7 @@ class VertexCache:
         
         if not name in self.obj:
             # Physical object is missing
-            if name.startswith('Exclude:') or name[-4:].lower() not in ['.obj', '.fac', '.for']:
+            if name.startswith('Exclude:') or name[-4:].lower() not in ['.obj', '.fac', '.for', '.pol']:
                 return True	# Don't need a physical object
             if name[0]=='*':	# this application's resource
                 self.obj[name]=join('Resources', name[1:])
@@ -586,9 +627,12 @@ class VertexCache:
         elif path[-4:].lower()=='.for':
             self.poly[path]=ForestDef(path, self.texcache)
             return retval
+        elif path[-4:].lower()=='.pol':
+            self.poly[path]=DrapedDef(path, self.texcache)
+            return retval
 
         # Physical object has not yet been read
-        if 1:#XXXtry:
+        if True: #try:
             h=None
             culled=[]
             nocull=[]
@@ -617,7 +661,7 @@ class VertexCache:
             if version!='2' and not h.readline().split()[0]=='OBJ':
                 raise IOError
             if version in ['2','700']:
-                while 1:
+                while True:
                     line=h.readline()
                     if not line: raise IOError
                     tex=line.strip()
@@ -634,10 +678,10 @@ class VertexCache:
                 else:
                     if debug: print 'Failed to find texture "%s"' % tex
             if version=='2':
-                while 1:
+                while True:
                     line=h.readline()
                     if not line: break
-                    c=line.split()
+                    c=line.split('//')[0].split()
                     if not c: continue
                     if c[0]=='99':
                         break
@@ -661,7 +705,25 @@ class VertexCache:
                         tcurrent.append([uv[1],uv[2]])
                         current.append(v[2])
                         tcurrent.append([uv[1],uv[3]])
-                    else:
+                    elif int(c[0]) < 0:	# strip
+                        count=-int(c[0])
+                        seq=[]
+                        for i in range(0,count*2-2,2):
+                            seq.extend([i,i+1,i+2,i+3,i+2,i+1])
+                        v=[]
+                        t=[]
+                        for i in range(count):
+                            c=h.readline().split()
+                            v.append([float(c[0]), float(c[1]), float(c[2])])
+                            maxsize=max(maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
+                            v.append([float(c[3]), float(c[4]), float(c[5])])
+                            maxsize=max(maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
+                            t.append([float(c[6]), float(c[8])])
+                            t.append([float(c[7]), float(c[9])])
+                        for i in seq:
+                            current.append(v[i])
+                            tcurrent.append(t[i])
+                    else:	# quads: type 4, 5, 6, 7, 8
                         uv=[float(c[1]), float(c[2]), float(c[3]), float(c[4])]
                         v=[]
                         for i in range(4):
@@ -681,7 +743,7 @@ class VertexCache:
                         current.append(v[3])
                         tcurrent.append([uv[0],uv[3]])
             elif version=='700':
-                while 1:
+                while True:
                     line=h.readline()
                     if not line: break
                     c=line.split('//')[0].split()
@@ -725,7 +787,7 @@ class VertexCache:
                             count=int(c[1])
                             for i in range(1,count-1):
                                 seq.extend([0,i,i+1])
-                        else:
+                        else:	# quad
                             count=4
                             seq=[0,1,2,0,2,3]
                         v=[]
@@ -749,7 +811,7 @@ class VertexCache:
                 vt=[]
                 idx=[]
                 anim=[[0,0,0]]
-                while 1:
+                while True:
                     line=h.readline()
                     if not line: break
                     c=line.split('#')[0].split()
@@ -870,7 +932,6 @@ class VertexCache:
             #if options&Prefs.ELEVATION:
             #    # Transfrom from lat,lon,e to curved surface in cartesian space
             #    (x,y,z)=v
-            #    xxx
             
             if (texture,flags) in bytex:
                 (v2,t2)=bytex[(texture,flags)]
@@ -975,6 +1036,13 @@ def importObj(pkgpath, path):
         else:
             t='custom object textures'
         oldtexpath=join(oldtexpath, t)
+    elif sep+'autogen objects'+sep in path.lower():
+        oldtexpath=path[:path.lower().index(sep+'autogen objects'+sep)]
+        for t in listdir(oldtexpath):
+            if t.lower()=='autogen textures': break
+        else:
+            t='AutoGen textures'
+        oldtexpath=join(oldtexpath, t)
     else:
         oldtexpath=dirname(path)
 
@@ -1006,10 +1074,10 @@ def importObj(pkgpath, path):
     for f in listdir(newpath):
         if f.lower()==basename(path).lower():
             raise IOError, (0, "An object with this name already exists in this package")
-    if path[-4:].lower()=='.fac':
-        badobj=(0, "This is not an X-Plane v8 facade")
-    else:
+    if path[-4:].lower()=='.obj':
         badobj=(0, "This is not an X-Plane v6, v7 or v8 object")
+    else:
+        badobj=(0, "This is not an X-Plane v8 facade, forest or polygon")
     h=file(path, 'rU')
     # Preserve comments, copyrights etc
     line=h.readline().strip()
@@ -1022,18 +1090,19 @@ def importObj(pkgpath, path):
     line=h.readline().strip()
     header+=line+'\n'
     c=line.split()
-    if not c or not c[0] in ['2', '700','800']:
+    if not c or not c[0] in ['2', '700', '800', '850']:
         raise IOError, badobj
     version=c[0]
     if version!='2':
         line=h.readline().strip()
         header+=line+'\n'
         c=line.split()
-        if not c or not (c[0]=='OBJ' or (version=='800'
-                                         and c[0] in ['FACADE', 'FOREST'])):
+        if not c or not (c[0]=='OBJ' or
+                         (version=='800' and c[0] in ['FACADE', 'FOREST']) or
+                         (version=='850' and c[0]=='DRAPED_POLYGON')):
             raise IOError, badobj
     if version in ['2','700']:
-        while 1:
+        while True:
             line=h.readline()
             if not line: raise IOError, badobj
             line=line.strip()
@@ -1069,8 +1138,8 @@ def importObj(pkgpath, path):
                         continue	# next lit
                     break
                 break
-    else: # v8
-        while 1:
+    else: # v8.x
+        while True:
             line=h.readline()
             if not line: raise IOError, badobj
             line=line.strip()
@@ -1097,7 +1166,7 @@ def importObj(pkgpath, path):
     w=file(newfile, 'wU')
     w.write(header)
     for line in h:
-        w.write(line.strip()+'\n')
+        w.write(line.rstrip()+'\n')
     w.close()
     h.close()
     return newfile
