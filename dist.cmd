@@ -5,7 +5,6 @@ for /f "usebackq tokens=1,2" %%I in (`c:\Progra~1\Python24\python.exe -c "from v
 set RPM=%TMP%\overlayeditor
 
 @if exist OverlayEditor_%VER%_src.zip del OverlayEditor_%VER%_src.zip
-REM @if exist OverlayEditor_%VER%_linux.tar.gz del OverlayEditor_%VER%_linux.tar.gz
 @if exist overlayeditor-%VERSION%-1.i386.rpm del overlayeditor-%VERSION%-1.i386.rpm
 @if exist OverlayEditor_%VER%_mac.zip del OverlayEditor_%VER%_mac.zip
 @if exist OverlayEditor_%VER%_win32.exe del OverlayEditor_%VER%_win32.exe
@@ -34,7 +33,11 @@ mkdir "%RPMRT%\usr\local\bin"
 mkdir "%RPMRT%\usr\local\lib\overlayeditor\Resources"
 mkdir "%RPMRT%\usr\local\lib\overlayeditor\linux"
 mkdir "%RPMRT%\usr\local\lib\overlayeditor\win32"
-copy linux\OverlayEditor.gif "%RPM%\SOURCES\overlayeditor.gif" |findstr -v "file(s) copied"
+mkdir "%RPMRT%\usr\share\applications"
+mkdir "%RPMRT%\usr\share\icons\hicolor\48x48\apps"
+copy linux\OverlayEditor.gif "%RPM%\SOURCES" |findstr -v "file(s) copied"
+copy linux\overlayeditor.desktop "%RPMRT%\usr\share\applications" |findstr -v "file(s) copied"
+copy Resources\OverlayEditor.png "%RPMRT%\usr\share\icons\hicolor\48x48\apps\overlayeditor.png" |findstr -v "file(s) copied"
 echo BuildRoot: /tmp/overlayeditor/root> "%RPM%\overlayeditor.spec"
 echo Version: %VERSION%>> "%RPM%\overlayeditor.spec"
 type linux\overlayeditor.spec    >> "%RPM%\overlayeditor.spec"
@@ -46,6 +49,17 @@ for %%I in (linux\DSFTool) do (copy linux\%%~nxI "%RPMRT%\usr\local\lib\overlaye
 for %%I in (win32\DSFTool.exe) do (copy win32\%%~nxI "%RPMRT%\usr\local\lib\overlayeditor\win32" |findstr -v "file(s) copied")
 "C:\Program Files\cygwin\lib\rpm\rpmb.exe" --quiet -bb --target i386-pc-linux --define '_topdir /tmp/overlayeditor' /tmp/overlayeditor/overlayeditor.spec
 move "%RPM%\RPMS\i386\overlayeditor-%VERSION%-1.cygwin.i386.rpm" overlayeditor-%VERSION%-1.i386.rpm
+mkdir "%RPMRT%\DEBIAN"
+echo Version: %VERSION%-1> "%RPMRT%\DEBIAN\control"
+type linux\control >> "%RPMRT%\DEBIAN\control"
+chmod -R 755 "%RPMRT%"
+for /r "%RPMRT%" %%I in (*) do chmod 644 %%I
+chmod -R 755 "%RPMRT%\usr\local\bin\overlayeditor"
+chmod -R 755 "%RPMRT%\usr\local\lib\overlayeditor\linux"
+chmod -R 755 "%RPMRT%\usr\local\lib\overlayeditor\win32"
+chown -R root:root "%RPMRT%"
+dpkg-deb -b /tmp/overlayeditor/root .
+chown -R %USERNAME% "%RPMRT%"
 
 @REM mac
 mkdir OverlayEditor.app\Contents
@@ -62,7 +76,7 @@ zip -j OverlayEditor_%VER%_mac.zip MacOS/OverlayEditor.html |findstr -vc:"adding
 zip -r OverlayEditor_%VER%_mac.zip OverlayEditor.app |findstr -vc:"adding:"
 
 @REM win32
-win32\setup.py py2exe
+win32\setup.py -q py2exe
 REM @set cwd="%CD%"
 REM cd dist
 REM zip -r ..\OverlayEditor_%VER%_win32.zip * |findstr -vc:"adding:"

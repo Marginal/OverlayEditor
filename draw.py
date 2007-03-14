@@ -1,6 +1,13 @@
-from math import acos, atan2, cos, sin, floor, hypot, pi
 from OpenGL.GL import *
 from OpenGL.GLU import *
+try:
+    # apparently older PyOpenGL version didn't define gluTessVertex
+    gluTessVertex
+except NameError:
+    from OpenGL import GLU
+    gluTessVertex = GLU._gluTessVertex
+
+from math import acos, atan2, cos, sin, floor, hypot, pi
 from os.path import join
 from struct import unpack
 from sys import exit, platform, maxint, version
@@ -13,6 +20,7 @@ from version import appname, dofacades
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
+twopi=pi+pi
 f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 sband=12	# width of mouse scroll band around edge of window
@@ -52,10 +60,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.tile=[0,999]	# [lat,lon] of SW
         self.centre=None	# [lat,lon] of centre
         self.airports={}	# (lat,lon,hdg,length,width) by code
-        self.runways={}		# (bbox,  [points], xwidth, zwidth) by tile
-        self.runwayslist=0
+        self.runways={}		# diplay list by tile
         self.navaids=[]		# (type, lat, lon, hdg)
-        self.nav={}		# [(obj, x, height, z, hdg)] by tile
         self.objects={}		# [(name,lat,lon,hdg,height)] by tile
         self.polygons={}	# [(name, parameter, [windings])] by tile
         self.objectslist=0
@@ -344,25 +350,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         glCallList(self.meshlist)
 
         # Runways
-        if not self.runwayslist:
-            self.runwayslist=glGenLists(1)
-            glNewList(self.runwayslist, GL_COMPILE)
-            glColor3f(0.333,0.333,0.333)
-            glDisable(GL_TEXTURE_2D)
-            glPolygonOffset(-10, -100)	# Stupid value cos not co-planar
-            glEnable(GL_POLYGON_OFFSET_FILL)
-            glDepthMask(GL_FALSE)	# Don't let poly offset update depth
-            for (runway, xinc, zinc) in self.runways[(self.tile[0],self.tile[1],self.options&Prefs.ELEVATION)]:
-                glBegin(GL_QUAD_STRIP)
-                for p in runway:
-                    glVertex3f(p[0]+xinc, p[1], p[2]+zinc)
-                    glVertex3f(p[0]-xinc, p[1], p[2]-zinc)
-                glEnd()
-            glDepthMask(GL_TRUE)
-            glEndList()
-        glCallList(self.runwayslist)
+        key=(self.tile[0],self.tile[1],self.options&Prefs.ELEVATION)
+        if key in self.runways: glCallList(self.runways[key])
 
-        # Navaids, Objects and Polygons
+        # Objects and Polygons
         if not self.objectslist:
             self.objectslist=glGenLists(1)
             glNewList(self.objectslist, GL_COMPILE)
@@ -413,11 +404,10 @@ class MyGL(wx.glcanvas.GLCanvas):
             glColor3f(0.75, 0.75, 0.75)	# Unpainted
             glEnable(GL_DEPTH_TEST)
             polystate=0
-            draw=objects+self.nav[(self.tile[0],self.tile[1],self.options&Prefs.ELEVATION)]
-            for i in range(len(draw)):
+            for i in range(len(objects)):
                 if i in self.selected and not self.selectanchor:
                     continue	# don't have to recompute on move
-                obj=draw[i]
+                obj=objects[i]
                 (x,z)=self.latlon2m(obj.lat, obj.lon)
                 (base,culled,nocull,texno,poly)=self.vertexcache.get(obj.name)
                 if poly:
@@ -1089,16 +1079,16 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def reload(self, reload, options, airports, navaids,
                objectmap, objects, polygons,
-               background, terrain, dsfdir):
+               background, terrain, dsfdirs):
         self.valid=False
         self.options=options
-        self.airports=airports
-        self.runways={}
+        self.airports=airports	# [runways] by tile
         self.navaids=navaids
-        self.nav={}
-        self.vertexcache.flushObjs(objectmap, terrain, dsfdir)
-        self.trashlists(True, True)	# need to re-layout runways
+        self.vertexcache.flushObjs(objectmap, terrain, dsfdirs)
+        self.trashlists(True, True)
         self.tile=[0,999]	# force reload
+        for key in self.runways.keys():	# need to re-layout runways
+            glDeleteLists(self.runways.pop(key), 1)
         if objects!=None:
             self.objects=objects
             self.polygons=polygons
@@ -1110,7 +1100,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.background=(image, lat, lon, hdg, width, length, opacity,None)
         else:
             self.background=None
-        self.runways={}
         self.selected=[]	# may not have same indices in new list
         self.selectednode=None
         if not reload:
@@ -1197,30 +1186,50 @@ class MyGL(wx.glcanvas.GLCanvas):
             key=(newtile[0],newtile[1],options&Prefs.ELEVATION)
             if key not in self.runways:
                 airports=[]
-                for apt in self.airports.values():
-                    (lat,lon,h,length,width,stop0,stop1)=apt[0]
-                    if [int(floor(lat)),int(floor(lon))]!=newtile: continue
+                pavements=[]
+                # Find bounding boxes of airport runways in this tile
+                for apt in self.airports[(newtile[0],newtile[1])]:
                     minx=minz=maxint
                     maxx=maxz=-maxint
                     runways=[]
-                    for (lat,lon,h,length,width,stop0,stop1) in apt:
-                        #print lat,lon,h,length,width
-                        (cx,cz)=self.aptlatlon2m(lat,lon)
-                        length0=f2m*(length/2.0+stop0)
-                        length1=f2m*(length/2.0+stop1)
-                        width=f2m*width/2
-                        h=d2r*h
-                        coshdg=cos(h)
-                        sinhdg=sin(h)
-                        p1=[cx-length0*sinhdg, 0, cz+length0*coshdg]
-                        p2=[cx+length1*sinhdg, 0, cz-length1*coshdg]
-                        minx=min(minx, p1[0], p2[0])
-                        maxx=max(maxx, p1[0], p2[0])
-                        minz=min(minz, p1[2], p2[2])
-                        maxz=max(maxz, p1[2], p2[2])
-                        runways.append((p1,p2, width*coshdg,width*sinhdg, {}))
+                    for thing in apt:
+                        if isinstance(thing, tuple):
+                            if not isinstance(thing[0], tuple):
+                                (lat,lon,h,length,width,stop1,stop2,surf)=thing
+                                (cx,cz)=self.aptlatlon2m(lat,lon)
+                                length1=length/2+stop1
+                                length2=length/2+stop2
+                                h=d2r*h
+                                coshdg=cos(h)
+                                sinhdg=sin(h)
+                                p1=[cx-length1*sinhdg, 0, cz+length1*coshdg]
+                                p2=[cx+length2*sinhdg, 0, cz-length2*coshdg]
+                            else:
+                                ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surf)=thing
+                                (x1,z1)=self.latlon2m(lat1,lon1)
+                                (x2,z2)=self.latlon2m(lat2,lon2)
+                                h=-atan2(x1-x2,z1-z2) #%twopi
+                                coshdg=cos(h)
+                                sinhdg=sin(h)
+                                p1=[x1-stop1*sinhdg, 0, z1+stop1*coshdg]
+                                p2=[x2+stop2*sinhdg, 0, z2-stop2*coshdg]
+                            minx=min(minx, p1[0], p2[0])
+                            maxx=max(maxx, p1[0], p2[0])
+                            minz=min(minz, p1[2], p2[2])
+                            maxz=max(maxz, p1[2], p2[2])
+                            runways.append((p1,p2, width/2*coshdg,width/2*sinhdg, {}))
+                        else:
+                            pavements.append(thing)
                     airports.append(([minx, maxx, minz, maxz], runways))
     
+                self.runways[key]=glGenLists(1)
+                glNewList(self.runways[key], GL_COMPILE)
+                glColor3f(0.333,0.333,0.333)
+                glDisable(GL_TEXTURE_2D)
+                glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
+                glEnable(GL_POLYGON_OFFSET_FILL)
+                glDepthMask(GL_FALSE)	# offset mustn't update depth
+
                 for (bbox, tris) in self.vertexcache.getMeshdata(newtile,options):
                     for (abox, runways) in airports:
                         if (bbox[0] >= abox[1] or bbox[2] >= abox[3] or bbox[1] <= abox[0] or bbox[3] <= abox[2]):
@@ -1250,42 +1259,161 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 if i2:	# p2 is enclosed by this tri
                                     p2[1]=self.vertexcache.height(newtile,options,p2[0],p2[2],tri)
                 # strip out bounding box and add cuts
-                points=[]
                 for (abox, runways) in airports:
                     for (p1, p2, xinc, zinc, cuts) in runways:
+                        glBegin(GL_QUAD_STRIP)
                         a=cuts.keys()
                         a.sort()
-                        r=[p1]
-                        if len(a) and a[0]>0.01: r.append(cuts[a[0]])
+                        glVertex3f(p1[0]+xinc, p1[1], p1[2]+zinc)
+                        glVertex3f(p1[0]-xinc, p1[1], p1[2]-zinc)
+                        if len(a) and a[0]>0.01:
+                            glVertex3f(cuts[a[0]][0]+xinc, cuts[a[0]][1], cuts[a[0]][2]+zinc)
+                            glVertex3f(cuts[a[0]][0]-xinc, cuts[a[0]][1], cuts[a[0]][2]-zinc)
                         for i in range(1, len(a)):
-                            if a[i]-a[i-1]>0.01: r.append(cuts[a[i]])
-                        r.append(p2)
-                        points.append((r, xinc, zinc))
-                self.runways[key]=points	# Don't cache flat
+                            if a[i]-a[i-1]>0.01:
+                                glVertex3f(cuts[a[i]][0]+xinc, cuts[a[i]][1], cuts[a[i]][2]+zinc)
+                                glVertex3f(cuts[a[i]][0]-xinc, cuts[a[i]][1], cuts[a[i]][2]-zinc)
+                        glVertex3f(p2[0]+xinc, p2[1], p2[2]+zinc)
+                        glVertex3f(p2[0]-xinc, p2[1], p2[2]-zinc)
+                        glEnd()
 
-            progress.Update(15, 'Navaids')
-            if key not in self.nav:
-                nav=[]
-                for (id, lat, lon, hdg) in self.navaids:
-                    if [int(floor(lat)),int(floor(lon))]!=newtile: continue
-                    if id==18:   name='lib/airport/landscape/beacon2.obj'
-                    elif id==19: name='*windsock.obj'
-                    else: name=[None, None,
-                                'lib/airport/NAVAIDS/NDB_3.obj',	# 2
-                                'lib/airport/NAVAIDS/VOR.obj',		# 3
-                                'lib/airport/NAVAIDS/ILS.obj',		# 4
-                                'lib/airport/NAVAIDS/ILS.obj',		# 5
-                                'lib/airport/NAVAIDS/glideslope.obj',	# 6
-                                'lib/airport/NAVAIDS/Marker1.obj',	# 7
-                                'lib/airport/NAVAIDS/Marker2.obj',	# 8
-                                'lib/airport/NAVAIDS/Marker2.obj',	# 9
-                                ][id]
-                    (x,z)=self.latlon2m(lat,lon)
-                    nav.append(Object(name, lat, lon, hdg, self.vertexcache.height(newtile,options,x,z)))
-                self.nav[key]=nav
+                # Pavements
+                oldtess=True
+                try:
+                    if gluGetString(GLU_VERSION) >= '1.2' and GLU_VERSION_1_2:
+                        oldtess=False
+                except:
+                    pass
+                
+                tessObj = gluNewTess()
+                if oldtess:
+                    # untested
+                    gluTessCallback(tessObj, GLU_BEGIN,  self.tessbegin)
+                    gluTessCallback(tessObj, GLU_VERTEX, self.tessvertex)
+                    gluTessCallback(tessObj, GLU_END,    self.tessend)
+                else:
+                    gluTessNormal(tessObj, 0, -1, 0)
+                    gluTessCallback(tessObj, GLU_TESS_BEGIN,  self.tessbegin)
+                    gluTessCallback(tessObj, GLU_TESS_VERTEX, self.tessvertex)
+                    gluTessCallback(tessObj, GLU_TESS_END,    self.tessend)
+                    gluTessCallback(tessObj, GLU_TESS_COMBINE,self.tesscombine)
+                for pave in pavements:
+                    try:
+                        if oldtess:
+                            gluBeginPolygon(tessObj)
+                        else:
+                            gluTessBeginPolygon(tessObj, None)
+                        for i in range(len(pave)):
+                            if oldtess:
+                                if i:
+                                    gluNextContour(tessObj, GLU_CW)
+                                else:
+                                    gluNextContour(tessObj, GLU_CCW)
+                            else:
+                                gluTessBeginContour(tessObj)
+                            edge=pave[i]
+                            n=len(edge)
+                            for j in range(n):
+                                if len(edge[j])==len(edge[(j+1)%n])==2:
+                                    points=[edge[j]]
+                                else:
+                                    cpoints=[(edge[j][0],edge[j][1])]
+                                    if len(edge[j])!=2:
+                                        cpoints.append((edge[j][2],edge[j][3]))
+                                    if len(edge[(j+1)%n])!=2:
+                                        cpoints.append((2*edge[(j+1)%n][0]-edge[(j+1)%n][2],2*edge[(j+1)%n][1]-edge[(j+1)%n][3]))
+                                            
+                                    cpoints.append((edge[(j+1)%n][0],edge[(j+1)%n][1]))
+                                    points=[self.bez(cpoints, u/10.0) for u in range(10)]
+                                for (lat,lon) in points:
+                                    (x,z)=self.latlon2m(lat,lon)
+                                    y=self.vertexcache.height(newtile,options,x,z)
+                                    pt3=[x,y,z]
+                                    gluTessVertex(tessObj, pt3, pt3)
+                            if not oldtess:
+                                gluTessEndContour(tessObj)
+                        if oldtess:
+                            gluEndPolygon(tessObj)
+                        else:
+                            gluTessEndPolygon(tessObj)
+                    except GLUerror, e:
+                        pass
+                gluDeleteTess(tessObj)
+                        
+                progress.Update(15, 'Navaids')
+                objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
+                      3:  'lib/airport/NAVAIDS/VOR.obj',
+                      4:  'lib/airport/NAVAIDS/ILS.obj',
+                      5:  'lib/airport/NAVAIDS/ILS.obj',
+                      6:  'lib/airport/NAVAIDS/glideslope.obj',
+                      7:  'lib/airport/NAVAIDS/Marker1.obj',
+                      8:  'lib/airport/NAVAIDS/Marker2.obj',
+                      9:  'lib/airport/NAVAIDS/Marker2.obj',
+                      18: 'lib/airport/landscape/beacon2.obj',
+                      19: '*windsock.obj',
+                      181:'lib/airport/lights/beacon_airport.obj',
+                      182:'lib/airport/lights/beacon_seaport.obj',
+                      183:'lib/airport/lights/beacon_heliport.obj',
+                      184:'lib/airport/lights/beacon_mil.obj',
+                      185:'lib/airport/lights/beacon_airport.obj',
+                      211:'lib/airport/lights/VASI.obj',
+                      212:'lib/airport/lights/PAPI.obj',
+                      213:'lib/airport/lights/PAPI.obj',
+                      214:'lib/airport/lights/PAPI.obj',
+                      215:'lib/airport/lights/VASI3.obj',
+                      216:'lib/airport/lights/rway_guard.obj',
+                      }
+                for name in objs.values():
+                    self.vertexcache.load(name, True)	# skip errors
+                self.vertexcache.realize()
+                glDepthMask(GL_TRUE)
+                glEnable(GL_CULL_FACE)
+                cullstate=True
+                glColor3f(0.75, 0.75, 0.75)	# Unpainted
+                glEnable(GL_TEXTURE_2D)
+                glDisable(GL_POLYGON_OFFSET_FILL)
+                polystate=0
+                for (i, lat, lon, hdg) in self.navaids:
+                    if [int(floor(lat)),int(floor(lon))]==newtile and i in objs:
+                        name=objs[i]
+                        (base,culled,nocull,texno,poly)=self.vertexcache.get(name)
+                        coshdg=cos(d2r*hdg)
+                        sinhdg=sin(d2r*hdg)
+                        (x,z)=self.latlon2m(lat,lon)
+                        y=self.vertexcache.height(newtile,options,x,z)
 
-            for obj in self.nav[key]:
-                self.vertexcache.load(obj.name, True)	# skip errors
+                        glBindTexture(GL_TEXTURE_2D, texno)
+                        if poly:
+                            if polystate!=poly:
+                                glPolygonOffset(-1*poly, -1*poly)
+                                glEnable(GL_POLYGON_OFFSET_FILL)
+                            polystate=poly
+                        else:
+                            if polystate: glDisable(GL_POLYGON_OFFSET_FILL)
+                            polystate=0
+                        
+                        if i==211:
+                            seq=[(1,75),(-1,75),(1,-75),(-1,-75)]
+                        elif i in range(212,215):
+                            seq=[(12,0),(4,0),(-4,0),(-12,0)]
+                        else:
+                            seq=[(0,0)]
+                        for (xinc,zinc) in seq:
+                            glPushMatrix()
+                            glTranslatef(x+xinc*coshdg-zinc*sinhdg, y,
+                                         z+xinc*sinhdg+zinc*coshdg)
+                            glRotatef(-hdg, 0.0,1.0,0.0)
+                            if culled:
+                                if not cullstate: glEnable(GL_CULL_FACE)
+                                cullstate=True
+                                glDrawArrays(GL_TRIANGLES, base, culled)
+                            if nocull:
+                                if cullstate: glDisable(GL_CULL_FACE)
+                                cullstate=False
+                                glDrawArrays(GL_TRIANGLES, base+culled, nocull)
+                            glPopMatrix()
+
+                glEndList()
 
             # Done
             progress.Update(16, 'Done')
@@ -1310,11 +1438,37 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.Refresh()
 
-    def trashlists(self, objectstoo=False, runwaysandterraintoo=False):
+    def tessbegin(self, datatype):
+        glBegin(datatype)
+    
+    def tessvertex(self, vertex):
+        glVertex3f(*vertex)
+
+    def tesscombine(self, coords, vertex, weight):
+        return (coords[0], coords[1], coords[2])
+
+    def tessend(self):
+        glEnd()
+
+    def bez(self, p, mu):
+        # http://local.wasp.uwa.edu.au/~pbourke/curves/bezier/index.html
+        mum1=1-mu
+        if len(p)==3:
+            mu2  = mu*mu
+            mum12= mum1*mum1
+            return (p[0][0]*mum12 + 2*p[1][0]*mum1*mu + p[2][0]*mu2,
+                    p[0][1]*mum12 + 2*p[1][1]*mum1*mu + p[2][1]*mu2)
+        elif len(p)==4:
+            mu3  = mu*mu*mu
+            mum13= mum1*mum1*mum1
+            return (p[0][0]*mum13 + 3*p[1][0]*mu*mum1*mum1 + 3*p[2][0]*mu*mu*mum1 + p[3][0]*mu3,
+                    p[0][1]*mum13 + 3*p[1][1]*mu*mum1*mum1 + 3*p[2][1]*mu*mu*mum1 + p[3][1]*mu3)
+        else:
+            raise ArithmeticError
+        
+    def trashlists(self, objectstoo=False, terraintoo=False):
         #print "i", objectstoo, runwaysandterraintoo
-        if runwaysandterraintoo:
-            if self.runwayslist: glDeleteLists(self.runwayslist, 1)
-            self.runwayslist=0
+        if terraintoo:
             if self.meshlist: glDeleteLists(self.meshlist, 1)
             self.meshlist=0
         if objectstoo:

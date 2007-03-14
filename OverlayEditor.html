@@ -31,7 +31,7 @@ Scenery</a> &raquo; <a href="http://marginal.org.uk/x-planescenery/tools.html">T
 <h3>Overview</h3>
 <p>This application edits X-Plane<small><sup>&reg;</sup></small>
 DSF overlay scenery packages for X-Plane 8.30 or later.
-It runs on Windows 2000 or later and MacOS 10.3.9 or later.</p>
+It runs on Windows 2000 or later, MacOS 10.3.9 or later and Linux.</p>
 <h3>Setting up</h3>
 <p>Users of MacOS 10.3 should first install
 <a href="http://prdownloads.sourceforge.net/wxpython/wxPython2.5-osx-unicode-2.5.3.1-panther-py2.3.dmg">wxPython 2.5.3</a> or later <small>(you don't need to
@@ -244,6 +244,13 @@ and cannot be edited.</li>
   <li>Terrain textures are simplified - no beaches or overlay textures.</li>
   <li>No flattening of terrain around airports. Terrain is displayed as if the
 X-Plane "allow sloped runways" rendering option is turned on.</li>
+  <li>X-Plane looks for scenery packages in alphabetical order in the
+<code>Custom&nbsp;Scenery</code> folder, and stops looking once it finds a
+"full" DSF for the required area. So an overlay scenery package will not be
+displayed if it has a name later in the alphabet than a "full" scenery
+package for the same area.
+This application lets you edit the overlay scenery package and does not
+warn you about this problem.</li>
 </ul>
 </p>
 <p>When you open or reload a scenery package this application warns about any
@@ -264,7 +271,7 @@ version, but X-Plane will display one of the eight versions chosen at random.<p>
 <h3>Limitations</h3>
 <ul>
   <li>Does not display autogen scenery.</li>
-  <li>Does not display lights or lines.</li>
+  <li>Does not display lights or lines in objects.</li>
   <li>Does not convert or edit <code>.env</code> files.</li>
   <li>Does not edit runways, taxiways, navaids etc.</li>
   <li>There is a limit to the number of objects that you can select at once. The number depends on your graphics hardware.</li>
@@ -274,7 +281,7 @@ version, but X-Plane will display one of the eight versions chosen at random.<p>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 1.44 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 1.45 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px; vertical-align: text-bottom;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
       </td>
     </tr>

@@ -85,9 +85,9 @@ class Polygon:
 #   IOError, IndexError
 #
 # Any vector data in the DSF file is ignored.
-# If terrains is defined,  assume loading terrain and discard poly data
+# If terrains is defined,  assume loading terrain and discard non-mesh data
 # If terrains not defined, assume looking for an overlay DSF
-
+#
 def readDSF(path, terrains={}):
     baddsf=(0, "Invalid DSF file", path)
 

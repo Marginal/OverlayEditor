@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 from glob import glob
-from math import cos, sin, pi
+from math import cos, floor, sin, pi
 import os	# for startfile
 from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
@@ -61,8 +61,6 @@ mainaptdat=join('Resources',navdata,aptdat)
 mainnavdat=join('Resources',navdata,'nav.dat')
 library='library.txt'
 default=join('Resources','default scenery')
-dsfdir=join(default,'DSF 820 Earth',navdata)
-
 
 global prefs
 
@@ -227,9 +225,7 @@ class myListBox(wx.VListBox):
         event=wx.CommandEvent(wx.wxEVT_COMMAND_LISTBOX_SELECTED, self.GetId())
         event.SetEventObject(self)
         self.GetEventHandler().ProcessEvent(event)
-
         self.timer.Start(1500, True)
-
 
     def OnTimer(self, event):
         self.sel=''
@@ -237,11 +233,16 @@ class myListBox(wx.VListBox):
 
 class GotoDialog(wx.Dialog):
 
-    def __init__(self, parent, aptname, aptcode):
+    def __init__(self, parent, airports):
 
         self.choice=None
-        self.aptname=aptname
-        self.aptcode=aptcode
+
+        self.aptcode={}
+        self.aptname={}
+        for code, stuff in airports.iteritems():
+            (name, loc, run)=stuff
+            self.aptcode['%s - %s' % (code, name)]=loc
+            self.aptname['%s - %s' % (name, code)]=loc
 
         wx.Dialog.__init__(self, parent, wx.ID_ANY, "Go to airport")
         wx.EVT_CLOSE(self, self.OnClose)
@@ -326,7 +327,10 @@ class PaletteListBox(wx.VListBox):
             imgno=1
         self.imgs.Draw(imgno, dc, rect.x+self.indent, rect.y,
                        wx.IMAGELIST_DRAW_TRANSPARENT, True)
-        dc.DrawText(self.choices[n][:-4], rect.x+12+2*self.indent, rect.y)
+        if self.choices[n].startswith('Exclude:'):
+            dc.DrawText(self.choices[n], rect.x+12+2*self.indent, rect.y)
+        else:
+            dc.DrawText(self.choices[n][:-4], rect.x+12+2*self.indent, rect.y)
 
 class Palette(wx.Choicebook):
     
@@ -353,7 +357,6 @@ class Palette(wx.Choicebook):
 
     def OnKeyDown(self, event):
         # Override & manually propagate
-        print event
         self.frame.OnKeyDown(event)
         event.Skip(False)
 
@@ -423,7 +426,8 @@ class Palette(wx.Choicebook):
             if self.GetSelection()!=ontab: self.SetSelection(ontab)
             l=self.lists[ontab]
             l.SetSelection(l.choices.index(key))
-            self.frame.toolbar.EnableTool(wx.ID_ADD, True)
+            if prefs.package:
+                self.frame.toolbar.EnableTool(wx.ID_ADD, True)
         else:	# no key, or listed in DSF but not present!
             self.frame.toolbar.EnableTool(wx.ID_ADD, False)
 
@@ -769,7 +773,7 @@ class MainWindow(wx.Frame):
         self.hdg=0
         self.elev=45
         self.dist=3333.25
-        self.aptname=self.aptcode=self.aptrunways={}	# default apt.dat
+        self.airports={}	# default apt.dat, by code
         self.nav=[]
         self.goto=None	# goto dialog
         self.bkgd=None	# background bitmap dialog
@@ -1112,12 +1116,13 @@ class MainWindow(wx.Frame):
         choices=listdir(join(prefs.xplane,custom))
         sortfolded(choices)
         i=0
-        x=0
+        x=150
+        y=12
         while i<len(choices):
-            if choices[i][0]=='.':
+            if choices[i][0]=='.' or not isdir(join(prefs.xplane,custom,choices[i])):
                 choices.pop(i)
             else:
-                i=i+1
+                i+=1
         list1=wx.ListBox(dlg, wx.ID_ANY, style=wx.LB_SINGLE, choices=choices)
         for d in choices:
             (x1,y)=list1.GetTextExtent(d)
@@ -1221,8 +1226,8 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_REFRESH, False)
             self.toolbar.EnableTool(wx.ID_PASTE, False)
         progress.Update(0, 'Global nav data')
-        if not self.aptname:	# Default apt.dat
-            (self.aptname,self.aptcode,self.aptrunways,self.nav)=readApt(join(prefs.xplane,mainaptdat))
+        if not self.airports:	# Default apt.dat
+            (self.airports,self.nav)=readApt(join(prefs.xplane,mainaptdat))
             self.nav.extend(readNav(join(prefs.xplane,mainnavdat)))
         progress.Update(1, 'Overlay DSFs')
         if not event:
@@ -1244,7 +1249,10 @@ class MainWindow(wx.Frame):
                                 isoverlay=True
                             elif kind in Polygon.EXCLUDE_NAME:
                                 # Convert exclusions to polygons and put first
-                                c=[float(i) for i in val.split('/')]
+                                if ',' in val:	# Fix for FS2XPlane 0.99
+                                    c=[float(i) for i in val.split(',')]
+                                else:
+                                    c=[float(i) for i in val.split('/')]
                                 p.insert(0,
                                          Polygon(Polygon.EXCLUDE_NAME[kind],
                                                  Polygon.EXCLUDE, 0,
@@ -1272,31 +1280,42 @@ class MainWindow(wx.Frame):
         else:
             placements=polygons=None	# keep existing
         progress.Update(2, 'Airports')
-        aptname=self.aptname
-        aptcode=self.aptcode
-        aptrunways=self.aptrunways
-        nav=self.nav
-        pkgaptname=pkgaptcode=pkgaptrunways={}
-        pkgnav=[]
-        if pkgnavdata and exists(join(pkgnavdata,aptdat)):
+        airports=dict(self.airports)
+        nav=list(self.nav)
+        runways={}
+        pkgloc=None
+        apts=glob(join(prefs.xplane, custom, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', '[aA][pP][tT].[dD][aA][tT]'))
+        for apt in apts:
             # Package-specific apt.dat
             try:
-                (pkgaptname,pkgaptcode,pkgaptrunways,pkgnav)=readApt(join(pkgnavdata,aptdat))
-                # Merge lists
-                aptname=dict(self.aptname)
-                aptname.update(pkgaptname)
-                aptcode=dict(self.aptcode)
-                aptcode.update(pkgaptcode)
-                aptrunways=dict(self.aptrunways)
-                aptrunways.update(pkgaptrunways)
-                nav=list(self.nav)
-                nav.extend(pkgnav)
+                (thisapt,thisnav)=readApt(apt)
+                # Merge lists - remove package airports from global
+                for code, stuff in thisapt.iteritems():
+                    airports.pop(code, None)
+                    (name, (lat,lon), run)=stuff
+                    tile=(int(floor(lat)),int(floor(lon)))
+                    if not tile in runways:
+                        runways[tile]=[run]
+                    else:
+                        runways[tile].append(run)
+                nav.extend(thisnav)
+                if prefs.package and apt[:-23].endswith(prefs.package):
+                    # get start location
+                    (name, loc, run)=thisapt.values()[0]
+                    pkgloc=[round2res(loc[0]),round2res(loc[1])]
             except:
-                myMessageBox("The %s file in this package is invalid." %aptdat,
-                             "Can't load airport data.",
-                             wx.ICON_EXCLAMATION|wx.OK, self)
+                if prefs.package and apt[:-23].endswith(prefs.package):
+                    myMessageBox("The %s file in this package is invalid." % aptdat, "Can't load airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
+        for code, stuff in airports.iteritems():
+            (name, (lat,lon), run)=stuff
+            tile=(int(floor(lat)),int(floor(lon)))
+            if not tile in runways:
+                runways[tile]=[run]
+            else:
+                runways[tile].append(run)
+
         if self.goto: self.goto.Close()	# Needed on wxMac 2.5
-        self.goto=GotoDialog(self, aptname, aptcode)	# build only
+        self.goto=GotoDialog(self, airports)	# build only
         # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
         # search order is: custom libraries, default libraries, scenery package
         progress.Update(3, 'Libraries')
@@ -1318,16 +1337,9 @@ class MainWindow(wx.Frame):
 
         objectsbylib={}	# (name, path) by libname
         terrain={}	# path by name
-        for path in [join(prefs.xplane,custom),
-                     join(prefs.xplane,default)]:
-            for d in listdir(path):
-                #if d=='800 objects': continue	# mostly placeholders
-                pkg=join(path,d)
-                if isdir(pkg):
-                    for f in listdir(pkg):
-                        if f.lower()==library:
-                            readLib(join(pkg,f), objectsbylib, terrain)
-                            break
+        libs=glob(join(prefs.xplane, custom, '*', '[lL][iI][bB][rR][aA][rR][yY].[tT][xX][tT]'))+glob(join(prefs.xplane, default, '*', '[lL][iI][bB][rR][aA][rR][yY].[tT][xX][tT]'))
+        libs.sort()	# asciibetical
+        for lib in libs: readLib(lib, objectsbylib, terrain)
         libobjs={}
         libs=objectsbylib.keys()
         sortfolded(libs)
@@ -1346,13 +1358,14 @@ class MainWindow(wx.Frame):
         else:
             background=None
         self.canvas.reload(event!=None, prefs.options,
-                           aptrunways, nav, objects, placements, polygons,
-                           background,
-                           terrain, join(prefs.xplane,dsfdir))
+                           runways, nav, objects, placements, polygons,
+                           background, terrain,
+                           [join(prefs.xplane, custom),
+                            join(prefs.xplane, default)])
         if not self.loc:
             # Load, not reload
-            if pkgaptname:	# go to first airport by name
-                self.loc=pkgaptname[pkgaptname.keys()[0]]
+            if pkgloc:	# go to first airport by name
+                self.loc=pkgloc
             else:
                 for p in placements.values():
                     if p:
@@ -1366,7 +1379,7 @@ class MainWindow(wx.Frame):
                             break
                     else:	# Fallback
                         self.loc=[34.096694,-117.248376]	# KSBD
-        self.loc=(round2res(self.loc[0]),round2res(self.loc[1]))
+        self.loc=[round2res(self.loc[0]),round2res(self.loc[1])]
         progress.Destroy()
         
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
@@ -1407,8 +1420,8 @@ class MainWindow(wx.Frame):
     def OnGoto(self, event):
         self.goto.CenterOnParent()	# Otherwise is centred on screen
         if self.goto.ShowModal()==wx.ID_OK and self.goto.choice:
-            self.loc=(round2res(self.goto.choice[0]),
-                      round2res(self.goto.choice[1]))
+            self.loc=[round2res(self.goto.choice[0]),
+                      round2res(self.goto.choice[1])]
             #self.hdg=0
             #self.elev=45
             #self.dist=3000
@@ -1436,7 +1449,7 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_UNDO, False)
             self.SetTitle(appname)
             dlg.Destroy()
-            self.aptname=self.aptcode=self.aptrunways={}
+            self.airports={}	# force reload
             prefs.write()
             self.OnReload(None)
         else:

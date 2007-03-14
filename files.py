@@ -5,6 +5,7 @@ try:
     from OpenGL.GL.ARB.texture_non_power_of_two import glInitTextureNonPowerOfTwoARB
 except:	# not in 2.0.0.44
     def glInitTextureNonPowerOfTwoARB(): return False
+from glob import glob
 from math import cos, pi
 from os import getenv, listdir, mkdir
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
@@ -103,9 +104,7 @@ class Prefs:
 
 
 def readApt(filename):
-    byname={}
-    bycode={}
-    runways={}	# (lat,lon,hdg,length,width,stop,stop) by code
+    airports={}	# (name, [lat,lon], [(lat,lon,hdg,length,width,stop,stop)]) by code
     nav=[]	# (type,lat,lon,hdg)
     if platform=='win32':
         h=file(filename,'rU')
@@ -113,46 +112,82 @@ def readApt(filename):
         h=codecs.open(filename, 'rU', 'latin1')
     if not h.readline().strip() in ['A','I']:
         raise IOError
-    if not h.readline().split()[0] in ['715','810','850']:
+    ver=h.readline().split()[0]
+    if not ver in ['600','715','810','850']:
         raise IOError
-    loc=None
-    name=None
-    code=None
+    ver=int(ver)
+    code=name=loc=None
     run=[]
+    pavement=[]
     for line in h:
         c=line.split()
-        if not len(c) or (len(c)==1 and int(c[0])==99):
-            if loc:
-                byname['%s - %s' % (name,code)]=loc
-                bycode['%s - %s' % (code,name)]=loc
-                runways[code]=run
-            loc=None
-            run=[]
-            continue
+        if not c: continue
         id=int(c[0])
-        if id in [1,16,17]:	# Airport/Seaport/Heliport
+        if pavement and id not in range(111,120):
+            run.append(pavement[:-1])
+            pavement=[]
+        if loc and id in [1,16,17,99]:
+            if not run: raise IOError
+            airports[code]=(name,loc,run)
+            code=name=loc=None
+            run=[]
+        if id in [1,16,17]:		# Airport/Seaport/Heliport
             code=c[4]
             name=' '.join(c[5:])
-        elif id==10: # in [10,100,102]:	# Runway / taxiway
-            if id==10:
-                lat=float(c[1])
-                lon=float(c[2])
-                if not loc: loc=[lat,lon]
-                stop=c[7].split('.')
-                
-            if len(stop)<2: stop.append(0)
-            run.append((float(c[1]),float(c[2]), float(c[4]),
-                        float(c[5]),float(c[8]),float(stop[0]),float(stop[1])))
         elif id==14:	# Prefer tower location
             loc=[float(c[1]),float(c[2])]
-        elif id in [18,19]:	# Beacon & Windsock - goes in nav
-            nav.append((id, float(c[1]), float(c[2]), 0))
+        elif id==10:	# Runway / taxiway
+            # (lat,lon,h,length,width,stop1,stop2)
+            lat=float(c[1])
+            lon=float(c[2])
+            if not loc: loc=[lat,lon]
+            stop=c[7].split('.')
+            if len(stop)<2: stop.append(0)
+            if len(c)<11: surface=1
+            else: surface=int(c[10])
+            run.append((lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]),
+                        f2m*float(stop[0]),f2m*float(stop[1]),surface))
+        elif id==102 and int(c[7]) not in [13,15]: # 850 Helipad
+            # (lat,lon,h,length,width,stop1,stop2)
+            lat=float(c[2])
+            lon=float(c[3])
+            if not loc: loc=[lat,lon]
+            run.append((lat, lon, float(c[4]), float(c[5]),float(c[6]),
+                        0,0, float(c[7])))
+        elif id==100 and int(c[2]) not in [13,15]: # 850 Runway
+            # ((lat1,lon1),(lat2,lon2),width,stop1,stop2)
+            if not loc:
+                loc=[(float(c[9])+float(c[18]))/2,
+                     (float(c[10])+float(c[19]))/2]
+            run.append(((float(c[9]), float(c[10])),
+                        (float(c[18]), float(c[19])),
+                        float(c[1]), float(c[12]),float(c[21]), float(c[2])))
+        elif id==110:
+            pavement=[[]]
+        elif id==111 and pavement:
+            pavement[-1].append((float(c[1]),float(c[2])))
+        elif id==112 and pavement:
+            pavement[-1].append((float(c[1]),float(c[2]),float(c[3]),float(c[4])))
+        elif id==113 and pavement:
+            pavement[-1].append((float(c[1]),float(c[2])))
+            pavement.append([])
+        elif id==114 and pavement:
+            pavement[-1].append((float(c[1]),float(c[2]),float(c[3]),float(c[4])))
+            pavement.append([])
+        elif id==18 and int(c[3]):	# Beacon - goes in nav
+            if ver<850:
+                nav.append((id, float(c[1]),float(c[2]), 0))
+            else:
+                nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), 0))
+        elif id==19:	# Windsock - goes in nav
+            nav.append((id, float(c[1]),float(c[2]), 0))
+        elif id==21:	# VASI/PAPI - goes in nav
+            nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
     if loc:	# No terminating 99
-        byname['%s - %s' % (name,code)]=loc
-        bycode['%s - %s' % (code,name)]=loc
-        runways[code]=run
+        if not run: raise IOError
+        airports[code]=(name,loc,run)
     h.close()
-    return (byname, bycode, runways, nav)
+    return (airports, nav)
 
 
 def readNav(filename):
@@ -424,7 +459,7 @@ class VertexCache:
         self.varray=[]
         self.tarray=[]
         self.valid=False
-        self.dsfdir=None
+        self.dsfdirs=None	# [custom, default]
 
     def flush(self):
         # invalidate array indices
@@ -436,11 +471,11 @@ class VertexCache:
         self.valid=False
         self.lasttri=None
 
-    def flushObjs(self, objects, terrain, dsfdir):
+    def flushObjs(self, objects, terrain, dsfdirs):
         # invalidate object geometry and textures
         self.obj=objects
         self.ter=terrain
-        self.dsfdir=dsfdir
+        self.dsfdirs=dsfdirs
         self.geo={}
         self.idx={}
         self.poly={}
@@ -529,7 +564,7 @@ class VertexCache:
             return retval
 
         # Physical object has not yet been read
-        if 1:#XXXtry:
+        try:
             h=None
             culled=[]
             nocull=[]
@@ -747,22 +782,32 @@ class VertexCache:
                 texno=self.texcache.get(texture)
                 self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly)
                 self.valid=False	# new geometry -> need to update OpenGL
-        #except:
-        #    if usefallback:
-        #        self.load('*default.obj')
-        #        self.objcache[name]=self.idx[path]=self.get('*default.obj')
-        #    return False
+        except:
+            if usefallback:
+                self.load('*default.obj')
+                self.objcache[name]=self.idx[path]=self.get('*default.obj')
+            return False
         return retval
 
 
     def loadMesh(self, tile, options):
         key=(tile[0],tile[1],options&Prefs.TERRAIN)
         if key in self.mesh: return	# don't reload
-        try:
-            if not options&Prefs.TERRAIN: raise IOError
-            (properties, placements, polygons, self.mesh[key])=readDSF(join(self.dsfdir, "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.dsf" % (tile[0], tile[1])), self.ter)
-        except:
-            if exists(join(self.dsfdir, "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.dsf" % (tile[0], tile[1]))) or exists(join(self.dsfdir, pardir, pardir, pardir, 'Earth nav data', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.env" % (tile[0], tile[1]))):
+        dsfs=[]
+        if options&Prefs.TERRAIN:
+            for path in self.dsfdirs:
+                dsfs+=glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1])))
+            dsfs.sort()	# asciibetical, custom first
+        for dsf in dsfs:
+            try:
+                (properties, placements, polygons, mesh)=readDSF(dsf, self.ter)
+                if mesh:
+                    self.mesh[key]=mesh
+                    break
+            except:
+                pass
+        if not key in self.mesh:
+            if glob(join(self.dsfdirs[1], '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))) + glob(join(self.dsfdirs[1], pardir, '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[eE][nN][vV]" % (tile[0], tile[1]))):
                 # DSF or ENV exists but can't read it
                 tex=join('Resources','airport0_000.png')
             else:

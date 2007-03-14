@@ -1,0 +1,11 @@
+Package: overlayeditor
+Section: graphics
+Priority: extra
+Architecture: i386
+Installed-Size: 2048
+Depends: python (>=2.4), python (<=2.4.99), python-gtk2 (>=2.6), python-imaging (>=1.1.4), python-opengl (>=2.0), wine
+Provides: overlayeditor
+Maintainer: Jonathan Harris <x-plane@marginal.org.uk>
+Description: DSF overlay editor
+ This application edits X-Plane DSF overlay scenery packages
+ for X-Plane 8.30 or later.

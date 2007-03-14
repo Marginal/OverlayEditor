@@ -7,8 +7,8 @@ URL: http://marginal.org.uk/x-planescenery
 Icon: overlayeditor.gif
 Vendor: Jonathan Harris <x-plane@marginal.org.uk>
 Prefix: /usr/local
-Requires: python>=2.4, python<2.5, wxPython>=2.6, python-imaging>=1.1.4, python-opengl>=2.0
-#Suse: python-wxGTK provides wxPython
+Requires: python>=2.4, python<2.5, wxPython>=2.6, python-imaging>=1.1.4, python-opengl>=2.0, wine
+#Suse: python-wxGTK provides wxPython, PyOpenGL=python-opengl
 
 %description
 This application edits X-Plane DSF overlay scenery packages
@@ -21,3 +21,5 @@ for X-Plane 8.30 or later.
 %doc /usr/local/lib/overlayeditor/OverlayEditor.html
 %attr(755,root,root) /usr/local/lib/overlayeditor/linux/DSFTool
 %attr(755,root,root) /usr/local/lib/overlayeditor/win32/DSFTool.exe
+/usr/share/applications/overlayeditor.desktop
+/usr/share/icons/hicolor/48x48/apps/overlayeditor.png
