@@ -501,7 +501,7 @@ class VertexCache:
         self.flush()
         self.texcache.flush()
     
-    def realize(self):
+    def realize(self, context):
         # need to call this before drawing
         if not self.valid:
             if self.varray:
@@ -795,9 +795,12 @@ class VertexCache:
                             tcurrent.append([v[3], v[4]])
             h.close()
             if not (len(culled)+len(nocull)):
-                # show empty objects as placeholders otherwise can't edit
-                self.load('*default.obj')
-                self.objcache[name]=self.idx[path]=self.get('*default.obj')
+                if usefallback!=0:
+                    # show empty objects as placeholders otherwise can't edit
+                    self.load('*default.obj')
+                    self.objcache[name]=self.idx[path]=self.get('*default.obj')
+                else:
+                    return False
             else:
                 self.geo[path]=(culled, nocull, tculled, tnocull, texture, maxpoly)
                 base=len(self.varray)

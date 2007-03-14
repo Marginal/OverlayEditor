@@ -28,6 +28,7 @@ except:
     Tkinter.Tk().withdraw()	# make and suppress top-level window
     tkMessageBox._show("Error", "PyOpenGL is not installed.\nThis application requires\npyopengl2 or later.", icon="error", type="ok")
     exit(1)
+from OpenGL.GL import *
 
 from draw import MyGL
 from files import importObj, Prefs, readApt, readNav,readLib, sortfolded
@@ -293,6 +294,7 @@ class GotoDialog(wx.Dialog):
 class PaletteListBox(wx.VListBox):
 
     def __init__(self, parent, id, style, objects, imgs):
+        if platform=='win32': style|=wx.ALWAYS_SHOW_SB	# fails on GTK
         wx.VListBox.__init__(self, parent, id, style=style)
         self.font=wx.SystemSettings_GetFont(wx.SYS_DEFAULT_GUI_FONT)
         if platform!='win32':	# Default is too big on Mac & Linux
@@ -384,7 +386,7 @@ class PaletteChoicebook(wx.Choicebook):
             
     def load(self, tabname, objects):
         #print "load", tabname
-        l=PaletteListBox(self, -1, wx.LB_SINGLE|wx.VSCROLL|wx.ALWAYS_SHOW_SB, objects, self.imgs)
+        l=PaletteListBox(self, -1, wx.LB_SINGLE|wx.VSCROLL, objects, self.imgs)
         self.lists.append(l)
         self.AddPage(l, tabname)
         wx.EVT_LISTBOX(self, l.GetId(), self.OnChoice)
@@ -446,13 +448,8 @@ class Palette(wx.SplitterWindow):
         self.SetWindowStyle(self.GetWindowStyle() & ~wx.TAB_TRAVERSAL)	# wx.TAB_TRAVERSAL is set behind our backs - this fucks up cursor keys
         self.cb=PaletteChoicebook(self, frame)
         self.preview=wx.Panel(self, wx.ID_ANY, style=wx.FULL_REPAINT_ON_RESIZE)
-        self.SplitHorizontally(self.cb, self.preview, 300)
-        if not platform.startswith('linux'):
-            self.SetMinimumPaneSize(240)	# Not really: force resize
-        else:
-            self.SetMinimumPaneSize(1)
-            self.SetSashPosition(300, True)	# force resize
-            self.UpdateSize()        
+        self.SetMinimumPaneSize(1)
+        self.SplitHorizontally(self.cb, self.preview)
         self.lastheight=self.GetSize().y
         wx.EVT_SIZE(self, self.OnSize)
         wx.EVT_KEY_DOWN(self.preview, self.OnKeyDown)
@@ -460,6 +457,10 @@ class Palette(wx.SplitterWindow):
         wx.EVT_SPLITTER_SASH_POS_CHANGING(self, self.GetId(), self.OnSashPositionChanging)
         wx.EVT_PAINT(self.preview, self.OnPaint)
 
+    def glInit(self):
+        self.sashsize=self.GetClientSize()[1]-(self.cb.GetClientSize()[1]+self.preview.GetClientSize()[1])
+        self.SetSashPosition(self.GetClientSize()[1]-self.preview.GetClientSize()[0]-self.sashsize, True)
+        
     def OnSize(self, event):
         # emulate sash gravity = 1.0
         delta=event.GetSize().y-self.lastheight
@@ -468,6 +469,14 @@ class Palette(wx.SplitterWindow):
         self.SetSashPosition(pos, False)
         self.lastheight=event.GetSize().y
         event.Skip()
+
+    def OnSashPositionChanging(self, event):
+        if event.GetSashPosition()<100:
+            # One-way minimum pane size
+            event.SetSashPosition(100)
+        elif event.GetEventObject().GetClientSize()[1]-event.GetSashPosition()-self.sashsize<16:
+            # Spring shut
+            event.SetSashPosition(event.GetEventObject().GetClientSize()[1]-self.sashsize)
 
     def OnKeyDown(self, event):
         # Override & manually propagate
@@ -479,21 +488,10 @@ class Palette(wx.SplitterWindow):
         self.frame.OnMouseWheel(event)
         event.Skip(False)
 
-    def OnSashPositionChanging(self, event):
-        if event.GetSashPosition()<100:
-            # One-way minimum pane size
-            event.SetSashPosition(100)
-        elif event.GetEventObject().GetClientSize()[1]-event.GetSashPosition()-self.sashsize<16:
-            # Spring shut
-            event.SetSashPosition(event.GetEventObject().GetClientSize()[1]-self.sashsize)
-
     def flush(self):
-        self.SetMinimumPaneSize(1)
-        self.sashsize=self.GetClientSize()[1]-(self.cb.GetClientSize()[1]+self.preview.GetClientSize()[1])
         self.cb.flush()
         self.lastkey=None
-        self.preview.SetBackgroundColour(wx.NullColour)
-        self.preview.ClearBackground()
+        self.preview.Refresh()
             
     def load(self, tabname, objects):
         self.cb.load(tabname, objects)
@@ -512,10 +510,11 @@ class Palette(wx.SplitterWindow):
             self.preview.Refresh()
 
     def OnPaint(self, event):
+        #print "preview", self.lastkey
         dc = wx.PaintDC(self.preview)
-        if dc.GetSize().y<16:
+        if dc.GetSize().y<16 or not self.lastkey:
             if self.previewkey:
-                self.previewimg=None
+                self.previewbmp=None
                 self.preview.SetBackgroundColour(wx.NullColour)
                 self.preview.ClearBackground()
             self.previewkey=None
@@ -523,15 +522,13 @@ class Palette(wx.SplitterWindow):
 
         if self.previewkey!=self.lastkey:
             # New
-
             self.previewkey=self.lastkey
+            self.previewimg=self.previewbmp=None
+
             if not self.previewkey:
-                self.previewimg=None
                 self.preview.SetBackgroundColour(wx.NullColour)
                 self.preview.ClearBackground()
                 return
-
-            self.previewimg=self.previewbmp=None
             
             # Look for built-in screenshot
             newfile=self.previewkey.replace('/', '_')[:-3]+'jpg'
@@ -544,42 +541,54 @@ class Palette(wx.SplitterWindow):
                     pass
             else:
                 # Look for library screenshot
-                if self.previewkey in self.frame.canvas.vertexcache.obj:
-                    newfile=join(dirname(self.frame.canvas.vertexcache.obj[self.previewkey]), 'screenshot.jpg')
-                    if exists(newfile):
-                        try:
-                            self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
-                        except:
-                            pass
-            if self.previewimg:
+                if not self.previewkey in self.frame.canvas.vertexcache.obj:
+                    self.preview.SetBackgroundColour(wx.NullColour)
+                    self.preview.ClearBackground()
+                    return	# unknown object - can't do anything
+                newfile=join(dirname(self.frame.canvas.vertexcache.obj[self.previewkey]), 'screenshot.jpg')
+                if exists(newfile):
+                    try:
+                        self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
+                    except:
+                        pass
+
+            if not self.previewimg and self.previewkey.endswith('.obj'):
+                # Display object data
+                self.preview.SetBackgroundColour(wx.Colour(77,128,153))
+                self.preview.ClearBackground()
+                self.previewimg=self.frame.canvas.snapshot(self.previewkey)
+                
+            elif self.previewimg:
                 self.preview.SetBackgroundColour(wx.Colour(self.previewimg.GetRed(0,0), self.previewimg.GetGreen(0,0), self.previewimg.GetBlue(0,0)))
-            else:
+                self.preview.ClearBackground()
+                
+            if not self.previewimg:	# Nowt
                 self.preview.SetBackgroundColour(wx.NullColour)
-            self.preview.ClearBackground()
-
-        if not self.previewimg:
-            return
-
-        # rescale if necessary
-        if (dc.GetSize().x >= self.previewimg.GetWidth() and
-            dc.GetSize().y >= self.previewimg.GetHeight()):
-            scale=None
-            newsize=(self.previewimg.GetWidth(), self.previewimg.GetHeight())
-        else:
-            scale=min(float(dc.GetSize().x)/self.previewimg.GetWidth(),
-                      float(dc.GetSize().y)/self.previewimg.GetHeight())
-            newsize=(int(scale*self.previewimg.GetWidth()),
-                     int(scale*self.previewimg.GetHeight()))
-        if not self.previewbmp or newsize!=self.previewsize:
-            self.previewsize=newsize
-            if scale:
-                self.previewbmp=wx.BitmapFromImage(self.previewimg.Scale(newsize[0], newsize[1]))
+                self.preview.ClearBackground()
+                
+        if self.previewimg:
+            # rescale if necessary
+            if (dc.GetSize().x >= self.previewimg.GetWidth() and
+                dc.GetSize().y >= self.previewimg.GetHeight()):
+                scale=None
+                newsize=(self.previewimg.GetWidth(),
+                         self.previewimg.GetHeight())
             else:
-                self.previewbmp=wx.BitmapFromImage(self.previewimg)
-            
-        dc.DrawBitmap(self.previewbmp,
-                      (dc.GetSize().x-self.previewsize[0])/2,
-                      (dc.GetSize().y-self.previewsize[1])/2, True)
+                scale=min(float(dc.GetSize().x)/self.previewimg.GetWidth(),
+                          float(dc.GetSize().y)/self.previewimg.GetHeight())
+                newsize=(int(scale*self.previewimg.GetWidth()),
+                         int(scale*self.previewimg.GetHeight()))
+            if not self.previewbmp or newsize!=self.previewsize:
+                self.previewsize=newsize
+                self.preview.SetBackgroundColour(wx.Colour(self.previewimg.GetRed(0,0), self.previewimg.GetGreen(0,0), self.previewimg.GetBlue(0,0)))
+                self.preview.ClearBackground()
+                if scale:
+                    self.previewbmp=wx.BitmapFromImage(self.previewimg.Scale(newsize[0], newsize[1]))
+                else:
+                    self.previewbmp=wx.BitmapFromImage(self.previewimg)
+            dc.DrawBitmap(self.previewbmp,
+                          (dc.GetSize().x-self.previewsize[0])/2,
+                          (dc.GetSize().y-self.previewsize[1])/2, True)
 
 
 class PreferencesDialog(wx.Dialog):
@@ -1037,47 +1046,27 @@ class MainWindow(wx.Frame):
         (x,y)=self.statusbar.GetTextExtent("  Lat: 999.999999  Lon: 9999.999999  Hdg: 999  Elv: 9999.9  ")
         self.statusbar.SetStatusWidths([0, x+50,-1])
 
-        if 0:#platform.lower().startswith('linux'):
-            # Don't know why SplitterWindow doesn't work under wxGTK
-            self.splitter=wx.Panel(self)            
-            self.canvas = MyGL(self.splitter, self)
-            self.palette = Palette(self.splitter, self)
-            box1=wx.BoxSizer(wx.HORIZONTAL)
-            box1.Add(self.canvas, 1, wx.EXPAND)
-            box1.Add([6,0], 0, wx.EXPAND)
-            box1.Add(self.palette, 0, wx.EXPAND)
-            self.palette.SetMinSize((260,-1))
-            self.splitter.SetSizer(box1)
-            box0=wx.BoxSizer()
-            box0.Add(self.splitter, 1, wx.EXPAND)
-            self.SetSizerAndFit(box0)
-        else:
-            self.splitter=wx.SplitterWindow(self, wx.ID_ANY,
-                                            style=wx.SP_3DSASH|wx.SP_NOBORDER|wx.SP_LIVE_UPDATE)
-            self.splitter.SetWindowStyle(self.splitter.GetWindowStyle() & ~wx.TAB_TRAVERSAL)	# wx.TAB_TRAVERSAL is set behind our backs - this fucks up cursor keys
-            self.canvas = MyGL(self.splitter, self)
-            self.palette = Palette(self.splitter, self)
-            self.splitter.SplitVertically(self.canvas, self.palette, -260)
-            box0=wx.BoxSizer()
-            box0.Add(self.splitter, 1, wx.EXPAND)
-            self.SetSizerAndFit(box0)
-            self.splitter.SetMinimumPaneSize(200)
-            self.splitter.SetSashPosition(534, True)	# force resize
-
+        self.splitter=wx.SplitterWindow(self, wx.ID_ANY,
+                                        style=wx.SP_3DSASH|wx.SP_NOBORDER|wx.SP_LIVE_UPDATE)
+        self.splitter.SetWindowStyle(self.splitter.GetWindowStyle() & ~wx.TAB_TRAVERSAL)	# wx.TAB_TRAVERSAL is set behind our backs - this fucks up cursor keys
+        self.canvas = MyGL(self.splitter, self) # needed by palette!
+        self.palette = Palette(self.splitter, self)
+        self.splitter.SetMinimumPaneSize(100)
+        self.splitter.SplitVertically(self.canvas, self.palette)
+        box0=wx.BoxSizer()
+        box0.Add(self.splitter, 1, wx.EXPAND)
+        self.SetSizerAndFit(box0)
         self.SetAutoLayout(True)
         self.SetSize((800,600))
-        self.SetMinSize((400,300))
-        
-        if 'SplitVertically' in dir(self.splitter):	# SplitterWindow?
-            if 'SetSashGravity' in dir(self.splitter):
-                self.splitter.SetSashGravity(1.0)
-            else:		# not on 2.5
-                self.splitter.SetSashPosition(534, True)	# force resize
-                self.lastwidth=self.GetSize().x
-                wx.EVT_SIZE(self, self.OnSize)
+        self.SetMinSize((600,400))
+        self.lastwidth=self.GetSize().x
+        wx.EVT_SIZE(self, self.OnSize)
+        wx.EVT_SPLITTER_SASH_POS_CHANGING(self.splitter, self.splitter.GetId(), self.OnSashPositionChanging)
 
         self.Show(True)
-        self.canvas.glInit()
+        self.splitter.SetSashPosition(self.canvas.GetClientSize()[1], True)
+        self.canvas.glInit()	# Must be after show
+        self.palette.glInit()	# Must be after show
         self.Update()
 
 
@@ -1106,10 +1095,15 @@ class MainWindow(wx.Frame):
         # emulate sash gravity = 1.0
         delta=event.GetSize().x-self.lastwidth
         pos=self.splitter.GetSashPosition()+delta
-        if pos<120: pos=120
+        if pos<300: pos=300	# required for preview
         self.splitter.SetSashPosition(pos, False)
         self.lastwidth=event.GetSize().x
         event.Skip()
+
+    def OnSashPositionChanging(self, event):
+        if event.GetSashPosition()<300:
+            # One-way minimum pane size
+            event.SetSashPosition(300)
 
     def OnKeyDown(self, event):
         changed=False

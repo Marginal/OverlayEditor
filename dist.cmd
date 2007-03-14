@@ -19,7 +19,7 @@ rd  /s /q OverlayEditor.app
 if exist "%RPM%" rd /s /q "%RPM%"
 REM >nul: 2>&1
 del /s /q dist  >nul: 2>&1
-del /s /q *.bak >nul: 2>&1
+REM del /s /q *.bak >nul: 2>&1
 del /s /q *.pyc >nul: 2>&1
 
 @set PY=OverlayEditor.py draw.py files.py DSFLib.py MessageBox.py version.py

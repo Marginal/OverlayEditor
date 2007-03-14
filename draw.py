@@ -7,10 +7,10 @@ except NameError:
     from OpenGL import GLU
     gluTessVertex = GLU._gluTessVertex
 
-from math import acos, atan2, cos, sin, floor, hypot, pi
+from math import acos, atan2, cos, sin, floor, hypot, pi, fabs
 from os.path import join
-from struct import unpack
 from sys import exit, platform, maxint, version
+import wx
 import wx.glcanvas
 
 from files import VertexCache, sortfolded, Prefs, ExcludeDef, FacadeDef, ForestDef
@@ -67,6 +67,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.objectslist=0
         self.background=None
         self.meshlist=0
+        self.sizecache={}
         
         self.selected=[]	# Indices into self.objects[self.tile]
         self.selections=[]	# List for picking
@@ -89,6 +90,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.e=90
         self.d=3333.25
         self.cliprat=1000
+
+        self.context=wx.glcanvas.GLContext
 
         # Must specify min sizes for glX? - see glXChooseVisual and GLXFBConfig
         wx.glcanvas.GLCanvas.__init__(self, parent,
@@ -129,9 +132,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         wx.EVT_TIMER(self, self.timer.GetId(), self.OnTimer)
 
     def glInit(self):
+        #print "Canvas Init"
         # Setup state. Under X must be called after window is shown
         self.SetCurrent()
-        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         #glClearDepth(1.0)
         glDepthFunc(GL_LESS)
         glEnable(GL_DEPTH_TEST)
@@ -140,7 +143,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glPointSize(3.0)		# for nodes
         glFrontFace(GL_CW)
         glCullFace(GL_BACK)
-        glPixelStorei(GL_UNPACK_ALIGNMENT,1)
+        glPixelStorei(GL_UNPACK_ALIGNMENT,1)	# byte aligned
         glReadBuffer(GL_BACK)	# for unproject
         #glPixelStorei(GL_UNPACK_LSB_FIRST,1)
         glEnable(GL_TEXTURE_2D)
@@ -205,6 +208,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         event.Skip()
             
     def OnIdle(self, event):
+        self.prepareselect()
         if self.selectnode:
             self.updatepoly(self.currentpolygons()[self.selected[0]&MSKPOLY])
             self.Refresh()
@@ -281,7 +285,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.selected=list(self.selectsaved)	# reset each time
             self.select()
             
-        elif not self.selectnode:
+        elif not self.selectnode and not self.selectanchor and len(self.selected)==1 and self.selected[0]&MSKSEL:
             # Change cursor if over a node or at window border
             size = self.GetClientSize()
             if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
@@ -329,21 +333,21 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.SetCursor(wx.NullCursor)
 
     def OnPaint(self, event):
+        #print "Canvas Paint"
         #print "paint", self.selected
         dc = wx.PaintDC(self)	# Tell the window system that we're on the case
+        size = self.GetClientSize()
+        if size.width<=0: return	# may be junk on startup
         self.SetCurrent()
         self.SetFocus()		# required for GTK
-        #glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-
+        
         glMatrixMode(GL_PROJECTION)
-        size = self.GetClientSize()
         glViewport(0, 0, size.width, size.height)
         glLoadIdentity()
 	# try to minimise near offset to improve clipping
-        if size.x:	# may be 0 on startup
-            glOrtho(-self.d, self.d,
-                    -self.d*size.y/size.x, self.d*size.y/size.x,
-                    -self.d*self.cliprat, self.d*self.cliprat)
+        glOrtho(-self.d, self.d,
+                -self.d*size.y/size.x, self.d*size.y/size.x,
+                -self.d*self.cliprat, self.d*self.cliprat)
         
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
@@ -357,6 +361,8 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if not self.valid:
             # Sea
+            glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
+            glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
             glColor3f(0.25, 0.25, 0.50)
             glBindTexture(GL_TEXTURE_2D, 0)
             glBegin(GL_QUADS)
@@ -369,7 +375,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
             return
 
-        self.vertexcache.realize()
+        self.vertexcache.realize(self)
         objects=self.currentobjects()
         polygons=self.currentpolygons()
 
@@ -384,7 +390,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if not self.options&Prefs.ELEVATION:
                 glPushMatrix()
                 glScalef(1,0,1)		# Defeat elevation data
-            glColor3f(0.75, 0.75, 0.75)	# Unpainted
+            glColor3f(0.8, 0.8, 0.8)	# Unpainted
             polystate=0
             for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
                 if poly:
@@ -427,7 +433,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if poly.kind==Polygon.FACADE:
                     fac=self.vertexcache.get(poly.name)
                     glBindTexture(GL_TEXTURE_2D, fac.texture)
-                    glColor3f(0.75, 0.75, 0.75)	# Unpainted
+                    glColor3f(0.8, 0.8, 0.8)	# Unpainted
                     glEnable(GL_DEPTH_TEST)
                     if fac.two_sided:
                         if cullstate: glDisable(GL_CULL_FACE)
@@ -459,7 +465,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     for p in poly.points:
                         glVertex3f(p[0],p[1],p[2])
                     glEnd()
-            glColor3f(0.75, 0.75, 0.75)	# Unpainted
+            glColor3f(0.8, 0.8, 0.8)	# Unpainted
             glEnable(GL_DEPTH_TEST)
             polystate=0
             for i in range(len(objects)):
@@ -550,7 +556,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Selections
         if self.frame.bkgd:
             # Don't show if setting background image
-            glColor3f(0.75, 0.75, 0.75)	# Unpainted
+            glColor3f(0.8, 0.8, 0.8)	# Unpainted
         else:
             glColor3f(1.0, 0.5, 1.0)
 
@@ -654,9 +660,16 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Display
         self.SwapBuffers()
 
+        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+
+
+    def prepareselect(self):
         # Pre-prepare selection list
         if not self.selectlist:
+            #print "prep"
+            objects=self.currentobjects()
+            polygons=self.currentpolygons()
             self.selectlist=glGenLists(1)
             glNewList(self.selectlist, GL_COMPILE)
             glInitNames()
@@ -696,6 +709,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         glEnd()
             glEnable(GL_DEPTH_TEST)
             glEndList()
+
             
     def select(self):
         #print "sel"
@@ -839,7 +853,8 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def add(self, name, lat, lon, hdg):
         if not self.vertexcache.load(name):
-            wx.MessageBox("Can't read %s." % name, 'Cannot add this object or facade.', wx.ICON_ERROR|wx.OK, self.frame)
+            wx.MessageBox("Can't read %s." % name, 'Cannot add this object.',
+                          wx.ICON_ERROR|wx.OK, self.frame)
             return False
         self.trashlists(self.selected)
         thing=self.vertexcache.get(name)
@@ -1072,10 +1087,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         return self.undostack!=[]
         
     def clearsel(self):
+        if self.selected:
+            self.Refresh()
         self.selected=[]
         self.selectednode=None
         self.trashlists(True)
-        self.Refresh()
 
     def allsel(self, withctrl):
         # fake up mouse drag
@@ -1187,6 +1203,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.navaids=navaids
         self.vertexcache.flushObjs(objectmap, terrain, dsfdirs)
         self.trashlists(True, True)
+        self.sizecache={}
         self.tile=[0,999]	# force reload
 
         for key in self.runways.keys():	# need to re-layout runways
@@ -1487,11 +1504,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                       }
                 for name in objs.values():
                     self.vertexcache.load(name, True)	# skip errors
-                self.vertexcache.realize()
+                self.vertexcache.realize(self)
                 glDepthMask(GL_TRUE)
                 glEnable(GL_CULL_FACE)
                 cullstate=True
-                glColor3f(0.75, 0.75, 0.75)	# Unpainted
+                glColor3f(0.8, 0.8, 0.8)	# Unpainted
                 glEnable(GL_TEXTURE_2D)
                 glDisable(GL_POLYGON_OFFSET_FILL)
                 polystate=0
@@ -1615,7 +1632,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_DEPTH_TEST)
         glCallList(self.meshlist)	# Terrain only
         #glFinish()	# redundant
-        (mz,)=unpack('f',glReadPixels(mx,my, 1,1, GL_DEPTH_COMPONENT,GL_FLOAT))
+        mz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
         (x,y,z)=gluUnProject(mx,my,mz,
                              glGetDoublev(GL_MODELVIEW_MATRIX),
                              glGetDoublev(GL_PROJECTION_MATRIX),
@@ -1626,6 +1643,56 @@ class MyGL(wx.glcanvas.GLCanvas):
         lon=round2res(self.centre[1]+x/(onedeg*cos(d2r*lat)))
         #print "%3d %3d %5.3f, %5d %5.1f %5d, %10.6f %11.6f" % (mx,my,mz, x,y,z, lat,lon)
         return (lat,lon)
+
+    def snapshot(self, name):
+        if not self.vertexcache.load(name, 0): return None
+        self.SetCurrent()
+        glViewport(0, 0, 300, 300)
+        glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        self.vertexcache.realize(self)
+        (base,culled,nocull,texno,poly)=self.vertexcache.get(name)
+        if name in self.sizecache:
+            maxsize=self.sizecache[name]
+        else:
+            maxsize=0.1	# mustn't be 0
+            for i in range(base, base+culled+nocull):
+                maxsize=max(maxsize, fabs(self.vertexcache.varray[i][0]), 0.55*self.vertexcache.varray[i][1], fabs(self.vertexcache.varray[i][2]))	# ad-hoc
+            self.sizecache[name]=maxsize
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        maxsize=1.2*maxsize
+        glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+        glRotatef( 30, 1,0,0)
+        glRotatef(-30, 0,1,0)
+        glColor3f(0.9, 0.9, 0.9)	# Unpainted
+        glEnable(GL_TEXTURE_2D)
+        glEnable(GL_DEPTH_TEST)
+        glBindTexture(GL_TEXTURE_2D, texno)
+        if culled:
+            glEnable(GL_CULL_FACE)
+            glDrawArrays(GL_TRIANGLES, base, culled)
+        if nocull:
+            glDisable(GL_CULL_FACE)
+            glDrawArrays(GL_TRIANGLES, base+culled, nocull)
+        #glFinish()	# redundant
+        data=glReadPixels(0,0, 300,300, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(300, 300, False)
+        img.SetData(data)
+        
+        # Restore state for unproject & selection
+        glPopMatrix()
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()	
+        glMatrixMode(GL_MODELVIEW)
+
+        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        return img.Mirror(False)
 
 
     def updatepoly(self, poly, bailearly=False):
