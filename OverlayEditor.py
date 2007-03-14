@@ -942,10 +942,12 @@ class MainWindow(wx.Frame):
     def ShowSel(self):
         (names,string,lat,lon,hdg)=self.canvas.getsel()
         if names:
-            if len(names)==1:
-                self.palette.set(names[0])
+            for name in names:
+                if name!=names[0]:
+                    self.palette.set(None)
+                    break
             else:
-                self.palette.set(None)
+                self.palette.set(names[0])
             self.toolbar.EnableTool(wx.ID_DELETE, True)
         else:
             self.palette.set(None)
@@ -1044,6 +1046,11 @@ class MainWindow(wx.Frame):
             changed=self.canvas.delsel()
         elif event.m_keyCode==wx.WXK_SPACE:
             self.canvas.allsel(event.m_controlDown or event.m_metaDown)
+        elif event.m_keyCode==ord('N'):
+            name=self.palette.get()
+            if name:
+                loc=self.canvas.nextsel(name, event.m_controlDown or event.m_metaDown)
+                if loc: self.loc=loc
         else:
             event.Skip(True)
             return
@@ -1220,7 +1227,7 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_PASTE, False)
         progress.Update(0, 'Global nav data')
         if not self.airports:	# Default apt.dat
-            (self.airports,self.nav)=readApt(glob(join(prefs.xplane, gmainaptdat))[0])
+            (self.airports,self.nav,foo)=readApt(glob(join(prefs.xplane, gmainaptdat))[0])
             self.nav.extend(readNav(glob(join(prefs.xplane,gmainnavdat))[0]))
         progress.Update(1, 'Overlay DSFs')
         if not event:
@@ -1281,7 +1288,7 @@ class MainWindow(wx.Frame):
         for apt in apts:
             # Package-specific apt.dat
             try:
-                (thisapt,thisnav)=readApt(apt)
+                (thisapt,thisnav,thiscode)=readApt(apt)
                 # Merge lists - remove package airports from global
                 # But runways in custom scenery are cumulative
                 for code, stuff in thisapt.iteritems():
@@ -1293,9 +1300,9 @@ class MainWindow(wx.Frame):
                     else:
                         runways[tile].append(run)
                 nav.extend(thisnav)
-                if prefs.package and apt[:-23].endswith(prefs.package):
+                if prefs.package and apt[:-23].endswith(prefs.package) and thiscode and not pkgloc:
                     # get start location
-                    (name, loc, run)=thisapt.values()[0]
+                    (name, loc, run)=thisapt[thiscode]
                     pkgloc=[round2res(loc[0]),round2res(loc[1])]
             except:
                 if prefs.package and apt[:-23].endswith(prefs.package):

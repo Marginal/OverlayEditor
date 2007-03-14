@@ -107,6 +107,7 @@ class Prefs:
 def readApt(filename):
     airports={}	# (name, [lat,lon], [(lat,lon,hdg,length,width,stop,stop)]) by code
     nav=[]	# (type,lat,lon,hdg)
+    firstcode=None
     if platform=='win32':
         h=file(filename,'rU')
     else:
@@ -137,6 +138,7 @@ def readApt(filename):
             run=[]
         if id in [1,16,17]:		# Airport/Seaport/Heliport
             code=c[4]
+            if not firstcode: firstcode=code
             name=' '.join(c[5:])
         elif id==14:	# Prefer tower location
             loc=[float(c[1]),float(c[2])]
@@ -191,7 +193,7 @@ def readApt(filename):
         if not run: raise IOError
         airports[code]=(name,loc,run)
     h.close()
-    return (airports, nav)
+    return (airports, nav, firstcode)
 
 
 def readNav(filename):
@@ -310,18 +312,27 @@ class TexCache:
                         size[i]=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
                 if size!=[image.size[0],image.size[1]]:
                     image=image.resize((size[0], size[1]), BILINEAR)
-            if not isbaseterrain:
-                if image.mode=='RGBA':
-                    data = image.tostring("raw", 'RGBA', 0, -1)
-                    format=GL_RGBA
-                else:
-                    data = image.tostring("raw", 'RGB', 0, -1)
-                    format=GL_RGB
-            else:
+
+            if isbaseterrain:
                 if image.mode!='RGB': image=image.convert('RGB')
                 image=image.resize((image.size[0]/4,image.size[1]/4), BILINEAR)
                 data = image.tostring("raw", 'RGB', 0, -1)
                 format=GL_RGB
+            elif image.mode=='RGBA':
+                data = image.tostring("raw", 'RGBA', 0, -1)
+                format=GL_RGBA
+            elif image.mode=='RGB':
+                data = image.tostring("raw", 'RGB', 0, -1)
+                format=GL_RGB
+            elif image.mode=='LA':
+                image=image.convert('RGBA')
+                data = image.tostring("raw", 'RGBA', 0, -1)
+                format=GL_RGBA
+            else:	# dunno - hope it converts
+                image=image.convert('RGB')
+                data = image.tostring("raw", 'RGB', 0, -1)
+                format=GL_RGB
+
             glBindTexture(GL_TEXTURE_2D, id)
             if fixsize:
                 glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,self.clampmode)
@@ -331,9 +342,11 @@ class TexCache:
             glTexImage2D(GL_TEXTURE_2D, 0, format, image.size[0], image.size[1], 0, format, GL_UNSIGNED_BYTE, data)
             self.texs[path]=id
             return id
+        except IOError, e:
+            if debug: print 'Failed to load texture "%s" - %s' % (path, e)
         except:
             if debug: print 'Failed to load texture "%s"' % path
-            return self.blank
+        return self.blank
 
 
 class FacadeDef:
@@ -372,7 +385,7 @@ class FacadeDef:
         while 1:
             line=h.readline()
             if not line: break
-            c=line.split()
+            c=line.split('#')[0].split()
             if not c: continue
             if c[0]=='TEXTURE':
                 if len(c)>1:
@@ -384,6 +397,8 @@ class FacadeDef:
                         if exists(tex+ext):
                             self.texture=texcache.get(tex+ext)
                             break
+                    else:
+                        if debug: print 'Failed to find texture "%s"' % tex
             elif c[0]=='RING':
                 if int(c[1]): self.ring=1
             elif c[0]=='TWO_SIDED': self.two_sided=(int(c[1])!=0)
@@ -393,7 +408,7 @@ class FacadeDef:
                 while 1:
                     line=h.readline()
                     if not line: break
-                    c=line.split()
+                    c=line.split('#')[0].split()
                     if not c: continue
                     if c[0]=='LOD': break	# stop after first LOD
                     elif c[0]=='ROOF':
@@ -407,7 +422,7 @@ class FacadeDef:
                         while 1:
                             line=h.readline()
                             if not line: break
-                            c=line.split()
+                            c=line.split('#')[0].split()
                             if not c: continue
                             if c[0] in ['LOD', 'WALL']: break
                             elif c[0]=='SCALE':
@@ -525,11 +540,13 @@ class VertexCache:
                 return True	# Don't need a physical object
             if name[0]=='*':	# this application's resource
                 self.obj[name]=join('Resources', name[1:])
-            elif usefallback:
-                self.obj[name]=join('Resources','default'+name[-4:].lower())
-                retval=False
             else:
-                return False
+                if debug: print 'Failed to find object "%s"' % name
+                if usefallback:
+                    self.obj[name]=join('Resources','default'+name[-4:].lower())
+                    retval=False	# Load default obj
+                else:
+                    return False
         
         path=self.obj[name]
         if path in self.idx:
@@ -559,6 +576,7 @@ class VertexCache:
                 self.poly[path]=FacadeDef(path, self.texcache)
                 return retval
             except:
+                if debug: print 'Failed to load facade "%s"' % path
                 if usefallback:
                     self.poly[path]=FacadeDef(join('Resources','default.fac'),
                                               self.texcache)
@@ -601,8 +619,7 @@ class VertexCache:
                     if not line: raise IOError
                     tex=line.strip()
                     if tex:
-                        if '//' in tex: tex=tex[:tex.index('//')]
-                        tex=tex.strip()
+                        if '//' in tex: tex=tex[:tex.index('//')].strip()
                         tex=tex.replace(':', sep)
                         tex=tex.replace('/', sep)
                         break
@@ -611,6 +628,8 @@ class VertexCache:
                     if exists(tex+ext):
                         texture=tex+ext
                         break
+                else:
+                    if debug: print 'Failed to find texture "%s"' % tex
             if version=='2':
                 while 1:
                     line=h.readline()
@@ -660,7 +679,7 @@ class VertexCache:
                 while 1:
                     line=h.readline()
                     if not line: break
-                    c=line.split()
+                    c=line.split('//')[0].split()
                     if not c: continue
                     if c[0]=='end':
                         break
@@ -727,11 +746,12 @@ class VertexCache:
                 while 1:
                     line=h.readline()
                     if not line: break
-                    c=line.split()
+                    c=line.split('#')[0].split()
                     if not c: continue
                     if c[0]=='TEXTURE':
                         if len(c)>1:
                             tex=line[7:].strip()
+                            if '//' in tex: tex=tex[:tex.index('//')].strip()
                             tex=tex.replace(':', sep)
                             tex=tex.replace('/', sep)
                             tex=abspath(join(texpath,tex))
@@ -739,6 +759,8 @@ class VertexCache:
                                 if exists(tex+ext):
                                     texture=tex+ext
                                     break
+                            else:
+                                if debug: print 'Failed to find texture "%s"' % tex
                     elif c[0]=='VT':
                         vt.append([float(c[1]), float(c[2]), float(c[3]),
                                    float(c[7]), float(c[8])])
@@ -787,6 +809,7 @@ class VertexCache:
                 self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly)
                 self.valid=False	# new geometry -> need to update OpenGL
         except:
+            if debug: print 'Failed to load object "%s"' % path
             if usefallback:
                 self.load('*default.obj')
                 self.objcache[name]=self.idx[path]=self.get('*default.obj')

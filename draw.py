@@ -197,7 +197,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.updatepoly(self.currentpolygons()[self.selected[0]&MSKPOLY])
         self.trashlists(True)	# recompute obj and select lists
         self.selectanchor=None
-        self.selectnode=None
+        self.selectnode=False
         self.selectmove=None
         self.timer.Stop()
         self.SetCursor(wx.NullCursor)
@@ -803,7 +803,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.trashlists(self.selected)
         thing=self.vertexcache.get(name)
         if self.selectednode!=None:
-            #print "node"
             poly=self.currentpolygons()[self.selected[0]&MSKPOLY]
             if poly.kind==Polygon.EXCLUDE: return False
             if not (self.undostack and self.undostack[-1].kind==UndoEntry.MOVE and self.undostack[-1].tile==self.tile and len(self.undostack[-1].data)==1 and self.undostack[-1].data[0][0]==self.selected[0]):
@@ -816,7 +815,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                                   round2res((poly.nodes[0][self.selectednode-1][1]+poly.nodes[0][(self.selectednode)%n][1])/2)))
             self.updatepoly(poly)
         elif isinstance(thing,ExcludeDef):
-            #print "polygon"
             polygons=self.currentpolygons()
             poly=Polygon(name, Polygon.EXCLUDE, 0,
                          [[(lon-0.001,lat-0.001), (lon+0.001,lat-0.001),
@@ -829,7 +827,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD,
                                             self.selected))
         elif isinstance(thing,FacadeDef):
-            #print "facade"
             polygons=self.currentpolygons()
             poly=Polygon(name, Polygon.FACADE, 10, [[]])
             h=d2r*hdg
@@ -844,7 +841,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD,
                                             self.selected))
         elif isinstance(thing,ForestDef):
-            #print "facade"
             polygons=self.currentpolygons()
             poly=Polygon(name, Polygon.FOREST, 128, [[]])
             h=d2r*hdg
@@ -972,7 +968,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.polygons[(self.tile[0],self.tile[1])]=newpolygons
             self.undostack.append(UndoEntry(self.tile, UndoEntry.DEL, deleted))
             self.selected=[]
-        self.trashlists()
+        self.trashlists(True)
         self.Refresh()
         self.frame.ShowSel()
         return True
@@ -1047,6 +1043,52 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.select()
         self.selectanchor=None
         self.trashlists(True)	# recompute obj and select lists
+
+    def nextsel(self, name, withctrl):
+        loc=None
+        self.trashlists(self.selected)	# recompute obj and select lists
+        # we have 0 or more items of the same type selected
+        if not self.vertexcache.load(name):
+            thing=None	# can't load
+        else:
+            thing=self.vertexcache.get(name)
+        if isinstance(thing, tuple) or not thing:
+            objects=self.currentobjects()
+            start=-1
+            for i in self.selected:
+                if not i&MSKSEL and objects[i].name==name: start=i
+            for i in range(start+1, len(objects)+start+1):
+                if objects[i%len(objects)].name==name:
+                    i=i%len(objects)
+                    if withctrl:
+                        if i in self.selected:
+                            self.selected.remove(i)
+                        else:
+                            self.selected.append(i)
+                    else:
+                        self.selected=[i]
+                    loc=(objects[i].lat, objects[i].lon)
+                    break
+        else:
+            polygons=self.currentpolygons()
+            start=-1
+            for i in self.selected:
+                if polygons[i&MSKPOLY].name==name: start=i&MSKPOLY
+            for i in range(start+1, len(polygons)+start+1):
+                if polygons[i%len(polygons)].name==name:
+                    i=i%len(polygons)
+                    if withctrl:
+                        if (i|MSKSEL) in self.selected:
+                            self.selected.remove(i|MSKSEL)
+                        else:
+                            self.selected.append(i|MSKSEL)
+                    else:
+                        self.selected=[i|MSKSEL]
+                    loc=(polygons[i].lat, polygons[i].lon)
+                    break
+        self.selectednode=None
+        self.frame.ShowSel()
+        return loc
 
     def getsel(self):
         # return current selection, or average
@@ -1383,17 +1425,17 @@ class MyGL(wx.glcanvas.GLCanvas):
                       9:  'lib/airport/NAVAIDS/Marker2.obj',
                       18: 'lib/airport/landscape/beacon2.obj',
                       19: '*windsock.obj',
-                      181:'lib/airport/lights/beacon_airport.obj',
-                      182:'lib/airport/lights/beacon_seaport.obj',
-                      183:'lib/airport/lights/beacon_heliport.obj',
-                      184:'lib/airport/lights/beacon_mil.obj',
-                      185:'lib/airport/lights/beacon_airport.obj',
-                      211:'lib/airport/lights/VASI.obj',
-                      212:'lib/airport/lights/PAPI.obj',
-                      213:'lib/airport/lights/PAPI.obj',
-                      214:'lib/airport/lights/PAPI.obj',
-                      215:'lib/airport/lights/VASI3.obj',
-                      216:'lib/airport/lights/rway_guard.obj',
+                      181:'lib/airport/beacons/beacon_airport.obj',
+                      182:'lib/airport/beacons/beacon_seaport.obj',
+                      183:'lib/airport/beacons/beacon_heliport.obj',
+                      184:'lib/airport/beacons/beacon_mil.obj',
+                      185:'lib/airport/beacons/beacon_airport.obj',
+                      211:'lib/airport/lights/slow/VASI.obj',
+                      212:'lib/airport/lights/slow/PAPI.obj',
+                      213:'lib/airport/lights/slow/PAPI.obj',
+                      214:'lib/airport/lights/slow/PAPI.obj',
+                      215:'lib/airport/lights/slow/VASI3.obj',
+                      216:'lib/airport/lights/slow/rway_guard.obj',
                       }
                 for name in objs.values():
                     self.vertexcache.load(name, True)	# skip errors

@@ -1,10 +1,12 @@
 from math import cos, floor, pi
 from md5 import md5
 from os import listdir, mkdir, popen3, popen4, rename, unlink
-from os.path import abspath, curdir, dirname, exists, isdir, join, pardir, sep
+from os.path import abspath, curdir, dirname, exists, expanduser, isdir, join, pardir, sep
 from struct import pack, unpack
 from sys import platform, maxint
 from tempfile import gettempdir
+
+import wx
 
 from version import appname, appversion, debug
 
@@ -553,7 +555,7 @@ def writeDSF(dsfdir, key, objects, polygons):
     for obj in objects:
         h.write('OBJECT\t\t%d %12.7f %12.7f %3.0f\n' % (
             objdefs.index(obj.name), obj.lon+minres/2, obj.lat+minres/2, obj.hdg))
-    if objdefs: h.write('\n')
+    if objects: h.write('\n')
     
     for poly in polygons:
         if poly.kind==Polygon.EXCLUDE:
@@ -574,14 +576,16 @@ def writeDSF(dsfdir, key, objects, polygons):
     if polydefs: h.write('\n')
     
     h.close()
-    if platform.lower().startswith('linux'):
-        # Force Wine to initialise font cache on first run
+    if platform.lower().startswith('linux') and not isdir(join(expanduser('~'), '.wine')):
+        # Let Wine initialise font cache etc on first run
+        progress=wx.ProgressDialog('Setting up Wine', 'Please wait')
         (i,o,e)=popen3('wine --version')
         i.close()
         o.read()
         e.read()
         o.close()
         e.close()
+        progress.Destroy()
     (i,o,e)=popen3('%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename))
     i.close()
     o.read()
