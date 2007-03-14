@@ -30,11 +30,15 @@ Scenery</a> &raquo; <a href="http://marginal.org.uk/x-planescenery/tools.html">T
 <h2>DSF overlay editor</h2>
 <h3>Overview</h3>
 <p>This application edits X-Plane<small><sup>&reg;</sup></small>
-DSF overlay scenery packages.</p>
+DSF overlay scenery packages. It should run on Windows 2000 and
+later, MacOS 10.3.9 and later, or Linux.</p>
 <h3>Setting up</h3>
+<p>Users of MacOS 10<b>.3</b> should first install
+<a href="http://prdownloads.sourceforge.net/wxpython/wxPythonOSX-2.5.2.8-panther-Py2.3.dmg">wxPython 2.5</a> or later <small>(you don't need to
+install MacPython - it's already installed on 10.3)</small>.</p>
 <p>The first time that you run the application you are asked to
 identify X-Plane's top-level folder (<i>ie</i> the folder which
-contains X-Plane, PlaneMaker etc.<p>
+contains X-Plane, PlaneMaker etc).<p>
 <h3>The application window</h3>
 <p>The application window consists of four parts:</p>
 <img style="border: 0px solid ; width: 792px; height: 562px;" alt="main window" src="Resources/screenshot.png">
@@ -126,7 +130,7 @@ The object is added at the current location and with the current heading.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><a name="reload"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Reload" src="Resources/reload.png"></a></td>
-      <td>Reloads the object, texture and apt.dat files in the scenery package
+      <td>Reloads the object, texture and apt.dat files in the scenery package.
 The DSF files are not reloaded.
 Use this if you have modified any of these files outside of this application.
 Also use this if you have added new objects to the scenery package and you want
@@ -150,8 +154,9 @@ but are not used in the scenery). You can only add objects that
 appear in this list - use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have added new objects to the scenery package folder.</p>
 <h3>Limitations</h3>
 <ul>
-  <li>It's slow.</li>
+  <li>No undo.</li>
   <li>Does not display terrain or autogen scenery.</li>
+  <li>Does not display lights or lines.</li>
   <li>Does not convert or edit <code>.env</code> files.</li>
   <li>Does not edit <code>apt.dat</code> files.</li>
 </ul>
@@ -159,7 +164,7 @@ appear in this list - use <a href="#reload"><img style="border: 0px solid ; widt
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">1.00 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan
+      <td class="banner">1.12 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan
 Harris</a> <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
       </td>
     </tr>

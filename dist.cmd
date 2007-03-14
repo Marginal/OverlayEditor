@@ -8,7 +8,8 @@ for /f "usebackq" %%I in (`c:\Progra~1\Python24\python.exe -c "from files import
 @if exist OverlayEditor_%VER%_mac.zip del OverlayEditor_%VER%_mac.zip
 @if exist OverlayEditor_%VER%_win32.zip del OverlayEditor_%VER%_win32.zip
 
-rd  /s /q OverlayEditor.app >nul: 2>&1
+rd  /s /q OverlayEditor.app
+REM >nul: 2>&1
 del /s /q dist  >nul: 2>&1
 del /s /q *.bak >nul: 2>&1
 del /s /q *.pyc >nul: 2>&1
@@ -21,14 +22,13 @@ del /s /q *.pyc >nul: 2>&1
 zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% setup.py %DATA% %RSRC% linux MacOS win32/*.exe win32/*.ico |findstr -vc:"adding:"
 
 @REM linux
-REM tar -zcf OverlayEditor_%VER%_linux.tar.gz %PY% %DATA% %RSRC% linux win32/bglunzip.exe win32/DSFTool.exe
+tar -zcf OverlayEditor_%VER%_linux.tar.gz %PY% %DATA% %RSRC% linux win32/DSFTool.exe
 
 @REM mac
 mkdir OverlayEditor.app\Contents
-for %%I in (%DATA%) do (copy %%I OverlayEditor.app\Contents\ |findstr -v "file(s) copied")
-mkdir OverlayEditor.app\Contents\MacOS
-xcopy /q MacOS\* OverlayEditor.app\Contents\MacOS\ |findstr -v "file(s) copied"
+xcopy /q /e MacOS OverlayEditor.app\Contents\MacOS\|findstr -v "file(s) copied"
 for %%I in (%PY%) do (copy %%I OverlayEditor.app\Contents\MacOS\ |findstr -v "file(s) copied")
+for %%I in (%DATA%) do (copy %%I OverlayEditor.app\Contents\ |findstr -v "file(s) copied")
 mkdir OverlayEditor.app\Contents\Resources
 for %%I in (%RSRC%) do (copy Resources\%%~nxI OverlayEditor.app\Contents\Resources\ |findstr -v "file(s) copied")
 del  OverlayEditor.app\Contents\MacOS\OverlayEditor.html

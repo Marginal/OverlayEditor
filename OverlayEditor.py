@@ -86,6 +86,14 @@ class myListBox(wx.VListBox):
         if platform!='win32':
             wx.EVT_KEY_DOWN(self, self.OnKeyDown)
 
+    def OnSetFocus(self, event):
+        self.SetSelectionBackground(self.actcol)
+        
+    def OnKillFocus(self, event):
+        self.SetSelectionBackground(self.inacol)
+        sel=self.GetSelection()
+        if sel>=0: self.RefreshLine(sel)
+
     def GetStringSelection(self):
         sel=self.GetSelection()
         if sel<0:
@@ -103,14 +111,6 @@ class myListBox(wx.VListBox):
         #DC.SetBackground(brush)
         if platform=='win32': DC.SetFont(self.font)
         DC.DrawText(self.choices[n], rect.x+self.indent, rect.y)
-
-    def OnSetFocus(self, event):
-        self.SetSelectionBackground(self.actcol)
-        
-    def OnKillFocus(self, event):
-        self.SetSelectionBackground(self.inacol)
-        sel=self.GetSelection()
-        if sel>=0: self.RefreshLine(sel)
 
     def OnKeyDown(self, event):
         # wxMac 2.5 doesn't handle cursor movement
@@ -156,6 +156,7 @@ class GotoDialog(wx.Dialog):
         self.aptcode=aptcode
 
         wx.Dialog.__init__(self, parent, wx.ID_ANY, "Go to airport")
+        wx.EVT_CLOSE(self, self.OnClose)
         grid1=wx.FlexGridSizer(0, 2, 14, 14)
         grid1.SetFlexibleDirection(wx.VERTICAL)
         grid1.AddGrowableCol(1,1)
@@ -165,22 +166,28 @@ class GotoDialog(wx.Dialog):
                   0, wx.ALIGN_CENTER_VERTICAL)
         choices=self.aptname.keys()
         choices.sort()	# sorted() not in 2.3
-        list1=myListBox(self,wx.ID_ANY, style=wx.LB_SINGLE, choices=choices)
-        grid1.Add(list1, 1, wx.ALIGN_CENTER_VERTICAL|wx.ALL|wx.EXPAND, pad)
-        (x,y)=list1.GetTextExtent("MT31 - [H] Central Montana Hospital and Nursing H")	# Maybe longest string
-        list1.SetMinSize((x+24,15*y))	# Allow for scrollbar
-        wx.EVT_LISTBOX(self, list1.GetId(), self.OnName)
+        self.list1=myListBox(self,wx.ID_ANY, style=wx.LB_SINGLE, choices=choices)
+        grid1.Add(self.list1, 1, wx.ALIGN_CENTER_VERTICAL|wx.ALL|wx.EXPAND, pad)
+        (x,y)=self.list1.GetTextExtent("MT31 - [H] Central Montana Hospital and Nursing H")	# Maybe longest string
+        self.list1.SetMinSize((x+24,15*y))	# Allow for scrollbar
+        wx.EVT_LISTBOX(self, self.list1.GetId(), self.OnName)
         choices=self.aptcode.keys()
         choices.sort()
-        list2=myListBox(self,wx.ID_ANY, style=wx.LB_SINGLE,choices=choices)
-        grid1.Add(list2, 1, wx.ALIGN_CENTER_VERTICAL|wx.ALL|wx.EXPAND, pad)
-        list2.SetMinSize((x+24,15*y))
-        wx.EVT_LISTBOX(self, list2.GetId(), self.OnCode)
+        self.list2=myListBox(self,wx.ID_ANY, style=wx.LB_SINGLE,choices=choices)
+        grid1.Add(self.list2, 1, wx.ALIGN_CENTER_VERTICAL|wx.ALL|wx.EXPAND, pad)
+        self.list2.SetMinSize((x+24,15*y))
+        wx.EVT_LISTBOX(self, self.list2.GetId(), self.OnCode)
         box1=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
         box0=wx.BoxSizer(wx.VERTICAL)
         box0.Add(grid1, 1, wx.ALL|wx.EXPAND, 14)
         box0.Add(box1, 0, wx.ALL|wx.EXPAND, 14)
         self.SetSizerAndFit(box0)
+
+    def OnClose(self, event):
+        # Prevent kill focus event causing refresh on wxMac 2.5
+        self.list1.SetSelection(-1)
+        self.list2.SetSelection(-1)
+        self.Destroy()
 
     def OnName(self, event):
         self.choice=self.aptname[event.GetEventObject().GetStringSelection()]
@@ -267,7 +274,7 @@ class MainWindow(wx.Frame):
         self.goto=None	# goto dialog
 
         wx.Frame.__init__(self, parent, id, title)
-        #wx.EVT_CLOSE(self, self.OnClose)
+        wx.EVT_CLOSE(self, self.OnClose)
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)
         
         if platform=='win32':
@@ -278,12 +285,12 @@ class MainWindow(wx.Frame):
         elif platform=='darwin':
             pass	# icon pulled from Resources via Info.plist
         
-        self.toolbar=self.CreateToolBar(wx.TB_HORIZONTAL|wx.STATIC_BORDER)
+        self.toolbar=self.CreateToolBar(wx.TB_HORIZONTAL|wx.STATIC_BORDER|wx.TB_FLAT)
         # Note colours>(245,245,245) get replaced by transparent
         newbitmap=wx.Bitmap("Resources/new.png", wx.BITMAP_TYPE_PNG)
         self.toolbar.SetToolBitmapSize((newbitmap.GetWidth(),
                                    newbitmap.GetHeight()))
-        #self.toolbar.SetToolSeparation(newbitmap.GetWidth()/2)
+        self.toolbar.SetToolSeparation(newbitmap.GetWidth()/4)
         self.toolbar.AddLabelTool(wx.ID_NEW, 'New',
                                   newbitmap,
                                   wx.NullBitmap, 0,
@@ -582,7 +589,7 @@ class MainWindow(wx.Frame):
             aptrunways.update(pkgaptrunways)
         progress.Update(2, 'Airports')
         if self.goto:
-            self.goto.Destroy()
+            self.goto.Close()	# Needed on wxMac 2.5
         self.goto=GotoDialog(self, aptname, aptcode)	# build only
         progress.Update(3, 'Objects')
         objects={}
@@ -659,7 +666,7 @@ class MainWindow(wx.Frame):
                 return
 
     def OnClose(self, event):
-        self.goto.Destroy()
+        self.goto.Close()
         self.Destroy()
         
     

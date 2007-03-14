@@ -23,9 +23,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.runwayslist=0
         self.objects={}		# (list, path, poly) by name
         self.placements={}	# [(name,lat,lon,hdg)] by tile
-        self.objectslist=[]
+        self.objectslist=0
         self.baggage={}		# (props, other) by tile
         self.texcache=TexCache()
+
+        self.varray=[]
+        self.tarray=[]
 
         self.selections=[]
         self.selected=None
@@ -38,7 +41,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         
         wx.glcanvas.GLCanvas.__init__(self, parent, style=GL_RGBA|GL_DOUBLEBUFFER|GL_DEPTH|wx.FULL_REPAINT_ON_RESIZE)
         wx.EVT_PAINT(self, self.OnPaint)
-        #wx.EVT_SIZE(self, self.OnSize)
         wx.EVT_ERASE_BACKGROUND(self, self.OnEraseBackground)
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)
         wx.EVT_LEFT_DOWN(self, self.OnLeftDown)
@@ -46,17 +48,17 @@ class MyGL(wx.glcanvas.GLCanvas):
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClearDepth(1.0)
         glDepthFunc(GL_LESS)
-        #glEnable(GL_DEPTH_TEST)
         glLineWidth(2.0)
         glFrontFace(GL_CW)
         glShadeModel(GL_FLAT)
         glLoadIdentity()
         glCullFace(GL_BACK)
-        #glEnable(GL_CULL_FACE)	# in display lists
         glPixelStorei(GL_UNPACK_ALIGNMENT,1)
         glEnable(GL_TEXTURE_2D)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glEnable(GL_BLEND)
+	glEnableClientState(GL_VERTEX_ARRAY)
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY)
 
     def OnEraseBackground(self, event):
         pass	# Prevent flicker when resizing / painting
@@ -112,14 +114,14 @@ class MyGL(wx.glcanvas.GLCanvas):
         
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
-        glRotatef(self.e, 1.0,0.0,0.0)	#self.e
+        glRotatef(self.e, 1.0,0.0,0.0)
         glRotatef(self.h, 0.0,1.0,0.0)
         glTranslatef(-self.x, 0.0, -self.z)
 
         placement=self.currentplacements()
 
         # Ground
-        if mode==GL_RENDER and not self.runwayslist:
+        if mode!=GL_SELECT and not self.runwayslist:
             self.runwayslist=glGenLists(1)
             glNewList(self.runwayslist, GL_COMPILE)
             # Ground
@@ -159,7 +161,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnd()
             glEndList()
 
-        if mode==GL_RENDER:
+        if mode!=GL_SELECT:
             glCallList(self.runwayslist)
 
             # Cursor
@@ -197,52 +199,79 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.SwapBuffers()
             return
 
-        glEnable(GL_CULL_FACE)
-        glEnable(GL_DEPTH_TEST)
-        glColor3f(0.75, 0.75, 0.75)	# Unpainted
         if mode==GL_SELECT or not self.objectslist:
             if mode==GL_RENDER:
-                base=glGenLists(len(placement))
-                self.objectslist=range(base, base+len(placement))
+                self.objectslist=glGenLists(1)
+                glNewList(self.objectslist, GL_COMPILE)
             else:
                 glInitNames()
                 glPushName(0)
+            glColor3f(0.75, 0.75, 0.75)	# Unpainted
+            glEnable(GL_DEPTH_TEST)
+            glEnable(GL_CULL_FACE)
+            cullstate=True
+            lat=lon=hdg=999
             for i in range(len(placement)):
                 (obj, lat, lon, hdg)=placement[i]
-                (x,z)=self.latlon2m(lat, lon)
-                if mode==GL_RENDER:
-                    glNewList(base+i, GL_COMPILE)
-                else:
-                    glLoadName(i)
                 if obj in self.objects:
-                    (j, path, poly)=self.objects[obj]
-                    #print obj, lat, lon, hdg, i, x, z
+                    glLoadName(i)
+                    (x,z)=self.latlon2m(lat, lon)
+                    (base,culled,nocull,texno,poly)=self.objects[obj]
+                    #print obj, lat, lon, hdg, x, z, base,culled,nocull,texno,poly
                     glPushMatrix()
                     glTranslatef(x, 0.0, z)
                     glRotatef(-hdg, 0.0,1.0,0.0)
-                    glCallList(j)
+                    glBindTexture(GL_TEXTURE_2D, texno)
+                    if culled:
+                        if not cullstate:
+                            glEnable(GL_CULL_FACE)
+                            cullstate=True
+                        glDrawArrays(GL_TRIANGLES, base, culled)
+                    if nocull:
+                        if cullstate:
+                            glDisable(GL_CULL_FACE)
+                            cullstate=False
+                        glDrawArrays(GL_TRIANGLES, base+culled, nocull)
                     glPopMatrix()
-                if mode==GL_RENDER:
-                    glEndList()   
+            if mode==GL_RENDER:
+                glEndList()   
 
         if mode==GL_SELECT:
             return
 
         if self.objectslist:
-            glCallLists(self.objectslist)
+            glCallList(self.objectslist)
 
         if self.selected!=None:
+            (obj, lat, lon, hdg)=placement[self.selected]
+            (x,z)=self.latlon2m(lat, lon)
+            (base,culled,nocull,texno,poly)=self.objects[obj]
+            glTranslatef(x, 0.0, z)
+            glRotatef(-hdg, 0.0,1.0,0.0)
+            glBindTexture(GL_TEXTURE_2D, texno)
             glColor3f(1.0, 0.5, 1.0)
             glPolygonOffset(0, -10)
             glEnable(GL_POLYGON_OFFSET_FILL)
-            glCallList(self.objectslist[self.selected])
+            if culled:
+                glEnable(GL_CULL_FACE)
+                glDrawArrays(GL_TRIANGLES, base, culled)
+            if nocull:
+                glDisable(GL_CULL_FACE)
+                cullstate=False
+                glDrawArrays(GL_TRIANGLES, base+culled, nocull)
             glDisable(GL_POLYGON_OFFSET_FILL)
             # Also show as line in case object has poly_os
-            glEnable(GL_POLYGON_OFFSET_LINE)
-            glPolygonMode(GL_FRONT, GL_LINE)
-            glCallList(self.objectslist[self.selected])
-            glPolygonMode(GL_FRONT, GL_FILL)
-            glDisable(GL_POLYGON_OFFSET_LINE)
+            #glEnable(GL_POLYGON_OFFSET_LINE)
+            #glPolygonMode(GL_FRONT, GL_LINE)
+            #if culled:
+            #    glEnable(GL_CULL_FACE)
+            #    glDrawArrays(GL_TRIANGLES, base, culled)
+            #if nocull:
+            #    glDisable(GL_CULL_FACE)
+            #    cullstate=False
+            #    glDrawArrays(GL_TRIANGLES, base+culled, nocull)
+            #glPolygonMode(GL_FRONT, GL_FILL)
+            #glDisable(GL_POLYGON_OFFSET_LINE)
             
         glFlush()
         self.SwapBuffers()
@@ -261,13 +290,25 @@ class MyGL(wx.glcanvas.GLCanvas):
     def reload(self, runways, objects, placements, baggage):
         self.tile=[999,999]	# force invalidation of dlists on next goto
         self.runways=runways
-        for (i, path, poly) in self.objects.values():
-            glDeleteLists(i, 1)
         self.texcache.flush()
         self.objects={}
+        self.varray=[]
+        self.tarray=[]
         for name, path in objects.iteritems():
-            (i,poly)=readObj(path, self.texcache)
-            if i: self.objects[name]=(i, path, poly)
+            (culled, nocull, tculled, tnocull, texno, poly)=readObj(path, self.texcache)
+            base=len(self.varray)
+            self.varray.extend(culled)
+            self.varray.extend(nocull)
+            self.tarray.extend(tculled)
+            self.tarray.extend(tnocull)
+            self.objects[name]=(base, len(culled), len(nocull), texno, poly)
+        if self.varray:
+            glVertexPointerf(self.varray)
+            glTexCoordPointerf(self.tarray)
+        else:
+            # need something
+            glVertexPointerf([[0,0,0],[0,0,0],[0,0,0]])
+            glTexCoordPointerf([[0,0],[0,0]])
         if placements!=None:
             self.placements=placements
             self.baggage=baggage
@@ -280,9 +321,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             wx.MessageBox("Package references missing objects:\n%s" % '\n'.join(missing), 'Warning', wx.ICON_INFORMATION|wx.OK, self.parent)
 
     def add(self, obj, lat, lon, hdg):
-        if self.objectslist: glDeleteLists(self.objectslist[0], len(self.objectslist))
-        self.objectslist=[]
-        (i, path, poly)=self.objects[obj]
+        if self.objectslist: glDeleteLists(self.objectslist, 1)
+        self.objectslist=0
+        (base,culled,nocull,texno,poly)=self.objects[obj]
         placement=self.currentplacements()
         if poly:
             placement.insert(0, (obj, lat, lon, hdg))
@@ -297,8 +338,8 @@ class MyGL(wx.glcanvas.GLCanvas):
     def movesel(self, dlat, dlon, dhdg):
         if self.selected==None:
             return
-        if self.objectslist: glDeleteLists(self.objectslist[0], len(self.objectslist))
-        self.objectslist=[]
+        if self.objectslist: glDeleteLists(self.objectslist, 1)
+        self.objectslist=0
         placement=self.currentplacements()
         (obj, lat, lon, hdg)=placement[self.selected]
         lat=round(lat+dlat,6)
@@ -316,8 +357,8 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def delsel(self):
         if self.selected==None: return None
-        if self.objectslist: glDeleteLists(self.objectslist[0], len(self.objectslist))
-        self.objectslist=[]
+        if self.objectslist: glDeleteLists(self.objectslist, 1)
+        self.objectslist=0
         placement=self.currentplacements()
         placement.pop(self.selected)
         self.placements[(self.tile[0],self.tile[1])]=placement
@@ -336,8 +377,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         if newtile!=self.tile:
             if self.runwayslist: glDeleteLists(self.runwayslist, 1)
             self.runwayslist=0
-            if self.objectslist: glDeleteLists(self.objectslist[0], len(self.objectslist))
-            self.objectslist=[]
+            if self.objectslist: glDeleteLists(self.objectslist, 1)
+            self.objectslist=0
             if self.selected!=None:
                 self.selected=None	# May not be the same index in new list
                 self.parent.ShowSel(None)

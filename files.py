@@ -1,6 +1,6 @@
 from math import floor
-from Image import open
-import BmpImagePlugin, PngImagePlugin	# force for py2exe
+from PIL.Image import open
+import PIL.BmpImagePlugin, PIL.PngImagePlugin	# force for py2exe
 from OpenGL.GL import *
 from os import getenv, listdir, mkdir, makedirs, popen3, rename, unlink
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, pardir, sep
@@ -12,7 +12,7 @@ if platform!='win32':
     import codecs
 
 appname='OverlayEditor'
-appversion='1.00'	# Must be numeric
+appversion='1.12'	# Must be numeric
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
@@ -251,9 +251,6 @@ def writeDsfs(path, placements, baggage):
         unlink(tmp)
     
 def readObj(path, texcache):
-    maxpoly=0
-    f=None
-    newlist=0
     co=sep+'custom objects'+sep
     if co in path.lower():
         texpath=path[:path.lower().index(co)]
@@ -273,9 +270,14 @@ def readObj(path, texcache):
             raise IOError
         if not h.readline().split()[0]=='OBJ':
             raise IOError
-        newlist=glGenLists(1)
-        glNewList(newlist, GL_COMPILE)
-        glEnable(GL_CULL_FACE)
+        culled=[]
+        nocull=[]
+        current=culled
+        tculled=[]
+        tnocull=[]
+        tcurrent=tculled
+        texno=0
+        maxpoly=0
         if version=='700':
             while 1:
                 tex=h.readline().strip()
@@ -288,11 +290,7 @@ def readObj(path, texcache):
             tex=abspath(join(texpath,tex))
             for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
                 if exists(tex+ext):
-                    glBindTexture(GL_TEXTURE_2D, texcache.get(tex+ext))
-                    break
-            else:
-                glBindTexture(GL_TEXTURE_2D, 0)
-            mode=None
+                    texno=texcache.get(tex+ext)
             while 1:
                 line=h.readline()
                 if not line: break
@@ -303,67 +301,57 @@ def readObj(path, texcache):
                 elif c[0]=='ATTR_LOD':
                     if float(c[1])!=0: break
                 elif c[0]=='ATTR_poly_os':
-                    polynow=int(c[1])
-                    if polynow:
-                        if mode: glEnd()
-                        mode=None
-                        glEnable(GL_POLYGON_OFFSET_FILL)
-                        glPolygonOffset(0, -polynow)
-                    elif maxpoly:
-                        if mode: glEnd()
-                        mode=None
-                        glDisable(GL_POLYGON_OFFSET_FILL)
-                    maxpoly=max(maxpoly,polynow)
+                    maxpoly=max(maxpoly,int(c[1]))
                 elif c[0]=='ATTR_cull':
-                    if mode: glEnd()
-                    mode=None
-                    glEnable(GL_CULL_FACE)
+                    current=culled
+                    tcurrent=tculled
                 elif c[0]=='ATTR_no_cull':
-                    if mode: glEnd()
-                    mode=None
-                    glDisable(GL_CULL_FACE)                
+                    current=nocull
+                    tcurrent=tnocull
                 elif c[0] in ['tri', 'quad', 'quad_hard', 'polygon',
                               'quad_strip', 'tri_strip', 'tri_fan']:
+                    seq=[]
                     if c[0]=='tri':
                         count=3
-                        newmode=GL_TRIANGLES
+                        seq=[0,1,2]
                     elif c[0]=='polygon':
                         count=int(c[1])
-                        newmode=GL_POLYGON
-                        if mode: mode=-1	# can't chain
+                        for i in range(1,count-1):
+                            seq.extend([0,i,i+1])
                     elif c[0]=='quad_strip':
                         count=int(c[1])
-                        newmode=GL_QUAD_STRIP
+                        for i in range(0,count-2,2):
+                            seq.extend([i,i+1,i+2,i+3,i+2,i+1])
                     elif c[0]=='tri_strip':
                         count=int(c[1])
-                        newmode=GL_TRIANGLE_STRIP
+                        seq=[]	# fixme
                     elif c[0]=='tri_fan':
                         count=int(c[1])
-                        newmode=GL_TRIANGLE_FAN
+                        for i in range(1,count-1):
+                            seq.extend([0,i,i+1])
                     else:
                         count=4
-                        newmode=GL_QUADS
-                    if mode!=newmode:
-                        if mode: glEnd()
-                        mode=newmode
-                        glBegin(mode)
+                        seq=[0,1,2,0,2,3]
+                    v=[]
+                    t=[]
                     i=0
                     while i<count:
                         c=h.readline().split()
-                        glTexCoord2f(float(c[3]), float(c[4]))
-                        glVertex3f(float(c[0]), float(c[1]), float(c[2]))
+                        v.append([float(c[0]), float(c[1]), float(c[2])])
+                        t.append([float(c[3]), float(c[4])])
                         if len(c)>5:	# Two per line
-                            glTexCoord2f(float(c[8]), float(c[9]))
-                            glVertex3f(float(c[5]), float(c[6]), float(c[7]))
+                            v.append([float(c[5]), float(c[6]), float(c[7])])
+                            t.append([float(c[8]), float(c[9])])
                             i+=2
                         else:
                             i+=1
-            if mode: glEnd()
+                    for i in seq:
+                        current.append(v[i])
+                        tcurrent.append(t[i])
         elif version=='800':
             vt=[]
             idx=[]
             anim=[[0,0,0]]
-            mode=None
             while 1:
                 line=h.readline()
                 if not line: break
@@ -377,13 +365,8 @@ def readObj(path, texcache):
                         tex=abspath(join(texpath,tex))
                         for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
                             if exists(tex+ext):
-                                glBindTexture(GL_TEXTURE_2D,
-                                              texcache.get(tex+ext))
+                                texno=texcache.get(tex+ext)
                                 break
-                        else:
-                            glBindTexture(GL_TEXTURE_2D, 0)
-                    else:
-                        glBindTexture(GL_TEXTURE_2D, 0)
                 elif c[0]=='VT':
                     vt.append([float(c[1]), float(c[2]), float(c[3]),
                                float(c[7]), float(c[8])])
@@ -394,21 +377,13 @@ def readObj(path, texcache):
                 elif c[0]=='ATTR_LOD':
                     if float(c[1])!=0: break
                 elif c[0]=='ATTR_poly_os':
-                    polynow=int(c[1])
-                    if polynow:
-                        if mode: glEnd()
-                        mode=None
-                        glEnable(GL_POLYGON_OFFSET_FILL)
-                        glPolygonOffset(0, -polynow)
-                    elif maxpoly:
-                        if mode: glEnd()
-                        mode=None
-                        glDisable(GL_POLYGON_OFFSET_FILL)
-                    maxpoly=max(maxpoly,polynow)
+                    maxpoly=max(maxpoly,int(c[1]))
                 elif c[0]=='ATTR_cull':
-                    glEnable(GL_CULL_FACE)
+                    current=culled
+                    tcurrent=tculled
                 elif c[0]=='ATTR_no_cull':
-                    glDisable(GL_CULL_FACE)                
+                    current=nocull
+                    tcurrent=tnocull
                 elif c[0]=='ANIM_begin':
                     anim.append([anim[-1][0], anim[-1][1], anim[-1][2]])
                 elif c[0]=='ANIM_end':
@@ -418,24 +393,16 @@ def readObj(path, texcache):
                               anim[-1][1]+float(c[2]),
                               anim[-1][2]+float(c[3])]
                 elif c[0]=='TRIS':
-                    if mode!=GL_TRIANGLES:
-                        if mode: glEnd()
-                        mode=GL_TRIANGLES
-                        glBegin(mode)
                     for i in range(int(c[1]), int(c[1])+int(c[2])):
                         v=vt[idx[i]]
-                        glTexCoord2f(v[3], v[4])
-                        glVertex3f(anim[-1][0]+v[0],
-                                   anim[-1][1]+v[1],
-                                   anim[-1][2]+v[2])
-            if mode: glEnd()
+                        current.append([anim[-1][0]+v[0],
+                                        anim[-1][1]+v[1],
+                                        anim[-1][2]+v[2]])
+                        tcurrent.append([v[3], v[4]])
     except:
         pass
-    if maxpoly:
-        glDisable(GL_POLYGON_OFFSET_FILL)
-    if newlist: glEndList()	# go with what we've got (if anything)
     if h: h.close()
-    return (newlist,maxpoly)
+    return (culled, nocull, tculled, tnocull, texno, maxpoly)
 
 
 class TexCache:

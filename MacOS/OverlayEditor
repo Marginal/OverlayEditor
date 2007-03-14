@@ -1,4 +1,5 @@
 #!/bin/bash
 # This is executed by user's default shell, ignoring previous line
 
-/usr/bin/env pythonw "$0.py"
+# Force default Python 2.3
+/usr/bin/pythonw2.3 -OO "$0.py"

@@ -94,6 +94,7 @@ setup(name='OverlayEditor',
                             },
                  },
 
+      # comment out for Mac
       zipfile = None,
       
       # win32
