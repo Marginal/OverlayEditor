@@ -1106,12 +1106,25 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         for key in self.runways.keys():	# need to re-layout runways
             glDeleteLists(self.runways.pop(key), 1)
+
         if objects!=None:
             self.objects=objects
             self.polygons=polygons
+
+        # Silently correct case of missing object refs
+        for objs in objects.values():
+            for obj in objs:
+                if obj.name not in objectmap:
+                    for existing in objectmap.keys():
+                        if obj.name.lower()==existing.lower():
+                            obj.name=existing
+                            break
+
+        # force polygons to recompute
         for polygons in self.polygons.values():
             for poly in polygons:
-                poly.points=[]		# force update
+                poly.points=[]
+
         if background:
             (image, lat, lon, hdg, width, length, opacity)=background
             self.background=(image, lat, lon, hdg, width, length, opacity,None)
