@@ -44,16 +44,19 @@ contains X-Plane, PlaneMaker etc).<p>
 <img style="border: 0px solid ; width: 792px; height: 562px;" alt="main window" src="Resources/screenshot.png">
 <h4>Main window</h4>
 <p>This shows the objects in the loaded scenery package.
-Runways and taxiways are displays in simplified form.
+Runways and taxiways are displayed in simplified form.
 Terrain and "autogen" scenery objects are not displayed.<p>
 <p>Navigate with the cursor keys or mouse. Hold down
-<samp>Ctrl</samp>/<samp>Cmd</samp>
-for bigger steps or <samp>Shift</samp> for tiny steps:</p>
-<table style="width: 100%;" border="0">
+<samp>Ctrl</samp> or <samp>Cmd</samp>
+for bigger steps, or <samp>Shift</samp> for tiny steps:</p>
+<table style="margin-left: 40px; width: 100%;" border="0">
   <tbody>
     <tr>
-      <td style="width: 33%;">
-<samp>Up</samp>, <samp>Down</samp>, <samp>Left</samp>, <samp>Right</samp></td>
+      <td style="width: 33%;"><samp>Up</samp>, <samp>Down</samp>, <samp>Left</samp>, <samp>Right</samp></td>
+      <td>Move</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;">Mouse click on window edge</td>
       <td>Move</td>
     </tr>
     <tr>
@@ -65,36 +68,52 @@ for bigger steps or <samp>Shift</samp> for tiny steps:</p>
       <td>Change elevation</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>=</samp>, <samp>-</samp>, <samp>MouseWheel</samp></td>
+      <td style="width: 33%;"><samp>=</samp>, <samp>-</samp>, Mouse wheel</td>
       <td>Zoom</td>
     </tr>
   </tbody>
 </table>
-<p>You can also move by clicking at one of the edges of the main window.<p>
-<p>Click on an object to select it. Hold down
-<samp>Ctrl</samp>/<samp>Cmd</samp> to select additional objects. Selected
-objects are highlighted in pink in the main window.<p>
-<p>These keys affect the selected objects. Hold down
-<samp>Ctrl</samp>/<samp>Cmd</samp>
-for bigger steps or <samp>Shift</samp> for tiny steps:</p>
-<table style="width: 100%;" border="0">
+<p>Selected objects are highlighted in pink in the main window.
+To select objects:</p>
+<table style="margin-left: 40px; width: 100%;" border="0">
   <tbody>
     <tr>
-      <td style="width: 33%;">
-<samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
-      <td>Move selected object</td>
+      <td style="width: 33%;">Mouse click</td>
+      <td>Select object</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;">Mouse drag</td>
+      <td>Select objects</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Ctrl</samp> or <samp>Cmd</samp> and click or drag</td>
+      <td>Toggle selected objects</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Space</samp></td>
+      <td>Select all objects on-screen (even if they're too small to see).</td>
+    </tr>
+  </tbody>
+</table>
+<p>These keys affect the selected objects. Hold down <samp>Ctrl</samp> or
+<samp>Cmd</samp> for bigger steps or <samp>Shift</samp> for tiny steps:</p>
+<table style="margin-left: 40px; width: 100%;" border="0">
+  <tbody>
+    <tr>
+      <td style="width: 33%;"><samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
+      <td>Move selected objects</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Q</samp>, <samp>E</samp></td>
-      <td>Rotate selected object</td>
+      <td>Rotate selected objects</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>C</samp></td>
-      <td>Centre on selected object</td>
+      <td>Centre on selected objects</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Delete</samp></td>
-      <td>Delete selected object</td>
+      <td>Delete selected objects</td>
     </tr>
   </tbody>
 </table>
@@ -130,7 +149,7 @@ The object is added at the current location and with the current heading.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Delete" src="Resources/delete.png"></td>
-      <td>Delete the selected object.</td>
+      <td>Delete the selected objects.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><a name="reload"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Reload" src="Resources/reload.png"></a></td>
@@ -152,9 +171,9 @@ of X-Plane's top-level folder while you are editing a scenery package.</td>
   </tbody>
 </table>
 <h4><a name="objectlist">List of objects</a></h4>
-<p>All the objects in the scenery package folder are listed
-(including those that are present in the scenery package folder
-but are not used in the scenery). You can only add objects that
+<p>All the objects in the scenery package folder are listed,
+including those that are present in the scenery package folder
+but are not used in the scenery. You can only add objects that
 appear in this list - use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have added new objects to the scenery package folder.</p>
 <h3>Limitations</h3>
 <ul>
@@ -163,13 +182,14 @@ appear in this list - use <a href="#reload"><img style="border: 0px solid ; widt
   <li>Does not display lights or lines.</li>
   <li>Does not convert or edit <code>.env</code> files.</li>
   <li>Does not edit <code>apt.dat</code> files.</li>
+  <li>You can only select up to 1024 objects at a time.</li>
 </ul>
 <hr>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">1.20 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan
-Harris</a> <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
+      <td class="banner">1.21 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+<a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
       </td>
     </tr>
   </tbody>

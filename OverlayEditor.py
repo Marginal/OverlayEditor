@@ -401,8 +401,12 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_DELETE, False)
         else:
             (obj, lat, lon, hdg)=selection
-            self.palette.set(obj)
-            self.statusbar.SetStatusText("Lat: %11.6f  Lon: %11.6f  Hdg: %3.0f" % (lat, lon, hdg), 2)
+            if len(obj)==1:
+                self.palette.set(obj[0])
+                self.statusbar.SetStatusText("Lat: %11.6f  Lon: %11.6f  Hdg: %3.0f" % (lat, lon, hdg), 2)
+            else:
+                self.palette.set(None)
+                self.statusbar.SetStatusText("Lat: %11.6f  Lon: %11.6f  (%d objects)" % (lat, lon, len(obj)), 2)
             self.toolbar.EnableTool(wx.ID_DELETE, True)
 
     def OnKeyDown(self, event):
@@ -426,7 +430,7 @@ class MainWindow(wx.Frame):
             if not details: return
             (obj,lat,lon,hdg)=details
             self.loc=[lat,lon]
-            if event.m_controlDown or event.m_metaDown:
+            if len(obj)==1 and (event.m_controlDown or event.m_metaDown):
                 self.hdg=round(hdg,0)
         elif event.m_keyCode==ord('Q'):
             if event.m_controlDown or event.m_metaDown:
@@ -474,6 +478,8 @@ class MainWindow(wx.Frame):
             if self.elev>90: self.elev=90
         elif event.m_keyCode==wx.WXK_DELETE:
             self.canvas.delsel()
+        elif event.m_keyCode==wx.WXK_SPACE:
+            self.canvas.allsel(event.m_controlDown or event.m_metaDown)
         else:
             #print event.m_keyCode, event.m_shiftDown, event.m_controlDown, event.m_metaDown
             event.Skip(True)
