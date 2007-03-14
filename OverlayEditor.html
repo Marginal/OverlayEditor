@@ -31,11 +31,7 @@ Scenery</a> &raquo; <a href="http://marginal.org.uk/x-planescenery/tools.html">T
 <h3>Overview</h3>
 <p>This application edits X-Plane<small><sup>&reg;</sup></small>
 DSF overlay scenery packages for X-Plane 8.30 or later.
-It runs on Windows 2000 or later, MacOS 10.3.9 or later and Linux.</p>
-<p>This document is a reference - it is assumed that you're familiar with
-X-Plane's scenery system and that you know how to create X-Plane scenery
-objects. If not, then you can get started by following
-<a target="_blank" href="http://marginal.org.uk/x-planescenery/hangar_tutorial/index.html">this tutorial</a>.<p>
+It runs on Windows 2000 or later and MacOS 10.3.9 or later.</p>
 <h3>Setting up</h3>
 <p>Users of MacOS 10.3 should first install
 <a href="http://prdownloads.sourceforge.net/wxpython/wxPython2.5-osx-unicode-2.5.3.1-panther-py2.3.dmg">wxPython 2.5.3</a> or later <small>(you don't need to
@@ -44,15 +40,15 @@ install MacPython - it's already installed on 10.3)</small>.</p>
 identify X-Plane's top-level folder (<i>ie</i> the folder which
 contains the X-Plane, Plane-Maker etc applications).<p>
 <h3>The application window</h3>
-<p>The application window consists of five parts:</p>
-<img style="border: 0px solid ; width: 706px; height: 491px;" alt="main window" src="Resources/screenshot.jpg">
+<p>The application window consists of four parts:</p>
+<img style="border: 0px solid ; width: 682px; height: 491px;" alt="main window" src="Resources/screenshot.png">
 <h4>Main window</h4>
 <p>This shows the objects in the loaded scenery package.
-By default terrain is displayed as flat - you can change this with <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Preferences" src="Resources/prefs.png"></a>.
-Runways, taxiways and navaids are displayed in simplified form and cannot
-be edited. "Autogen" scenery objects are not displayed at all.<p>
-<p>Navigate with the cursor keys or mouse. Hold down <samp>Ctrl</samp> or
-<samp>Cmd</samp> for bigger steps, or <samp>Shift</samp> for tiny steps:</p>
+Runways and taxiways are displayed in simplified form.
+Terrain and "autogen" scenery objects are not displayed.<p>
+<p>Navigate with the cursor keys or mouse. Hold down
+<samp>Ctrl</samp> or <samp>Cmd</samp>
+for bigger steps, or <samp>Shift</samp> for tiny steps:</p>
 <table style="margin-left: 40px; width: 100%;" border="0">
   <tbody>
     <tr>
@@ -72,7 +68,7 @@ be edited. "Autogen" scenery objects are not displayed at all.<p>
       <td>Change elevation</td>
     </tr>
     <tr>
-      <td style="width: 33%;">Mouse wheel, <samp>-</samp>, <samp>=</samp></td>
+      <td style="width: 33%;"><samp>=</samp>, <samp>-</samp>, Mouse wheel</td>
       <td>Zoom</td>
     </tr>
   </tbody>
@@ -95,78 +91,52 @@ To select objects:</p>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Space</samp></td>
-      <td>Select all objects in the main window <small>(even if they're too small to see)</small>.</td>
+      <td>Select all objects shown in the main window (even if they're too small to see).</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Ctrl</samp> or <samp>Cmd</samp> and <samp>Space</samp></td>
-      <td>Toggle selection of all objects in the main window</td>
+      <td>Toggle selection of all objects shown in the main window.</td>
     </tr>
   </tbody>
 </table>
-<p>If you select a single polygon (facade, forest or exclusion region)
-you can click on an individual node (<i>ie</i> corner) to select it.
-The selected node is highlighted in white.</p>
-<p>These keys affect the selected objects or the selected node.
-Hold down <samp>Ctrl</samp> or <samp>Cmd</samp> for bigger steps
-or <samp>Shift</samp> for tiny steps:</p>
+<p>These keys affect the selected objects. Hold down <samp>Ctrl</samp> or
+<samp>Cmd</samp> for bigger steps or <samp>Shift</samp> for tiny steps:</p>
 <table style="margin-left: 40px; width: 100%;" border="0">
   <tbody>
     <tr>
-      <td style="width: 33%;">Mouse click and drag</td>
-      <td>Move object or node</td>
-    </tr>
-    <tr>
       <td style="width: 33%;"><samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
-      <td>Move selected objects or node</td>
+      <td>Move selected objects</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Q</samp>, <samp>E</samp></td>
       <td>Rotate selected objects</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>R</samp>, <samp>F</samp></td>
-      <td>Increase/decrease facade height or forest density</td>
-    </tr>
-    <tr>
       <td style="width: 33%;"><samp>C</samp></td>
-      <td>Centre on selected objects or node</td>
+      <td>Centre on selected objects</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>N</samp></td>
-      <td>Centre on and select the next use of this object</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Insert</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
-      <td>Add new node object or node</small></td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
-      <td>Delete selected objects or node</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Ctrl</samp> or <samp>Cmd</samp> and <samp>Z</samp>, or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
-      <td>Undo the last edit.</td>
+      <td style="width: 33%;"><samp>Delete</samp></td>
+      <td>Delete selected objects</td>
     </tr>
   </tbody>
 </table>
-<p>You can't select or otherwise manipulate runways, taxiways or
-navaids (ILS, VOR, DME etc).</p>
 <h4>Status bar</h4>
-<p>This shows your current location, heading, elevation and, if you have
-selected an object or node, the object or node's location, heading and
-elevation (or average location if you have selected more than one object).</p>
+<p>This shows your current location and heading and, if you have
+selected an object, the object's location and heading (or average
+location if you have selected more than one object).</p>
 <h4>Tool bar</h4>
 <table style="width: 100%;" border="0">
   <tbody>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="New" src="Resources/new.png"></td>
       <td>Create a new scenery package. This just creates a new folder
-in X-Plane's<code> Custom&nbsp;Scenery </code>folder.</td>
+in X-Plane's <code>Custom Scenery</code> folder.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Open" src="Resources/open.png"></td>
       <td>Open an existing scenery package. All the packages in
-X-Plane's<code> Custom&nbsp;Scenery </code>folder are listed but you
+X-Plane's <code>Custom Scenery</code> folder are listed but you
 can only actually edit those that use DSF overlays (rather than
 ENVs or "full" DSFs).</td>
     </tr>
@@ -203,22 +173,19 @@ to appear in the <a href="#objectlist">list of objects</a>.
 <small>(Note that the DSF files are not reloaded - just re-open the package if you want to revert to the last saved version)</small>.</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="import"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Go To" src="Resources/import.png"></td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Go To" src="Resources/import.png"></td>
       <td>Import objects and their textures from another scenery package and add them to the <a href="#objectlist">list of objects</a>.
-The imported objects are placed in<code> custom&nbsp;objects </code>or<code> objects </code>if either of these folders exist, otherwise in the package's top-level folder. 
-The texture path names in the imported objects are fixed up as required.<br>
-Before you import objects from another scenery package you should first check
-the licensing terms; these often prohibit re-distribution of individual
-objects.</td>
+The imported objects are placed in <code>custom objects</code> or <code>objects</code> if either of these folders exist, otherwise in the package's top-level folder.
+The texture path names in the imported objects are fixed up as required.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Go To" src="Resources/goto.png"></td>
       <td>Go to an airport.</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="preferences"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Preferences" src="Resources/prefs.png"></a></td>
-      <td>Change X-Plane's top-level folder and whether to show terrain and elevation data.<br>
-Do not change the location of X-Plane's top-level folder while you are editing a scenery package, otherwise your unsaved changes will be lost.</td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Preferences" src="Resources/prefs.png"></a></td>
+      <td>Identify X-Plane's top-level folder. Do not change the location
+of X-Plane's top-level folder while you are editing a scenery package.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Help" src="Resources/help.png"></a></td>
@@ -227,160 +194,47 @@ Do not change the location of X-Plane's top-level folder while you are editing a
   </tbody>
 </table>
 <h4><a name="objectlist">List of objects</a></h4>
-<p>All the objects, facades etc in the scenery package folder are listed under
+<p>All the objects in the scenery package folder are listed under
 the heading "Objects", including those that are present in the scenery
-package folder but are not used in the scenery.
-The type of object is indicated by a symbol:</p>
-<ul>
-  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="obj" src="Resources/obj.png"></a> Object  (<code>.obj</code>)</li>
-  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="fac" src="Resources/fac.png"></a> Polygon - facade or forest</li>
-  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="exc" src="Resources/exc.png"></a> Exclusion region</li>
-</ul>
-<p>Objects that have been made available by scenery libraries, including
-X-Plane's built-in libraries, are listed under further headings in the
-drop-down list. Note that later versions of X-Plane come with more extensive
-libraries than earlier versions, so you you should always design using the
-earliest version of X-Plane that you want your scenery package to work
-with.
-(See <a target="_blank" href="http://marginal.org.uk/x-planescenery/library_tutorial/index.html">this tutorial</a> if you're interested in making your own scenery libraries).</p>
-<p>You can only add objects that appear in these lists to your scenery
-(think of this as your "palette"):</p>
-<ul>
-  <li>Use <a href="#import"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Import" src="Resources/import.png"></a> to copy objects from another scenery <u>package</u>. (Don't use this to copy objects from a scenery
-<u>library</u>; just select the object from the appropriate list).</li>
-  <li>Use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have otherwise added or modified objects in the scenery package folder, or if you have installed a new scenery library.</li>
-</ul>
-<h4>Preview picture</h4>
-<p>A preview of the currently selected object is shown (when available)
-underneath the list of objects. If more than one picture is shown this
-means that the library object exists in multiple versions; X-Plane will
-choose which version of the object to display at random, but this
-application always displays the first version.</p>
-<p>You can drag the separators between the preview window and the other
-windows to make the preview picture larger or smaller.</p>
+package folder but are not used in the scenery. Objects that have been
+made available by scenery libraries are listed under further headings.</p>
+<p>You can only add objects that appear in these lists - use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have added new objects to the scenery package folder or if you have installed a new scenery library.</p>
 <h3>Differences between this application and X-Plane</h3>
 <p>This application displays terrain and objects in orthogonal projection
-and in a simplified form. <i>ie</i>:</p>
-<ul>
-  <li>No lights, lines, shading or animation. 
-Objects that only contain lights or lines are displayed as small
-"placeholder" cubes so that they can be edited.</li>
-  <li>Forests are just displayed as an outline.</li>
-  <li>X-Plane allows forests and draped polygons to contain holes (glades),
-however this application does not. If you edit a forest or draped polygon
-any hole will be deleted.</li>
-  <li>This application only understands facades and forests.
-Other types of polygons (lines, strings etc) are displayed as an outline
-and cannot be edited.</li>
-  <li>Terrain textures are simplified - no beaches or overlay textures.</li>
-  <li>No flattening of terrain around airports. Terrain is displayed as if the
-X-Plane "allow sloped runways" rendering option is turned on.</li>
-</ul>
-<a name="priority">    
-<p>X-Plane prioritises scenery packages; and it doesn't load scenery from
-lower priority packages once it has found a "full" DSF for the required area.
-A package's priority is determined by its <a href="http://en.wikipedia.org/wiki/ASCIIbetical">ASCIIbetical</a> order in
-the<code> Custom&nbsp;Scenery </code>folder.
-So an overlay scenery package will not be displayed if it has a name later
-in the alphabet than a "full" scenery package for the same area.</a><br>
-This application lets you edit the overlay scenery package and does not
-warn you about this problem.
-You can see the order in which X-Plane prioritises your packages
-by looking at the file <code>Log.txt</code> in X-Plane's top-level folder.</p>
+and in a simplified form - <i>ie</i> no lights, lines, shading or animation,
+and simplified terrain textures.
+Objects that do not contain any polygons are displayed as small
+"placeholder" cubes so that they can be edited.<p>
 <p>When you open or reload a scenery package this application warns about any
 objects that it can't read or that are missing, but lets you edit and save
 the scenery package anyway. The unreadable or missing objects are displayed
 as small "placeholder" cubes. X-Plane will crash unless you either provide
-implementations of unreadable and missing objects, or delete them from the
-scenery.<p>
+implementations of all missing objects or hand-edit the DSF file to remove all
+references to missing objects. X-Plane will also crash if it cannot read an
+object.<p>
 <p>X-Plane supports having multiple versions of a single library object,
-and chooses which object to display at random.
-However, this application always displays the first version of an object
-that it comes across.
+and chooses which object to display at random. However, this application
+always displays the first version of an object that it comes across.
 Many objects in the <code>global8</code> library exist in multiple versions
 - <i>eg</i> the library object <code>/lib/global8/us/in_sq_90_30r.obj</code>
 exists in eight different versions in X-Plane 8.40; if you use that object
-in your scenery package then this application will always display the same
-version, but X-Plane will display one of the eight versions chosen at random.<p>
-<h3>Troubleshooting</h3>
-<h4>OverlayEditor complains that it "Can't read one or more objects"</h4>
-Neither X-Plane nor OverlayEditor can read objects designed for X-Plane v5.
-You can identify objects by looking at them in a text editor;
-the second line should start with <code>2</code>, <code>700</code> or a larger
-number and the third line should start with <code>OBJ</code>.
-Otherwise this is either an X-Plane v5 object or it is not an X-Plane
-object at all.<br>
-If the object looks OK then please report the problem to the
-<a href="mailto:x-plane@marginal.org.uk">author</a>.
-
-<h4>My scenery object just appears as a grey blob in OverlayEditor</h4>
-OverlayEditor doesn't draw lights or lines - objects that only contain
-lights or lines are displayed as small "placeholder" cubes.
-This is a limitation of the application.
-    
-<h4>My scenery object has the right shape, but appears grey in OverlayEditor</h4>
-This happens when OverlayEditor fails to find the texture file listed in your
-object.<br>
-OverlayEditor expects the texture filename to have the correct case.
-Edit your object to correct the texture filename.
-Then press <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> to tell OverlayEditor to re-read your object.
-
-<h4>My scenery objects don't show up in X-Plane</h4>
-<dl>
-  <dt>Check that OverlayEditor saved your package correctly:</dt>
-  <dd>Run OverlayEditor again, open your scenery package and check that
-it looks OK.</dd>
-  <dt>&nbsp;</dt>
-  <dt>Check that OverlayEditor saved your package in the correct copy of X-Plane:</dt>
-  <dd>Press <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
-and check that the "X-Plane location" points to the copy of X-Plane
-that you're running.<br>
-If it doesn't, change the "X-Plane location" setting.
-Then, in Explorer or the Finder, move your scenery package folder to the
-copy of X-Plane that you're running.</dd>
-  <dt>&nbsp;</dt>
-  <dt>Check your X-Plane settings:</dt>
-  <dd>Run X-Plane and choose <samp>Settings &raquo; Rendering&nbsp;Options</samp>.<br>
-Check that "number of objects" is not set to "None".</dd>
-  <dt>&nbsp;</dt>
-  <dt>Check that X-Plane found your scenery package:</dt>
-  <dd>Quit X-Plane. Open the file <code>Log.txt</code> in the top-level
-X-Plane folder.
-Your scenery package should be listed at least twice in this file;
-firstly in the list of scenery packages, eg:<br>
-<code>&nbsp;4 Custom Scenery\<i>My package</i>\</code><br>
-and secondly when the X-Plane loads the DSF(s) from your scenery package, eg:<br>
-<code>&nbsp;DSF load time: 28488 for file Custom Scenery\<i>My package</i>\Earth nav data:+50-010\+51-001.dsf</code><br>
-If X-Plane is loading DSFs from another package in
-the<code> Custom&nbsp;Scenery </code>folder this is because the other package
-has a <a href="#priority">higher priority</a> than your package.
-Rename one or both of the packages to change their relative priority.</dd>
-</dl>
-
+then this application will always display the same version, but X-Plane will
+display one of the eight versions chosen at random.<p>
 <h3>Limitations</h3>
 <ul>
   <li>Does not display autogen scenery.</li>
-  <li>Does not display lights or lines in objects.</li>
+  <li>Does not display lights or lines.</li>
   <li>Does not convert or edit <code>.env</code> files.</li>
-  <li>Does not edit runways, taxiways, navaids etc.</li>
+  <li>Does not edit vectors (exclusion areas, forests etc).</li>
+  <li>Does not edit <code>apt.dat</code> files.</li>
   <li>There is a limit to the number of objects that you can select at once. The number depends on your graphics hardware.</li>
-  <li>Palletised or interlaced PNG files appear plain grey (X-Plane can't read the former either).</li>
+  <li>Cannot read palettised or interlaced PNG files (X-Plane can't read the former either).</li>
 </ul>
-<h3>License</h3>
-<p>These tools are licensed under the Creative Commons <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/">Attribution-ShareAlike</a> license.</p>
-<p>Use of these tools does not impose any requirement on you to license
-your work under a Creative Commons license. For the avoidance of doubt,
-this means that you can license any scenery that you make using these
-tools under commercial terms (subject to any licensing restrictions on
-any imported or library objects that you use).</p>
-<p>The author would appreciate a courtesy copy of any commercial
-scenery or planes that you make using these tools, but you are under
-no obligation.</p>
 <hr>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 1.59 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 1.41 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px; vertical-align: text-bottom;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
       </td>
     </tr>
