@@ -1,10 +1,10 @@
 from math import cos, sin, floor, pi
 from OpenGL.GL import *
 from OpenGL.GLU import *
-from sys import platform
+from os.path import join
 import wx.glcanvas
 
-from files import readObj, TexCache
+from files import readObj, TexCache, sortfolded
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
@@ -12,12 +12,17 @@ f2m=0.3048	# 1 foot [m]
 
 sband=12	# width of mouse scroll band around edge of window
 
+UNDOADD=0
+UNDODEL=1
+UNDOMOVE=2
+
 
 # OpenGL Window
 class MyGL(wx.glcanvas.GLCanvas):
-    def __init__(self, parent):
+    def __init__(self, parent, frame):
 
         self.parent=parent
+        self.frame=frame
         self.movecursor=wx.StockCursor(wx.CURSOR_HAND)
         self.dragcursor=wx.StockCursor(wx.CURSOR_CROSS)
 
@@ -41,6 +46,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.selectsaved=None	# Selection at start of drag        
         self.mousenow=None	# Current position
 
+        self.undostack=[]
+        
         self.x=0
         self.z=0
         self.h=0
@@ -55,8 +62,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         wx.EVT_MOTION(self, self.OnMouseMotion)
         wx.EVT_LEFT_DOWN(self, self.OnLeftDown)
         wx.EVT_LEFT_UP(self, self.OnLeftUp)
-        wx.EVT_KILL_FOCUS(self, self.OnLeftUp)        
-        if platform=='darwin':
+        #wx.EVT_KILL_FOCUS(self, self.OnLeftUp)        
+        if 'GetMouseState' not in dir(wx):
             # needed cos we can't tell if mouse is down
             wx.EVT_LEAVE_WINDOW(self, self.OnLeftUp)
         
@@ -88,11 +95,11 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def OnKeyDown(self, event):
         # Manually propagate
-        self.parent.OnKeyDown(event)
+        self.frame.OnKeyDown(event)
 
     def OnMouseWheel(self, event):
         # Manually propagate
-        self.parent.OnMouseWheel(event)
+        self.frame.OnMouseWheel(event)
 
     def OnTimer(self, event):
         # mouse scroll - fake up a key event and pass it up
@@ -102,8 +109,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         if posx<sband or posy<sband or size.x-posx<sband or size.y-posy<sband:
             keyevent=wx.KeyEvent()
             keyevent.m_controlDown=keyevent.m_metaDown=self.selectctrl
-            if platform!='darwin':
-                state=wx.GetMouseState()	# not in wxMac 2.5
+            if 'GetMouseState' in dir(wx):	# not in wxMac 2.5
+                state=wx.GetMouseState()
                 if not state.LeftDown():
                     self.timer.Stop()
                     return
@@ -116,7 +123,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 keyevent.m_keyCode=wx.WXK_RIGHT
             elif size.y-posy<sband:
                 keyevent.m_keyCode=wx.WXK_DOWN
-            self.parent.OnKeyDown(keyevent)
+            self.frame.OnKeyDown(keyevent)
         else:
             self.timer.Stop()
         
@@ -129,12 +136,14 @@ class MyGL(wx.glcanvas.GLCanvas):
             # mouse scroll
             self.timer.Start(50)
         else:
+            #self.CaptureMouse()	# prevent notebook stealing focus
             self.select(event)
 
     def OnLeftUp(self, event):
         if self.selectanchor:
             self.selectanchor=None
             self.SetCursor(wx.NullCursor)
+            #self.ReleaseMouse()
             self.Refresh()	# get rid of drag box
         else:
             self.timer.Stop()
@@ -201,7 +210,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.selections=selections
 
         self.Refresh()
-        self.parent.ShowSel()
+        self.frame.ShowSel()
         
     def redraw(self, mode, event=None):
         glMatrixMode(GL_PROJECTION)
@@ -426,49 +435,55 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.runways=runways
         self.texcache.flush()
         self.objects={}
-        self.varray=[]
-        self.tarray=[]
         errobjs=[]
+        (culled, nocull, tculled, tnocull, texno, poly)=readObj(join('Resources','default.obj'), self.texcache)
+        self.varray=culled+nocull
+        self.tarray=tculled+tnocull
+        default=(0, len(culled), len(nocull), texno, poly)
         for name, path in objects.iteritems():
             try:
                 (culled, nocull, tculled, tnocull, texno, poly)=readObj(path, self.texcache)
+                if not (len(culled)+len(nocull)):
+                    # show empty objects as placeholders otherwise can't edit
+                    self.objects[name]=default
+                else:
+                    base=len(self.varray)
+                    self.varray.extend(culled)
+                    self.varray.extend(nocull)
+                    self.tarray.extend(tculled)
+                    self.tarray.extend(tnocull)
+                    self.objects[name]=(base, len(culled), len(nocull), texno, poly)
             except:
-                errobjs.append(name)
-                (culled, nocull, tculled, tnocull, texno, poly)=([],[],[],[],0,0)
-            base=len(self.varray)
-            self.varray.extend(culled)
-            self.varray.extend(nocull)
-            self.tarray.extend(tculled)
-            self.tarray.extend(tnocull)
-            self.objects[name]=(base, len(culled), len(nocull), texno, poly)
-
+                if name!='lib/airport/landscape/powerline_tower':
+                    errobjs.append(name)
+                self.objects[name]=default
         if self.varray:
             glVertexPointerf(self.varray)
             glTexCoordPointerf(self.tarray)
-        else:
-            # need something
+        else:	# need something or get conversion error
             glVertexPointerf([[0,0,0],[0,0,0],[0,0,0]])
             glTexCoordPointerf([[0,0],[0,0]])
         if placements!=None:
             self.placements=placements
             self.baggage=baggage
-        # Redraw can happen under MessageBox, so be ready
         if self.runwayslist: glDeleteLists(self.runwayslist, 1)
         self.runwayslist=0
         if self.objectslist: glDeleteLists(self.objectslist, 1)
         self.objectslist=0
         self.selected=[]	# may not have same indices in new list
-        if errobjs:
-            errobjs.sort()
-            wx.MessageBox("One or more objects could not be read and will not be displayed:\n%s" % '\n'.join(errobjs), 'Warning', wx.ICON_EXCLAMATION|wx.OK, self.parent)
+        self.undostack=[]
         missing=[]
         for placement in self.placements.values():
             for (obj, lat, lon, hdg) in placement:
                 if not obj in self.objects and not obj in missing:
                     missing.append(obj)
+        # Redraw can happen under MessageBox, so do this last
+        if errobjs:
+            sortfolded(errobjs)
+            wx.MessageBox("One or more objects could not be read and will be shown as placeholders:\n%s" % '\n'.join(errobjs), 'Warning', wx.ICON_EXCLAMATION|wx.OK, self.frame)
         if missing:
-            missing.sort()
-            wx.MessageBox("Package references missing objects:\n%s" % '\n'.join(missing), 'Warning', wx.ICON_INFORMATION|wx.OK, self.parent)
+            sortfolded(missing)
+            wx.MessageBox("Package references missing objects:\n%s" % '\n'.join(missing), 'Warning', wx.ICON_EXCLAMATION|wx.OK, self.frame)
 
     def add(self, obj, lat, lon, hdg):
         if self.objectslist: glDeleteLists(self.objectslist, 1)
@@ -483,10 +498,11 @@ class MyGL(wx.glcanvas.GLCanvas):
             placement.append((obj, lat, lon, hdg))
         self.placements[(self.tile[0],self.tile[1])]=placement
         self.Refresh()
-        self.parent.ShowSel()
+        self.frame.ShowSel()
 
     def movesel(self, dlat, dlon, dhdg):
-        if not self.selected: return
+        # returns True if changed something
+        if not self.selected: return False
         if self.objectslist: glDeleteLists(self.objectslist, 1)
         self.objectslist=0
         placement=self.currentplacements()
@@ -498,7 +514,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             placement[i]=(obj, lat, lon, hdg)
         self.placements[(self.tile[0],self.tile[1])]=placement
         self.Refresh()
-        self.parent.ShowSel()
+        self.frame.ShowSel()
+        return True
 
     def clearsel(self):
         self.selected=[]
@@ -516,7 +533,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.selectanchor=None
 
     def delsel(self):
-        if not self.selected: return
+        # returns True if deleted something
+        if not self.selected: return False
         if self.objectslist: glDeleteLists(self.objectslist, 1)
         self.objectslist=0
         placement=self.currentplacements()
@@ -527,7 +545,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.placements[(self.tile[0],self.tile[1])]=newplace
         self.selected=[]
         self.Refresh()
-        self.parent.ShowSel()
+        self.frame.ShowSel()
+        return True
 
     def getsel(self):
         # return current selection, or average
@@ -550,7 +569,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if self.objectslist: glDeleteLists(self.objectslist, 1)
             self.objectslist=0
             self.selected=[]
-            self.parent.ShowSel()
+            self.frame.ShowSel()
         self.tile=newtile
         self.centre=[self.tile[0]+0.5, self.tile[1]+0.5]
         (self.x, self.z)=self.latlon2m(loc[0],loc[1])

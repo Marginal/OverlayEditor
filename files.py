@@ -3,7 +3,7 @@ from PIL.Image import open
 import PIL.BmpImagePlugin, PIL.PngImagePlugin	# force for py2exe
 from OpenGL.GL import *
 from os import getenv, listdir, mkdir, makedirs, popen3, rename, unlink
-from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, pardir, sep
+from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 from sys import platform
 from tempfile import gettempdir
 import wx
@@ -12,7 +12,7 @@ if platform!='win32':
     import codecs
 
 appname='OverlayEditor'
-appversion='1.22'	# Must be numeric
+appversion='1.30'	# Must be numeric
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
@@ -20,6 +20,12 @@ elif platform.lower().startswith('linux'):
     dsftool=join(curdir,'linux','DSFTool')
 else:	# Mac
     dsftool=join(curdir,'MacOS','DSFTool')
+
+
+# 2.3 version of case-insensitive sort
+# 2.4-only version is faster: sort(cmp=lambda x,y: cmp(x.lower(), y.lower()))
+def sortfolded(seq):
+    seq.sort(lambda x,y: cmp(x.lower(), y.lower()))
 
 
 class Prefs:
@@ -123,6 +129,48 @@ def readApt(filename):
     return (byname, bycode, runways)
 
 
+def readLib(filename, objects):
+    h=None
+    try:
+        path=dirname(filename)
+        h=file(filename, 'rU')
+        if not h.readline().strip()[0] in ['I','A']:
+            raise IOError
+        if not h.readline().split()[0]=='800':
+            raise IOError
+        if not h.readline().split()[0]=='LIBRARY':
+            raise IOError
+        for line in h:
+            c=line.split()
+            if not c: continue
+            if c[0]=='EXPORT' and len(c)>=3 and c[1][-4:].lower()=='.obj':
+                c.pop(0)
+                name=c[0][:-4]
+                name=name.replace(':','/')
+                name=name.replace('\\','/')
+                if name[0][0]=='/': name=name[1:]
+                lib=name
+                if name.startswith('lib/'): lib=lib[4:]
+                if not '/' in lib:
+                    lib="uncategorised"
+                else:
+                    lib=lib[:lib.index('/')]
+                if lib in objects and name in objects[lib]:
+                    continue
+                c.pop(0)
+                obj=' '.join(c)	# allow single spaces
+                obj=obj.replace(':','/')
+                obj=obj.replace('\\','/')
+                if obj=='blank.obj':
+                    continue	# no point adding placeholders
+                obj=join(path, normpath(obj))
+                if not lib in objects:
+                    objects[lib]={}
+                objects[lib][name]=obj
+    except:
+        if h: h.close()
+            
+
 def readDsf(filename):
     tmp=join(gettempdir(), basename(filename[:-4])+'.txt')
     (i,o,e)=popen3('%s -dsf2text "%s" "%s"' % (dsftool, filename, tmp))
@@ -163,7 +211,6 @@ def readDsf(filename):
             obj=line.strip()[10:].strip()[:-4]
             obj=obj.replace(':','/')
             obj=obj.replace('\\','/')
-            if obj.startswith('objects/'): obj=obj[8:]
             objects.append(obj)
         elif c[0]=='OBJECT':
             data.append((objects[int(c[1])], float(c[3]), float(c[2]), float(c[4])))
@@ -228,13 +275,7 @@ def writeDsfs(path, placements, baggage):
         for (obj, lat, lon, hdg) in placement:
             if not obj in objects:
                 objects.append(obj)
-                # Hack - check for presence in objects dir
-                if exists(join(path, 'objects', obj+'.obj')):
-                    h.write('OBJECT_DEF objects/%s.obj\n' % obj)
-                elif exists(join(path, 'objects', obj+'.OBJ')):
-                    h.write('OBJECT_DEF objects/%s.OBJ\n' % obj)
-                else:
-                    h.write('OBJECT_DEF %s.obj\n' % obj)
+                h.write('OBJECT_DEF %s.obj\n' % obj)
         h.write('\n')
         for (obj, lat, lon, hdg) in placement:
             h.write('OBJECT %3d %11.6f %10.6f %3.0f\n' % (
@@ -269,147 +310,185 @@ def readObj(path, texcache):
                 break
     else:
         texpath=dirname(path)
-    try:
-        h=file(path, 'rU')
-        if not h.readline().strip()[0] in ['I','A']:
-            raise IOError
-        version=h.readline().split()[0]
-        if not version in ['700','800']:
-            raise IOError
-        if version!='2' and not h.readline().split()[0]=='OBJ':
-            raise IOError
-        if version in ['2','700']:
-            while 1:
-                tex=h.readline().strip()
-                if tex:
-                    if '//' in tex: tex=tex[:tex.index('//')]
-                    tex=tex.strip()
+    h=file(path, 'rU')
+    if not h.readline().strip()[0] in ['I','A']:
+        raise IOError
+    version=h.readline().split()[0]
+    if not version in ['2', '700','800']:
+        raise IOError
+    if version!='2' and not h.readline().split()[0]=='OBJ':
+        raise IOError
+    if version in ['2','700']:
+        while 1:
+            line=h.readline()
+            if not line: raise IOError
+            tex=line.strip()
+            if tex:
+                if '//' in tex: tex=tex[:tex.index('//')]
+                tex=tex.strip()
+                tex=tex.replace(':', sep)
+                tex=tex.replace('/', sep)
+                break
+        tex=abspath(join(texpath,tex))
+        for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
+            if exists(tex+ext):
+                texno=texcache.get(tex+ext)
+    if version=='2':
+        while 1:
+            line=h.readline()
+            if not line: break
+            c=line.split()
+            if not c: continue
+            if c[0]=='99':
+                break
+            if c[0]=='1':
+                h.readline()
+            elif c[0]=='2':
+                h.readline()
+                h.readline()
+            elif c[0] in ['6','7']:	# smoke
+                for i in range(4): h.readline()
+            elif c[0]=='3':
+                uv=[float(c[1]), float(c[2]), float(c[3]), float(c[4])]
+                v=[]
+                for i in range(3):
+                    c=h.readline().split()
+                    v.append([float(c[0]), float(c[1]), float(c[2])])
+                current.append(v[0])
+                tcurrent.append([uv[0],uv[3]])
+                current.append(v[1])
+                tcurrent.append([uv[1],uv[2]])
+                current.append(v[2])
+                tcurrent.append([uv[1],uv[3]])
+            else:
+                uv=[float(c[1]), float(c[2]), float(c[3]), float(c[4])]
+                v=[]
+                for i in range(4):
+                    c=h.readline().split()
+                    v.append([float(c[0]), float(c[1]), float(c[2])])
+                current.append(v[0])
+                tcurrent.append([uv[1],uv[3]])
+                current.append(v[1])
+                tcurrent.append([uv[1],uv[2]])
+                current.append(v[2])
+                tcurrent.append([uv[0],uv[2]])
+                current.append(v[0])
+                tcurrent.append([uv[1],uv[3]])
+                current.append(v[2])
+                tcurrent.append([uv[0],uv[2]])
+                current.append(v[3])
+                tcurrent.append([uv[0],uv[3]])
+    elif version=='700':
+        while 1:
+            line=h.readline()
+            if not line: break
+            c=line.split()
+            if not c: continue
+            if c[0]=='end':
+                break
+            elif c[0]=='ATTR_LOD':
+                if float(c[1])!=0: break
+            elif c[0]=='ATTR_poly_os':
+                maxpoly=max(maxpoly,int(float(c[1])))
+            elif c[0]=='ATTR_cull':
+                current=culled
+                tcurrent=tculled
+            elif c[0]=='ATTR_no_cull':
+                current=nocull
+                tcurrent=tnocull
+            elif c[0] in ['tri', 'quad', 'quad_hard', 'polygon', 
+                          'quad_strip', 'tri_strip', 'tri_fan',
+                          'quad_movie']:
+                count=0
+                seq=[]
+                if c[0]=='tri':
+                    count=3
+                    seq=[0,1,2]
+                elif c[0]=='polygon':
+                    count=int(c[1])
+                    for i in range(1,count-1):
+                        seq.extend([0,i,i+1])
+                elif c[0]=='quad_strip':
+                    count=int(c[1])
+                    for i in range(0,count-2,2):
+                        seq.extend([i,i+1,i+2,i+3,i+2,i+1])
+                elif c[0]=='tri_strip':
+                    count=int(c[1])
+                    seq=[]	# XXX implement me
+                elif c[0]=='tri_fan':
+                    count=int(c[1])
+                    for i in range(1,count-1):
+                        seq.extend([0,i,i+1])
+                else:
+                    count=4
+                    seq=[0,1,2,0,2,3]
+                v=[]
+                t=[]
+                i=0
+                while i<count:
+                    c=h.readline().split()
+                    v.append([float(c[0]), float(c[1]), float(c[2])])
+                    t.append([float(c[3]), float(c[4])])
+                    if len(c)>5:	# Two per line
+                        v.append([float(c[5]), float(c[6]), float(c[7])])
+                        t.append([float(c[8]), float(c[9])])
+                        i+=2
+                    else:
+                        i+=1
+                for i in seq:
+                    current.append(v[i])
+                    tcurrent.append(t[i])
+    elif version=='800':
+        vt=[]
+        idx=[]
+        anim=[[0,0,0]]
+        while 1:
+            line=h.readline()
+            if not line: break
+            c=line.split()
+            if not c: continue
+            if c[0]=='TEXTURE':
+                if len(c)>1:
+                    tex=line[7:].strip()
                     tex=tex.replace(':', sep)
                     tex=tex.replace('/', sep)
-                    break
-            tex=abspath(join(texpath,tex))
-            for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
-                if exists(tex+ext):
-                    texno=texcache.get(tex+ext)
-            while 1:
-                line=h.readline()
-                if not line: break
-                c=line.split()
-                if not c: continue
-                if c[0] in ['end', '99']:
-                    break
-                elif c[0]=='ATTR_LOD':
-                    if float(c[1])!=0: break
-                elif c[0]=='ATTR_poly_os':
-                    maxpoly=max(maxpoly,int(c[1]))
-                elif c[0]=='ATTR_cull':
-                    current=culled
-                    tcurrent=tculled
-                elif c[0]=='ATTR_no_cull':
-                    current=nocull
-                    tcurrent=tnocull
-                elif c[0] in ['tri', 'quad', 'quad_hard', 'polygon', 
-                              'quad_strip', 'tri_strip', 'tri_fan',
-                              'quad_movie',
-                              '1', '2', '3', '4', '5', '6', '7', '8']:
-                    count=0
-                    seq=[]
-                    if c[0] in ['1']:
-                        h.readline()
-                    elif c[0] in ['2']:
-                        h.readline()
-                        h.readline()
-                    elif c[0] in ['3', 'tri']:
-                        count=3
-                        seq=[0,1,2]
-                    elif c[0]=='polygon':
-                        count=int(c[1])
-                        for i in range(1,count-1):
-                            seq.extend([0,i,i+1])
-                    elif c[0]=='quad_strip':
-                        count=int(c[1])
-                        for i in range(0,count-2,2):
-                            seq.extend([i,i+1,i+2,i+3,i+2,i+1])
-                    elif c[0]=='tri_strip':
-                        count=int(c[1])
-                        seq=[]	# XXX implement me
-                    elif c[0]=='tri_fan':
-                        count=int(c[1])
-                        for i in range(1,count-1):
-                            seq.extend([0,i,i+1])
-                    else:
-                        count=4
-                        seq=[0,1,2,0,2,3]
-                    v=[]
-                    t=[]
-                    i=0
-                    while i<count:
-                        c=h.readline().split()
-                        v.append([float(c[0]), float(c[1]), float(c[2])])
-                        t.append([float(c[3]), float(c[4])])
-                        if len(c)>5:	# Two per line
-                            v.append([float(c[5]), float(c[6]), float(c[7])])
-                            t.append([float(c[8]), float(c[9])])
-                            i+=2
-                        else:
-                            i+=1
-                    for i in seq:
-                        tcurrent.append(t[i])
-                        current.append(v[i])
-        elif version=='800':
-            vt=[]
-            idx=[]
-            anim=[[0,0,0]]
-            while 1:
-                line=h.readline()
-                if not line: break
-                c=line.split()
-                if not c: continue
-                if c[0]=='TEXTURE':
-                    if len(c)>1:
-                        tex=line[7:].strip()
-                        tex=tex.replace(':', sep)
-                        tex=tex.replace('/', sep)
-                        tex=abspath(join(texpath,tex))
-                        for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
-                            if exists(tex+ext):
-                                texno=texcache.get(tex+ext)
-                                break
-                elif c[0]=='VT':
-                    vt.append([float(c[1]), float(c[2]), float(c[3]),
-                               float(c[7]), float(c[8])])
-                elif c[0]=='IDX':
-                    idx.append(int(c[1]))
-                elif c[0]=='IDX10':
-                    idx.extend([int(c[1]), int(c[2]), int(c[3]), int(c[4]), int(c[5]), int(c[6]), int(c[7]), int(c[8]), int(c[9]), int(c[10])])
-                elif c[0]=='ATTR_LOD':
-                    if float(c[1])!=0: break
-                elif c[0]=='ATTR_poly_os':
-                    maxpoly=max(maxpoly,int(c[1]))
-                elif c[0]=='ATTR_cull':
-                    current=culled
-                    tcurrent=tculled
-                elif c[0]=='ATTR_no_cull':
-                    current=nocull
-                    tcurrent=tnocull
-                elif c[0]=='ANIM_begin':
-                    anim.append([anim[-1][0], anim[-1][1], anim[-1][2]])
-                elif c[0]=='ANIM_end':
-                    anim.pop()
-                elif c[0]=='ANIM_trans':
-                    anim[-1]=[anim[-1][0]+float(c[1]),
-                              anim[-1][1]+float(c[2]),
-                              anim[-1][2]+float(c[3])]
-                elif c[0]=='TRIS':
-                    for i in range(int(c[1]), int(c[1])+int(c[2])):
-                        v=vt[idx[i]]
-                        tcurrent.append([v[3], v[4]])
-                        current.append([anim[-1][0]+v[0],
-                                        anim[-1][1]+v[1],
-                                        anim[-1][2]+v[2]])
-    except:
-        if h: h.close()
-        raise IOError
+                    tex=abspath(join(texpath,tex))
+                    for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
+                        if exists(tex+ext):
+                            texno=texcache.get(tex+ext)
+                            break
+            elif c[0]=='VT':
+                vt.append([float(c[1]), float(c[2]), float(c[3]),
+                           float(c[7]), float(c[8])])
+            elif c[0]=='IDX':
+                idx.append(int(c[1]))
+            elif c[0]=='IDX10':
+                idx.extend([int(c[1]), int(c[2]), int(c[3]), int(c[4]), int(c[5]), int(c[6]), int(c[7]), int(c[8]), int(c[9]), int(c[10])])
+            elif c[0]=='ATTR_LOD':
+                if float(c[1])!=0: break
+            elif c[0]=='ATTR_poly_os':
+                maxpoly=max(maxpoly,int(float(c[1])))
+            elif c[0]=='ATTR_cull':
+                current=culled
+                tcurrent=tculled
+            elif c[0]=='ATTR_no_cull':
+                current=nocull
+                tcurrent=tnocull
+            elif c[0]=='ANIM_begin':
+                anim.append([anim[-1][0], anim[-1][1], anim[-1][2]])
+            elif c[0]=='ANIM_end':
+                anim.pop()
+            elif c[0]=='ANIM_trans':
+                anim[-1]=[anim[-1][0]+float(c[1]),
+                          anim[-1][1]+float(c[2]),
+                          anim[-1][2]+float(c[3])]
+            elif c[0]=='TRIS':
+                for i in range(int(c[1]), int(c[1])+int(c[2])):
+                    v=vt[idx[i]]
+                    current.append([anim[-1][0]+v[0],
+                                    anim[-1][1]+v[1],
+                                    anim[-1][2]+v[2]])
+                    tcurrent.append([v[3], v[4]])
     h.close()
     return (culled, nocull, tculled, tnocull, texno, maxpoly)
 

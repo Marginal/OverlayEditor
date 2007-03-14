@@ -7,9 +7,7 @@ from sys import exit, argv, platform
 import wx
 
 from draw import MyGL
-from files import appname, appversion, Prefs, readApt, readDsf, writeDsfs
-
-d2r=pi/180.0
+from files import appname, appversion, Prefs, readApt, readLib, readDsf, writeDsfs, sortfolded
 
 # Path validation
 mypath=dirname(abspath(argv[0]))
@@ -21,10 +19,15 @@ else:
     chdir(mypath)
 
 # constants
+d2r=pi/180.0
+maxzoom=50624.0
 custom='Custom Scenery'
 navdata='Earth nav data'
 aptdat='apt.dat'
 mainaptdat=join('Resources',navdata,aptdat)
+library='library.txt'
+default=join('Resources','default scenery')
+
 
 if platform=='darwin':
     # Hack: wxMac 2.5 requires the following to get shadows to look OK:
@@ -83,7 +86,7 @@ class myListBox(wx.VListBox):
         wx.EVT_SET_FOCUS(self, self.OnSetFocus)
         wx.EVT_KILL_FOCUS(self, self.OnKillFocus)
         wx.EVT_CHAR(self, self.OnChar)
-        if platform!='win32':
+        if platform!='win32':	# Handled natively at some point after 2.5.3
             wx.EVT_KEY_DOWN(self, self.OnKeyDown)
 
     def OnSetFocus(self, event):
@@ -165,14 +168,14 @@ class GotoDialog(wx.Dialog):
         grid1.Add(wx.StaticText(self, wx.ID_ANY, "Airports by code:"),
                   0, wx.ALIGN_CENTER_VERTICAL)
         choices=self.aptname.keys()
-        choices.sort()	# sorted() not in 2.3
+        sortfolded(choices)
         self.list1=myListBox(self,wx.ID_ANY, style=wx.LB_SINGLE, choices=choices)
         grid1.Add(self.list1, 1, wx.ALIGN_CENTER_VERTICAL|wx.ALL|wx.EXPAND, pad)
         (x,y)=self.list1.GetTextExtent("MT31 - [H] Central Montana Hospital and Nursing H")	# Maybe longest string
         self.list1.SetMinSize((x+24,15*y))	# Allow for scrollbar
         wx.EVT_LISTBOX(self, self.list1.GetId(), self.OnName)
         choices=self.aptcode.keys()
-        choices.sort()
+        sortfolded(choices)
         self.list2=myListBox(self,wx.ID_ANY, style=wx.LB_SINGLE,choices=choices)
         grid1.Add(self.list2, 1, wx.ALIGN_CENTER_VERTICAL|wx.ALL|wx.EXPAND, pad)
         self.list2.SetMinSize((x+24,15*y))
@@ -196,30 +199,37 @@ class GotoDialog(wx.Dialog):
         self.choice=self.aptcode[event.GetEventObject().GetStringSelection()]
 
 
-class Palette(wx.ListBox):
+#class Palette(wx.Notebook):
+class Palette(wx.Choicebook):
     
-    def __init__(self, parent, toolbar, statusbar, canvas, objects=None):
+    def __init__(self, parent, toolbar, statusbar, canvas):
         self.parent=parent
-        self.choices=[]
         self.toolbar=toolbar
         self.statusbar=statusbar
         self.canvas=canvas
-        self.last=-1
-        wx.ListBox.__init__(self, parent, wx.ID_ANY,
-                            style=wx.LB_SINGLE|wx.LB_ALWAYS_SB|wx.LB_HSCROLL)
-        wx.EVT_LISTBOX(self, self.GetId(), self.OnChoice)
+        #wx.Notebook.__init__(self, parent, style=wx.NB_MULTILINE)
+        wx.Choicebook.__init__(self, parent, wx.ID_ANY, style=wx.CHB_TOP)
+        if platform=='darwin':	# Default too big
+            self.SetWindowVariant(wx.WINDOW_VARIANT_MINI)
+        self.last=(-1,-1)
+        self.choices=[]
+        self.lists=[]
+        if 'GetChoiceCtrl' in dir(self):
+            wx.EVT_KEY_DOWN(self.GetChoiceCtrl(), self.OnKeyDown)
+            wx.EVT_MOUSEWHEEL(self.GetChoiceCtrl(), self.OnMouseWheel)
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)
         wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
-        if objects:
-            self.reload(objects)
-
+        
     def OnChoice(self, event):
-        if self.last!=self.GetSelection():
-            self.last=self.GetSelection()
+        l=event.GetEventObject()
+        tab=l.GetParent().GetSelection()
+        if self.last!=(tab,l.GetSelection()):
             self.canvas.clearsel()
-            self.toolbar.EnableTool(wx.ID_ADD, True)
-            self.toolbar.EnableTool(wx.ID_DELETE, False)
+            self.toolbar.EnableTool(wx.ID_PASTE, True)
+            self.toolbar.EnableTool(wx.ID_CLEAR, False)
             self.statusbar.SetStatusText("", 2)
+            # prevent clearing of selection due to set() 
+            self.last=(tab,l.GetSelection())
         
     def OnKeyDown(self, event):
         # Override & manually propagate
@@ -231,41 +241,58 @@ class Palette(wx.ListBox):
         self.parent.GetParent().OnMouseWheel(event)
         event.Skip(False)
 
-    def reload(self, objects):
-        if objects:
-            self.choices=objects.keys()
-            self.choices.sort()
-        else:
-            self.choices=[]
-        key=self.GetStringSelection()
-        self.Set(self.choices)
-        if 0:	# don't bother - selection will be wiped out later
-            self.SetStringSelection(key)
-            self.toolbar.EnableTool(wx.ID_ADD, True)
-        #except:
-        #    self.toolbar.EnableTool(wx.ID_ADD, False)
-
+    def flush(self):
+        if len(self.lists): self.SetSelection(0)	# reduce flicker
+        for i in range(len(self.lists)-1,-1,-1):
+            self.DeletePage(i)
+        self.choices=[]
+        self.lists=[]
+            
+    def load(self, tabname, objects):
+        choices=objects.keys()
+        sortfolded(choices)
+        self.choices.append(choices)
+        l=wx.ListBox(self, wx.ID_ANY,
+                     style=wx.LB_SINGLE|wx.LB_ALWAYS_SB|wx.LB_HSCROLL)
+        l.Set(choices)
+        self.AddPage(l, tabname)
+        self.lists.append(l)
+        #self.Refresh()        # Helps prevent redraw fiasco
+        #self.Update()
+        
+        wx.EVT_LISTBOX(self, l.GetId(), self.OnChoice)
+        wx.EVT_KEY_DOWN(l, self.OnKeyDown)
+        wx.EVT_MOUSEWHEEL(l, self.OnMouseWheel)
+    
     def get(self):
-        key=self.GetStringSelection()
-        if not key or not key in self.choices:
+        (tab,sel)=self.last
+        if tab<0: return None
+        key=self.lists[tab].GetStringSelection()
+        if not key or not key in self.choices[tab]:
             return None
         return key
 
     def set(self, key):
-        # Causes EVT_LISTBOX event -> OnChoice
-        if key==None:
-            #self.SetSelection(wx.NOT_FOUND)
-            if self.GetSelection()>=0:
-                self.SetSelection(self.GetSelection(), False)
-            self.toolbar.EnableTool(wx.ID_ADD, False)
-        else:
-            try:
-                self.SetStringSelection(key)
-                self.toolbar.EnableTool(wx.ID_ADD, True)
-            except:
-                self.SetSelection(wx.NOT_FOUND)
-                self.toolbar.EnableTool(wx.ID_ADD, False)
-        self.last=self.GetSelection()
+        ontab=-1
+        for tab in range(len(self.lists)):
+            l=self.lists[tab]
+            if key and key in self.choices[tab]:
+                ontab=tab
+            elif l.GetSelection()>=0:
+                #self.SetSelection(wx.NOT_FOUND)	# not on wxMac 2.5
+                l.SetSelection(l.GetSelection(), False)
+        if ontab!=-1:
+            # Setting causes EVT_NOTEBOOK_PAGE_*
+            self.SetSelection(ontab)
+            l=self.lists[ontab]
+            l.SetFocus()	# Required to get choice to show up
+            # Setting causes EVT_LISTBOX event on wxMac 2.5
+            l.SetStringSelection(key)
+            self.toolbar.EnableTool(wx.ID_PASTE, True)
+            self.last=(ontab, l.GetSelection())
+        else:	# no key, or listed in DSF but not present!
+            self.toolbar.EnableTool(wx.ID_PASTE, False)
+            self.last=(-1, -1)
 
 
 # The app
@@ -293,7 +320,7 @@ class MainWindow(wx.Frame):
             pass	# icon pulled from Resources via Info.plist
         
         self.toolbar=self.CreateToolBar(wx.TB_HORIZONTAL|wx.STATIC_BORDER|wx.TB_FLAT)
-        # Note colours>(245,245,245) get replaced by transparent
+        # Note colours>~(245,245,245) get replaced by transparent
         newbitmap=wx.Bitmap("Resources/new.png", wx.BITMAP_TYPE_PNG)
         self.toolbar.SetToolBitmapSize((newbitmap.GetWidth(),
                                    newbitmap.GetHeight()))
@@ -316,31 +343,31 @@ class MainWindow(wx.Frame):
                                   'Save scenery package')
         wx.EVT_TOOL(self.toolbar, wx.ID_SAVE, self.OnSave)
         self.toolbar.AddSeparator()
-        self.toolbar.AddLabelTool(wx.ID_ADD, 'Add',
+        self.toolbar.AddLabelTool(wx.ID_PASTE, 'Add',
                                   wx.Bitmap("Resources/add.png",
                                             wx.BITMAP_TYPE_PNG),
                                   wx.NullBitmap, 0,
                                   'Add new object')
-        wx.EVT_TOOL(self.toolbar, wx.ID_ADD, self.OnAdd)
-        self.toolbar.AddLabelTool(wx.ID_DELETE, 'Delete',
+        wx.EVT_TOOL(self.toolbar, wx.ID_PASTE, self.OnAdd)
+        self.toolbar.AddLabelTool(wx.ID_CLEAR, 'Delete',
                                   wx.Bitmap("Resources/delete.png",
                                             wx.BITMAP_TYPE_PNG),
                                   wx.NullBitmap, 0,
                                   'Delete selected object')
-        wx.EVT_TOOL(self.toolbar, wx.ID_DELETE, self.OnDelete)
+        wx.EVT_TOOL(self.toolbar, wx.ID_CLEAR, self.OnDelete)
         self.toolbar.AddSeparator()
-        self.toolbar.AddLabelTool(wx.ID_REFRESH, 'Reload',
+        self.toolbar.AddLabelTool(wx.ID_REVERT, 'Reload',
                                   wx.Bitmap("Resources/reload.png",
                                             wx.BITMAP_TYPE_PNG),
                                   wx.NullBitmap, 0,
                                   "Reload package's objects, textures and airports")
-        wx.EVT_TOOL(self.toolbar, wx.ID_REFRESH, self.OnReload)
-        self.toolbar.AddLabelTool(wx.ID_PASTE, 'Import',
+        wx.EVT_TOOL(self.toolbar, wx.ID_REVERT, self.OnReload)
+        self.toolbar.AddLabelTool(wx.ID_MORE, 'Import',
                                   wx.Bitmap("Resources/import.png",
                                             wx.BITMAP_TYPE_PNG),
                                   wx.NullBitmap, 0,
                                   'Import object into this package')
-        wx.EVT_TOOL(self.toolbar, wx.ID_PASTE, self.OnImport)
+        wx.EVT_TOOL(self.toolbar, wx.ID_MORE, self.OnImport)
         self.toolbar.AddLabelTool(wx.ID_FORWARD, 'Go To',
                                   wx.Bitmap("Resources/goto.png",
                                             wx.BITMAP_TYPE_PNG),
@@ -348,46 +375,48 @@ class MainWindow(wx.Frame):
                                   'Go to airport')
         wx.EVT_TOOL(self.toolbar, wx.ID_FORWARD, self.OnGoto)
         self.toolbar.AddSeparator()
-        self.toolbar.AddLabelTool(wx.ID_PREFERENCES, 'Preferences',
+        self.toolbar.AddLabelTool(wx.ID_SETUP, 'Preferences',
                                   wx.Bitmap("Resources/prefs.png",
                                             wx.BITMAP_TYPE_PNG),
                                   wx.NullBitmap, 0,
                                   'Preferences')
-        wx.EVT_TOOL(self.toolbar, wx.ID_PREFERENCES, self.OnPrefs)
+        wx.EVT_TOOL(self.toolbar, wx.ID_SETUP, self.OnPrefs)
         
 	self.toolbar.Realize()
         self.toolbar.EnableTool(wx.ID_SAVE, False)
-        self.toolbar.EnableTool(wx.ID_ADD, False)
-        self.toolbar.EnableTool(wx.ID_DELETE, False)
         self.toolbar.EnableTool(wx.ID_PASTE, False)
+        self.toolbar.EnableTool(wx.ID_CLEAR, False)
+        self.toolbar.EnableTool(wx.ID_MORE, False)
 
         # Hack: Use zero-sized first field to hide toolbar button long help
         self.statusbar=self.CreateStatusBar(3, wx.ST_SIZEGRIP)
         #self.statusbar.SetStatusStyles([wx.SB_FLAT,wx.SB_FLAT,wx.SB_FLAT])
         (x,y)=self.statusbar.GetTextExtent("Lat: 7777.777777  Lon: 7777.777777  Hdg: 777")
         self.statusbar.SetStatusWidths([0, x+50,-1])
-        
-        self.canvas = MyGL(self)
-        panel1 = wx.Panel(self,-1)	# Need a panel under StaticText
-        self.palette = Palette(panel1, self.toolbar, self.statusbar, self.canvas)
-        self.palette.SetSizeHints(240, -1, 240, -1)	# Fixed width
 
-        box1=wx.BoxSizer(wx.VERTICAL)
-        box1.Add(wx.StaticText(panel1, wx.ID_ANY, "Objects"),
-                 0, wx.ALIGN_CENTER_VERTICAL|wx.EXPAND|wx.BOTTOM|wx.LEFT, 3)
-        box1.Add(self.palette, 1, wx.EXPAND|wx.LEFT, 3)
-        panel1.SetSizer(box1)
-
-        box0=wx.BoxSizer(wx.HORIZONTAL)
-        box0.Add(self.canvas, 1, wx.EXPAND)
-        box0.Add(panel1, 0, wx.EXPAND)
-        self.SetSizer(box0)
+        self.splitter=wx.SplitterWindow(self, wx.SP_3DSASH|wx.SP_NOBORDER)
+        self.canvas = MyGL(self.splitter, self)
+        self.palette = Palette(self.splitter, self.toolbar, self.statusbar, self.canvas)
+        self.splitter.SplitVertically(self.canvas, self.palette, -240)
+        box0=wx.BoxSizer()
+        box0.Add(self.splitter, 1, wx.EXPAND)
+        self.SetSizerAndFit(box0)
+        self.splitter.SetMinimumPaneSize(200)
+        self.splitter.SetSashPosition(550, True)	# Try to force resize
 
         self.SetAutoLayout(True)
         self.SetSize((800,600))
         self.SetMinSize((400,300))
+        
+        if 'SetSashGravity' in dir(self.splitter):
+            self.splitter.SetSashGravity(1.0)
+        else:		# not on WxMac 2.5
+            self.splitter.SetSashPosition(550, True)	# Try to force resize
+            self.lastwidth=self.GetSize().x
+            wx.EVT_SIZE(self, self.OnSize)
+        
         self.Show(True)
-
+        self.Update()
 
     def ShowLoc(self):
         self.statusbar.SetStatusText("Lat: %11.6f  Lon: %11.6f  Hdg: %3.0f" %(
@@ -398,7 +427,7 @@ class MainWindow(wx.Frame):
         if selection==None:
             self.palette.set(None)
             self.statusbar.SetStatusText("", 2)
-            self.toolbar.EnableTool(wx.ID_DELETE, False)
+            self.toolbar.EnableTool(wx.ID_CLEAR, False)
         else:
             (obj, lat, lon, hdg)=selection
             if len(obj)==1:
@@ -407,9 +436,19 @@ class MainWindow(wx.Frame):
             else:
                 self.palette.set(None)
                 self.statusbar.SetStatusText("Lat: %11.6f  Lon: %11.6f  (%d objects)" % (lat, lon, len(obj)), 2)
-            self.toolbar.EnableTool(wx.ID_DELETE, True)
+            self.toolbar.EnableTool(wx.ID_CLEAR, True)
+
+    def OnSize(self, event):
+        # emulate sash gravity = 1.0
+        delta=event.GetSize().x-self.lastwidth
+        pos=self.splitter.GetSashPosition()+delta
+        if pos<120: pos=120
+        self.splitter.SetSashPosition(pos, False)
+        self.lastwidth=event.GetSize().x
+        event.Skip()
 
     def OnKeyDown(self, event):
+        changed=False
         cursors=[wx.WXK_UP, wx.WXK_RIGHT, wx.WXK_DOWN, wx.WXK_LEFT,
                  ord('W'), ord('D'), ord('S'), ord('A')]
         if event.m_keyCode in cursors:
@@ -424,7 +463,7 @@ class MainWindow(wx.Frame):
                 self.loc=[round(self.loc[0]+incr*cos(hr),6),
                           round(self.loc[1]+incr*sin(hr),6)]
             else:
-                self.canvas.movesel(incr*cos(hr), incr*sin(hr), 0)
+                changed=self.canvas.movesel(incr*cos(hr), incr*sin(hr), 0)
         elif event.m_keyCode==ord('C'):
             details=self.canvas.getsel()
             if not details: return
@@ -434,14 +473,14 @@ class MainWindow(wx.Frame):
                 self.hdg=round(hdg,0)
         elif event.m_keyCode==ord('Q'):
             if event.m_controlDown or event.m_metaDown:
-                self.canvas.movesel(0, 0, -10)
+                changed=self.canvas.movesel(0, 0, -10)
             else:
-                self.canvas.movesel(0, 0, -1)
+                changed=self.canvas.movesel(0, 0, -1)
         elif event.m_keyCode==ord('E'):
             if event.m_controlDown or event.m_metaDown:
-                self.canvas.movesel(0, 0, 10)
+                changed=self.canvas.movesel(0, 0, 10)
             else:
-                self.canvas.movesel(0, 0, 1)
+                changed=self.canvas.movesel(0, 0, 1)
         elif event.m_keyCode==wx.WXK_END:
             if event.m_controlDown or event.m_metaDown:
                 self.hdg=(self.hdg-10)%360
@@ -463,7 +502,7 @@ class MainWindow(wx.Frame):
                 self.dist*=2
             else:
                 self.dist*=1.4142
-            if self.dist>25312.0: self.dist=25312.0
+            if self.dist>maxzoom: self.dist=maxzoom
         elif event.m_keyCode in [wx.WXK_PAGEDOWN, wx.WXK_NEXT]:
             if event.m_controlDown or event.m_metaDown:
                 self.elev-=5
@@ -477,7 +516,7 @@ class MainWindow(wx.Frame):
                 self.elev+=1
             if self.elev>90: self.elev=90
         elif event.m_keyCode==wx.WXK_DELETE:
-            self.canvas.delsel()
+            changed=self.canvas.delsel()
         elif event.m_keyCode==wx.WXK_SPACE:
             self.canvas.allsel(event.m_controlDown or event.m_metaDown)
         else:
@@ -487,6 +526,7 @@ class MainWindow(wx.Frame):
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
         self.Update()		# Let window draw first
         self.ShowLoc()
+        if changed: self.toolbar.EnableTool(wx.ID_SAVE, True)
         event.Skip(True)
     
     def OnMouseWheel(self, event):
@@ -501,9 +541,9 @@ class MainWindow(wx.Frame):
                 self.dist*=2
             else:
                 self.dist*=1.4142
-            if self.dist>25312.0: self.dist=25312.0
+            if self.dist>maxzoom: self.dist=maxzoom
         else:
-            print event.m_wheelRotation, event.m_shiftDown, event.m_controlDown, event.m_metaDown
+            #print event.m_wheelRotation, event.m_shiftDown, event.m_controlDown, event.m_metaDown
             event.Skip(True)
             return
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
@@ -513,6 +553,7 @@ class MainWindow(wx.Frame):
         
         
     def OnNew(self, event):
+        if not self.SaveDialog(): return
         dlg=wx.TextEntryDialog(self, "Name of new scenery package folder:",
                                "New scenery package")
         while 1:
@@ -522,9 +563,10 @@ class MainWindow(wx.Frame):
                 for f in listdir(join(prefs.xplane,custom)):
                     if f.lower()==v.lower():
                         wx.MessageBox("A package called %s already exists" % v,
-                                      'Error', wx.ICON_ERROR|wx.OK, None)
+                                      'Error', wx.ICON_ERROR|wx.OK, self)
                         break
                 else:
+                    self.toolbar.EnableTool(wx.ID_SAVE, False)
                     mkdir(join(prefs.xplane,custom,v))
                     mkdir(join(prefs.xplane,custom,v,navdata))
                     mkdir(join(prefs.xplane,custom,v,'objects'))
@@ -534,16 +576,22 @@ class MainWindow(wx.Frame):
                     self.hdg=0
                     self.SetTitle("%s - %s" % (prefs.package, appname))
                     self.OnReload(None)
-                    self.toolbar.EnableTool(wx.ID_SAVE, True)
                     dlg.Destroy()
                     return
             else:
                 return
 
     def OnOpen(self, event):
+        if not self.SaveDialog(): return
         dlg=wx.Dialog(self, wx.ID_ANY, "Open scenery package")
         choices=listdir(join(prefs.xplane,custom))
-        if '.DS_Store' in choices: choices.remove('.DS_Store')
+        sortfolded(choices)
+        i=0
+        while i<len(choices):
+            if choices[i][0]=='.':
+                choices.pop(i)
+            else:
+                i=i+1
         list1=wx.ListBox(dlg, wx.ID_ANY, style=wx.LB_SINGLE, choices=choices)
         wx.EVT_LISTBOX(dlg, list1.GetId(), self.OnOpened)
         box1=myCreateStdDialogButtonSizer(dlg, wx.CANCEL)
@@ -555,11 +603,11 @@ class MainWindow(wx.Frame):
         r=dlg.ShowModal()
         dlg.Destroy()
         if r==wx.ID_OK:
+            self.toolbar.EnableTool(wx.ID_SAVE, False)
             self.loc=None
             self.hdg=0
             self.SetTitle("%s - %s" % (prefs.package, appname))
             self.OnReload(None)
-            self.toolbar.EnableTool(wx.ID_SAVE, True)
 
     def OnOpened(self, event):
         list1=event.GetEventObject()
@@ -569,16 +617,21 @@ class MainWindow(wx.Frame):
     def OnSave(self, event):
         writeDsfs(join(prefs.xplane,custom,prefs.package),
                   self.canvas.placements, self.canvas.baggage)
+        self.toolbar.EnableTool(wx.ID_SAVE, False)
         
     def OnAdd(self, event):
+        # Assumes that only one object selected
         self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg)
+        self.toolbar.EnableTool(wx.ID_SAVE, True)
 
     def OnDelete(self, event):
-        self.canvas.delsel()
+        if self.canvas.delsel():
+            self.toolbar.EnableTool(wx.ID_SAVE, True)
 
     # Load (self.loc==None) or reload current package
     def OnReload(self, event):
         progress=wx.ProgressDialog('Loading', '', 5, self, wx.PD_APP_MODAL)
+        self.palette.flush()
         pkgnavdata=None
         if prefs.package:
             pkgdir=join(prefs.xplane,custom,prefs.package)
@@ -598,7 +651,7 @@ class MainWindow(wx.Frame):
                 try:
                     for path, dirs, files in walk(pkgnavdata):
                         for f in files:
-                            if f[0] in '+-' and f[-4:].lower()=='.dsf':
+                            if f[0] in '+-' and f[-4:].lower()=='.dsf' and len(f)==11:
                                 (tile,data,props,other)=readDsf(join(path,f))
                                 placements[tile]=data
                                 baggage[tile]=(props,other)
@@ -624,11 +677,12 @@ class MainWindow(wx.Frame):
             aptname.update(pkgaptname)
             aptcode.update(pkgaptcode)
             aptrunways.update(pkgaptrunways)
-        progress.Update(2, 'Airports')
         if self.goto:
             self.goto.Close()	# Needed on wxMac 2.5
         self.goto=GotoDialog(self, aptname, aptcode)	# build only
-        progress.Update(3, 'Objects')
+        progress.Update(2, 'Libraries')
+        # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
+        # search order is: custom libraries, default libraries, scenery package
         objects={}
         if prefs.package:
             for path, dirs, files in walk(pkgdir):
@@ -637,11 +691,32 @@ class MainWindow(wx.Frame):
                         name=join(path,f)[len(pkgdir)+1:-4].replace('\\','/')
                         if name.lower().startswith('custom objects'):
                             name=name[15:]
-                        elif name.lower().startswith('objects'):
-                            name=name[8:]
-                        objects[name]=join(path,f)
-        self.palette.reload(objects)
-        self.canvas.reload(aptrunways,objects,placements,baggage)
+                        if not name in objects:	# library takes precedence
+                            objects[name]=join(path,f)
+        self.palette.load('Objects', objects)
+
+        objectsbylib={}	# (name, path) by libname
+        for path in [join(prefs.xplane,custom),
+                     join(prefs.xplane,default)]:
+            for d in listdir(path):
+                if d=='800 objects': continue	# mostly placeholders
+                pkg=join(path,d)
+                if isdir(pkg):
+                    for f in listdir(pkg):
+                        if f.lower()==library:
+                            readLib(join(pkg,f), objectsbylib)
+                            break
+        libobjs={}
+        libs=objectsbylib.keys()
+        sortfolded(libs)
+        for lib in libs:
+            objs=objectsbylib[lib]
+            self.palette.load(lib, objs)
+            libobjs.update(objs)
+        objects.update(libobjs)	# libs take precedence
+
+        progress.Update(3, 'Objects')
+        self.canvas.reload(aptrunways, objects, placements, baggage)
         if not self.loc:
             # Load, not reload
             if pkgnavdata:
@@ -703,12 +778,39 @@ class MainWindow(wx.Frame):
                 return
 
     def OnClose(self, event):
+        if not self.SaveDialog(event.CanVeto()):
+            event.Veto()
+            return False
         self.goto.Close()
         self.Destroy()
+        return True
+
+    def SaveDialog(self, cancancel=True):
+        # returns False if wants to cancel
+        style=wx.YES_NO
+        if cancancel: style|=wx.CANCEL
+        if self.toolbar.GetToolEnabled(wx.ID_SAVE):
+            if platform=='darwin':
+                r=wx.MessageBox('"%s" has been modified.' % prefs.package,
+                                'Save scenery package?',
+                                wx.ICON_QUESTION|style, self)
+            else:
+                r=wx.MessageBox('"%s" has been modified.\n\nDo you want to save the changes?' % prefs.package, appname,
+                                wx.ICON_EXCLAMATION|style, self)
+            if r==wx.YES:
+                self.OnSave(None)
+            elif r==wx.CANCEL:
+                return False
+        return True
         
     
 # main
 app=wx.PySimpleApp()
+if platform=='win32':
+    if app.GetComCtl32Version()>=600 and wx.DisplayDepth()>=32:
+        wx.SystemOptions.SetOptionInt('msw.remap', 2)
+    else:
+        wx.SystemOptions.SetOptionInt('msw.remap', 0)
 
 frame=MainWindow(None, wx.ID_ANY, appname)
 app.SetTopWindow(frame)
@@ -725,7 +827,6 @@ frame.Update()		# Let window draw first
 frame.OnReload(None)
 if prefs.package:
     frame.SetTitle("%s - %s" % (prefs.package, appname))
-    frame.toolbar.EnableTool(wx.ID_SAVE, True)
 app.MainLoop()
 
 # Save prefs

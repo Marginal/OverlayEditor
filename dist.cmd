@@ -16,7 +16,7 @@ del /s /q *.pyc >nul: 2>&1
 
 @set PY=OverlayEditor.py draw.py files.py
 @set DATA=OverlayEditor.html
-@set RSRC=Resources/add.png Resources/delete.png Resources/goto.png Resources/import.png Resources/new.png Resources/open.png Resources/OverlayEditor.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/screenshot.png
+@set RSRC=Resources/add.png Resources/delete.png Resources/goto.png Resources/import.png Resources/new.png Resources/open.png Resources/OverlayEditor.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/default.obj Resources/screenshot.png
 
 @REM source
 zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% setup.py %DATA% %RSRC% linux MacOS win32/*.exe win32/*.ico |findstr -vc:"adding:"

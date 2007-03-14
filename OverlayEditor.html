@@ -33,15 +33,15 @@ Scenery</a> &raquo; <a href="http://marginal.org.uk/x-planescenery/tools.html">T
 DSF overlay scenery packages for X-Plane 8.30 or later.
 It runs on Windows 2000 or later and MacOS 10.3.9 or later.</p>
 <h3>Setting up</h3>
-<p>Users of MacOS 10<b>.3</b> should first install
-<a href="http://prdownloads.sourceforge.net/wxpython/wxPythonOSX-2.5.2.8-panther-Py2.3.dmg">wxPython 2.5</a> or later <small>(you don't need to
+<p>Users of MacOS 10.3 should first install
+<a href="http://prdownloads.sourceforge.net/wxpython/wxPython2.5-osx-unicode-2.5.3.1-panther-py2.3.dmg">wxPython 2.5.3</a> or later <small>(you don't need to
 install MacPython - it's already installed on 10.3)</small>.</p>
 <p>The first time that you run the application you are asked to
 identify X-Plane's top-level folder (<i>ie</i> the folder which
 contains X-Plane, PlaneMaker etc).<p>
 <h3>The application window</h3>
 <p>The application window consists of four parts:</p>
-<img style="border: 0px solid ; width: 792px; height: 562px;" alt="main window" src="Resources/screenshot.png">
+<img style="border: 0px solid ; width: 743px; height: 527px;" alt="main window" src="Resources/screenshot.png">
 <h4>Main window</h4>
 <p>This shows the objects in the loaded scenery package.
 Runways and taxiways are displayed in simplified form.
@@ -160,8 +160,8 @@ The object is added at the current location and with the current heading.</td>
       <td>Reloads the object, texture and apt.dat files in the scenery package.
 The DSF files are not reloaded.
 Use this if you have modified any of these files outside of this application.
-Also use this if you have added new objects to the scenery package and you want
-these new objects to appear in the <a href="#objectlist">list of objects</a>.</td>
+Also use this if you have added new objects and you want these new objects
+to appear in the <a href="#objectlist">list of objects</a>.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Go To" src="Resources/goto.png"></td>
@@ -175,10 +175,11 @@ of X-Plane's top-level folder while you are editing a scenery package.</td>
   </tbody>
 </table>
 <h4><a name="objectlist">List of objects</a></h4>
-<p>All the objects in the scenery package folder are listed,
-including those that are present in the scenery package folder
-but are not used in the scenery. You can only add objects that
-appear in this list - use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have added new objects to the scenery package folder.</p>
+<p>All the objects in the scenery package folder are listed under
+the heading "Objects", including those that are present in the scenery
+package folder but are not used in the scenery. Objects that have been
+made available by scenery libraries are listed under further headings.</p>
+<p>You can only add objects that appear in these lists - use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have added new objects to the scenery package folder or if you have installed a new scenery library.</p>
 <h3>Limitations</h3>
 <ul>
   <li>No undo.</li>
@@ -186,13 +187,13 @@ appear in this list - use <a href="#reload"><img style="border: 0px solid ; widt
   <li>Does not display lights or lines.</li>
   <li>Does not convert or edit <code>.env</code> files.</li>
   <li>Does not edit <code>apt.dat</code> files.</li>
-  <li>You cannot select more than 1024 objects.</li>
+  <li>There is a limit to the number of objects that you can select at once. The number depends on your graphics hardware.</li>
 </ul>
 <hr>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 1.22 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 1.31 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
       </td>
     </tr>
