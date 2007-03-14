@@ -1,15 +1,19 @@
-from math import floor, cos, pi
 from PIL.Image import open, BILINEAR
 import PIL.BmpImagePlugin, PIL.JpegImagePlugin, PIL.PngImagePlugin	# force for py2exe
 from OpenGL.GL import *
-from os import getenv, listdir, mkdir, popen3, rename, unlink
+try:
+    from OpenGL.GL.ARB.texture_non_power_of_two import glInitTextureNonPowerOfTwoARB
+except:	# not in 2.0.0.44
+    def glInitTextureNonPowerOfTwoARB(): return False
+from math import cos, pi
+from os import getenv, listdir, mkdir
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
 from sys import platform, maxint
-from tempfile import gettempdir
 import wx
 
-import DSFLib
+from DSFLib import readDSF
+from version import appname, appversion, dofacades
 
 if platform!='win32':
     import codecs
@@ -17,16 +21,7 @@ if platform!='win32':
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
 
-appname='OverlayEditor'
-appversion=1.42	# Must be numeric
-
-if platform=='win32':
-    dsftool=join(curdir,'win32','DSFTool.exe')
-elif platform.lower().startswith('linux'):
-    dsftool=join(curdir,'linux','DSFTool')
-else:	# Mac
-    dsftool=join(curdir,'MacOS','DSFTool')
-
+GL_CLAMP_TO_EDGE=0x812F	# Not defined in PyOpenGL 2.x
 
 # 2.3 version of case-insensitive sort
 # 2.4-only version is faster: sort(cmp=lambda x,y: cmp(x.lower(), y.lower()))
@@ -110,6 +105,7 @@ def readApt(filename):
     byname={}
     bycode={}
     runways={}	# (lat,lon,hdg,length,width) by code
+    nav=[]	# (type,lat,lon,hdg)
     if platform=='win32':
         h=file(filename,'rU')
     else:
@@ -126,36 +122,68 @@ def readApt(filename):
         c=line.split()
         if not len(c) or (len(c)==1 and int(c[0])==99):
             if loc:
-                #tile=[int(floor(loc[0])),int(floor(loc[1]))]
                 byname['%s - %s' % (name,code)]=loc
                 bycode['%s - %s' % (code,name)]=loc
                 runways[code]=run
             loc=None
             run=[]
-        elif int(c[0]) in [1,16,17]:
+            continue
+        id=int(c[0])
+        if id in [1,16,17]:	# Airport/Seaport/Heliport
             code=c[4]
             name=' '.join(c[5:])
-        elif int(c[0])==10:	# Runway / taxiway
-            if not loc:
-                loc=[float(c[1]),float(c[2])]
+        elif id==10:	# Runway / taxiway
+            if not loc: loc=[float(c[1]),float(c[2])]
             stop=c[7].split('.')
             if len(stop)<2: stop.append(0)
             run.append((float(c[1]),float(c[2]), float(c[4]),
                         float(c[5])+float(stop[0])+float(stop[1]),float(c[8])))
-        elif int(c[0])==14:	# Prefer tower
+        elif id==14:	# Prefer tower location
             loc=[float(c[1]),float(c[2])]
+        elif id in [18,19]:	# Beacon & Windsock - goes in nav
+            nav.append((id, float(c[1]), float(c[2]), 0))
     if loc:	# No terminating 99
         byname['%s - %s' % (name,code)]=loc
         bycode['%s - %s' % (code,name)]=loc
         runways[code]=run
     h.close()
-    return (byname, bycode, runways)
+    return (byname, bycode, runways, nav)
+
+
+def readNav(filename):
+    nav=[]	# (type,lat,lon,hdg)
+    if platform=='win32':
+        h=file(filename,'rU')
+    else:
+        h=codecs.open(filename, 'rU', 'latin1')
+    if not h.readline().strip() in ['A','I']:
+        raise IOError
+    if not h.readline().split()[0] in ['740','810']:
+        raise IOError
+    for line in h:
+        c=line.split()
+        if not c: continue
+        id=int(c[0])
+        if id>=2 and id<=5:
+            nav.append((id, float(c[1]), float(c[2]), float(c[6])))
+        elif id>=6 and id<=9:	# heading ignored
+            nav.append((id, float(c[1]), float(c[2]), 0))
+    h.close()
+    return nav
 
 
 def readLib(filename, objects, terrain):
     h=None
+    path=dirname(filename)
+    if basename(dirname(filename))=='800 objects':
+        if dofacades:
+            filename=join('Resources','800library.txt')
+            builtinhack=True
+        else:
+            return
+    else:
+        builtinhack=False
     try:
-        path=dirname(filename)
         h=file(filename, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
@@ -166,19 +194,21 @@ def readLib(filename, objects, terrain):
         for line in h:
             c=line.split()
             if not c: continue
-            if c[0]=='EXPORT' and len(c)>=3 and c[1][-4:].lower() in ['.obj', '.ter']:
+            if c[0]=='EXPORT' and len(c)>=3 and c[1][-4:].lower() in ['.obj', '.fac', '.for', '.ter']:
                 c.pop(0)
                 name=c[0]
                 name=name.replace(':','/')
                 name=name.replace('\\','/')
-                #if name[0][0]=='/': name=name[1:]	# No! keep leading '/'
-                lib=name
-                if lib.startswith('/'): lib=lib[1:]
-                if lib.startswith('lib/'): lib=lib[4:]
-                if not '/' in lib:
-                    lib="uncategorised"
+                if builtinhack:
+                    lib='misc v800'
                 else:
-                    lib=lib[:lib.index('/')]
+                    lib=name
+                    if lib.startswith('/'): lib=lib[1:]
+                    if lib.startswith('lib/'): lib=lib[4:]
+                    if not '/' in lib:
+                        lib="uncategorised"
+                    else:
+                        lib=lib[:lib.index('/')]
                 c.pop(0)
                 obj=' '.join(c)	# allow single spaces
                 obj=obj.replace(':','/')
@@ -186,161 +216,57 @@ def readLib(filename, objects, terrain):
                 if obj=='blank.obj':
                     continue	# no point adding placeholders
                 obj=join(path, normpath(obj))
-                if name[-4:]=='.obj':
+                if not exists(obj):
+                    continue
+                if name[-4:]=='.ter':
+                    if name in terrain: continue
+                    terrain[name]=obj
+                else:
                     name=name[:-4]
                     if lib in objects:
                         if name in objects[lib]: continue
                     else:
                         objects[lib]={}
                     objects[lib][name]=obj
-                else:
-                    if name in terrain: continue
-                    terrain[name]=obj
     except:
         if h: h.close()
             
 
-def readDsf(filename):
-    tmp=join(gettempdir(), basename(filename[:-4])+'.txt')
-    (i,o,e)=popen3('%s -dsf2text "%s" "%s"' % (dsftool, filename, tmp))
-    i.close()
-    o.read()
-    err=e.read()
-    o.close()
-    e.close()
-    tile=[0,0]
-    objects=[]
-    data=[]
-    props=''
-    other=''
-    overlay=False
-    h=file(tmp, 'rU')
-    if not h.readline().strip()[0] in ['I','A']:
-        raise IOError
-    if not h.readline().split()[0]=='800':
-        raise IOError
-    if not h.readline().split()[0]=='DSF2TEXT':
-        raise IOError
-    while 1:
-        line=h.readline()
-        if not line: break
-        c=line.split()
-        if not c: continue
-        if c[0]=='PROPERTY':
-            if c[1]=='sim/overlay' and int(c[2])==1: overlay=True
-            elif c[1]=='sim/south': tile[0]=int(c[2])
-            elif c[1]=='sim/west': tile[1]=int(c[2])
-            elif c[1].startswith('sim/exclude'): props+=line
-        elif c[0]=='OBJECT_DEF':
-            if not overlay:	# crap out early
-                h.close()
-                unlink(tmp)
-                wx.MessageBox("Can't edit this package:\n%s is not an overlay." % basename(filename), 'Error', wx.ICON_ERROR|wx.OK, None)
-                raise IOError
-            obj=line.strip()[10:].strip()[:-4]
-            obj=obj.replace(':','/')
-            obj=obj.replace('\\','/')
-            objects.append(obj)
-        elif c[0]=='OBJECT':
-            data.append((objects[int(c[1])], float(c[3]), float(c[2]), float(c[4]), None))
-        elif line.startswith('# Result code:'):
-            if int(c[3]):
-                h.close()
-                unlink(tmp)
-                wx.MessageBox("Can't edit this package:\nCan't parse %s." % basename(filename), 'Error', wx.ICON_ERROR|wx.OK, None)
-                raise IOError
-        elif c[0][0]!='#':
-            other+=line
-    h.close()
-    unlink(tmp)
-    if not overlay:
-        wx.MessageBox("Can't edit this package:\n%s is not an overlay." % basename(filename), 'Error', wx.ICON_ERROR|wx.OK, None)
-        raise IOError
-    return ((tile[0],tile[1]), data, props, other)
-
-
-def writeDsfs(path, placements, baggage):
-    if not isdir(path): mkdir(path)
-    for f in listdir(path):
-        if f.lower()=='earth nav data':
-            endpath=join(path,f)
-            break
-    else:
-        endpath=join(path, 'Earth nav data')
-        if not isdir(endpath): mkdir(endpath)
-
-    for key in placements.keys():
-        (south,west)=key
-        tiledir=join(endpath, "%+02d0%+03d0" % (int(south/10), int(west/10)))
-        tilename=join(tiledir, "%+03d%+04d" % (south,west))
-        if exists(tilename+'.dsf'):
-            if exists(tilename+'.dsf.bak'): unlink(tilename+'.dsf.bak')
-            rename(tilename+'.dsf', tilename+'.dsf.bak')
-        if exists(tilename+'.DSF'):
-            if exists(tilename+'.DSF.BAK'): unlink(tilename+'.DSF.BAK')
-            rename(tilename+'.DSF', tilename+'.DSF.BAK')
-        placement=placements[key]
-        if key not in baggage:
-            props=other=''
-        else:
-            (props,other)=baggage[key]
-        if not (placement or props or other): continue
-        if not isdir(tiledir): mkdir(tiledir)
-        tmp=join(gettempdir(), "%+03d%+04d.txt" % (south,west))
-        h=file(tmp, 'wt')
-        h.write('I\n800\nDSF2TEXT\n\n')
-        h.write('PROPERTY sim/planet\tearth\n')
-        h.write('PROPERTY sim/overlay\t1\n')
-        h.write('PROPERTY sim/require_object\t1/0\n')
-        h.write('PROPERTY sim/creation_agent\t%s %4.2f\n' % (
-            appname, appversion))
-        h.write(props)
-        h.write('PROPERTY sim/west\t%d\n' %  west)
-        h.write('PROPERTY sim/east\t%d\n' %  (west+1))
-        h.write('PROPERTY sim/north\t%d\n' %  (south+1))
-        h.write('PROPERTY sim/south\t%d\n' %  south)
-        h.write('\n')
-        objects=[]
-        for (obj, lat, lon, hdg, height) in placement:
-            if not obj in objects:
-                objects.append(obj)
-                h.write('OBJECT_DEF %s.obj\n' % obj)
-        h.write('\n')
-        for (obj, lat, lon, hdg, height) in placement:
-            h.write('OBJECT %3d %11.6f %10.6f %3.0f\n' % (
-                objects.index(obj), lon, lat, hdg))
-        h.write('\n')
-        h.write(other)
-        h.close()
-        (i,o,e)=popen3('%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename))
-        i.close()
-        o.read()
-        err=e.read()
-        o.close()
-        e.close()
-        unlink(tmp)
-
-    
 class TexCache:
-    def __init__(self, clampmode):
+    
+    def __init__(self):
         self.blank=0
         self.texs={}
         self.blank=0	#self.get(join('Resources','blank.png'))
         self.texs={}
-        self.clampmode=clampmode
+        # Must be after init
+        self.npot=glInitTextureNonPowerOfTwoARB()
+        if glGetString(GL_VERSION) >= '1.2':
+            self.clampmode=GL_CLAMP_TO_EDGE
+        else:
+            self.clampmode=GL_REPEAT
 
     def flush(self):
         if self.texs:
             glDeleteTextures(self.texs.values())
         self.texs={}
 
-    def get(self, path, isterrain=False):
+    def get(self, path, isterrain=False, fixsize=False):
         if not path: return 0
         if path in self.texs:
             return self.texs[path]
         try:
             id=glGenTextures(1)
             image = open(path)
+            if fixsize and not self.npot:
+                size=[image.size[0],image.size[1]]
+                for i in [0,1]:
+                    l=log(size[i],2)
+                    if l!=int(l): size[i]=2**(1+int(l))
+                    if size[i]>glGetIntegerv(GL_MAX_TEXTURE_SIZE):
+                        size[i]=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
+                if size!=[image.size[0],image.size[1]]:
+                    image=image.resize((size[0], size[1]), BILINEAR)
             if not isterrain:
                 if image.mode=='RGBA':
                     data = image.tostring("raw", 'RGBA', 0, -1)
@@ -350,12 +276,13 @@ class TexCache:
                     format=GL_RGB
             else:
                 if image.mode!='RGB': image=image.convert('RGB')
-                image.resize((image.size[0]/2, image.size[1]/2), BILINEAR)
+                image=image.resize((image.size[0]/2,image.size[1]/2), BILINEAR)
                 data = image.tostring("raw", 'RGB', 0, -1)
                 format=GL_RGB
             glBindTexture(GL_TEXTURE_2D, id)
-            #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, self.clampmode)
-            #glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, self.clampmode)
+            if fixsize:
+                glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,self.clampmode)
+                glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,self.clampmode)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glTexImage2D(GL_TEXTURE_2D, 0, format, image.size[0], image.size[1], 0, format, GL_UNSIGNED_BYTE, data)
@@ -365,16 +292,121 @@ class TexCache:
             return self.blank
 
 
-class VertexCache:
-    defObj=join('Resources','default.obj')
-    defSea=join('Resources','Sea01.png')
+class FacadeDef:
 
-    def __init__(self, clampmode):
+    def __init__(self, path, texcache):
+        # Only reads first wall in first LOD
+        self.texture=0
+        self.ring=0
+        self.two_sided=False
+        self.roof=[]
+        # per-wall
+        self.roof_slope=0
+        self.hscale=100
+        self.vscale=100
+        self.horiz=[]
+        self.vert=[]
+        self.hends=[0,0]
+        self.vends=[0,0]
+    
+        co=sep+'custom objects'+sep
+        if co in path.lower():
+            texpath=path[:path.lower().index(co)]
+            for f in listdir(texpath):
+                if f.lower()=='custom object textures':
+                    texpath=join(texpath,f)
+                    break
+        else:
+            texpath=dirname(path)
+        h=file(path, 'rU')
+        if not h.readline().strip()[0] in ['I','A']:
+            raise IOError
+        if not h.readline().strip() in ['800']:
+            raise IOError
+        if not h.readline().strip() in ['FACADE']:
+            raise IOError
+        while 1:
+            line=h.readline()
+            if not line: break
+            c=line.split()
+            if not c: continue
+            if c[0]=='TEXTURE':
+                if len(c)>1:
+                    tex=line[7:].strip()
+                    tex=tex.replace(':', sep)
+                    tex=tex.replace('/', sep)
+                    tex=abspath(join(texpath,tex))
+                    for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
+                        if exists(tex+ext):
+                            self.texture=texcache.get(tex+ext)
+                            break
+            elif c[0]=='RING':
+                if int(c[1]): self.ring=1
+            elif c[0]=='TWO_SIDED': self.two_sided=(int(c[1])!=0)
+            elif c[0]=='LOD':
+                # LOD
+                roof=[]
+                while 1:
+                    line=h.readline()
+                    if not line: break
+                    c=line.split()
+                    if not c: continue
+                    if c[0]=='LOD': break	# stop after first LOD
+                    elif c[0]=='ROOF':
+                        roof.append((float(c[1]), float(c[2])))
+                    elif c[0]=='WALL':
+                        # WALL
+                        if len(roof) in [0,4]:
+                            self.roof=roof
+                        else:
+                            self.roof=[roof[0], roof[0], roof[0], roof[0]]
+                        while 1:
+                            line=h.readline()
+                            if not line: break
+                            c=line.split()
+                            if not c: continue
+                            if c[0] in ['LOD', 'WALL']: break
+                            elif c[0]=='SCALE':
+                                self.hscale=float(c[1])
+                                self.vscale=float(c[2])
+                            elif c[0]=='ROOF_SLOPE':
+                                self.roof_slope=float(c[1])
+                            elif c[0] in ['LEFT', 'CENTER', 'RIGHT']:
+                                self.horiz.append((float(c[1]),float(c[2])))
+                                if c[0]=='LEFT': self.hends[0]+=1
+                                elif c[0]=='RIGHT': self.hends[1]+=1
+                            elif c[0] in ['BOTTOM', 'MIDDLE', 'TOP']:
+                                self.vert.append((float(c[1]),float(c[2])))
+                                if c[0]=='BOTTOM': self.vends[0]+=1
+                                elif c[0]=='TOP': self.vends[1]+=1
+                            elif c[0] in ['HARD_ROOF', 'HARD_WALL']:
+                                pass
+                            else:
+                                raise IOError
+                        break # stop after first WALL
+                    else:
+                        raise IOError
+                break	# stop after first LOD
+        h.close()
+
+
+class ExcludeDef:
+    pass
+
+class ForestDef:
+    def __init__(self, path, texcache):
+        pass
+
+
+class VertexCache:
+
+    def __init__(self):
         # indices = (base, #culled, #nocull, texno, maxpoly)
-        self.obj={}		# name -> physical obj
+        self.obj={}		# name -> physical obj/fac/etc
         self.geo={}		# physical obj -> geo
         self.idx={}		# physical obj -> indices
         self.objcache={}	# name -> indices
+        self.poly={}		# physical fac -> facade
 
         # indices = (base, #culled, texno)
         self.ter={}		# name -> physical ter
@@ -383,7 +415,7 @@ class VertexCache:
         self.meshcache=[]	# [indices] of current tile
         self.lasttri=None	# take advantage of locality of reference
 
-        self.texcache=TexCache(clampmode)
+        self.texcache=TexCache()
         self.varray=[]
         self.tarray=[]
         self.valid=False
@@ -406,6 +438,7 @@ class VertexCache:
         self.dsfdir=dsfdir
         self.geo={}
         self.idx={}
+        self.poly={}
         self.flush()
         self.texcache.flush()
     
@@ -420,17 +453,22 @@ class VertexCache:
                 glTexCoordPointerf([[0,0],[0,0]])
             self.valid=True
 
-    def getObj(self, name):
+    def get(self, name):
         # object better be in cache or we go bang
-        return self.objcache[name]
+        if name in self.objcache:
+            return self.objcache[name]
+        elif name.startswith('Exclude:'):
+            return ExcludeDef()
+        else:
+            return self.poly[self.obj[name]]
 
-    def addObj(self, name, path):
+    def add(self, name, path):
         # Import a new object
         self.obj[name]=path
         
-    def loadObj(self, name, usefallback=False):
-        # read object into cache, but don't update OpenGL arrays
-        # returns False if error reading object
+    def load(self, name, usefallback=False):
+        # read object or facade into cache, but don't update OpenGL arrays
+        # returns False if error reading object or facade
 
         if name in self.objcache:
             # Already loaded (or fallbacked)
@@ -438,8 +476,12 @@ class VertexCache:
         
         if not name in self.obj:
             # Physical object is missing
-            if usefallback:
-                self.obj[name]=VertexCache.defObj
+            if name.startswith('Exclude:'):
+                return True
+            if name[0]=='*':	# this application's resource
+                self.obj[name]=join('Resources', name[1:])
+            elif usefallback:
+                self.obj[name]=join('Resources','default.obj')
             else:
                 return False
         
@@ -447,6 +489,9 @@ class VertexCache:
         if path in self.idx:
             # Object is already in the array under another name
             self.objcache[name]=self.idx[path]
+            return True
+        if path in self.poly:
+            # Facade already loaded
             return True
 
         if path in self.geo:
@@ -462,8 +507,22 @@ class VertexCache:
             self.valid=False	# new geometry -> need to update OpenGL
             return True
             
+        # Physical poly has not yet been read
+        if path[-4:].lower()=='.fac':
+            try:
+                self.poly[path]=FacadeDef(path, self.texcache)
+                return True
+            except:
+                if usefallback:
+                    self.poly[path]=FacadeDef(join('Resources','default.fac'),
+                                              self.texcache)
+                return False
+        elif path[-4:].lower()=='.for':
+            self.poly[path]=ForestDef(path, self.texcache)
+            return True
+
+        # Physical object has not yet been read
         try:
-            # Physical object has not yet been read
             h=None
             culled=[]
             nocull=[]
@@ -587,7 +646,11 @@ class VertexCache:
                                 seq.extend([i,i+1,i+2,i+3,i+2,i+1])
                         elif c[0]=='tri_strip':
                             count=int(c[1])
-                            seq=[]	# XXX implement me
+                            for i in range(0,count-2):
+                                if i&1:
+                                    seq.extend([i+2,i+1,i])
+                                else:
+                                    seq.extend([i,i+1,i+2])
                         elif c[0]=='tri_fan':
                             count=int(c[1])
                             for i in range(1,count-1):
@@ -665,8 +728,8 @@ class VertexCache:
             h.close()
             if not (len(culled)+len(nocull)):
                 # show empty objects as placeholders otherwise can't edit
-                self.loadObj('*default', True)
-                self.objcache[name]=self.idx[path]=self.getObj('*default')
+                self.load('*default.obj')
+                self.objcache[name]=self.idx[path]=self.get('*default.obj')
             else:
                 self.geo[path]=(culled, nocull, tculled, tnocull, texture, maxpoly)
                 base=len(self.varray)
@@ -679,8 +742,8 @@ class VertexCache:
                 self.valid=False	# new geometry -> need to update OpenGL
         except:
             if usefallback:
-                self.loadObj('*default', True)
-                self.objcache[name]=self.idx[path]=self.getObj('*default')
+                self.load('*default.obj')
+                self.objcache[name]=self.idx[path]=self.get('*default.obj')
             return False
         return True
 
@@ -690,97 +753,22 @@ class VertexCache:
         if key in self.mesh: return	# don't reload
         try:
             if not options&Prefs.TERRAIN: raise IOError
-            (properties, placements, meshdata)=DSFLib.read(join(self.dsfdir, "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.dsf" % (tile[0], tile[1])))
+            (properties, placements, polygons, self.mesh[key])=readDSF(join(self.dsfdir, "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.dsf" % (tile[0], tile[1])), self.ter)
         except:
             if exists(join(self.dsfdir, "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.dsf" % (tile[0], tile[1]))) or exists(join(self.dsfdir, pardir, pardir, pardir, 'Earth nav data', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.env" % (tile[0], tile[1]))):
                 # DSF or ENV exists but can't read it
-                ter='lib/terrain/grass_Af.ter'	# plain v8.0 terrain
+                tex=join('Resources','airport0_000.png')
             else:
-                ter='terrain_Water'
-            meshdata=[(ter, [[tile[1],   tile[0],   0],
-                             [tile[1]+1, tile[0]+1, 0],
-                             [tile[1]+1, tile[0],   0],
-                             [tile[1],   tile[0],   0],
-                             [tile[1],   tile[0]+1, 0],
-                             [tile[1]+1, tile[0]+1, 0]])]
-        mesh=[]
-        terraincache={}
-        centrelat=tile[0]+0.5
-        centrelon=tile[1]+0.5
-        for (ter, patch) in meshdata:
-            texture=None
-            angle=0
-            xscale=zscale=0.001
-            if ter=='terrain_Water':
-                texture=abspath(VertexCache.defSea)
-            elif ter in terraincache:
-                (texture, angle, xscale, zscale)=terraincache[ter]
-            else:
-                try:
-                    h=file(self.ter[ter], 'rU')
-                    if not (h.readline().strip() in ['I','A'] and
-                            h.readline().strip()=='800' and
-                            h.readline().strip()=='TERRAIN'):
-                        raise IOError
-                    for line in h:
-                        line=line.strip()
-                        c=line.split()
-                        if not c: continue
-                        if c[0]=='BASE_TEX':
-                            texture=line[8:].strip()
-                            texture=texture.replace(':', sep)
-                            texture=texture.replace('/', sep)
-                            texture=abspath(join(dirname(self.ter[ter]),texture))
-                        elif c[0]=='PROJECTED':
-                            xscale=1/float(c[1])
-                            zscale=1/float(c[2])
-                        elif c[0]=='PROJECT_ANGLE':
-                            if float(c[1])==0 and float(c[2])==1 and float(c[3])==0:
-                                # no idea what rotation about other axes means
-                                angle=int(float(c[4]))
-                    h.close()
-                except:
-                    pass
-                terraincache[ter]=(texture, angle, xscale, zscale)
-
-            v=[]
-            t=[]
-            if len(patch[0])<7:	# no st coords (all? Laminar hard scenery)
-                for p in patch:
-                    x=(p[0]-centrelon)*onedeg*cos(d2r*p[1])
-                    z=(centrelat-p[1])*onedeg
-                    v.append([x, p[2], z])
-                    if angle==90:
-                        t.append([z*zscale, x*xscale])
-                        #texture=join('Resources','FS2X-palette.png')
-                        #t.append([0.24,0])	# red
-                    elif angle==180:
-                        t.append([-x*xscale, z*zscale])
-                        #texture=join('Resources','FS2X-palette.png')
-                        #t.append([0,0.24])	# green
-                    elif angle==270:
-                        t.append([-z*zscale, -x*xscale])
-                        #texture=join('Resources','FS2X-palette.png')
-                        #t.append([0.75,0.75])	# blue
-                    else: # angle==0 or not square
-                        t.append([x*xscale, -z*zscale])
-                        #texture=join('Resources','FS2X-palette.png')
-                        #t.append([0.96,0.96])	# white
-            else: # untested
-                for p in patch:
-                    v.append([(p[0]-centrelon)*onedeg*cos(d2r*p[1]),
-                              p[2], (centrelat-p[1])*onedeg])
-                    if angle==90:
-                        t.append([p[6],p[5]])
-                    elif angle==180:
-                        t.append([-p[5],p[6]])
-                    elif angle==270:
-                        t.append([-p[6],-p[5]])
-                    else: # angle==0 or not square
-                        t.append([p[5],-p[6]])
-            mesh.append((texture,v,t))
-        self.mesh[key]=mesh
-
+                tex=join('Resources','Sea01.png')
+            self.mesh[key]=[(tex,
+                             [[-onedeg*cos(d2r*(tile[0]+1))/2, 0, -onedeg/2],
+                              [ onedeg*cos(d2r* tile[0]   )/2, 0,  onedeg/2],
+                              [-onedeg*cos(d2r* tile[0]   )/2, 0,  onedeg/2],
+                              [-onedeg*cos(d2r*(tile[0]+1))/2, 0, -onedeg/2],
+                              [ onedeg*cos(d2r*(tile[0]+1))/2, 0, -onedeg/2],
+                              [ onedeg*cos(d2r* tile[0]   )/2, 0,  onedeg/2]],
+                             [[0, 0], [100, 100], [0, 100],
+                              [0, 0], [100, 0], [100, 100]])]
 
     def getMesh(self, tile, options):
         if self.meshcache:
@@ -925,7 +913,10 @@ def importObj(pkgpath, path):
     for f in listdir(newpath):
         if f.lower()==basename(path).lower():
             raise IOError, (0, "An object with this name already exists in this package")
-    badobj=(0, "This is not an X-Plane v6, v7 or v8 object")
+    if path[-4:].lower()=='.fac':
+        badobj=(0, "This is not an X-Plane v8 facade")
+    else:
+        badobj=(0, "This is not an X-Plane v6, v7 or v8 object")
     h=file(path, 'rU')
     # Preserve comments, copyrights etc
     line=h.readline().strip()
@@ -945,7 +936,8 @@ def importObj(pkgpath, path):
         line=h.readline().strip()
         header+=line+'\n'
         c=line.split()
-        if not c or not c[0]=='OBJ':
+        if not c or not (c[0]=='OBJ' or (version=='800'
+                                         and c[0] in ['FACADE', 'FOREST'])):
             raise IOError, badobj
     if version in ['2','700']:
         while 1:

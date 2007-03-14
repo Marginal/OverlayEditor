@@ -1,7 +1,7 @@
 @echo off
 @setlocal
 
-for /f "usebackq tokens=1,2" %%I in (`c:\Progra~1\Python24\python.exe -c "from files import appversion; print '%%4.2f %%d'%%(appversion, appversion*100)"`) do (set VERSION=%%I&set VER=%%J)
+for /f "usebackq tokens=1,2" %%I in (`c:\Progra~1\Python24\python.exe -c "from version import appversion; print '%%4.2f %%d'%%(appversion, appversion*100)"`) do (set VERSION=%%I&set VER=%%J)
 
 @if exist OverlayEditor_%VER%_src.zip del OverlayEditor_%VER%_src.zip
 @if exist OverlayEditor_%VER%_linux.tar.gz del OverlayEditor_%VER%_linux.tar.gz
@@ -14,9 +14,9 @@ del /s /q dist  >nul: 2>&1
 del /s /q *.bak >nul: 2>&1
 del /s /q *.pyc >nul: 2>&1
 
-@set PY=OverlayEditor.py draw.py files.py DSFLib.py
+@set PY=OverlayEditor.py draw.py files.py DSFLib.py MessageBox.py version.py
 @set DATA=OverlayEditor.html
-@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/OverlayEditor.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.obj Resources/Sea01.png Resources/screenshot.png
+@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.fac Resources/default.obj Resources/windsock.obj Resources/windsock.png Resources/exc.png Resources/fac.png Resources/obj.png Resources/airport0_000.png Resources/Sea01.png Resources/OverlayEditor.png Resources/screenshot.png Resources/800library.txt
 
 @REM source
 zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% %DATA% %RSRC% linux MacOS win32 |findstr -vc:"adding:"

@@ -1,0 +1,28 @@
+A
+800
+LIBRARY
+
+# The useful subset of the generic '800 objects' library
+
+EXPORT com/convertrow.obj buildings:B1_a_60x10.obj
+EXPORT com/largehmall.obj xp7:comp_lm1_360x290.obj
+EXPORT com/largestrip.obj xp7:comp_ls1_90x80.obj
+EXPORT com/smallmall.obj xp7:comp_sm1_220x100.obj
+EXPORT ind/truckstop.obj xp7:gas station chevron_new.obj
+EXPORT ins/church.obj xp7:church_new.obj
+EXPORT ins/medicalcomplex.obj skyscrapers:wide1.obj
+EXPORT res/singlehouse.obj xp7:house small stucco_new.obj
+EXPORT res/bighouse.obj xp7:house big stucco_new.obj
+EXPORT trans/truckstop.obj xp7:gas station texaco_new.obj
+
+EXPORT com/lowoffice.fac skyscrapers:sky2_1.fac
+EXPORT com/medoffice.fac skyscrapers:sky1_3.fac
+EXPORT com/rowshops.fac buildings:B1_d.fac
+EXPORT com/skyscraper.fac skyscrapers:sky1_1.fac
+EXPORT ind/storage.fac buildings:B1_a.fac
+EXPORT ins/cityschool.fac skyscrapers:sky2_4.fac
+EXPORT ins/university.fac skyscrapers:sky1_5.fac
+EXPORT res/hotel.fac skyscrapers:sky1_2.fac
+EXPORT res/lowapt.fac buildings:B1_b.fac
+EXPORT res/midapt.fac skyscrapers:sky2a_1.fac
+EXPORT res/rowhouses.fac buildings:B1_c.fac

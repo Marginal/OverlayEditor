@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-from files import appversion
+from files import appname, appversion
 from distutils.core import setup
 from os import listdir, name
 from sys import platform
@@ -12,7 +12,7 @@ manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
           '<assemblyIdentity\n'+
           '    version="%4.2f.0.0"\n' % appversion +
           '    processorArchitecture="X86"\n'+
-          '    name="OverlayEditor"\n'+
+          '    name="%s"\n' % appname +
           '    type="win32"\n'+
           '/>\n'+
           '<description>DSF overlay editor.</description>\n'+
@@ -71,14 +71,22 @@ setup(name='OverlayEditor',
                     'Resources/import.png',
                     'Resources/new.png',
                     'Resources/open.png',
-                    'Resources/OverlayEditor.png',
                     'Resources/prefs.png',
                     'Resources/reload.png',
                     'Resources/save.png',
                     'Resources/undo.png',
+                    'Resources/default.fac',
                     'Resources/default.obj',
+                    'Resources/windsock.obj',
+                    'Resources/windsock.png',
+                    'Resources/exc.png',
+                    'Resources/fac.png',
+                    'Resources/obj.png',
+                    'Resources/airport0_000.png',
                     'Resources/Sea01.png',
+                    'Resources/OverlayEditor.png',
                     'Resources/screenshot.png',
+                    'Resources/800library.txt',
                     ]),
                   ] + platdata,
 
