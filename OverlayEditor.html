@@ -28,6 +28,7 @@ Scenery</a> &raquo; <a href="http://marginal.org.uk/x-planescenery/tools.html">T
 </table>
 <hr>
 <h2>DSF overlay scenery editor</h2>
+
 <h3>Overview</h3>
 <p>This application edits X-Plane<small><sup>&reg;</sup></small>
 DSF overlay scenery packages for X-Plane 8.30 or later.
@@ -36,6 +37,7 @@ It runs on Windows 2000 or later, MacOS 10.3.9 or later and Linux.</p>
 X-Plane's scenery system and that you know how to create X-Plane scenery
 objects. If not, then you can get started by following
 <a target="_blank" href="http://marginal.org.uk/x-planescenery/hangar_tutorial/index.html">this tutorial</a>.<p>
+
 <h3>Setting up</h3>
 <p>Users of MacOS 10.3 should first install
 <a href="http://prdownloads.sourceforge.net/wxpython/wxPython2.5-osx-unicode-2.5.3.1-panther-py2.3.dmg">wxPython 2.5.3</a> or later <small>(you don't need to
@@ -43,118 +45,11 @@ install MacPython - it's already installed on 10.3)</small>.</p>
 <p>The first time that you run the application you are asked to
 identify X-Plane's top-level folder (<i>ie</i> the folder which
 contains the X-Plane, Plane-Maker etc applications).<p>
+
 <h3>The application window</h3>
 <p>The application window consists of five parts:</p>
 <img style="border: 0px solid ; width: 706px; height: 491px;" alt="main window" src="Resources/screenshot.jpg">
-<h4>Main window</h4>
-<p>This shows the objects in the loaded scenery package.
-By default terrain is displayed as flat - you can change this with <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Preferences" src="Resources/prefs.png"></a>.
-Runways, taxiways and navaids are displayed in simplified form and cannot
-be edited. "Autogen" scenery objects are not displayed at all.<p>
-<p>Navigate with the cursor keys or mouse. Hold down <samp>Ctrl</samp> or
-<samp>Cmd</samp> for bigger steps, or <samp>Shift</samp> for tiny steps:</p>
-<table style="margin-left: 40px; width: 100%;" border="0">
-  <tbody>
-    <tr>
-      <td style="width: 33%;"><samp>Up</samp>, <samp>Down</samp>, <samp>Left</samp>, <samp>Right</samp></td>
-      <td>Move</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;">Mouse click on window edge</td>
-      <td>Move</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Home</samp>, <samp>End</samp></td>
-      <td>Rotate</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>PageUp</samp>, <samp>PageDown</samp></td>
-      <td>Change elevation</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;">Mouse wheel, <samp>-</samp>, <samp>=</samp></td>
-      <td>Zoom</td>
-    </tr>
-  </tbody>
-</table>
-<p>Selected objects are highlighted in pink in the main window.
-To select objects:</p>
-<table style="margin-left: 40px; width: 100%;" border="0">
-  <tbody>
-    <tr>
-      <td style="width: 33%;">Mouse click</td>
-      <td>Select object</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;">Mouse drag</td>
-      <td>Select objects</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Ctrl</samp> or <samp>Cmd</samp> and click or drag</td>
-      <td>Toggle selected objects</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Space</samp></td>
-      <td>Select all objects in the main window <small>(even if they're too small to see)</small>.</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Ctrl</samp> or <samp>Cmd</samp> and <samp>Space</samp></td>
-      <td>Toggle selection of all objects in the main window</td>
-    </tr>
-  </tbody>
-</table>
-<p>If you select a single polygon (facade, forest or exclusion region)
-you can click on an individual node (<i>ie</i> corner) to select it.
-The selected node is highlighted in white.</p>
-<p>These keys affect the selected objects or the selected node.
-Hold down <samp>Ctrl</samp> or <samp>Cmd</samp> for bigger steps
-or <samp>Shift</samp> for tiny steps:</p>
-<table style="margin-left: 40px; width: 100%;" border="0">
-  <tbody>
-    <tr>
-      <td style="width: 33%;">Mouse click and drag</td>
-      <td>Move object or node</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
-      <td>Move selected objects or node</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Q</samp>, <samp>E</samp></td>
-      <td>Rotate selected objects</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>R</samp>, <samp>F</samp></td>
-      <td>Increase/decrease facade height or forest density</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>C</samp></td>
-      <td>Centre on selected objects or node</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>N</samp></td>
-      <td>Centre on and select the next use of this object</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Insert</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
-      <td>Add new node object or node</small></td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
-      <td>Delete selected objects or node</td>
-    </tr>
-    <tr>
-      <td style="width: 33%;"><samp>Ctrl</samp> or <samp>Cmd</samp> and <samp>Z</samp>, or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
-      <td>Undo the last edit.</td>
-    </tr>
-  </tbody>
-</table>
-<p>You can't select or otherwise manipulate runways, taxiways or
-navaids (ILS, VOR, DME etc).</p>
-<h4>Status bar</h4>
-<p>This shows your current location, heading, elevation and, if you have
-selected an object or node, the object or node's location, heading and
-elevation (or average location if you have selected more than one object).</p>
+
 <h4>Tool bar</h4>
 <table style="width: 100%;" border="0">
   <tbody>
@@ -226,14 +121,124 @@ Do not change the location of X-Plane's top-level folder while you are editing a
     </tr>
   </tbody>
 </table>
+
+<h4>Main window</h4>
+<p>This shows the objects in the loaded scenery package.
+By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Preferences" src="Resources/prefs.png"></a>.
+Runways, taxiways and navaids are displayed in simplified form and cannot
+be edited. "Autogen" scenery objects are not displayed at all.<p>
+<p>Navigate with the cursor keys or mouse. Hold down <samp>Ctrl</samp> or
+<samp>Cmd</samp> for bigger steps, or <samp>Shift</samp> for tiny steps:</p>
+<table style="margin-left: 40px; width: 100%;" border="0">
+  <tbody>
+    <tr>
+      <td style="width: 33%;"><samp>Up</samp>, <samp>Down</samp>, <samp>Left</samp>, <samp>Right</samp></td>
+      <td>Move</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;">Mouse click on window edge</td>
+      <td>Move</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Home</samp>, <samp>End</samp></td>
+      <td>Rotate</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>PageUp</samp>, <samp>PageDown</samp></td>
+      <td>Change elevation</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;">Mouse wheel, <samp>-</samp>, <samp>=</samp></td>
+      <td>Zoom</td>
+    </tr>
+  </tbody>
+</table>
+<p>Selected objects are highlighted in pink in the main window.
+To select objects:</p>
+<table style="margin-left: 40px; width: 100%;" border="0">
+  <tbody>
+    <tr>
+      <td style="width: 33%;">Mouse click</td>
+      <td>Select object</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;">Mouse drag</td>
+      <td>Select objects</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Ctrl</samp> or <samp>Cmd</samp> and click or drag</td>
+      <td>Toggle selected objects</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Space</samp></td>
+      <td>Select all objects in the main window <small>(even if they're too small to see)</small>.</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Ctrl</samp> or <samp>Cmd</samp> and <samp>Space</samp></td>
+      <td>Toggle selection of all objects in the main window</td>
+    </tr>
+  </tbody>
+</table>
+<p>If you select a single polygon (draped, facade, forest or exclusion region)
+you can click on an individual node (<i>ie</i> corner) to select it.
+The selected node is highlighted in white.</p>
+<p>These keys affect the selected objects or the selected node.
+Hold down <samp>Ctrl</samp> or <samp>Cmd</samp> for bigger steps
+or <samp>Shift</samp> for tiny steps:</p>
+<table style="margin-left: 40px; width: 100%;" border="0">
+  <tbody>
+    <tr>
+      <td style="width: 33%;">Mouse click and drag</td>
+      <td>Move object or node</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
+      <td>Move selected objects or node</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Q</samp>, <samp>E</samp></td>
+      <td>Rotate selected objects</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>R</samp>, <samp>F</samp></td>
+      <td>Increase/decrease facade height or forest density, or rotate a draped polygon's texture.</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>C</samp></td>
+      <td>Centre on selected objects or node</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>N</samp></td>
+      <td>Centre on and select the next use of this object</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Insert</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
+      <td>Add new node object or node</small></td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
+      <td>Delete selected objects or node</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Ctrl</samp> or <samp>Cmd</samp> and <samp>Z</samp>, or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
+      <td>Undo the last edit.</td>
+    </tr>
+  </tbody>
+</table>
+<p>You can't select or otherwise manipulate runways, taxiways or
+navaids (ILS, VOR, DME etc).</p>
+
 <h4><a name="objectlist">List of objects</a></h4>
 <p>All the objects, facades etc in the scenery package folder are listed under
 the heading "Objects", including those that are present in the scenery
 package folder but are not used in the scenery.
 The type of object is indicated by a symbol:</p>
 <ul>
-  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="obj" src="Resources/obj.png"></a> Object  (<code>.obj</code>)</li>
-  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="fac" src="Resources/fac.png"></a> Polygon - facade or forest</li>
+  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="obj" src="Resources/obj.png"></a> 3D object (<code>.obj</code>)</li>
+  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="pol" src="Resources/pol.png"></a> Draped polygon (<code>.pol</code>) with a <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later)</li>
+  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="ort" src="Resources/ort.png"></a> Draped polygon (<code>.pol</code>) for use as an <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later)</li>
+  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="fac" src="Resources/fac.png"></a> Facade polygon (<code>.fac</code>)</li>
+  <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="for" src="Resources/for.png"></a> Forest polygon (<code>.for</code>)</li>
   <li><img style="border: 0px solid ; width: 12px; height: 12px;" alt="exc" src="Resources/exc.png"></a> Exclusion region</li>
 </ul>
 <p>Objects that have been made available by scenery libraries, including
@@ -243,21 +248,30 @@ libraries than earlier versions, so you you should always design using the
 earliest version of X-Plane that you want your scenery package to work
 with.
 (See <a target="_blank" href="http://marginal.org.uk/x-planescenery/library_tutorial/index.html">this tutorial</a> if you're interested in making your own scenery libraries).</p>
-<p>You can only add objects that appear in these lists to your scenery
-(think of this as your "palette"):</p>
+<p>You can only add objects to your scenery that appear in these lists
+(think of this as your
+"<a href="http://en.wikipedia.org/wiki/Palette">palette</a>"):</p>
 <ul>
   <li>Use <a href="#import"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Import" src="Resources/import.png"></a> to copy objects from another scenery <u>package</u>. (Don't use this to copy objects from a scenery
 <u>library</u>; just select the object from the appropriate list).</li>
   <li>Use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have otherwise added or modified objects in the scenery package folder, or if you have installed a new scenery library.</li>
 </ul>
+
 <h4>Preview picture</h4>
 <p>A preview of the currently selected object is shown (when available)
-underneath the list of objects. If more than one picture is shown this
+underneath the list of objects.</p>
+<p>If more than one picture is shown this
 means that the library object exists in multiple versions; X-Plane will
 choose which version of the object to display at random, but this
-application always displays the first version.</p>
+application always displays the same version.
+(However if only one picture is shown for a library object then you cannot
+assume that there is only one version).</p>
 <p>You can drag the separators between the preview window and the other
-windows to make the preview picture larger or smaller.</p>
+windows to make the preview picture smaller.</p>
+<h4>Status bar</h4>
+<p>This shows your current location, heading, elevation and, if you have
+selected an object or node, the object or node's location, heading and
+elevation (or average location if you have selected more than one object).</p>
 <h3>Differences between this application and X-Plane</h3>
 <p>This application displays terrain and objects in orthogonal projection
 and in a simplified form. <i>ie</i>:</p>
@@ -265,18 +279,28 @@ and in a simplified form. <i>ie</i>:</p>
   <li>No lights, lines, shading or animation. 
 Objects that only contain lights or lines are displayed as small
 "placeholder" cubes so that they can be edited.</li>
-  <li>Forests are just displayed as an outline.</li>
-  <li>X-Plane allows forests and draped polygons to contain holes (glades),
-however this application does not. If you edit a forest or draped polygon
-any hole will be deleted.</li>
-  <li>This application only understands facades and forests.
+  <li>This application only understands draped, facade and forest polygons.
 Other types of polygons (lines, strings etc) are displayed as an outline
 and cannot be edited.</li>
+  <li>This application recognises two distinct types of draped polygon:
+    <ul>
+      <li>A draped polygon (<code>.pol</code>) file that contains a
+<code>TEXTURE</code> statement is assumed to be intended for use as a
+<a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later).</li>
+      <li>A draped polygon (<code>.pol</code>) file that contains a
+<code>TEXTURE_NOWRAP</code> statement is assumed to be intended for use as a quadrilateral <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later).</li>
+    </ul>
+However X-Plane lets you use the same draped polygon (<code>.pol</code>) file
+for either purpose (but you'll get texture artifacts if you use the incorrect
+<code>TEXTURE</code> or <code>TEXTURE_NOWRAP</code> statement).</li>
+  <li>X-Plane allows draped and forest polygons to contain holes (glades),
+however this application does not. Ifm you edit a draped or forest polygon
+any hole will be deleted.</li>
   <li>Terrain textures are simplified - no beaches or overlay textures.</li>
   <li>No flattening of terrain around airports. Terrain is displayed as if the
 X-Plane "allow sloped runways" rendering option is turned on.</li>
 </ul>
-<a name="priority">    
+<a name="priority">
 <p>X-Plane prioritises scenery packages; and it doesn't load scenery from
 lower priority packages once it has found a "full" DSF for the required area.
 A package's priority is determined by its <a href="http://en.wikipedia.org/wiki/ASCIIbetical">ASCIIbetical</a> order in
@@ -380,7 +404,7 @@ no obligation.</p>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 1.59 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 1.60 &copy; 2006 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px; vertical-align: text-bottom;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
       </td>
     </tr>

@@ -409,7 +409,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glColor3f(0.8, 0.8, 0.8)	# Unpainted
             polystate=0
             for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
-                if poly:
+                if poly:		# eg overlaid photoscenery
                     if polystate!=poly:
                         glDepthMask(GL_FALSE)	# offset mustn't update depth
                         glPolygonOffset(-10*poly, -10*poly)
@@ -680,6 +680,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
 
     def prepareselect(self):
+        return # XXX
         # Pre-prepare selection list - assumes self.selectlist==0
         #print "prep"
         objects=self.currentobjects()

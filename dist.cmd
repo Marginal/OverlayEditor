@@ -24,7 +24,7 @@ del /s /q *.pyc >nul: 2>&1
 
 @set PY=OverlayEditor.py draw.py files.py DSFLib.py MessageBox.py version.py
 @set DATA=OverlayEditor.html
-@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.fac Resources/default.for Resources/default.obj Resources/windsock.obj Resources/windsock.png Resources/exc.png Resources/fac.png Resources/obj.png Resources/airport0_000.png Resources/Sea01.png Resources/OverlayEditor.png Resources/screenshot.jpg Resources/800library.txt
+@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.fac Resources/default.for Resources/default.obj Resources/windsock.obj Resources/windsock.png Resources/exc.png Resources/fac.png Resources/for.png Resources/obj.png Resources/ort.png Resources/pol.png Resources/airport0_000.png Resources/Sea01.png Resources/OverlayEditor.png Resources/screenshot.jpg Resources/800library.txt
 @set PREV=Resources/previews
 
 @REM source
@@ -81,6 +81,8 @@ chown -R %USERNAME% "%RPMRT%"
 mkdir OverlayEditor.app\Contents
 for %%I in (%DATA%) do (copy %%I OverlayEditor.app\Contents\ |findstr -v "file(s) copied")
 xcopy /q /e MacOS OverlayEditor.app\Contents\MacOS\|findstr -v "file(s) copied"
+for /r OverlayEditor.app %%I in (CVS) do rd /s /q "%%I" >nul: 2>&1
+for /r OverlayEditor.app %%I in (.cvs*) do del /q "%%I" >nul:
 for %%I in (%PY%) do (copy %%I OverlayEditor.app\Contents\MacOS\ |findstr -v "file(s) copied")
 mkdir OverlayEditor.app\Contents\Resources
 for %%I in (%RSRC%) do (copy Resources\%%~nxI OverlayEditor.app\Contents\Resources\ |findstr -v "file(s) copied")

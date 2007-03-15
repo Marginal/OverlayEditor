@@ -1,0 +1,5 @@
+dist
+OverlayEditor.app
+*.pyc
+*.zip
+foo*

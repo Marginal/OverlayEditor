@@ -1,0 +1,10 @@
+middle mouse move
+eddn_overlay
+Object prioritisation (detect poly_os clash for ver<8.50)
+Bezier polygons
+boundary (130)
+Clean export - only used 
+Info popup - name, source .obj file, source texture
+roads
+LSPK ?
+Mutliple add
