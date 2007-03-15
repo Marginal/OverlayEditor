@@ -18,7 +18,7 @@ set RPM=%TMP%\overlayeditor
 if exist OverlayEditor.app rd /s /q OverlayEditor.app
 if exist "%RPM%" rd /s /q "%RPM%"
 REM >nul: 2>&1
-del /s /q dist  >nul: 2>&1
+if exist dist rd /s /q dist >nul:  2>&1
 REM del /s /q *.bak >nul: 2>&1
 del /s /q *.pyc >nul: 2>&1
 
@@ -28,7 +28,7 @@ del /s /q *.pyc >nul: 2>&1
 @set PREV=Resources/previews
 
 @REM source
-zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% %DATA% %RSRC% %PREV% linux MacOS win32 |findstr -vc:"adding:"
+REM zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% %DATA% %RSRC% %PREV% linux MacOS win32 |findstr -vc:"adding:"
 
 @REM linux
 REM tar -zcf OverlayEditor_%VER%_linux.tar.gz %PY% %DATA% %RSRC% linux win32/DSFTool.exe
