@@ -962,8 +962,26 @@ class MainWindow(wx.Frame):
             self.SetIcon(wx.Icon('Resources/%s.png' % appname,
                                  wx.BITMAP_TYPE_PNG))
         elif platform=='darwin':
-            pass	# icon pulled from Resources via Info.plist
-        
+            # icon pulled from Resources via Info.plist. Need minimal menu
+            menubar = wx.MenuBar()
+            filemenu = wx.Menu()
+            filemenu.Append(wx.ID_NEW, 'New...')
+            wx.EVT_MENU(self, wx.ID_NEW, self.OnNew)
+            filemenu.Append(wx.ID_OPEN, 'Open...')
+            wx.EVT_MENU(self, wx.ID_OPEN, self.OnOpen)
+            filemenu.Append(wx.ID_SAVE, 'Save')
+            wx.EVT_MENU(self, wx.ID_SAVE, self.OnSave)
+            filemenu.Append(wx.ID_PREFERENCES, 'Preferences\tCtrl-,')
+            wx.EVT_MENU(self, wx.ID_PREFERENCES, self.OnPrefs)
+            filemenu.Append(wx.ID_EXIT, 'Quit %s\tCtrl-X' % appname)
+            wx.EVT_MENU(self, wx.ID_EXIT, self.OnClose)	# generates command evt
+            menubar.Append(filemenu, 'File')
+            helpmenu = wx.Menu()
+            helpmenu.Append(wx.ID_HELP, '%s Help\tCtrl-?'  % appname)
+            wx.EVT_MENU(self, wx.ID_HELP, self.OnHelp)            
+            menubar.Append(helpmenu, '&Help')
+            self.SetMenuBar(menubar)
+
         self.toolbar=self.CreateToolBar(wx.TB_HORIZONTAL|wx.STATIC_BORDER|wx.TB_FLAT|wx.TB_NODIVIDER)
         # Note colours>~(245,245,245) get replaced by transparent
         newbitmap=wx.Bitmap("Resources/new.png", wx.BITMAP_TYPE_PNG)
@@ -1032,12 +1050,12 @@ class MainWindow(wx.Frame):
                                   'Go to airport')
         wx.EVT_TOOL(self.toolbar, wx.ID_FORWARD, self.OnGoto)
         self.toolbar.AddSeparator()
-        self.toolbar.AddLabelTool(wx.ID_SETUP, 'Preferences',
+        self.toolbar.AddLabelTool(wx.ID_PREFERENCES, 'Preferences',
                                   wx.Bitmap("Resources/prefs.png",
                                             wx.BITMAP_TYPE_PNG),
                                   wx.NullBitmap, 0,
                                   'Preferences')
-        wx.EVT_TOOL(self.toolbar, wx.ID_SETUP, self.OnPrefs)
+        wx.EVT_TOOL(self.toolbar, wx.ID_PREFERENCES, self.OnPrefs)
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_HELP, 'Help',
                                   wx.Bitmap("Resources/help.png",
@@ -1215,6 +1233,8 @@ class MainWindow(wx.Frame):
             if prefs.package:
                 if not self.canvas.undo():
                     self.toolbar.EnableTool(wx.ID_UNDO, False)
+        elif event.m_keyCode==wx.WXK_F1 and platform!='darwin':
+            self.OnHelp(event)
         else:
             event.Skip(True)
             return
@@ -1632,11 +1652,18 @@ class MainWindow(wx.Frame):
             webbrowser.open("file:"+quote(filename))
 
     def OnClose(self, event):
-        if not self.SaveDialog(event.CanVeto()):
+        if event.IsCommandEvent() and platform=='darwin':
+            # Suppress Cmd-Q on Mac. Also suppresses Quit menu item!
+            fake=wx.KeyEvent()
+            fake.m_metaDown=True
+            fake.m_keyCode=ord('Q')
+            self.OnKeyDown(fake)
+            return False
+        elif not self.SaveDialog(event.CanVeto()):
             event.Veto()
             return False
         prefs.write()
-        self.goto.Close()
+        if self.goto: self.goto.Close()
         self.Destroy()
         return True
 

@@ -18,5 +18,9 @@
 	<string>APPL</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleShortVersionString</key>
+	<string>appversion</string>
+	<key>CFBundleGetInfoString</key>
+	<string>OverlayEditor appversion, © 2006 Jonathan Harris</string>
 </dict>
 </plist>

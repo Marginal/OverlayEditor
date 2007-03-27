@@ -87,7 +87,9 @@ for %%I in (%RSRC%) do (copy Resources\%%~nxI OverlayEditor.app\Contents\Resourc
 mkdir OverlayEditor.app\Contents\Resources\previews
 for %%I in (%PREV%\*.jpg) do (copy Resources\previews\%%~nxI OverlayEditor.app\Contents\Resources\previews |findstr -v "file(s) copied")
 del  OverlayEditor.app\Contents\MacOS\OverlayEditor.html
-move OverlayEditor.app\Contents\MacOS\Info.plist OverlayEditor.app\Contents\
+sed s/appversion/%VERSION%/ <OverlayEditor.app\Contents\MacOS\Info.plist >OverlayEditor.app\Contents\Info.plist
+del OverlayEditor.app\Contents\MacOS\Info.plist
+
 move OverlayEditor.app\Contents\MacOS\OverlayEditor.icns OverlayEditor.app\Contents\Resources\
 move /y OverlayEditor.app\Contents\MacOS\*.png OverlayEditor.app\Contents\Resources\ |findstr -vc:".png"
 zip -j OverlayEditor_%VER%_mac.zip MacOS/OverlayEditor.html |findstr -vc:"adding:"
