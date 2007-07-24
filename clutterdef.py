@@ -117,16 +117,15 @@ class ObjectDef(ClutterDef):
                 tex=line.strip()
                 if tex:
                     if '//' in tex: tex=tex[:tex.index('//')].strip()
-                    tex=tex.replace(':', sep)
-                    tex=tex.replace('/', sep)
+                    tex=abspath(join(self.texpath, tex.replace(':', sep).replace('/', sep)))
                     break
-            tex=abspath(join(self.texpath,tex))
             for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
                 if exists(tex+ext):
                     texture=tex+ext
                     break
             else:
-                if __debug__: print 'Failed to find texture "%s"' % tex
+                texture=tex
+
         if version=='2':
             while True:
                 line=h.readline()
@@ -261,34 +260,30 @@ class ObjectDef(ClutterDef):
                         tcurrent.append(t[i])
         elif version=='800':
             vt=[]
+            vtt=[]
             idx=[]
-            anim=[[0,0,0]]
+            anim=[]
             while True:
                 line=h.readline()
                 if not line: break
-                c=line.split('#')[0].split('//')[0].split().split()
+                c=line.split('#')[0].split('//')[0].split()
                 if not c: continue
                 if c[0]=='TEXTURE':
                     if len(c)>1:
                         tex=line[7:].strip()
                         if '//' in tex: tex=tex[:tex.index('//')].strip()
-                        tex=tex.replace(':', sep)
-                        tex=tex.replace('/', sep)
-                        tex=abspath(join(self.texpath,tex))
-                        for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
-                            if exists(tex+ext):
-                                texture=tex+ext
-                                break
-                        else:
-                            if __debug__: print 'Failed to find texture "%s"' % tex
+                        texture=abspath(join(self.texpath, tex.replace(':', sep).replace('/', sep)))
                 elif c[0]=='VT':
-                    vt.append([float(c[1]), float(c[2]), float(c[3]),
-                               float(c[7]), float(c[8])])
-                    self.maxsize=max(self.maxsize, fabs(vt[-1][0]), 0.55*vt[-1][1], fabs(vt[-1][2]))	# ad-hoc
+                        x=float(c[1])
+                        y=float(c[2])
+                        z=float(c[3])
+                        vt.append([x,y,z])
+                        vtt.append([float(c[7]), float(c[8])])
+                        self.maxsize=max(self.maxsize, fabs(x), 0.55*y, fabs(z))	# ad-hoc
                 elif c[0]=='IDX':
                     idx.append(int(c[1]))
                 elif c[0]=='IDX10':
-                    idx.extend([int(c[1]), int(c[2]), int(c[3]), int(c[4]), int(c[5]), int(c[6]), int(c[7]), int(c[8]), int(c[9]), int(c[10])])
+                    idx.extend([int(c[i]) for i in range(1,11)])
                 elif c[0]=='ATTR_LOD':
                     if float(c[1])!=0: break
                 elif c[0]=='ATTR_poly_os':
@@ -302,20 +297,22 @@ class ObjectDef(ClutterDef):
                 elif c[0]=='ATTR_layer_group':
                     self.setlayer(c[1], int(c[2]))
                 elif c[0]=='ANIM_begin':
-                    anim.append([anim[-1][0], anim[-1][1], anim[-1][2]])
+                    if anim:
+                        anim.append(list(anim[-1]))
+                    else:
+                        anim=[[0,0,0]]
                 elif c[0]=='ANIM_end':
                     anim.pop()
                 elif c[0]=='ANIM_trans':
-                    anim[-1]=[anim[-1][0]+float(c[1]),
-                              anim[-1][1]+float(c[2]),
-                              anim[-1][2]+float(c[3])]
+                    anim[-1]=[anim[-1][i]+float(c[i+1]) for i in range(3)]
                 elif c[0]=='TRIS':
-                    for i in range(int(c[1]), int(c[1])+int(c[2])):
-                        v=vt[idx[i]]
-                        current.append([anim[-1][0]+v[0],
-                                        anim[-1][1]+v[1],
-                                        anim[-1][2]+v[2]])
-                        tcurrent.append([v[3], v[4]])
+                    start=int(c[1])
+                    new=int(c[2])
+                    if anim:
+                        current.extend([[vt[idx[i]][j]+anim[-1][j] for j in range (3)] for i in range(start, start+new)])
+                    else:
+                        current.extend([vt[idx[i]] for i in range(start, start+new)])
+                    tcurrent.extend([vtt[idx[i]] for i in range(start, start+new)])
         h.close()
 
         if self.layer==None:
@@ -378,16 +375,10 @@ class DrapedDef(PolygonDef):
             if not line: break
             c=line.split('#')[0].split()
             if not c: continue
-            if c[0]=='TEXTURE_NOWRAP': self.ortho=True
             if c[0] in ['TEXTURE', 'TEXTURE_NOWRAP']:
-                tex=line[len(c[0]):].strip()
-                tex=tex.replace(':', sep)
-                tex=tex.replace('/', sep)
-                tex=abspath(join(self.texpath,tex))
-                if exists(tex):
-                    self.texture=vertexcache.texcache.get(tex, False, not self.ortho)
-                else:
-                    if __debug__: print 'Failed to find texture "%s"' % tex
+                if c[0]=='TEXTURE_NOWRAP': self.ortho=True
+                tex=abspath(join(self.texpath, line[len(c[0]):].strip().replace(':', sep).replace('/', sep)))
+                self.texture=vertexcache.texcache.get(tex)
             elif c[0]=='SCALE':
                 self.hscale=float(c[1])
                 self.vscale=float(c[2])
@@ -445,14 +436,8 @@ class FacadeDef(PolygonDef):
             c=line.split('#')[0].split()
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
-                tex=line[7:].strip()
-                tex=tex.replace(':', sep)
-                tex=tex.replace('/', sep)
-                tex=abspath(join(self.texpath,tex))
-                if exists(tex):
-                    self.texture=vertexcache.texcache.get(tex)
-                else:
-                    if __debug__: print 'Failed to find texture "%s"' % tex
+                tex=abspath(join(self.texpath, line[7:].strip().replace(':', sep).replace('/', sep)))
+                self.texture=vertexcache.texcache.get(tex)
             elif c[0]=='RING':
                 self.ring=int(c[1])
             elif c[0]=='TWO_SIDED': self.two_sided=(int(c[1])!=0)

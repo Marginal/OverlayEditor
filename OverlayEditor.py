@@ -1190,8 +1190,16 @@ class MainWindow(wx.Frame):
                 self.menubar.Enable(wx.ID_PASTE,   False)
         progress.Update(0, 'Global nav data')
         if False:# XXX not self.airports:	# Default apt.dat
-            (self.airports,self.nav,foo)=readApt(glob(join(prefs.xplane, gmainaptdat))[0])
-            self.nav.extend(readNav(glob(join(prefs.xplane,gmainnavdat))[0]))
+            try:
+                (self.airports,self.nav,foo)=readApt(glob(join(prefs.xplane, gmainaptdat))[0])
+            except:
+                self.nav=[]
+                myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
+            try:
+                self.nav.extend(readNav(glob(join(prefs.xplane,gmainnavdat))[0]))
+            except:
+                pass
+                
         progress.Update(1, 'Overlay DSFs')
         if not event:
             # Load, not reload

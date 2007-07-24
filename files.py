@@ -1,4 +1,4 @@
-from PIL.Image import open, BILINEAR
+from PIL.Image import open, NEAREST, BILINEAR, BICUBIC
 import PIL.BmpImagePlugin, PIL.JpegImagePlugin, PIL.PngImagePlugin	# force for py2exe
 from OpenGL.GL import *
 try:
@@ -23,6 +23,8 @@ from shutil import copyfile
 import sys	# for version
 from sys import platform, maxint
 import wx
+if __debug__:
+    import time
 
 #from Numeric import array
 
@@ -31,8 +33,6 @@ from DSFLib import readDSF
 from prefs import Prefs
 from version import appname, appversion
 
-#if platform!='win32':
-#    import codecs
 
 # memory leak? causing SegFault on Linux - Ubuntu seems OK for some reason
 cantreleasetexs=(platform.startswith('linux') and 'ubuntu' not in sys.version.lower())
@@ -75,6 +75,7 @@ def readApt(filename):
             pavement=[]
         if loc and id in [1,16,17,99]:
             if not run: raise IOError
+            run.reverse()	# drawn in reverse order
             airports[code]=(name,loc,run)
             code=name=loc=None
             run=[]
@@ -111,7 +112,7 @@ def readApt(filename):
                         (float(c[18]), float(c[19])),
                         float(c[1]), float(c[12]),float(c[21]), float(c[2])))
         elif id==110:
-            pavement=[[]]
+            pavement=[int(c[1]),[]]	# surface
         elif id==111 and pavement:
             pavement[-1].append((float(c[1]),float(c[2])))
         elif id==112 and pavement:
@@ -133,6 +134,7 @@ def readApt(filename):
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
     if loc:	# No terminating 99
         if not run: raise IOError
+        run.reverse()	# drawn in reverse order
         airports[code]=(name,loc,run)
     h.close()
     return (airports, nav, firstcode)
@@ -245,7 +247,6 @@ class TexCache:
         if path in self.texs:
             return self.texs[path]
         try:
-            id=glGenTextures(1)
             image = open(path)
             if fixsize and not self.npot:
                 size=[image.size[0],image.size[1]]
@@ -255,11 +256,11 @@ class TexCache:
                     if size[i]>glGetIntegerv(GL_MAX_TEXTURE_SIZE):
                         size[i]=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
                 if size!=[image.size[0],image.size[1]]:
-                    image=image.resize((size[0], size[1]), BILINEAR)
+                    image=image.resize((size[0], size[1]), BICUBIC)
 
             if downsample:
                 if image.mode!='RGB': image=image.convert('RGB')
-                image=image.resize((image.size[0]/4,image.size[1]/4), BILINEAR)
+                image=image.resize((image.size[0]/4,image.size[1]/4), NEAREST)
                 data = image.tostring("raw", 'RGB', 0, -1)
                 format=GL_RGB
             elif image.mode=='RGBA':
@@ -277,6 +278,7 @@ class TexCache:
                 data = image.tostring("raw", 'RGB', 0, -1)
                 format=GL_RGB
 
+            id=glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, id)
             if not wrap:
                 glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,self.clampmode)
@@ -289,10 +291,16 @@ class TexCache:
             glTexImage2D(GL_TEXTURE_2D, 0, format, image.size[0], image.size[1], 0, format, GL_UNSIGNED_BYTE, data)
             self.texs[path]=id
             return id
-        except IOError, e:
-            if __debug__: print 'Failed to load texture "%s" - %s' % (path, e)
+        except IOError, (errno, e):
+            self.texs[path]=0
+            if __debug__:
+                if errno==2:
+                    print 'Failed to find texture "%s"' % basename(path)
+                else:
+                    print 'Failed to load texture "%s" - %s' % (basename(path), e)
         except:
-            if __debug__: print 'Failed to load texture "%s"' % path
+            self.texs[path]=0
+            if __debug__: print 'Failed to load texture "%s"' % basename(path)
         return self.blank
 
 
@@ -365,6 +373,7 @@ class VertexCache:
             #print join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))
             #print dsfs
             dsfs.sort()	# asciibetical, custom first
+        if __debug__: clock=time.clock()	# Processor time
         for dsf in dsfs:
             try:
                 (properties, placements, polygons, mesh)=readDSF(dsf, self.ter)
@@ -373,6 +382,7 @@ class VertexCache:
                     break
             except:
                 pass
+        if __debug__: print "%s CPU time in loadMesh" % (time.clock()-clock)
         if not key in self.mesh:
             if glob(join(self.dsfdirs[1], '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))) + glob(join(self.dsfdirs[1], pardir, '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[eE][nN][vV]" % (tile[0], tile[1]))):
                 # DSF or ENV exists but can't read it
@@ -407,18 +417,20 @@ class VertexCache:
             else:
                 bytex[(texture,flags)]=(list(v), list(t))
         # add into array
+        if __debug__: clock=time.clock()	# Processor time
         for (texture, flags), (v, t) in bytex.iteritems():
             base=len(self.varray)
             self.varray.extend(v)
             self.tarray.extend(t)
             texno=self.texcache.get(texture, flags&1, flags&1)
             self.meshcache.append((base, len(v), texno, flags/2))
+        if __debug__: print "%s CPU time in getMesh" % (time.clock()-clock)
         self.valid=False	# new geometry -> need to update OpenGL
         self.currenttile=tile
         return self.meshcache
 
 
-    # return mesh data by patch
+    # create sets of bounding boxes for height testing
     def getMeshdata(self, tile, options):
         key=(tile[0],tile[1],options&Prefs.ELEVATION)
         if key in self.meshdata:
@@ -432,6 +444,7 @@ class VertexCache:
             return meshdata
         meshdata=[]
         tot=0
+        if __debug__: clock=time.clock()	# Processor time
         for (texture, flags, v, t) in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
             minx=minz=maxint
             maxx=maxz=-maxint
@@ -444,6 +457,7 @@ class VertexCache:
                 tris.append(([v[i], v[i+1], v[i+2]], [0,0,0,0]))
             meshdata.append(([minx, maxx, minz, maxz], tris))
             tot+=len(tris)
+        if __debug__: print "%s CPU time in getMeshdata" % (time.clock()-clock)
         #print len(meshdata), "patches,", tot, "tris,", tot/len(meshdata), "av"
         self.meshdata[key]=meshdata
         return meshdata
