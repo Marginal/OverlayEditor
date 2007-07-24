@@ -1,4 +1,4 @@
-from PIL.Image import open, BILINEAR
+from PIL.Image import open, NEAREST, BILINEAR, BICUBIC
 import PIL.BmpImagePlugin, PIL.JpegImagePlugin, PIL.PngImagePlugin	# force for py2exe
 from OpenGL.GL import *
 try:
@@ -14,12 +14,11 @@ from shutil import copyfile
 import sys	# for version
 from sys import platform, maxint
 import wx
+if __debug__:
+    import time
 
 from DSFLib import readDSF
-from version import appname, appversion, debug
-
-#if platform!='win32':
-#    import codecs
+from version import appname, appversion
 
 # memory leak? causing SegFault on Linux - Ubuntu seems OK for some reason
 cantreleasetexs=(platform.startswith('linux') and 'ubuntu' not in sys.version.lower())
@@ -106,17 +105,14 @@ def readApt(filename):
     airports={}	# (name, [lat,lon], [(lat,lon,hdg,length,width,stop,stop)]) by code
     nav=[]	# (type,lat,lon,hdg)
     firstcode=None
-    if platform=='win32':
-        h=file(filename,'rU')
-    else:
-        h=codecs.open(filename, 'rU', 'latin1')
+    h=codecs.open(filename, 'rU', 'latin1')
     if not h.readline().strip() in ['A','I']:
         raise IOError
     while True:	# NYEXPRO has a blank line here
         c=h.readline().split()
         if c: break
     ver=c[0]
-    if not ver in ['600','715','810','850']:
+    if not ver in ['600','703','715','810','850']:
         raise IOError
     ver=int(ver)
     code=name=loc=None
@@ -131,6 +127,7 @@ def readApt(filename):
             pavement=[]
         if loc and id in [1,16,17,99]:
             if not run: raise IOError
+            run.reverse()	# drawn in reverse order
             airports[code]=(name,loc,run)
             code=name=loc=None
             run=[]
@@ -147,7 +144,7 @@ def readApt(filename):
             if not loc: loc=[lat,lon]
             stop=c[7].split('.')
             if len(stop)<2: stop.append(0)
-            if len(c)<11: surface=1
+            if len(c)<11: surface=0
             else: surface=int(c[10])
             run.append((lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]),
                         f2m*float(stop[0]),f2m*float(stop[1]),surface))
@@ -167,7 +164,7 @@ def readApt(filename):
                         (float(c[18]), float(c[19])),
                         float(c[1]), float(c[12]),float(c[21]), float(c[2])))
         elif id==110:
-            pavement=[[]]
+            pavement=[int(c[1]),[]]	# surface
         elif id==111 and pavement:
             pavement[-1].append((float(c[1]),float(c[2])))
         elif id==112 and pavement:
@@ -189,6 +186,7 @@ def readApt(filename):
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
     if loc:	# No terminating 99
         if not run: raise IOError
+        run.reverse()	# drawn in reverse order
         airports[code]=(name,loc,run)
     h.close()
     return (airports, nav, firstcode)
@@ -265,7 +263,6 @@ def readLib(filename, objects, terrain):
                     if name in terrain: continue
                     terrain[name]=obj
                 else:
-                    name=name
                     if lib in objects:
                         if name in objects[lib]: continue
                     else:
@@ -301,21 +298,23 @@ class TexCache:
         if path in self.texs:
             return self.texs[path]
         try:
-            id=glGenTextures(1)
             image = open(path)
+            #image=wx.Image(path)
             if fixsize and not self.npot:
                 size=[image.size[0],image.size[1]]
+                #size=[image.Width,image.Height]
                 for i in [0,1]:
                     l=log(size[i],2)
                     if l!=int(l): size[i]=2**(1+int(l))
                     if size[i]>glGetIntegerv(GL_MAX_TEXTURE_SIZE):
                         size[i]=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
                 if size!=[image.size[0],image.size[1]]:
-                    image=image.resize((size[0], size[1]), BILINEAR)
+                    image=image.resize((size[0], size[1]), BICUBIC)
+                    #image.Rescale(size[0],size[1],wx.IMAGE_QUALITY_HIGH)
 
             if isbaseterrain:
                 if image.mode!='RGB': image=image.convert('RGB')
-                image=image.resize((image.size[0]/4,image.size[1]/4), BILINEAR)
+                image=image.resize((image.size[0]/4,image.size[1]/4), NEAREST)
                 data = image.tostring("raw", 'RGB', 0, -1)
                 format=GL_RGB
             elif image.mode=='RGBA':
@@ -333,6 +332,7 @@ class TexCache:
                 data = image.tostring("raw", 'RGB', 0, -1)
                 format=GL_RGB
 
+            id=glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, id)
             if fixsize:
                 glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,self.clampmode)
@@ -342,10 +342,16 @@ class TexCache:
             glTexImage2D(GL_TEXTURE_2D, 0, format, image.size[0], image.size[1], 0, format, GL_UNSIGNED_BYTE, data)
             self.texs[path]=id
             return id
-        except IOError, e:
-            if debug: print 'Failed to load texture "%s" - %s' % (path, e)
+        except IOError, (errno, e):
+            self.texs[path]=0
+            if __debug__:
+                if errno==2:
+                    print 'Failed to find texture "%s"' % basename(path)
+                else:
+                    print 'Failed to load texture "%s" - %s' % (basename(path), e)
         except:
-            if debug: print 'Failed to load texture "%s"' % path
+            self.texs[path]=0
+            if __debug__: print 'Failed to load texture "%s"' % basename(path)
         return self.blank
 
 
@@ -388,13 +394,8 @@ class FacadeDef:
             c=line.split('#')[0].split()
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
-                tex=line[7:].strip()
-                tex=tex.replace(':', sep)
-                tex=tex.replace('/', sep)
-                tex=abspath(join(texpath,tex))
-                if exists(tex):
-                    self.texture=texcache.get(tex)
-                elif debug: print 'Failed to find texture "%s"' % tex
+                tex=abspath(join(texpath, line[7:].strip().replace(':', sep).replace('/', sep)))
+                self.texture=texcache.get(tex)
             elif c[0]=='RING':
                 if int(c[1]): self.ring=1
             elif c[0]=='TWO_SIDED': self.two_sided=(int(c[1])!=0)
@@ -487,13 +488,8 @@ class DrapedDef:
             if c[0] in ['TEXTURE', 'TEXTURE_NOWRAP'] and len(c)>1:
                 if c[0]=='TEXTURE_NOWRAP':
                     self.ortho=True
-                tex=line[7:].strip()
-                tex=tex.replace(':', sep)
-                tex=tex.replace('/', sep)
-                tex=abspath(join(texpath,tex))
-                if exists(tex):
-                    self.texture=texcache.get(tex)
-                elif debug: print 'Failed to find texture "%s"' % tex
+                tex=abspath(join(texpath, line[len(c[0]):].strip().replace(':', sep).replace('/', sep)))
+                self.texture=texcache.get(tex)
             elif c[0]=='SCALE':
                 self.hscale=float(c[1])
                 self.vscale=float(c[2])
@@ -584,7 +580,7 @@ class VertexCache:
             if name[0]=='*':	# this application's resource
                 self.obj[name]=join('Resources', name[1:])
             else:
-                if debug: print 'Failed to find object "%s"' % name
+                if __debug__: print 'Failed to find object "%s"' % name
                 if usefallback:
                     self.obj[name]=join('Resources','default'+name[-4:].lower())
                     retval=False	# Load default obj
@@ -619,7 +615,7 @@ class VertexCache:
                 self.poly[path]=FacadeDef(path, self.texcache)
                 return retval
             except:
-                if debug: print 'Failed to load facade "%s"' % path
+                if __debug__: print 'Failed to load facade "%s"' % path
                 if usefallback:
                     self.poly[path]=FacadeDef(join('Resources','default.fac'),
                                               self.texcache)
@@ -667,16 +663,15 @@ class VertexCache:
                     tex=line.strip()
                     if tex:
                         if '//' in tex: tex=tex[:tex.index('//')].strip()
-                        tex=tex.replace(':', sep)
-                        tex=tex.replace('/', sep)
+                        tex=abspath(join(texpath, tex.replace(':', sep).replace('/', sep)))
                         break
-                tex=abspath(join(texpath,tex))
                 for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
                     if exists(tex+ext):
                         texture=tex+ext
                         break
                 else:
-                    if debug: print 'Failed to find texture "%s"' % tex
+                    texture=tex
+                    
             if version=='2':
                 while True:
                     line=h.readline()
@@ -809,8 +804,9 @@ class VertexCache:
                             tcurrent.append(t[i])
             elif version=='800':
                 vt=[]
+                vtt=[]
                 idx=[]
-                anim=[[0,0,0]]
+                anim=[]
                 while True:
                     line=h.readline()
                     if not line: break
@@ -820,23 +816,31 @@ class VertexCache:
                         if len(c)>1:
                             tex=line[7:].strip()
                             if '//' in tex: tex=tex[:tex.index('//')].strip()
-                            tex=tex.replace(':', sep)
-                            tex=tex.replace('/', sep)
-                            tex=abspath(join(texpath,tex))
-                            for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
-                                if exists(tex+ext):
-                                    texture=tex+ext
-                                    break
-                            else:
-                                if debug: print 'Failed to find texture "%s"' % tex
+                            texture=abspath(join(texpath, tex.replace(':', sep).replace('/', sep)))
+                    #elif c[0]=='POINT_COUNTS':
+                    #    vt=empty((int(c[1]),3),'f')
+                    #    vtt=empty((int(c[1]),2),'f')
+                    #    vti=0
+                    #    idx=empty((int(c[4])),'i')
+                    #    ii=0
                     elif c[0]=='VT':
-                        vt.append([float(c[1]), float(c[2]), float(c[3]),
-                                   float(c[7]), float(c[8])])
-                        maxsize=max(maxsize, fabs(vt[-1][0]), 0.55*vt[-1][1], fabs(vt[-1][2]))	# ad-hoc
+                        x=float(c[1])
+                        y=float(c[2])
+                        z=float(c[3])
+                        vt.append([x,y,z])
+                        vtt.append([float(c[7]), float(c[8])])
+                        #vt[vti]=array([x,y,z],'f')
+                        #vtt[vti]=array([float(c[7]), float(c[8])],'f')
+                        #vti+=1
+                        maxsize=max(maxsize, fabs(x), 0.55*y, fabs(z))	# ad-hoc
                     elif c[0]=='IDX':
                         idx.append(int(c[1]))
+                        #idx[ii]=int(c[1])
+                        #ii+=1
                     elif c[0]=='IDX10':
-                        idx.extend([int(c[1]), int(c[2]), int(c[3]), int(c[4]), int(c[5]), int(c[6]), int(c[7]), int(c[8]), int(c[9]), int(c[10])])
+                        idx.extend([int(c[i]) for i in range(1,11)])
+                        #idx[ii:ii+10]=[int(c[i]) for i in range(1,11)]
+                        #ii+=10
                     elif c[0]=='ATTR_LOD':
                         if float(c[1])!=0: break
                     elif c[0]=='ATTR_poly_os':
@@ -848,20 +852,28 @@ class VertexCache:
                         current=nocull
                         tcurrent=tnocull
                     elif c[0]=='ANIM_begin':
-                        anim.append([anim[-1][0], anim[-1][1], anim[-1][2]])
+                        if anim:
+                            anim.append(list(anim[-1]))
+                        else:
+                            anim=[[0,0,0]]
                     elif c[0]=='ANIM_end':
                         anim.pop()
                     elif c[0]=='ANIM_trans':
-                        anim[-1]=[anim[-1][0]+float(c[1]),
-                                  anim[-1][1]+float(c[2]),
-                                  anim[-1][2]+float(c[3])]
+                        anim[-1]=[anim[-1][i]+float(c[i+1]) for i in range(3)]
                     elif c[0]=='TRIS':
-                        for i in range(int(c[1]), int(c[1])+int(c[2])):
-                            v=vt[idx[i]]
-                            current.append([anim[-1][0]+v[0],
-                                            anim[-1][1]+v[1],
-                                            anim[-1][2]+v[2]])
-                            tcurrent.append([v[3], v[4]])
+                        start=int(c[1])
+                        new=int(c[2])
+                        if anim:
+                            current.extend([[vt[idx[i]][j]+anim[-1][j] for j in range (3)] for i in range(start, start+new)])
+                        else:
+                            current.extend([vt[idx[i]] for i in range(start, start+new)])
+                        tcurrent.extend([vtt[idx[i]] for i in range(start, start+new)])
+                        #i=take(idx, arange(start, start+new, 1, 'i'))
+                        #if anim:
+                        #    current.extend(take(vt, i)+anim[-1])
+                        #else:
+                        #    current.extend(take(vt, i))
+                        #tcurrent.extend(take(vtt, i))
             h.close()
             if not (len(culled)+len(nocull)):
                 if usefallback!=0:
@@ -881,7 +893,7 @@ class VertexCache:
                 self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly, maxsize)
                 self.valid=False	# new geometry -> need to update OpenGL
         except:
-            if debug: print 'Failed to load object "%s"' % path
+            if __debug__: print 'Failed to load object "%s"' % path
             if usefallback:
                 self.load('*default.obj')
                 self.objcache[name]=self.idx[path]=self.get('*default.obj')
@@ -889,6 +901,7 @@ class VertexCache:
         return retval
 
 
+    # load mesh from DSF
     def loadMesh(self, tile, options):
         key=(tile[0],tile[1],options&Prefs.TERRAIN)
         if key in self.mesh: return	# don't reload
@@ -899,6 +912,7 @@ class VertexCache:
             #print join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))
             #print dsfs
             dsfs.sort()	# asciibetical, custom first
+        if __debug__: clock=time.clock()	# Processor time
         for dsf in dsfs:
             try:
                 (properties, placements, polygons, mesh)=readDSF(dsf, self.ter)
@@ -907,6 +921,7 @@ class VertexCache:
                     break
             except:
                 pass
+        if __debug__: print "%s CPU time in loadMesh" % (time.clock()-clock)
         if not key in self.mesh:
             if glob(join(self.dsfdirs[1], '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))) + glob(join(self.dsfdirs[1], pardir, '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[eE][nN][vV]" % (tile[0], tile[1]))):
                 # DSF or ENV exists but can't read it
@@ -923,6 +938,8 @@ class VertexCache:
                              [[0, 0], [100, 100], [0, 100],
                               [0, 0], [100, 0], [100, 100]])]
 
+
+    # populate arrays and load texs
     def getMesh(self, tile, options):
         if self.meshcache:
             return self.meshcache
@@ -940,16 +957,19 @@ class VertexCache:
             else:
                 bytex[(texture,flags)]=(list(v), list(t))
         # add into array
+        if __debug__: clock=time.clock()	# Processor time
         for (texture, flags), (v, t) in bytex.iteritems():
             base=len(self.varray)
             self.varray.extend(v)
             self.tarray.extend(t)
             texno=self.texcache.get(texture, flags&1)
             self.meshcache.append((base, len(v), texno, flags/2))
+        if __debug__: print "%s CPU time in getMesh" % (time.clock()-clock)
         self.valid=False	# new geometry -> need to update OpenGL
         return self.meshcache
 
 
+    # create sets of bounding boxes for height testing
     def getMeshdata(self, tile, options):
         key=(tile[0],tile[1],options&Prefs.ELEVATION)
         if key in self.meshdata:
@@ -963,6 +983,7 @@ class VertexCache:
             return meshdata
         meshdata=[]
         tot=0
+        if __debug__: clock=time.clock()	# Processor time
         for (texture, flags, v, t) in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
             minx=minz=maxint
             maxx=maxz=-maxint
@@ -975,6 +996,7 @@ class VertexCache:
                 tris.append(([v[i], v[i+1], v[i+2]], [0,0,0,0]))
             meshdata.append(([minx, maxx, minz, maxz], tris))
             tot+=len(tris)
+        if __debug__: print "%s CPU time in getMeshdata" % (time.clock()-clock)
         #print len(meshdata), "patches,", tot, "tris,", tot/len(meshdata), "av"
         self.meshdata[key]=meshdata
         return meshdata

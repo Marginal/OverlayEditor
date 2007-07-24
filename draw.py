@@ -10,14 +10,15 @@ except NameError:
 from math import acos, atan2, cos, sin, floor, hypot, pi
 from os.path import join
 from sys import exit, platform, maxint, version
-#import time
 import wx
 import wx.glcanvas
+if __debug__:
+    import time
 
 from files import VertexCache, sortfolded, Prefs, ExcludeDef, FacadeDef, ForestDef
 from DSFLib import Object, Polygon, resolution, maxres, round2res
 from MessageBox import myMessageBox
-from version import appname, debug
+from version import appname
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
@@ -25,8 +26,6 @@ twopi=pi+pi
 f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 sband=12	# width of mouse scroll band around edge of window
-
-runwaycolour=(0.333,0.333,0.333)
 
 debugapt=False	# XXX
 
@@ -94,6 +93,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.e=90
         self.d=3333.25
         self.cliprat=1000
+        self.polyhack=1		# 256 for Radeon 96xx on Mac?
 
         self.context=wx.glcanvas.GLContext
 
@@ -109,7 +109,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             #wx.glcanvas.WX_GL_MIN_ALPHA, 4,
             wx.glcanvas.WX_GL_DEPTH_SIZE, 24])	# ATI on Mac defaults to 16
         if self.GetId()==-1:
-            # Failed - try with smaller depth buffer
+            # Failed - try with default depth buffer
             wx.glcanvas.GLCanvas.__init__(self, parent,
                                           style=GL_RGBA|GL_DOUBLEBUFFER|GL_DEPTH|wx.FULL_REPAINT_ON_RESIZE,
                                           attribList=[wx.glcanvas.WX_GL_RGBA,wx.glcanvas.WX_GL_DOUBLEBUFFER])
@@ -146,7 +146,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_LINE_SMOOTH)
         #glLineStipple(1, 0x0f0f)	# for selection drag
         if debugapt: glLineWidth(2.0)
-        glPointSize(3.0)		# for nodes
+        glPointSize(4.0)		# for nodes
         glFrontFace(GL_CW)
         glCullFace(GL_BACK)
         glPixelStorei(GL_UNPACK_ALIGNMENT,1)	# byte aligned
@@ -160,6 +160,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
 
     def OnEraseBackground(self, event):
+        #print "eb"
         pass	# Prevent flicker when resizing / painting on MSW
 
     def OnKeyDown(self, event):
@@ -176,7 +177,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         posx=self.mousenow[0]
         posy=self.mousenow[1]
         keyevent=wx.KeyEvent()
-        keyevent.m_controlDown=keyevent.m_metaDown=self.selectctrl
+        keyevent.m_shiftDown=wx.GetKeyState(wx.WXK_SHIFT)
         if posx<sband:
             keyevent.m_keyCode=wx.WXK_LEFT
         elif posy<sband:
@@ -191,7 +192,7 @@ class MyGL(wx.glcanvas.GLCanvas):
     def OnLeftDown(self, event):
         #event.Skip(False)	# don't change focus
         self.mousenow=[event.m_x,event.m_y]
-        self.selectctrl=event.CmdDown()
+        self.selectctrl=event.m_controlDown
         self.CaptureMouse()
         size = self.GetClientSize()
         if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
@@ -250,6 +251,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                     self.undostack.append(UndoEntry(self.tile, UndoEntry.MOVE, [(self.selected[0], poly.clone())]))
                     self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
                     self.frame.toolbar.EnableTool(wx.ID_UNDO, True)
+                    if self.frame.menubar:
+                        self.frame.menubar.Enable(wx.ID_SAVE, True)
+                        self.frame.menubar.Enable(wx.ID_UNDO, True)
                 poly.nodes=[poly.nodes[0]]	# Destroy other windings
                 poly.nodes[0][self.selectednode]=(lon,lat)
                 if poly.kind==Polygon.EXCLUDE:
@@ -288,6 +292,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.movesel(lat-self.selectmove[0], lon-self.selectmove[1], 0)
                 self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
                 self.frame.toolbar.EnableTool(wx.ID_UNDO, True)
+                if self.frame.menubar:
+                    self.frame.menubar.Enable(wx.ID_SAVE, True)
+                    self.frame.menubar.Enable(wx.ID_UNDO, True)
                 self.selectmove=(lat,lon)
             
         elif self.selectanchor:
@@ -348,10 +355,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.SetCursor(wx.NullCursor)
 
     def OnPaint(self, event):
-        #print "Canvas Paint"
-        #print "paint", self.selected
         dc = wx.PaintDC(self)	# Tell the window system that we're on the case
         size = self.GetClientSize()
+        #print "pt", size
         if size.width<=0: return	# may be junk on startup
         self.SetCurrent()
         self.SetFocus()		# required for GTK
@@ -374,6 +380,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_CULL_FACE)
         glDisable(GL_DEPTH_TEST)
 
+        # Ground terrain
+
         if not self.valid:
             # Sea
             glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
@@ -391,33 +399,33 @@ class MyGL(wx.glcanvas.GLCanvas):
             return
 
         self.vertexcache.realize(self)
-        objects=self.currentobjects()
-        polygons=self.currentpolygons()
-
-        # Ground
         if not self.meshlist:
             self.meshlist=glGenLists(1)
             glNewList(self.meshlist, GL_COMPILE)
-            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+            glColor3f(0.8, 0.8, 0.8)	# Unpainted
+            glEnable(GL_TEXTURE_2D)
             glEnable(GL_DEPTH_TEST)
-            glEnable(GL_CULL_FACE)
             glDepthMask(GL_TRUE)
+            glDepthFunc(GL_LESS)
             glDisable(GL_POLYGON_OFFSET_FILL)
+            polystate=0
+            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+            glEnable(GL_CULL_FACE)
             if not self.options&Prefs.ELEVATION:
                 glPushMatrix()
                 glScalef(1,0,1)		# Defeat elevation data
-            glColor3f(0.8, 0.8, 0.8)	# Unpainted
-            polystate=0
             for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
-                if poly:
+                if poly:		# eg overlaid photoscenery
                     if polystate!=poly:
                         glDepthMask(GL_FALSE)	# offset mustn't update depth
-                        glPolygonOffset(-10*poly, -10*poly)
+                        glDepthFunc(GL_LEQUAL)
                         glEnable(GL_POLYGON_OFFSET_FILL)
+                        glPolygonOffset(-10*poly, -10*self.polyhack*poly)
                     polystate=poly
                 else:
                     if polystate:
                         glDepthMask(GL_TRUE)
+                        glDepthFunc(GL_LESS)
                         glDisable(GL_POLYGON_OFFSET_FILL)
                     polystate=0
                 glBindTexture(GL_TEXTURE_2D, texno)
@@ -434,15 +442,19 @@ class MyGL(wx.glcanvas.GLCanvas):
         if key in self.runways: glCallList(self.runways[key])
 
         # Objects and Polygons
+        objects=self.currentobjects()
+        polygons=self.currentpolygons()
         if not self.objectslist:
             self.objectslist=glGenLists(1)
             glNewList(self.objectslist, GL_COMPILE)
-
-            glEnable(GL_CULL_FACE)
-            cullstate=True
             glEnable(GL_TEXTURE_2D)
             glEnable(GL_DEPTH_TEST)
+            glDepthMask(GL_TRUE)
+            glDepthFunc(GL_LESS)
             glDisable(GL_POLYGON_OFFSET_FILL)
+            polystate=0
+            glEnable(GL_CULL_FACE)
+            cullstate=True
             for i in range(len(polygons)):
                 if (i|MSKSEL) in self.selected and not self.selectanchor:
                     continue	# don't have to recompute on move
@@ -484,7 +496,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                     glEnd()
             glColor3f(0.8, 0.8, 0.8)	# Unpainted
             glEnable(GL_DEPTH_TEST)
-            polystate=0
             for i in range(len(objects)):
                 if i in self.selected and not self.selectanchor:
                     continue	# don't have to recompute on move
@@ -493,11 +504,12 @@ class MyGL(wx.glcanvas.GLCanvas):
                 (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(obj.name)
                 if poly:
                     if polystate!=poly:
-                        glPolygonOffset(-1*poly, -1*poly)
                         glEnable(GL_POLYGON_OFFSET_FILL)
+                        glPolygonOffset(-1*poly, -1*self.polyhack*poly)
                     polystate=poly
                 else:
-                    if polystate: glDisable(GL_POLYGON_OFFSET_FILL)
+                    if polystate:
+                        glDisable(GL_POLYGON_OFFSET_FILL)
                     polystate=0
                 glPushMatrix()
                 glTranslatef(x, obj.height, z)
@@ -518,6 +530,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Overlays
         glDisable(GL_POLYGON_OFFSET_FILL)
         glDisable(GL_DEPTH_TEST)
+        glDepthMask(GL_FALSE)
 
         # Background
         if self.background:
@@ -577,10 +590,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             glColor3f(1.0, 0.5, 1.0)
 
-        glDisable(GL_CULL_FACE)
         glEnable(GL_DEPTH_TEST)
-        glPolygonOffset(-3, -3)
+        glDepthMask(GL_TRUE)
+        glDepthFunc(GL_LESS)
+        glPolygonOffset(-3, -3*self.polyhack)
         glEnable(GL_POLYGON_OFFSET_FILL)
+        glDisable(GL_CULL_FACE)
         for i in self.selected:
             if i&MSKSEL:
                 poly=polygons[i&MSKPOLY]
@@ -1252,7 +1267,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if not reload:
             self.undostack=[]
 
-        if 0:	# debug
+        if __debug__:	# debug
             print "Frame:\t%s"  % self.frame.GetId()
             print "Toolb:\t%s"  % self.frame.toolbar.GetId()
             print "Parent:\t%s" % self.parent.GetId()
@@ -1304,7 +1319,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.options=options
 
             # Limit progress dialog to 10 updates
-            #clock=time.clock()	# Processor time
+            if __debug__: clock=time.clock()	# Processor time
             objects=self.currentobjects()
             p=len(objects)/10+1
             n=0
@@ -1319,7 +1334,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if obj.height==None:
                     (x,z)=self.latlon2m(obj.lat, obj.lon)
                     obj.height=self.vertexcache.height(newtile,options,x,z)
-            #print "%s CPU time" % (time.clock()-clock)
+            if __debug__: print "%s CPU time in objects" % (time.clock()-clock)
 
             progress.Update(13, 'Polygons')
             polygons=self.currentpolygons()
@@ -1333,6 +1348,16 @@ class MyGL(wx.glcanvas.GLCanvas):
             # Lay out runways
             progress.Update(14, 'Runways')
             key=(newtile[0],newtile[1],options&Prefs.ELEVATION)
+            surfaces={0:  (0.25, 0.25, 0.25, 1.0),	# unknown
+                      1:  (0.4,  0.4,  0.4,  1.0),	# asphalt
+                      2:  (0.5,  0.5,  0.45, 1.0),	# concrete
+                      3:  (0.25, 0.3,  0.15, 1.0),	# grass
+                      4:  (0.45, 0.4,  0.35, 1.0),	# dirt,
+                      5:  (0.45, 0.45, 0.4,  1.0),	# gravel
+                      12: (0.55, 0.45, 0.35, 1.0),	# lakebed
+                      13: (0.0,  0.0,  0.5,  0.25),	# water
+                      14: (0.75, 0.75, 0.75, 1.0),	# ice
+                      15: (0.33, 0.33, 0.33, 0.25)}	# transparent
             if key not in self.runways:
                 airports=[]
                 pavements=[]
@@ -1368,70 +1393,30 @@ class MyGL(wx.glcanvas.GLCanvas):
                             maxx=max(maxx, p1[0], p2[0])
                             minz=min(minz, p1[2], p2[2])
                             maxz=max(maxz, p1[2], p2[2])
-                            runways.append((p1,p2, width/2*coshdg,width/2*sinhdg, {}))
+                            if surf in surfaces:
+                                col=surfaces[surf]
+                            else:
+                                col=surfaces[0]
+                            runways.append((p1,p2, width/2*coshdg,width/2*sinhdg, col, {}))
                         else:
                             pavements.append(thing)
                     airports.append(([minx, maxx, minz, maxz], runways))
     
                 self.runways[key]=glGenLists(1)
                 glNewList(self.runways[key], GL_COMPILE)
-                if debugapt:
-                    glColor3f(0.5,0.5,0.5)
-                else:
-                    glColor3f(*runwaycolour)
+                #if debugapt:
+                #    glColor3f(0.5,0.5,0.5)
+                #else:
+                #    runwaycolour=(0.333,0.333,0.333)
+                #    glColor3f(*runwaycolour)
                 glDisable(GL_TEXTURE_2D)
-                glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
-                glEnable(GL_POLYGON_OFFSET_FILL)
-                if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
-                glEnable(GL_CULL_FACE)
+                glEnable(GL_DEPTH_TEST)
                 glDepthMask(GL_FALSE)	# offset mustn't update depth
-
-                for (bbox, tris) in self.vertexcache.getMeshdata(newtile,options):
-                    for (abox, runways) in airports:
-                        if (bbox[0] >= abox[1] or bbox[2] >= abox[3] or bbox[1] <= abox[0] or bbox[3] <= abox[2]):
-                            continue
-                        for tri in tris:
-                            for (p1, p2, xinc, zinc, cuts) in runways:
-                                (pt, coeffs)=tri
-                                i1=i2=False
-                                for j in range(3):
-                                    #http://astronomy.swin.edu.au/~pbourke/geometry/lineline2d
-                                    p3=pt[j]
-                                    p4=pt[(j+1)%3]
-                                    d=(p4[2]-p3[2])*(p2[0]-p1[0])-(p4[0]-p3[0])*(p2[2]-p1[2])
-                                    if d==0: continue	# parallel
-                                    b=((p2[0]-p1[0])*(p1[2]-p3[2])-(p2[2]-p1[2])*(p1[0]-p3[0]))/d
-                                    if b<=0 or b>=1: continue	# no intersect
-                                    a=((p4[0]-p3[0])*(p1[2]-p3[2])-(p4[2]-p3[2])*(p1[0]-p3[0]))/d
-                                    if a>=0: i1 = not i1
-                                    if a<=1: i2 = not i2
-                                    if a<0 or a>1: continue	# no intersection
-                                    cuts[a]=([p1[0]+a*(p2[0]-p1[0]),
-                                              p3[1]+b*(p4[1]-p3[1]),
-                                              p1[2]+a*(p2[2]-p1[2])])
-                                    
-                                if i1:	# p1 is enclosed by this tri
-                                    p1[1]=self.vertexcache.height(newtile,options,p1[0],p1[2],tri)
-                                if i2:	# p2 is enclosed by this tri
-                                    p2[1]=self.vertexcache.height(newtile,options,p2[0],p2[2],tri)
-                # strip out bounding box and add cuts
-                for (abox, runways) in airports:
-                    for (p1, p2, xinc, zinc, cuts) in runways:
-                        glBegin(GL_QUAD_STRIP)
-                        a=cuts.keys()
-                        a.sort()
-                        glVertex3f(p1[0]+xinc, p1[1], p1[2]+zinc)
-                        glVertex3f(p1[0]-xinc, p1[1], p1[2]-zinc)
-                        if len(a) and a[0]>0.01:
-                            glVertex3f(cuts[a[0]][0]+xinc, cuts[a[0]][1], cuts[a[0]][2]+zinc)
-                            glVertex3f(cuts[a[0]][0]-xinc, cuts[a[0]][1], cuts[a[0]][2]-zinc)
-                        for i in range(1, len(a)):
-                            if a[i]-a[i-1]>0.01:
-                                glVertex3f(cuts[a[i]][0]+xinc, cuts[a[i]][1], cuts[a[i]][2]+zinc)
-                                glVertex3f(cuts[a[i]][0]-xinc, cuts[a[i]][1], cuts[a[i]][2]-zinc)
-                        glVertex3f(p2[0]+xinc, p2[1], p2[2]+zinc)
-                        glVertex3f(p2[0]-xinc, p2[1], p2[2]-zinc)
-                        glEnd()
+                glDepthFunc(GL_LEQUAL)
+                glEnable(GL_POLYGON_OFFSET_FILL)
+                glPolygonOffset(-10, -10*self.polyhack)	# Stupid value cos not coplanar
+                if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+                glDisable(GL_CULL_FACE)
 
                 # Pavements
                 oldtess=True
@@ -1449,7 +1434,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                     gluTessCallback(tessObj, GLU_END,    self.tessend)
                 else:
                     gluTessNormal(tessObj, 0, -1, 0)
-                    # gluTessProperty(tessObj, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)	# XXX
                     #if debugapt: gluTessProperty(tessObj,GLU_TESS_BOUNDARY_ONLY,GL_TRUE)
                     gluTessCallback(tessObj, GLU_TESS_BEGIN,  self.tessbegin)
                     gluTessCallback(tessObj, GLU_TESS_VERTEX, self.tessvertex)
@@ -1461,9 +1445,13 @@ class MyGL(wx.glcanvas.GLCanvas):
                             gluBeginPolygon(tessObj)
                         else:
                             gluTessBeginPolygon(tessObj, None)
-                        for i in range(len(pave)):
+                        if pave[0] in surfaces:
+                            col=surfaces[pave[0]]
+                        else:
+                            col=surfaces[0]
+                        for i in range(1,len(pave)):
                             if oldtess:
-                                if i:
+                                if i==1:
                                     gluNextContour(tessObj, GLU_CW)
                                 else:
                                     gluNextContour(tessObj, GLU_CCW)
@@ -1490,12 +1478,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                                     (x,z)=self.latlon2m(*pt)
                                     y=self.vertexcache.height(newtile,options,x,z)
                                     pt3=[x,y,z]
-                                    if debugapt and i:
-                                        gluTessVertex(tessObj, pt3,
-                                                      (pt3, (0,0,0)))
-                                    else:
-                                        gluTessVertex(tessObj, pt3,
-                                                      (pt3, runwaycolour))
+                                    #if debugapt and i>1:
+                                    #    gluTessVertex(tessObj, pt3,
+                                    #                  (pt3, (0,0,0,0)))
+                                    #else:
+                                    gluTessVertex(tessObj, pt3, (pt3, col))
                             if not oldtess:
                                 gluTessEndContour(tessObj)
                         if oldtess:
@@ -1505,9 +1492,56 @@ class MyGL(wx.glcanvas.GLCanvas):
                     except GLUerror, e:
                         pass
                 gluDeleteTess(tessObj)
-                glDisable(GL_POLYGON_OFFSET_FILL)
-                if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
-                
+
+                # runways
+                for (bbox, tris) in self.vertexcache.getMeshdata(newtile,options):
+                    for (abox, runways) in airports:
+                        if (bbox[0] >= abox[1] or bbox[2] >= abox[3] or bbox[1] <= abox[0] or bbox[3] <= abox[2]):
+                            continue
+                        for tri in tris:
+                            for (p1, p2, xinc, zinc, col, cuts) in runways:
+                                (pt, coeffs)=tri
+                                i1=i2=False
+                                for j in range(3):
+                                    #http://astronomy.swin.edu.au/~pbourke/geometry/lineline2d
+                                    p3=pt[j]
+                                    p4=pt[(j+1)%3]
+                                    d=(p4[2]-p3[2])*(p2[0]-p1[0])-(p4[0]-p3[0])*(p2[2]-p1[2])
+                                    if d==0: continue	# parallel
+                                    b=((p2[0]-p1[0])*(p1[2]-p3[2])-(p2[2]-p1[2])*(p1[0]-p3[0]))/d
+                                    if b<=0 or b>=1: continue	# no intersect
+                                    a=((p4[0]-p3[0])*(p1[2]-p3[2])-(p4[2]-p3[2])*(p1[0]-p3[0]))/d
+                                    if a>=0: i1 = not i1
+                                    if a<=1: i2 = not i2
+                                    if a<0 or a>1: continue	# no intersection
+                                    cuts[a]=([p1[0]+a*(p2[0]-p1[0]),
+                                              p3[1]+b*(p4[1]-p3[1]),
+                                              p1[2]+a*(p2[2]-p1[2])])
+                                    
+                                if i1:	# p1 is enclosed by this tri
+                                    p1[1]=self.vertexcache.height(newtile,options,p1[0],p1[2],tri)
+                                if i2:	# p2 is enclosed by this tri
+                                    p2[1]=self.vertexcache.height(newtile,options,p2[0],p2[2],tri)
+                # strip out bounding box and add cuts
+                for (abox, runways) in airports:
+                    for (p1, p2, xinc, zinc, col, cuts) in runways:
+                        glColor4f(*col)
+                        glBegin(GL_QUAD_STRIP)
+                        a=cuts.keys()
+                        a.sort()
+                        glVertex3f(p1[0]+xinc, p1[1], p1[2]+zinc)
+                        glVertex3f(p1[0]-xinc, p1[1], p1[2]-zinc)
+                        if len(a) and a[0]>0.01:
+                            glVertex3f(cuts[a[0]][0]+xinc, cuts[a[0]][1], cuts[a[0]][2]+zinc)
+                            glVertex3f(cuts[a[0]][0]-xinc, cuts[a[0]][1], cuts[a[0]][2]-zinc)
+                        for i in range(1, len(a)):
+                            if a[i]-a[i-1]>0.01:
+                                glVertex3f(cuts[a[i]][0]+xinc, cuts[a[i]][1], cuts[a[i]][2]+zinc)
+                                glVertex3f(cuts[a[i]][0]-xinc, cuts[a[i]][1], cuts[a[i]][2]-zinc)
+                        glVertex3f(p2[0]+xinc, p2[1], p2[2]+zinc)
+                        glVertex3f(p2[0]-xinc, p2[1], p2[2]-zinc)
+                        glEnd()
+
                 progress.Update(15, 'Navaids')
                 objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
                       3:  'lib/airport/NAVAIDS/VOR.obj',
@@ -1534,11 +1568,15 @@ class MyGL(wx.glcanvas.GLCanvas):
                 for name in objs.values():
                     self.vertexcache.load(name, True)	# skip errors
                 self.vertexcache.realize(self)
-                glDepthMask(GL_TRUE)
-                glEnable(GL_CULL_FACE)
-                cullstate=True
                 glColor3f(0.8, 0.8, 0.8)	# Unpainted
                 glEnable(GL_TEXTURE_2D)
+                #glEnable(GL_DEPTH_TEST)	# already enabled
+                glDepthMask(GL_TRUE)
+                glDepthFunc(GL_LESS)
+                glDisable(GL_POLYGON_OFFSET_FILL)
+                if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
+                glEnable(GL_CULL_FACE)
+                cullstate=True
                 polystate=0
                 for (i, lat, lon, hdg) in self.navaids:
                     if [int(floor(lat)),int(floor(lon))]==newtile and i in objs:
@@ -1552,11 +1590,16 @@ class MyGL(wx.glcanvas.GLCanvas):
                         glBindTexture(GL_TEXTURE_2D, texno)
                         if poly:
                             if polystate!=poly:
-                                glPolygonOffset(-1*poly, -1*poly)
+                                glDepthMask(GL_FALSE)
+                                glDepthFunc(GL_LEQUAL)
+                                glPolygonOffset(-1*poly, -1*self.polyhack*poly)
                                 glEnable(GL_POLYGON_OFFSET_FILL)
                             polystate=poly
                         else:
-                            if polystate: glDisable(GL_POLYGON_OFFSET_FILL)
+                            if polystate:
+                                glDepthMask(GL_TRUE)
+                                glDepthFunc(GL_LESS)
+                                glDisable(GL_POLYGON_OFFSET_FILL)
                             polystate=0
                         
                         if i==211:
@@ -1609,7 +1652,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glBegin(datatype)
     
     def tessvertex(self, (vertex, colour)):
-        glColor3f(*colour)
+        glColor4f(*colour)
         if debugapt:
             glVertex3f(vertex[0], vertex[1]+0.1, vertex[2])
         else:
@@ -1630,14 +1673,15 @@ class MyGL(wx.glcanvas.GLCanvas):
                     lat=self.centre[0]-vertex[i][0][2]/onedeg
                     lon=self.centre[1]+vertex[i][0][0]/(onedeg*cos(d2r*lat))
                     print "%.6f %.6f %5.3f" % (lat, lon, weight[i])
-            return ((coords[0], coords[1], coords[2]),(1,0.333,0.333))
+            return ((coords[0], coords[1], coords[2]),(1.0,0.33,0.33,1.0))
         else:	# Same point
-            colour=[0,0,0]
+            colour=[0.0,0.0,0.0,0.0]
             for i in range(len(weight)):
                 if not weight[i]: break
                 colour[0]+=vertex[i][1][0]*weight[i]
                 colour[1]+=vertex[i][1][1]*weight[i]
                 colour[2]+=vertex[i][1][2]*weight[i]
+                colour[3]+=vertex[i][1][3]*weight[i]
             return ((coords[0], coords[1], coords[2]),tuple(colour))
 
     def tessend(self):
@@ -1716,7 +1760,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glLoadIdentity()
         glRotatef( 30, 1,0,0)
         glRotatef(-30, 0,1,0)
-        glColor3f(0.9, 0.9, 0.9)	# Unpainted
+        glColor3f(0.8, 0.8, 0.8)	# Unpainted
         glEnable(GL_TEXTURE_2D)
         glEnable(GL_DEPTH_TEST)
         glBindTexture(GL_TEXTURE_2D, texno)
@@ -1732,6 +1776,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         img.SetData(data)
         
         # Restore state for unproject & selection
+        glViewport(0, 0, *self.GetClientSize())
         glPopMatrix()
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()	
@@ -1739,6 +1784,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        self.Refresh()	# Mac draws from the front buffer w/out paint event
         return img.Mirror(False)
 
 

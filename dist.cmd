@@ -1,11 +1,7 @@
 @echo off
 @setlocal
 
-for /f "usebackq tokens=1,2,3" %%I in (`c:\Progra~1\Python24\python.exe -c "from version import appversion, debug; print '%%4.2f %%d %%d'%%(appversion, round(appversion*100,0), debug)"`) do (set VERSION=%%I&set VER=%%J&set DEBUG=%%K)
-if %DEBUG%==1 (
-    echo Debug version you fool
-    goto end
-)
+for /f "usebackq tokens=1,2,3" %%I in (`c:\Progra~1\Python24\python.exe -c "from version import appversion; print '%%4.2f %%d'%%(appversion, round(appversion*100,0))"`) do (set VERSION=%%I&set VER=%%J)
 set RELEASE=1
 set RPM=%TMP%\overlayeditor
 
@@ -18,7 +14,7 @@ set RPM=%TMP%\overlayeditor
 if exist OverlayEditor.app rd /s /q OverlayEditor.app
 if exist "%RPM%" rd /s /q "%RPM%"
 REM >nul: 2>&1
-del /s /q dist  >nul: 2>&1
+if exist dist rd /s /q dist >nul: 2>&1
 REM del /s /q *.bak >nul: 2>&1
 del /s /q *.pyc >nul: 2>&1
 
@@ -28,7 +24,7 @@ del /s /q *.pyc >nul: 2>&1
 @set PREV=Resources/previews
 
 @REM source
-zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% %DATA% %RSRC% %PREV% linux MacOS win32 |findstr -vc:"adding:"
+REM zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% %DATA% %RSRC% %PREV% linux MacOS win32 |findstr -vc:"adding:"
 
 @REM linux
 REM tar -zcf OverlayEditor_%VER%_linux.tar.gz %PY% %DATA% %RSRC% linux win32/DSFTool.exe
@@ -81,20 +77,26 @@ chown -R %USERNAME% "%RPMRT%"
 mkdir OverlayEditor.app\Contents
 for %%I in (%DATA%) do (copy %%I OverlayEditor.app\Contents\ |findstr -v "file(s) copied")
 xcopy /q /e MacOS OverlayEditor.app\Contents\MacOS\|findstr -v "file(s) copied"
+for /r OverlayEditor.app %%I in (CVS) do rd /s /q "%%I" >nul: 2>&1
+for /r OverlayEditor.app %%I in (.cvs*) do del /q "%%I" >nul:
+for /r OverlayEditor.app %%I in (*.bak) do del /q "%%I" >nul:
+for /r OverlayEditor.app %%I in (*.pspimage) do del /q "%%I" >nul:
 for %%I in (%PY%) do (copy %%I OverlayEditor.app\Contents\MacOS\ |findstr -v "file(s) copied")
 mkdir OverlayEditor.app\Contents\Resources
 for %%I in (%RSRC%) do (copy Resources\%%~nxI OverlayEditor.app\Contents\Resources\ |findstr -v "file(s) copied")
 mkdir OverlayEditor.app\Contents\Resources\previews
 for %%I in (%PREV%\*.jpg) do (copy Resources\previews\%%~nxI OverlayEditor.app\Contents\Resources\previews |findstr -v "file(s) copied")
 del  OverlayEditor.app\Contents\MacOS\OverlayEditor.html
-move OverlayEditor.app\Contents\MacOS\Info.plist OverlayEditor.app\Contents\
+sed s/appversion/%VERSION%/ <OverlayEditor.app\Contents\MacOS\Info.plist >OverlayEditor.app\Contents\Info.plist
+del OverlayEditor.app\Contents\MacOS\Info.plist
 move OverlayEditor.app\Contents\MacOS\OverlayEditor.icns OverlayEditor.app\Contents\Resources\
+move OverlayEditor.app\Contents\MacOS\screenshot.jpg OverlayEditor.app\Contents\Resources\
 move /y OverlayEditor.app\Contents\MacOS\*.png OverlayEditor.app\Contents\Resources\ |findstr -vc:".png"
 zip -j OverlayEditor_%VER%_mac.zip MacOS/OverlayEditor.html |findstr -vc:"adding:"
 zip -r OverlayEditor_%VER%_mac.zip OverlayEditor.app |findstr -vc:"adding:"
 
 @REM win32
-win32\setup.py -q py2exe
+"C:\Program Files\Python24\python.exe" -OO win32\setup.py -q py2exe
 REM @set cwd="%CD%"
 REM cd dist
 REM zip -r ..\OverlayEditor_%VER%_win32.zip * |findstr -vc:"adding:"

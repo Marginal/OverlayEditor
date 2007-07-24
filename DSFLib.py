@@ -9,7 +9,7 @@ import types
 
 import wx
 
-from version import appname, appversion, debug
+from version import appname, appversion
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
@@ -471,7 +471,7 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
                         angle=int(float(c[4]))
             h.close()
         except:
-            if debug: print 'Failed to load terrain "%s"' % ter
+            if __debug__: print 'Failed to load terrain "%s"' % ter
         tercache[ter]=(texture, angle, xscale, zscale)
 
     # Make mesh
@@ -615,92 +615,3 @@ def writeDSF(dsfdir, key, objects, polygons):
         elif exists(tilename+'.DSF.BAK'):
             rename(tilename+'.DSF.BAK', tilename+'.DSF')
         raise IOError, (0, err.strip().replace('\n', ', '))
-
-    
-def NEWwriteDSF(dsfdir, key, objects, polygons):
-    if not (objects or polygons): return
-    (south,west)=key
-    tiledir=join(dsfdir, "%+02d0%+03d0" % (int(south/10), int(west/10)))
-    if not isdir(tiledir): mkdir(tiledir)
-    props=('sim/planet\0earth\0'+
-           'sim/overlay\01\0'+
-           'sim/require_object\01/0\0'+
-           'sim/require_facade\01/0\0'+
-           'sim/creation_agent\0%s %4.2f\0' % (appname, appversion))
-    objt=[]
-    objs=[]
-    for obj in objects:
-        name=obj.name+'.obj'
-        if name in objt:
-            idx=objt.index(name)
-        else:
-            idx=len(objt)
-            objt.append(name)
-            objs.append([])
-        objs[idx].append((obj.lat,obj.lon,obj.hdg))
-    objt='\0'.join(objt)+'\0'
-    objt='TJBO'+pack('<I', len(objt)+8)+objt
-
-    poly=[]
-    facs=[]
-    for p in polygons:
-        if p.name.startswith('Exclude:'):
-            for k in Polygon.EXCLUDE_NAME.keys():
-                if Polygon.EXCLUDE_NAME[k]==p.name:
-                    minlat=minlon=maxint
-                    maxlat=maxlon=-maxint
-                    for n in p.nodes:
-                        minlat=min(minlat,n[0])
-                        maxlat=max(maxlat,n[0])
-                        minlon=min(minlon,n[1])
-                        maxlon=max(maxlon,n[1])
-                    props+='%s\0%10.6f/%11.6f/%10.6f/%11.6f\0' % (
-                        k, minlon, minlat, maxlon, maxlat)
-                    break
-            continue
-        name=p.name+'.fac'
-        if name in poly:
-            idx=poly.index(name)
-        else:
-            idx=len(poly)
-            poly.append(name)
-            facs.append([])
-        facs[idx].append((p.lat,p.lon))
-    poly='\0'.join(poly)+'\0'
-    poly='YLOP'+pack('<I', len(poly)+8)+poly
-
-    props+=('sim/west\0%d\0'  %  west +	# last for DSFTool compatibility
-            'sim/east\0%d\0'  % (west+1) +
-            'sim/north\0%d\0' % (south+1) +
-            'sim/south\0%d\0' %  south)
-    props='PORP'+pack('<I', len(props)+8)+props
-    head='DAEH'+pack('<I', len(props)+8)+props
-    
-    defn='TRET\x08\0\0\0'+objt+poly+'WTEN\x08\0\0\0'
-    defn='NFED'+pack('<I', len(defn)+8)+defn
-
-    opool=''
-    oscal=''
-
-    if opool:
-        opool='LOOP'+pack('<I', len(opool)+8)+opool
-        oscal='LACS'+pack('<Iffffff', 32, 65535, west, 360, 0)+oscal
-    if ppool:
-        ppool='LOOP'+pack('<I', len(ppool)+8)+ppool
-        pscal='LACS'+pack('<Iffff', 24)+pscal
-    geod=opool+oscal+ppool+pscal	#+'23OP\x08\0\0\023CS\x08\0\0\0'
-    geod='DOEG'+pack('<I', len(geod)+8)+geod
-    
-    contents='XPLNEDSF\1\0\0\0'+head+defn+geod+cmds
-    contents+=md5(contents).digest()
-
-    tilename=join(tiledir, "%+03d%+04d" % (south,west))
-    if exists(tilename+'.dsf'): 
-        if exists(tilename+'.dsf.bak'): unlink(tilename+'.dsf.bak')
-        rename(tilename+'.dsf', tilename+'.dsf.bak')
-    if exists(tilename+'.DSF'):
-        if exists(tilename+'.DSF.BAK'): unlink(tilename+'.DSF.BAK')
-        rename(tilename+'.DSF', tilename+'.DSF.BAK')
-    h=file(tilename, 'wb')
-    h.write(contents)
-    h.close()
