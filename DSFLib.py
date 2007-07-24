@@ -8,13 +8,11 @@ import types
 
 import wx
 
-from version import appname, appversion, debug
+from clutter import Object, PolygonFactory, Exclude, minres
+from version import appname, appversion
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
-resolution=8*65535
-minres=1.0/resolution
-maxres=1-minres
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
@@ -24,16 +22,9 @@ else:	# Mac
     dsftool=join(curdir,'MacOS','DSFTool')
 
 
-def round2res(x):
-    i=floor(x)
-    return i+round((x-i)*resolution,0)*minres
-
-
 # Takes a DSF path name.
-# Returns (properties, placements, polygons, mesh), where:
-#   properties = [(property, string value)]
-#   placements
-#   polygons
+# Returns (lat, lon, placements, mesh), where:
+#   placements = [Clutter]
 #   mesh = [(texture name, flags, [point], [st])], where
 #     flags=patch flags: 1=hard, 2=overlay
 #     point = [x, y, z]
@@ -56,20 +47,29 @@ def readDSF(path, terrains={}):
     if h.read(4)!='PORP':
         raise IOError, baddsf
     (l,)=unpack('<I', h.read(4))
-    properties=[]
+    placements=[]
     c=h.read(l-9).split('\0')
     h.read(1)
     overlay=0
     for i in range(0, len(c)-1, 2):
         if c[i]=='sim/overlay': overlay=int(c[i+1])
-        elif c[i]=='sim/south': centrelat=int(c[i+1])+0.5
-        elif c[i]=='sim/west': centrelon=int(c[i+1])+0.5
-        properties.append((c[i],c[i+1]))
-    h.seek(headend)
+        elif c[i]=='sim/south': lat=int(c[i+1])
+        elif c[i]=='sim/west': lon=int(c[i+1])
+        elif c[i] in Exclude.NAMES:
+            if ',' in c[i+1]:	# Fix for FS2XPlane 0.99
+                v=[float(x) for x in c[i+1].split(',')]
+            else:
+                v=[float(x) for x in c[i+1].split('/')]
+            placements.append(Exclude(Exclude.NAMES[c[i]], 0,
+                                      [[(v[0],v[1]),(v[2],v[1]),
+                                        (v[2],v[3]),(v[0],v[3])]]))
+    centrelat=lat+0.5
+    centrelon=lon+0.5
     if not overlay and not terrains:
         # Not an Overlay DSF - bail early
         h.close()
-        return (properties, [], [], [])
+        raise IOError (0, "%s is not an overlay." % basename(path))
+    h.seek(headend)
 
     # Definitions Atom
     if h.read(4)!='NFED':
@@ -97,10 +97,6 @@ def readDSF(path, terrains={}):
         else:
             h.seek(l-8, 1)
 
-    polykind=[]
-    for i in range(len(polygons)):
-        polykind.append(polygons[i][-4:].lower())
-    
     # Geodata Atom
     if h.read(4)!='DOEG':
         raise IOError, baddsf
@@ -180,8 +176,6 @@ def readDSF(path, terrains={}):
     near=0
     far=-1
     flags=0	# 1=physical, 2=overlay
-    placements=[]
-    polyplace=[]
     mesh=[]
     curter='terrain_Water'
     curpatch=[]
@@ -242,8 +236,7 @@ def readDSF(path, terrains={}):
                 (d,)=unpack('<H', h.read(2))
                 p=pool[curpool][d]
                 winding.append(tuple(p))
-            polyplace.append(Polygon(polygons[idx], polykind[idx],
-                                     param, [winding]))
+            placements.append(PolygonFactory(polygons[idx], param, [winding]))
             
         elif c==13:	# Polygon Range (DSF2Text uses this one)
             (param,first,last)=unpack('<HHH', h.read(6))
@@ -252,8 +245,7 @@ def readDSF(path, terrains={}):
             for d in range(first, last):
                 p=pool[curpool][d]
                 winding.append(tuple(p))
-            polyplace.append(Polygon(polygons[idx], polykind[idx],
-                                     param, [winding]))
+            placements.append(PolygonFactory(polygons[idx], param, [winding]))
             
         elif c==14:	# Nested Polygon
             (param,n)=unpack('<HB', h.read(3))
@@ -267,8 +259,7 @@ def readDSF(path, terrains={}):
                     winding.append(tuple(p))
                 windings.append(winding)
             if not terrains and n>0 and len(windings[0])>=2:
-                polyplace.append(Polygon(polygons[idx], polykind[idx],
-                                         param, windings))
+                placements.append(PolygonFactory(polygons[idx], param, windings))
                 
         elif c==15:	# Nested Polygon Range (DSF2Text uses this one too)
             (param,n)=unpack('<HB', h.read(3))
@@ -284,8 +275,7 @@ def readDSF(path, terrains={}):
                     p=pool[curpool][d]
                     winding.append(tuple(p))
                 windings.append(winding)
-            polyplace.append(Polygon(polygons[idx], polykind[idx],
-                                     param, windings))
+            placements.append(PolygonFactory(polygons[idx], param, windings))
             
         elif c==16:	# Terrain Patch
             if curpatch:
@@ -375,7 +365,7 @@ def readDSF(path, terrains={}):
         if newmesh: mesh.append(newmesh)
     
     h.close()
-    return (properties, placements, polyplace, mesh)
+    return (lat, lon, placements, mesh)
 
 def meshfan(points):
     tris=[]
@@ -421,7 +411,7 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
                         angle=int(float(c[4]))
             h.close()
         except:
-            if debug: print 'Failed to load terrain "%s"' % ter
+            if __debug__: print 'Failed to load terrain "%s"' % ter
         tercache[ter]=(texture, angle, xscale, zscale)
 
     # Make mesh
@@ -446,6 +436,7 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
                       p[2], (centrelat-p[1])*onedeg])
             t.append([p[5],p[6]])
     else:
+        # skip not hard and no st coords - complicated blending required
         return None
     return (texture,flags,v,t)
 
@@ -473,8 +464,8 @@ def writeDSF(dsfdir, key, objects, polygons):
     h.write('PROPERTY\tsim/creation_agent\t%s %4.2f\n' % (appname, appversion))
     for poly in polygons:
         if poly.kind==Polygon.EXCLUDE:
-            for k in Polygon.EXCLUDE_NAME.keys():
-                if Polygon.EXCLUDE_NAME[k]==poly.name:
+            for k in Exclude.NAMES.keys():
+                if Polygon.NAMES[k]==poly.name:
                     minlat=minlon=maxint
                     maxlat=maxlon=-maxint
                     for n in poly.nodes[0]:

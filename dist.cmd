@@ -1,11 +1,7 @@
 @echo off
 @setlocal
 
-for /f "usebackq tokens=1,2,3" %%I in (`c:\Progra~1\Python24\python.exe -c "from version import appversion, debug; print '%%4.2f %%d %%d'%%(appversion, round(appversion*100,0), debug)"`) do (set VERSION=%%I&set VER=%%J&set DEBUG=%%K)
-if %DEBUG%==1 (
-    echo Debug version you fool
-    goto end
-)
+for /f "usebackq tokens=1,2,3" %%I in (`c:\Progra~1\Python24\python.exe -c "from version import appversion; print '%%4.2f %%d'%%(appversion, round(appversion*100,0))"`) do (set VERSION=%%I&set VER=%%J)
 set RELEASE=1
 set RPM=%TMP%\overlayeditor
 
@@ -24,7 +20,7 @@ del /s /q *.pyc >nul: 2>&1
 
 @set PY=OverlayEditor.py draw.py files.py DSFLib.py MessageBox.py version.py
 @set DATA=OverlayEditor.html
-@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.fac Resources/default.for Resources/default.obj Resources/windsock.obj Resources/windsock.png Resources/exc.png Resources/fac.png Resources/for.png Resources/obj.png Resources/ort.png Resources/pol.png Resources/airport0_000.png Resources/Sea01.png Resources/OverlayEditor.png Resources/screenshot.jpg Resources/800library.txt
+@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.fac Resources/default.for Resources/default.obj Resources/windsock.obj Resources/windsock.png Resources/exc.png Resources/fac.png Resources/for.png Resources/obj.png Resources/ortho.png Resources/pol.png Resources/unknown.png Resources/airport0_000.png Resources/Sea01.png Resources/OverlayEditor.png Resources/screenshot.jpg Resources/800library.txt
 @set PREV=Resources/previews
 
 @REM source
@@ -83,20 +79,24 @@ for %%I in (%DATA%) do (copy %%I OverlayEditor.app\Contents\ |findstr -v "file(s
 xcopy /q /e MacOS OverlayEditor.app\Contents\MacOS\|findstr -v "file(s) copied"
 for /r OverlayEditor.app %%I in (CVS) do rd /s /q "%%I" >nul: 2>&1
 for /r OverlayEditor.app %%I in (.cvs*) do del /q "%%I" >nul:
+for /r OverlayEditor.app %%I in (*.bak) do del /q "%%I" >nul:
+for /r OverlayEditor.app %%I in (*.pspimage) do del /q "%%I" >nul:
 for %%I in (%PY%) do (copy %%I OverlayEditor.app\Contents\MacOS\ |findstr -v "file(s) copied")
 mkdir OverlayEditor.app\Contents\Resources
 for %%I in (%RSRC%) do (copy Resources\%%~nxI OverlayEditor.app\Contents\Resources\ |findstr -v "file(s) copied")
 mkdir OverlayEditor.app\Contents\Resources\previews
 for %%I in (%PREV%\*.jpg) do (copy Resources\previews\%%~nxI OverlayEditor.app\Contents\Resources\previews |findstr -v "file(s) copied")
 del  OverlayEditor.app\Contents\MacOS\OverlayEditor.html
-move OverlayEditor.app\Contents\MacOS\Info.plist OverlayEditor.app\Contents\
+sed s/appversion/%VERSION%/ <OverlayEditor.app\Contents\MacOS\Info.plist >OverlayEditor.app\Contents\Info.plist
+del OverlayEditor.app\Contents\MacOS\Info.plist
 move OverlayEditor.app\Contents\MacOS\OverlayEditor.icns OverlayEditor.app\Contents\Resources\
+move OverlayEditor.app\Contents\MacOS\screenshot.jpg OverlayEditor.app\Contents\Resources\
 move /y OverlayEditor.app\Contents\MacOS\*.png OverlayEditor.app\Contents\Resources\ |findstr -vc:".png"
 zip -j OverlayEditor_%VER%_mac.zip MacOS/OverlayEditor.html |findstr -vc:"adding:"
 zip -r OverlayEditor_%VER%_mac.zip OverlayEditor.app |findstr -vc:"adding:"
 
 @REM win32
-win32\setup.py -q py2exe
+"C:\Program Files\Python24\python.exe" -OO win32\setup.py -q py2exe
 REM @set cwd="%CD%"
 REM cd dist
 REM zip -r ..\OverlayEditor_%VER%_win32.zip * |findstr -vc:"adding:"

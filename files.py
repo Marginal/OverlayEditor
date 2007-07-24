@@ -5,18 +5,31 @@ try:
     from OpenGL.GL.ARB.texture_non_power_of_two import glInitTextureNonPowerOfTwoARB
 except:	# not in 2.0.0.44
     def glInitTextureNonPowerOfTwoARB(): return False
+
+from OpenGL.GLU import *
+try:
+    # apparently older PyOpenGL version didn't define gluTessVertex
+    gluTessVertex
+except NameError:
+    from OpenGL import GLU
+    gluTessVertex = GLU._gluTessVertex
+
 import codecs
 from glob import glob
-from math import cos, log, pi, fabs
-from os import getenv, listdir, mkdir
-from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
+from math import cos, log, pi
+from os import listdir, mkdir
+from os.path import abspath, basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
 import sys	# for version
 from sys import platform, maxint
 import wx
 
+#from Numeric import array
+
+from clutterdef import KnownDefs, SkipDefs
 from DSFLib import readDSF
-from version import appname, appversion, debug
+from prefs import Prefs
+from version import appname, appversion
 
 #if platform!='win32':
 #    import codecs
@@ -36,87 +49,18 @@ def sortfolded(seq):
     seq.sort(lambda x,y: cmp(x.lower(), y.lower()))
 
 
-class Prefs:
-    TERRAIN=1
-    ELEVATION=2
-    
-    def __init__(self):
-        self.filename=None
-        self.xplane=None
-        self.package=None
-        self.options=Prefs.TERRAIN
-        self.packageprops={}
-
-        if platform=='win32':
-            from _winreg import OpenKey, QueryValueEx, HKEY_CURRENT_USER, REG_SZ, REG_EXPAND_SZ
-            try:
-                handle=OpenKey(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders\\')
-                (v,t)=QueryValueEx(handle, 'AppData')
-                handle.Close()
-                if t==REG_EXPAND_SZ:
-                    dirs=v.split('\\')
-                    for i in range(len(dirs)):
-                        if dirs[i][0]==dirs[i][-1]=='%':
-                            dirs[i]=getenv(dirs[i][1:-1],dirs[i])
-                        v='\\'.join(dirs)
-                if t in [REG_SZ,REG_EXPAND_SZ] and isdir(v):
-                    self.filename=join(v,'marginal.org',appname)
-                    if not isdir(dirname(self.filename)):
-                        mkdir(dirname(self.filename))
-            except:
-                pass
-        if not self.filename:
-            self.filename=join(expanduser('~'), '.%s' % appname.lower())
-        self.read()
-
-    def read(self):
-        try:
-            handle=codecs.open(self.filename, 'rU', 'utf-8')
-            self.xplane=handle.readline().strip()
-            self.package=handle.readline().strip()
-            if self.package=='None': self.package=None
-            for line in handle:
-                if '=' in line:
-                    pkg=line[:line.index('=')]
-                    if pkg=='*options':
-                        self.options=int(line[9:])
-                    else:
-                        line=line[len(pkg)+2:]
-                        f=line[:line.index('"')]
-                        c=line[len(f)+1:].split()
-                        self.packageprops[pkg]=(f, float(c[0]), float(c[1]), int(c[2]), float(c[3]), float(c[4]), int(c[5]))
-            handle.close()
-        except:
-            pass
-
-    def write(self):
-        try:
-            handle=codecs.open(self.filename, 'wt', 'utf-8')
-            handle.write('%s\n%s\n*options=%d\n' % (
-                self.xplane, self.package, self.options))
-            for pkg, (f,lat,lon,hdg,w,h,o) in self.packageprops.iteritems():
-                handle.write('%s="%s" %10.6f %11.6f %3d %8.2f %8.2f %2d\n' % (
-                    pkg, f,lat,lon,hdg,w,h,o))
-            handle.close()
-        except:
-            pass
-
-
 def readApt(filename):
     airports={}	# (name, [lat,lon], [(lat,lon,hdg,length,width,stop,stop)]) by code
     nav=[]	# (type,lat,lon,hdg)
     firstcode=None
-    if platform=='win32':
-        h=file(filename,'rU')
-    else:
-        h=codecs.open(filename, 'rU', 'latin1')
+    h=codecs.open(filename, 'rU', 'latin1')
     if not h.readline().strip() in ['A','I']:
         raise IOError
     while True:	# NYEXPRO has a blank line here
         c=h.readline().split()
         if c: break
     ver=c[0]
-    if not ver in ['600','715','810','850']:
+    if not ver in ['600','703','715','810','850']:
         raise IOError
     ver=int(ver)
     code=name=loc=None
@@ -147,7 +91,7 @@ def readApt(filename):
             if not loc: loc=[lat,lon]
             stop=c[7].split('.')
             if len(stop)<2: stop.append(0)
-            if len(c)<11: surface=1
+            if len(c)<11: surface=int(c[9])/1000000	# v6
             else: surface=int(c[10])
             run.append((lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]),
                         f2m*float(stop[0]),f2m*float(stop[1]),surface))
@@ -224,7 +168,7 @@ def readLib(filename, objects, terrain):
         builtinhack=True
     else:
         builtinhack=False
-    try:
+    if 1:#XXXtry:
         h=file(filename, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
@@ -236,8 +180,9 @@ def readLib(filename, objects, terrain):
             c=line.split()
             if not c: continue
             if c[0] in ['EXPORT', 'EXPORT_RATIO', 'EXPORT_EXTEND']:
+                # ignore EXPORT_BACKUP
                 if c[0]=='EXPORT_RATIO': c.pop(1)
-                if len(c)<3 or c[1][-4:].lower() not in ['.obj', '.fac', '.for', '.pol', '.ter']: continue
+                if len(c)<3 or c[1][-4:].lower() in SkipDefs: continue
                 c.pop(0)
                 name=c[0]
                 name=name.replace(':','/')
@@ -265,13 +210,12 @@ def readLib(filename, objects, terrain):
                     if name in terrain: continue
                     terrain[name]=obj
                 else:
-                    name=name
                     if lib in objects:
                         if name in objects[lib]: continue
                     else:
                         objects[lib]={}
                     objects[lib][name]=obj
-    except:
+    else:#except:
         if h: h.close()
             
 
@@ -296,7 +240,7 @@ class TexCache:
                 glDeleteTextures(self.texs.values())
             self.texs={}
 
-    def get(self, path, isbaseterrain=False, fixsize=False):
+    def get(self, path, downsample=False, wrap=True, fixsize=False):
         if not path: return 0
         if path in self.texs:
             return self.texs[path]
@@ -313,7 +257,7 @@ class TexCache:
                 if size!=[image.size[0],image.size[1]]:
                     image=image.resize((size[0], size[1]), BILINEAR)
 
-            if isbaseterrain:
+            if downsample:
                 if image.mode!='RGB': image=image.convert('RGB')
                 image=image.resize((image.size[0]/4,image.size[1]/4), BILINEAR)
                 data = image.tostring("raw", 'RGB', 0, -1)
@@ -334,35 +278,31 @@ class TexCache:
                 format=GL_RGB
 
             glBindTexture(GL_TEXTURE_2D, id)
-            if fixsize:
+            if not wrap:
                 glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,self.clampmode)
                 glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,self.clampmode)
+            #else:
+            #    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT)
+            #    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glTexImage2D(GL_TEXTURE_2D, 0, format, image.size[0], image.size[1], 0, format, GL_UNSIGNED_BYTE, data)
             self.texs[path]=id
             return id
         except IOError, e:
-            if debug: print 'Failed to load texture "%s" - %s' % (path, e)
+            if __debug__: print 'Failed to load texture "%s" - %s' % (path, e)
         except:
-            if debug: print 'Failed to load texture "%s"' % path
+            if __debug__: print 'Failed to load texture "%s"' % path
         return self.blank
 
 
 class VertexCache:
 
     def __init__(self):
-        # indices = (base, #culled, #nocull, texno, maxpoly)
-        self.obj={}		# name -> physical obj/fac/etc
-        self.geo={}		# physical obj -> geo
-        self.idx={}		# physical obj -> indices
-        self.objcache={}	# name -> indices
-        self.poly={}		# physical fac -> facade
-
-        # indices = (base, #culled, texno)
         self.ter={}		# name -> physical ter
         self.mesh={}		# tile -> [patches] where patch=(texture,f,v,t)
         self.meshdata={}	# tile->[(bbox, [(points, plane coeffs)])]
+        self.currenttile=None
         self.meshcache=[]	# [indices] of current tile
         self.lasttri=None	# take advantage of locality of reference
 
@@ -372,27 +312,30 @@ class VertexCache:
         self.valid=False
         self.dsfdirs=None	# [custom, default]
 
+        # General purpose tessellator
+        self.tess=gluNewTess()
+        gluTessNormal(self.tess, 0, -1, 0)
+        gluTessCallback(self.tess, GLU_TESS_EDGE_FLAG, self.tessedge)	# no strips
+
+    def tessedge(self, flag):
+        pass	# dummy
+
+    def reset(self, terrain, dsfdirs):
+        # invalidate geometry and textures
+        self.ter=terrain
+        self.dsfdirs=dsfdirs
+        self.flush()
+        self.texcache.flush()
+    
     def flush(self):
         # invalidate array indices
-        self.idx={}
-        self.objcache={}
+        self.currenttile=None
         self.meshcache=[]
         self.varray=[]
         self.tarray=[]
         self.valid=False
         self.lasttri=None
 
-    def flushObjs(self, objects, terrain, dsfdirs):
-        # invalidate object geometry and textures
-        self.obj=objects
-        self.ter=terrain
-        self.dsfdirs=dsfdirs
-        self.geo={}
-        self.idx={}
-        self.poly={}
-        self.flush()
-        self.texcache.flush()
-    
     def realize(self, context):
         # need to call this before drawing
         if not self.valid:
@@ -404,339 +347,13 @@ class VertexCache:
                 glTexCoordPointerf([[0,0],[0,0]])
             self.valid=True
 
-    def get(self, name):
-        # object better be in cache or we go bang
-        if name in self.objcache:
-            return self.objcache[name]
-        elif name.startswith('Exclude:'):
-            return ExcludeDef()
-        else:
-            return self.poly[self.obj[name]]
-
-    def add(self, name, path):
-        # Import a new object
-        self.obj[name]=path
-        
-    def load(self, name, usefallback=False):
-        # read object or facade into cache, but don't update OpenGL arrays
-        # returns False if error reading object or facade
-        retval=True
-        
-        if name in self.objcache:
-            # Already loaded (or fallbacked)
-            return True
-        
-        if not name in self.obj:
-            # Physical object is missing
-            if name.startswith('Exclude:') or name[-4:].lower() not in ['.obj', '.fac', '.for', '.pol']:
-                return True	# Don't need a physical object
-            if name[0]=='*':	# this application's resource
-                self.obj[name]=join('Resources', name[1:])
-            else:
-                if debug: print 'Failed to find object "%s"' % name
-                if usefallback:
-                    self.obj[name]=join('Resources','default'+name[-4:].lower())
-                    retval=False	# Load default obj
-                else:
-                    return False
-        
-        path=self.obj[name]
-        if path in self.idx:
-            # Object is already in the array under another name
-            self.objcache[name]=self.idx[path]
-            return retval
-        if path in self.poly:
-            # Facade already loaded
-            return retval
-
-        if path in self.geo:
-            # Object geometry is loaded, but not in the array
-            (culled, nocull, tculled, tnocull, texture, maxpoly, maxsize)=self.geo[path]
-            base=len(self.varray)
-            self.varray.extend(culled)
-            self.varray.extend(nocull)
-            self.tarray.extend(tculled)
-            self.tarray.extend(tnocull)
-            texno=self.texcache.get(texture)
-            self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly, maxsize)
-            self.valid=False	# new geometry -> need to update OpenGL
-            return retval
-            
-        # Physical poly has not yet been read
-        if path[-4:].lower()=='.fac':
-            try:
-                self.poly[path]=FacadeDef(path, self.texcache)
-                return retval
-            except:
-                if debug: print 'Failed to load facade "%s"' % path
-                if usefallback:
-                    self.poly[path]=FacadeDef(join('Resources','default.fac'),
-                                              self.texcache)
-                return False
-        elif path[-4:].lower()=='.for':
-            self.poly[path]=ForestDef(path, self.texcache)
-            return retval
-        elif path[-4:].lower()=='.pol':
-            self.poly[path]=DrapedDef(path, self.texcache)
-            return retval
-
-        # Physical object has not yet been read
-        try:
-            h=None
-            culled=[]
-            nocull=[]
-            current=culled
-            tculled=[]
-            tnocull=[]
-            tcurrent=tculled
-            texture=None
-            maxsize=0.1	# mustn't be 0
-            maxpoly=0
-            co=sep+'custom objects'+sep
-            if co in path.lower():
-                texpath=path[:path.lower().index(co)]
-                for f in listdir(texpath):
-                    if f.lower()=='custom object textures':
-                        texpath=join(texpath,f)
-                        break
-            else:
-                texpath=dirname(path)
-            h=file(path, 'rU')
-            if not h.readline().strip()[0] in ['I','A']:
-                raise IOError
-            version=h.readline().split()[0]
-            if not version in ['2', '700','800']:
-                raise IOError
-            if version!='2' and not h.readline().split()[0]=='OBJ':
-                raise IOError
-            if version in ['2','700']:
-                while True:
-                    line=h.readline()
-                    if not line: raise IOError
-                    tex=line.strip()
-                    if tex:
-                        if '//' in tex: tex=tex[:tex.index('//')].strip()
-                        tex=tex.replace(':', sep)
-                        tex=tex.replace('/', sep)
-                        break
-                tex=abspath(join(texpath,tex))
-                for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
-                    if exists(tex+ext):
-                        texture=tex+ext
-                        break
-                else:
-                    if debug: print 'Failed to find texture "%s"' % tex
-            if version=='2':
-                while True:
-                    line=h.readline()
-                    if not line: break
-                    c=line.split('//')[0].split()
-                    if not c: continue
-                    if c[0]=='99':
-                        break
-                    if c[0]=='1':
-                        h.readline()
-                    elif c[0]=='2':
-                        h.readline()
-                        h.readline()
-                    elif c[0] in ['6','7']:	# smoke
-                        for i in range(4): h.readline()
-                    elif c[0]=='3':
-                        uv=[float(c[1]), float(c[2]), float(c[3]), float(c[4])]
-                        v=[]
-                        for i in range(3):
-                            c=h.readline().split()
-                            v.append([float(c[0]), float(c[1]), float(c[2])])
-                            maxsize=max(maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
-                        current.append(v[0])
-                        tcurrent.append([uv[0],uv[3]])
-                        current.append(v[1])
-                        tcurrent.append([uv[1],uv[2]])
-                        current.append(v[2])
-                        tcurrent.append([uv[1],uv[3]])
-                    elif int(c[0]) < 0:	# strip
-                        count=-int(c[0])
-                        seq=[]
-                        for i in range(0,count*2-2,2):
-                            seq.extend([i,i+1,i+2,i+3,i+2,i+1])
-                        v=[]
-                        t=[]
-                        for i in range(count):
-                            c=h.readline().split()
-                            v.append([float(c[0]), float(c[1]), float(c[2])])
-                            maxsize=max(maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
-                            v.append([float(c[3]), float(c[4]), float(c[5])])
-                            maxsize=max(maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
-                            t.append([float(c[6]), float(c[8])])
-                            t.append([float(c[7]), float(c[9])])
-                        for i in seq:
-                            current.append(v[i])
-                            tcurrent.append(t[i])
-                    else:	# quads: type 4, 5, 6, 7, 8
-                        uv=[float(c[1]), float(c[2]), float(c[3]), float(c[4])]
-                        v=[]
-                        for i in range(4):
-                            c=h.readline().split()
-                            v.append([float(c[0]), float(c[1]), float(c[2])])
-                            maxsize=max(maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
-                        current.append(v[0])
-                        tcurrent.append([uv[1],uv[3]])
-                        current.append(v[1])
-                        tcurrent.append([uv[1],uv[2]])
-                        current.append(v[2])
-                        tcurrent.append([uv[0],uv[2]])
-                        current.append(v[0])
-                        tcurrent.append([uv[1],uv[3]])
-                        current.append(v[2])
-                        tcurrent.append([uv[0],uv[2]])
-                        current.append(v[3])
-                        tcurrent.append([uv[0],uv[3]])
-            elif version=='700':
-                while True:
-                    line=h.readline()
-                    if not line: break
-                    c=line.split('//')[0].split()
-                    if not c: continue
-                    if c[0]=='end':
-                        break
-                    elif c[0]=='ATTR_LOD':
-                        if float(c[1])!=0: break
-                    elif c[0]=='ATTR_poly_os':
-                        maxpoly=max(maxpoly,int(float(c[1])))
-                    elif c[0]=='ATTR_cull':
-                        current=culled
-                        tcurrent=tculled
-                    elif c[0]=='ATTR_no_cull':
-                        current=nocull
-                        tcurrent=tnocull
-                    elif c[0] in ['tri', 'quad', 'quad_hard', 'polygon', 
-                                  'quad_strip', 'tri_strip', 'tri_fan',
-                                  'quad_movie']:
-                        count=0
-                        seq=[]
-                        if c[0]=='tri':
-                            count=3
-                            seq=[0,1,2]
-                        elif c[0]=='polygon':
-                            count=int(c[1])
-                            for i in range(1,count-1):
-                                seq.extend([0,i,i+1])
-                        elif c[0]=='quad_strip':
-                            count=int(c[1])
-                            for i in range(0,count-2,2):
-                                seq.extend([i,i+1,i+2,i+3,i+2,i+1])
-                        elif c[0]=='tri_strip':
-                            count=int(c[1])
-                            for i in range(0,count-2):
-                                if i&1:
-                                    seq.extend([i+2,i+1,i])
-                                else:
-                                    seq.extend([i,i+1,i+2])
-                        elif c[0]=='tri_fan':
-                            count=int(c[1])
-                            for i in range(1,count-1):
-                                seq.extend([0,i,i+1])
-                        else:	# quad
-                            count=4
-                            seq=[0,1,2,0,2,3]
-                        v=[]
-                        t=[]
-                        i=0
-                        while i<count:
-                            c=h.readline().split()
-                            v.append([float(c[0]), float(c[1]), float(c[2])])
-                            maxsize=max(maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
-                            t.append([float(c[3]), float(c[4])])
-                            if len(c)>5:	# Two per line
-                                v.append([float(c[5]), float(c[6]), float(c[7])])
-                                t.append([float(c[8]), float(c[9])])
-                                i+=2
-                            else:
-                                i+=1
-                        for i in seq:
-                            current.append(v[i])
-                            tcurrent.append(t[i])
-            elif version=='800':
-                vt=[]
-                idx=[]
-                anim=[[0,0,0]]
-                while True:
-                    line=h.readline()
-                    if not line: break
-                    c=line.split('#')[0].split()
-                    if not c: continue
-                    if c[0]=='TEXTURE':
-                        if len(c)>1:
-                            tex=line[7:].strip()
-                            if '//' in tex: tex=tex[:tex.index('//')].strip()
-                            tex=tex.replace(':', sep)
-                            tex=tex.replace('/', sep)
-                            tex=abspath(join(texpath,tex))
-                            for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
-                                if exists(tex+ext):
-                                    texture=tex+ext
-                                    break
-                            else:
-                                if debug: print 'Failed to find texture "%s"' % tex
-                    elif c[0]=='VT':
-                        vt.append([float(c[1]), float(c[2]), float(c[3]),
-                                   float(c[7]), float(c[8])])
-                        maxsize=max(maxsize, fabs(vt[-1][0]), 0.55*vt[-1][1], fabs(vt[-1][2]))	# ad-hoc
-                    elif c[0]=='IDX':
-                        idx.append(int(c[1]))
-                    elif c[0]=='IDX10':
-                        idx.extend([int(c[1]), int(c[2]), int(c[3]), int(c[4]), int(c[5]), int(c[6]), int(c[7]), int(c[8]), int(c[9]), int(c[10])])
-                    elif c[0]=='ATTR_LOD':
-                        if float(c[1])!=0: break
-                    elif c[0]=='ATTR_poly_os':
-                        maxpoly=max(maxpoly,int(float(c[1])))
-                    elif c[0]=='ATTR_cull':
-                        current=culled
-                        tcurrent=tculled
-                    elif c[0]=='ATTR_no_cull':
-                        current=nocull
-                        tcurrent=tnocull
-                    elif c[0]=='ANIM_begin':
-                        anim.append([anim[-1][0], anim[-1][1], anim[-1][2]])
-                    elif c[0]=='ANIM_end':
-                        anim.pop()
-                    elif c[0]=='ANIM_trans':
-                        anim[-1]=[anim[-1][0]+float(c[1]),
-                                  anim[-1][1]+float(c[2]),
-                                  anim[-1][2]+float(c[3])]
-                    elif c[0]=='TRIS':
-                        for i in range(int(c[1]), int(c[1])+int(c[2])):
-                            v=vt[idx[i]]
-                            current.append([anim[-1][0]+v[0],
-                                            anim[-1][1]+v[1],
-                                            anim[-1][2]+v[2]])
-                            tcurrent.append([v[3], v[4]])
-            h.close()
-            if not (len(culled)+len(nocull)):
-                if usefallback!=0:
-                    # show empty objects as placeholders otherwise can't edit
-                    self.load('*default.obj')
-                    self.objcache[name]=self.idx[path]=self.get('*default.obj')
-                else:
-                    return False
-            else:
-                self.geo[path]=(culled, nocull, tculled, tnocull, texture, maxpoly, maxsize)
-                base=len(self.varray)
-                self.varray.extend(culled)
-                self.varray.extend(nocull)
-                self.tarray.extend(tculled)
-                self.tarray.extend(tnocull)
-                texno=self.texcache.get(texture)
-                self.objcache[name]=self.idx[path]=(base, len(culled), len(nocull), texno, maxpoly, maxsize)
-                self.valid=False	# new geometry -> need to update OpenGL
-        except:
-            if debug: print 'Failed to load object "%s"' % path
-            if usefallback:
-                self.load('*default.obj')
-                self.objcache[name]=self.idx[path]=self.get('*default.obj')
-            return False
-        return retval
-
+    def allocate(self, vdata, tdata):
+        # allocate geometry data into cache, but don't update OpenGL arrays
+        base=len(self.varray)
+        self.varray.extend(vdata)
+        self.tarray.extend(tdata)
+        self.valid=False	# new geometry -> need to update OpenGL
+        return base
 
     def loadMesh(self, tile, options):
         key=(tile[0],tile[1],options&Prefs.TERRAIN)
@@ -772,8 +389,9 @@ class VertexCache:
                              [[0, 0], [100, 100], [0, 100],
                               [0, 0], [100, 0], [100, 100]])]
 
+    # return mesh data sorted by tex for drawing
     def getMesh(self, tile, options):
-        if self.meshcache:
+        if tile==self.currenttile:
             return self.meshcache
         # merge patches that use same texture
         bytex={}
@@ -793,12 +411,14 @@ class VertexCache:
             base=len(self.varray)
             self.varray.extend(v)
             self.tarray.extend(t)
-            texno=self.texcache.get(texture, flags&1)
+            texno=self.texcache.get(texture, flags&1, flags&1)
             self.meshcache.append((base, len(v), texno, flags/2))
         self.valid=False	# new geometry -> need to update OpenGL
+        self.currenttile=tile
         return self.meshcache
 
 
+    # return mesh data by patch
     def getMeshdata(self, tile, options):
         key=(tile[0],tile[1],options&Prefs.ELEVATION)
         if key in self.meshdata:
@@ -827,6 +447,19 @@ class VertexCache:
         #print len(meshdata), "patches,", tot, "tris,", tot/len(meshdata), "av"
         self.meshdata[key]=meshdata
         return meshdata
+            
+
+    # tessellate
+    def tessellate(self, tile, options):
+        # XXX assert(options&Prefs.ELEVATION)	# don't call me if no elevaton
+        for (texture, flags, v, t) in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
+            if flags>1: continue	# not interested in overlays
+            for i in range(0,len(v),3):
+                gluTessBeginContour(self.tess)
+                gluTessVertex(self.tess, [v[i][0],0,v[i][2]], (v[i],None))
+                gluTessVertex(self.tess, [v[i+1][0],0,v[i+1][2]],(v[i+1],None))
+                gluTessVertex(self.tess, [v[i+2][0],0,v[i+2][2]],(v[i+2],None))
+                gluTessEndContour(self.tess)
             
 
     def height(self, tile, options, x, z, likely=None):
@@ -911,11 +544,14 @@ def importObj(pkgpath, path):
             if o.lower()=='objects':
                 newpath=join(pkgpath, o)
                 for t in listdir(pkgpath):
-                    if t.lower()=='textures': break
+                    # only if "textures" folder exists
+                    if t.lower()=='textures':
+                        newtexpath=join(pkgpath, t)
+                        newtexprefix='../'+t+'/'
+                        break
                 else:
-                    t='textures'
-                newtexpath=join(pkgpath, t)
-                newtexprefix='../'+t+'/'
+                    newtexpath=newpath
+                    newtexprefix=''
                 break
         else:
             newpath=newtexpath=pkgpath

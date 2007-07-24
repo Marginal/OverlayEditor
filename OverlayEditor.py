@@ -13,11 +13,10 @@ else:
     try:
         import wx
     except:
-        import Tkinter
-        import tkMessageBox
+        import Tkinter, tkMessageBox
         Tkinter.Tk().withdraw()	# make and suppress top-level window
         if platform=='darwin':
-            tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\nwxPython 2.5.3 (py%s) or later." % version[:3], icon="question", type="ok")
+            tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\nwxPython2.5.3-py%s or later." % version[:3], icon="question", type="ok")
         else:	# linux
             tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\npython wxgtk2.5.3 or later.", icon="error", type="ok")
         exit(1)
@@ -27,24 +26,27 @@ else:
         import Tkinter
         import tkMessageBox
         Tkinter.Tk().withdraw()	# make and suppress top-level window
-        tkMessageBox._show("Error", "PyOpenGL is not installed.\nThis application requires\npyopengl2 or later.", icon="error", type="ok")
+        tkMessageBox._show("Error", "PyOpenGL is not installed.\nThis application requires\nPyOpenGL2 or later.", icon="error", type="ok")
         exit(1)
-
 from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
 from OpenGL.GL import *
 
-from draw import MyGL
-from files import importObj, Prefs, readApt, readNav,readLib, sortfolded
-from DSFLib import readDSF, writeDSF, Polygon, round2res, minres
-from MessageBox import myMessageBox
-from version import appname, appversion, debug
-
-    
 if not 'startfile' in dir(os):
     import types
     # Causes problems under py2exe & not needed
     from urllib import quote
     import webbrowser
+
+from clutter import round2res, minres, Exclude	# for loading exclusions into palette
+from clutterdef import KnownDefs
+from draw import MyGL
+from files import importObj, readApt, readNav,readLib, sortfolded
+from palette import Palette
+from DSFLib import readDSF, writeDSF
+from MessageBox import myMessageBox, AboutBox
+from prefs import Prefs
+from version import appname, appversion
+
 
 # Path validation
 mypath=dirname(abspath(argv[0]))
@@ -72,6 +74,8 @@ global prefs
 
 
 if platform=='darwin':
+    from Carbon import Menu
+    from EasyDialogs import AskFolder
     # Hack: wxMac 2.5 requires the following to get shadows to look OK:
     # ... wx.ALIGN_CENTER_VERTICAL|wx.TOP|wx.BOTTOM, 2)
     pad=2
@@ -90,7 +94,7 @@ class myCreateStdDialogButtonSizer(wx.BoxSizer):
         no=style&wx.CANCEL
         
         # adjust order of buttons per Windows or Mac conventions
-        if platform=='win32':
+        if platform!='darwin':
             if ok: buttonok=wx.Button(parent, wx.ID_OK)
             if no: buttonno=wx.Button(parent, wx.ID_CANCEL)
             self.Add([0,0], 1)		# push following buttons to right
@@ -104,8 +108,7 @@ class myCreateStdDialogButtonSizer(wx.BoxSizer):
             if no: self.Add(buttonno, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, pad)
             if ok and no: self.Add([6,0], 0)	# cosmetic
             if ok: self.Add(buttonok, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, pad)
-            if platform=='darwin':
-                self.Add([0,0], 1)	# centre
+            self.Add([0,0], 1)	# centre
         if ok: buttonok.SetDefault()
 
 
@@ -170,19 +173,19 @@ class myListBox(wx.VListBox):
 
     def OnKeyDown(self, event):
         # wxMac 2.5 doesn't handle cursor movement
-        if event.m_keyCode==wx.WXK_UP and self.GetSelection()>0:
+        if event.m_keyCode in [wx.WXK_UP, wx.WXK_NUMPAD_UP] and self.GetSelection()>0:
             self.SetSelection(self.GetSelection()-1)
-        elif event.m_keyCode==wx.WXK_DOWN and self.GetSelection()<len(self.choices)-1:
+        elif event.m_keyCode in [wx.WXK_DOWN, wx.WXK_NUMPAD_DOWN] and self.GetSelection()<len(self.choices)-1:
             self.SetSelection(self.GetSelection()+1)
-        elif event.m_keyCode==wx.WXK_HOME:
+        elif event.m_keyCode in [wx.WXK_HOME, wx.WXK_NUMPAD_HOME]:
             self.SetSelection(0)
-        elif event.m_keyCode==wx.WXK_END:
+        elif event.m_keyCode in [wx.WXK_END, wx.WXK_NUMPAD_END]:
             self.SetSelection(len(self.choices)-1)
-        elif event.m_keyCode in [wx.WXK_PAGEUP, wx.WXK_PRIOR]:
+        elif event.m_keyCode in [wx.WXK_PAGEUP, wx.WXK_PRIOR, wx.WXK_NUMPAD_PAGEUP, wx.WXK_NUMPAD_PRIOR]:
             self.ScrollPages(-1)
             self.SetSelection(max(0,
                                   self.GetSelection()-self.GetClientSize().y/self.height))
-        elif event.m_keyCode in [wx.WXK_PAGEDOWN, wx.WXK_NEXT]:
+        elif event.m_keyCode in [wx.WXK_PAGEDOWN, wx.WXK_NEXT, wx.WXK_NUMPAD_PAGEDOWN, wx.WXK_NUMPAD_NEXT]:
             self.ScrollPages(1)
             self.SetSelection(min(len(self.choices)-1,
                                   self.GetSelection()+self.GetClientSize().y/self.height))
@@ -294,318 +297,6 @@ class GotoDialog(wx.Dialog):
         self.FindWindowById(wx.ID_OK).Enable()
 
 
-class PaletteListBox(wx.VListBox):
-
-    def __init__(self, parent, id, style, objects, imgs):
-        if platform=='win32': style|=wx.ALWAYS_SHOW_SB	# fails on GTK
-        wx.VListBox.__init__(self, parent, id, style=style)
-        self.font=wx.SystemSettings_GetFont(wx.SYS_DEFAULT_GUI_FONT)
-        if platform!='win32':	# Default is too big on Mac & Linux
-            self.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
-        if platform.startswith('linux'):
-            self.font.SetPointSize(8)
-        self.choices=objects.keys()
-        sortfolded(self.choices)
-        self.imgs=imgs
-        self.actfg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHTTEXT)
-        self.actbg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHT)
-        self.inafg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
-        self.inabg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENU)
-        (x,self.height)=self.GetTextExtent("Mq")
-        self.height=max(13,self.height)
-        self.indent=4
-        self.SetItemCount(len(self.choices))
-
-    def OnMeasureItem(self, n):
-        return self.height
-
-    def OnDrawItem(self, dc, rect, n):
-        if platform!='darwin':
-            dc.SetFont(self.font)	# wtf?
-        if self.GetSelection()==n:
-            dc.SetTextForeground(self.actfg)
-        else:
-            dc.SetTextForeground(self.inafg)
-        if self.choices[n].startswith('Exclude:'):
-            imgno=2
-        elif self.choices[n][-4:].lower()=='.obj':
-            imgno=0
-        else:
-            imgno=1
-        self.imgs.Draw(imgno, dc, rect.x+self.indent, rect.y,
-                       wx.IMAGELIST_DRAW_TRANSPARENT, True)
-        if self.choices[n].startswith('Exclude:'):
-            dc.DrawText(self.choices[n], rect.x+12+2*self.indent, rect.y)
-        else:
-            dc.DrawText(self.choices[n][:-4], rect.x+12+2*self.indent, rect.y)
-
-class PaletteChoicebook(wx.Choicebook):
-    
-    def __init__(self, parent, frame):
-        self.frame=frame
-        
-        wx.Choicebook.__init__(self, parent, wx.ID_ANY, style=wx.CHB_TOP)
-        #if platform=='darwin':	# Default is too big on Mac
-        #    self.SetWindowVariant(wx.WINDOW_VARIANT_MINI)
-        self.last=(-1,None)
-        #self.choices=[]
-        self.lists=[]
-        self.imgs=wx.ImageList(12,12,True,0)
-        self.imgs.Add(wx.Bitmap("Resources/obj.png", wx.BITMAP_TYPE_PNG))
-        self.imgs.Add(wx.Bitmap("Resources/fac.png", wx.BITMAP_TYPE_PNG))
-        self.imgs.Add(wx.Bitmap("Resources/exc.png", wx.BITMAP_TYPE_PNG))
-        wx.EVT_KEY_DOWN(self, self.OnKeyDown)	# appears to do nowt on Windows
-        wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
-        if 'GetChoiceCtrl' in dir(self):	# not available on Mac
-            if platform=='win32':
-                self.GetChoiceCtrl().SetWindowVariant(wx.WINDOW_VARIANT_LARGE)
-            wx.EVT_KEY_DOWN(self.GetChoiceCtrl(), self.OnKeyDown)
-            wx.EVT_MOUSEWHEEL(self.GetChoiceCtrl(), self.OnMouseWheel)
-
-    def OnKeyDown(self, event):
-        # Override & manually propagate
-        self.frame.OnKeyDown(event)
-        event.Skip(False)
-
-    def OnMouseWheel(self, event):
-        # Override & manually propagate
-        self.frame.OnMouseWheel(event)
-        event.Skip(False)
-
-    def OnChoice(self, event):
-        #print "choice"
-        l=event.GetEventObject()
-        self.frame.palette.set(l.choices[l.GetSelection()])
-        self.frame.canvas.clearsel()
-        self.frame.statusbar.SetStatusText("", 2)
-        self.frame.toolbar.EnableTool(wx.ID_DELETE, False)
-        event.Skip()
-
-    def flush(self):
-        if len(self.lists): self.SetSelection(0)	# reduce flicker
-        for i in range(len(self.lists)-1,-1,-1):
-            self.DeletePage(i)
-        self.lists=[]
-            
-    def load(self, tabname, objects):
-        #print "load", tabname
-        l=PaletteListBox(self, -1, wx.LB_SINGLE|wx.VSCROLL, objects, self.imgs)
-        self.lists.append(l)
-        self.AddPage(l, tabname)
-        wx.EVT_LISTBOX(self, l.GetId(), self.OnChoice)
-        wx.EVT_KEY_DOWN(l, self.OnKeyDown)
-        wx.EVT_MOUSEWHEEL(l, self.OnMouseWheel)
-    
-    def add(self, name, path):
-        #print "cbadd", name
-        # Add to objects tab - assumes that this is first tab
-        l=self.lists[0]
-        for i in range(len(l.choices)):
-            if l.choices[i].lower()>name.lower(): break
-        else:
-            i=len(l.choices)
-        l.choices.insert(i, name)
-        l.SetItemCount(len(l.choices))
-        l.Refresh()
-        self.set(name)
-        self.frame.canvas.clearsel()
-        self.frame.statusbar.SetStatusText("", 2)
-        self.frame.toolbar.EnableTool(wx.ID_DELETE, False)
-
-    def get(self):
-        for l in self.lists:
-            if l.GetSelection()!=-1:
-                #print "get", l.choices[l.GetSelection()]
-                return l.choices[l.GetSelection()]
-        #print "get None"
-        return None
-
-    def set(self, key):
-        # Called from parent Palette or from OnChoice
-        #print "cbset", key
-        ontab=-1
-        for tab in range(len(self.lists)):
-            l=self.lists[tab]
-            if key and key in l.choices:
-                ontab=tab
-            else:
-                l.SetSelection(-1)
-        if ontab!=-1:
-            # Setting causes EVT_NOTEBOOK_PAGE_*
-            if self.GetSelection()!=ontab: self.SetSelection(ontab)
-            l=self.lists[ontab]
-            l.SetSelection(l.choices.index(key))
-            if prefs.package:
-                self.frame.toolbar.EnableTool(wx.ID_ADD, True)
-        else:	# no key, or listed in DSF but not present!
-            self.frame.toolbar.EnableTool(wx.ID_ADD, False)
-
-class Palette(wx.SplitterWindow):
-    
-    def __init__(self, parent, frame):
-        self.frame=frame
-        self.lastkey=None
-        self.previewkey=self.previewbmp=self.previewimg=self.previewsize=None
-        self.sashsize=4
-        wx.SplitterWindow.__init__(self, parent, wx.ID_ANY,
-                                   style=wx.SP_3DSASH|wx.SP_NOBORDER|wx.SP_LIVE_UPDATE)
-        self.SetWindowStyle(self.GetWindowStyle() & ~wx.TAB_TRAVERSAL)	# wx.TAB_TRAVERSAL is set behind our backs - this fucks up cursor keys
-        self.cb=PaletteChoicebook(self, frame)
-        self.preview=wx.Panel(self, wx.ID_ANY, style=wx.FULL_REPAINT_ON_RESIZE)
-        self.SetMinimumPaneSize(1)
-        self.SplitHorizontally(self.cb, self.preview)
-        self.lastheight=self.GetSize().y
-        wx.EVT_SIZE(self, self.OnSize)
-        wx.EVT_KEY_DOWN(self.preview, self.OnKeyDown)
-        wx.EVT_MOUSEWHEEL(self.preview, self.OnMouseWheel)
-        wx.EVT_SPLITTER_SASH_POS_CHANGING(self, self.GetId(), self.OnSashPositionChanging)
-        wx.EVT_PAINT(self.preview, self.OnPaint)
-
-    def glInit(self):
-        self.sashsize=self.GetClientSize()[1]-(self.cb.GetClientSize()[1]+self.preview.GetClientSize()[1])
-        self.SetSashPosition(self.GetClientSize()[1]-self.preview.GetClientSize()[0]-self.sashsize, True)
-        
-    def OnSize(self, event):
-        # emulate sash gravity = 1.0
-        delta=event.GetSize().y-self.lastheight
-        pos=self.GetSashPosition()+delta
-        if pos<100: pos=100
-        self.SetSashPosition(pos, False)
-        self.lastheight=event.GetSize().y
-        event.Skip()
-
-    def OnSashPositionChanging(self, event):
-        if event.GetSashPosition()<100:
-            # One-way minimum pane size
-            event.SetSashPosition(100)
-        elif event.GetEventObject().GetClientSize()[1]-event.GetSashPosition()-self.sashsize<16:
-            # Spring shut
-            event.SetSashPosition(event.GetEventObject().GetClientSize()[1]-self.sashsize)
-
-    def OnKeyDown(self, event):
-        # Override & manually propagate
-        self.frame.OnKeyDown(event)
-        event.Skip(False)
-
-    def OnMouseWheel(self, event):
-        # Override & manually propagate
-        self.frame.OnMouseWheel(event)
-        event.Skip(False)
-
-    def flush(self):
-        self.cb.flush()
-        self.lastkey=None
-        self.preview.Refresh()
-            
-    def load(self, tabname, objects):
-        self.cb.load(tabname, objects)
-    
-    def add(self, name, path):
-        #print "add", name
-        # Add to objects tab - assumes that this is first tab
-        self.lastkey=name
-        self.cb.add(name, path)
-        self.preview.Refresh()
-
-    def get(self):
-        return self.cb.get()
-    
-    def set(self, key):
-        #print "set", key, self.lastkey
-        if key!=self.lastkey:
-            self.cb.set(key)
-            self.lastkey=key
-            self.preview.Refresh()
-
-    def OnPaint(self, event):
-        #print "preview", self.lastkey
-        dc = wx.PaintDC(self.preview)
-        if dc.GetSize().y<16 or not self.lastkey:
-            if self.previewkey:
-                self.previewbmp=None
-                self.preview.SetBackgroundColour(wx.NullColour)
-                self.preview.ClearBackground()
-            self.previewkey=None
-            return
-
-        if self.previewkey!=self.lastkey:
-            # New
-            self.previewkey=self.lastkey
-            self.previewimg=self.previewbmp=None
-
-            if not self.previewkey:
-                self.preview.SetBackgroundColour(wx.NullColour)
-                self.preview.ClearBackground()
-                return
-            
-            # Look for built-in screenshot
-            newfile=self.previewkey.replace('/', '_')[:-3]+'jpg'
-            if newfile[0]=='_': newfile=newfile[1:]
-            newfile=join('Resources', 'previews', newfile)
-            if exists(newfile):
-                try:
-                    self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
-                except:
-                    pass
-            else:
-                # Look for library screenshot - object.jpg or screenshot.jpg
-                if not self.previewkey in self.frame.canvas.vertexcache.obj:
-                    self.preview.SetBackgroundColour(wx.NullColour)
-                    self.preview.ClearBackground()
-                    return	# unknown object - can't do anything
-                newfile=self.frame.canvas.vertexcache.obj[self.previewkey][:-3]+'jpg'
-                if exists(newfile):
-                    try:
-                        self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
-                    except:
-                        pass
-                else:
-                    newfile=join(dirname(newfile), 'screenshot.jpg')
-                    if exists(newfile):
-                        try:
-                            self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
-                        except:
-                            pass
-
-            if not self.previewimg and self.previewkey.endswith('.obj'):
-                # Display object data
-                self.preview.SetBackgroundColour(wx.Colour(77,128,153))
-                self.preview.ClearBackground()
-                self.previewimg=self.frame.canvas.snapshot(self.previewkey)
-                
-            elif self.previewimg:
-                self.preview.SetBackgroundColour(wx.Colour(self.previewimg.GetRed(0,0), self.previewimg.GetGreen(0,0), self.previewimg.GetBlue(0,0)))
-                self.preview.ClearBackground()
-                
-            if not self.previewimg:	# Nowt
-                self.preview.SetBackgroundColour(wx.NullColour)
-                self.preview.ClearBackground()
-                
-        if self.previewimg:
-            # rescale if necessary
-            if (dc.GetSize().x >= self.previewimg.GetWidth() and
-                dc.GetSize().y >= self.previewimg.GetHeight()):
-                scale=None
-                newsize=(self.previewimg.GetWidth(),
-                         self.previewimg.GetHeight())
-            else:
-                scale=min(float(dc.GetSize().x)/self.previewimg.GetWidth(),
-                          float(dc.GetSize().y)/self.previewimg.GetHeight())
-                newsize=(int(scale*self.previewimg.GetWidth()),
-                         int(scale*self.previewimg.GetHeight()))
-            if not self.previewbmp or newsize!=self.previewsize:
-                self.previewsize=newsize
-                self.preview.SetBackgroundColour(wx.Colour(self.previewimg.GetRed(0,0), self.previewimg.GetGreen(0,0), self.previewimg.GetBlue(0,0)))
-                self.preview.ClearBackground()
-                if scale:
-                    self.previewbmp=wx.BitmapFromImage(self.previewimg.Scale(newsize[0], newsize[1]))
-                else:
-                    self.previewbmp=wx.BitmapFromImage(self.previewimg)
-            dc.DrawBitmap(self.previewbmp,
-                          (dc.GetSize().x-self.previewsize[0])/2,
-                          (dc.GetSize().y-self.previewsize[1])/2, True)
-
-
 class PreferencesDialog(wx.Dialog):
 
     def __init__(self, parent, id, title):
@@ -649,13 +340,19 @@ class PreferencesDialog(wx.Dialog):
         self.SetSizerAndFit(box0)
 
     def OnBrowse(self, event):
-        while 1:
-            dlg=wx.DirDialog(self, "Please locate the X-Plane folder:", self.path.GetValue())
-            if dlg.ShowModal()!=wx.ID_OK:
+        while True:
+            if platform=='darwin':
+                path=AskFolder('Please locate your X-Plane folder', defaultLocation=self.path.GetValue(), wanted=unicode)
+                if not path: return wx.ID_CANCEL
+            else:
+                style=wx.DEFAULT_DIALOG_STYLE|wx.RESIZE_BORDER
+                if 'DD_DIR_MUST_EXIST' in dir(wx): style|=wx.DD_DIR_MUST_EXIST
+                dlg=wx.DirDialog(self, 'Please locate your X-Plane folder', self.path.GetValue(), style)
+                if dlg.ShowModal()!=wx.ID_OK:
+                    dlg.Destroy()
+                    return wx.ID_CANCEL
+                path=dlg.GetPath()
                 dlg.Destroy()
-                return wx.ID_CANCEL
-            path=dlg.GetPath()
-            dlg.Destroy()
             if glob(join(path, gcustom)) and glob(join(path, gmainaptdat)):
                 self.path.SetValue(path.strip())
                 self.FindWindowById(wx.ID_OK).Enable()
@@ -821,12 +518,12 @@ class BackgroundDialog(wx.Dialog):
             return
         cursors=[ord('W'), ord('D'), ord('S'), ord('A')]
         if event.m_keyCode in cursors:
-            if event.m_shiftDown:
+            if event.m_controlDown:
                 xinc=zinc=0.000001
             else:
                 zinc=self.parent.dist/10000000
                 if zinc<0.00001: zinc=0.00001
-                if event.CmdDown(): zinc*=10
+                if event.m_shiftDown: zinc*=10
                 xinc=zinc/cos(d2r*self.lat.GetValue())
             hr=d2r*((self.parent.hdg + [0,90,180,270][cursors.index(event.m_keyCode)])%360)
             try:
@@ -838,18 +535,18 @@ class BackgroundDialog(wx.Dialog):
             except:
                 pass
         elif event.m_keyCode==ord('Q'):
-            if event.CmdDown():
+            if event.m_shiftDown:
                 self.hdg.SetValue((self.hdg.GetValue()-10)%360)
             else:
                 self.hdg.SetValue((self.hdg.GetValue()-1)%360)
         elif event.m_keyCode==ord('E'):
-            if event.CmdDown():
+            if event.m_shiftDown:
                 self.hdg.SetValue((self.hdg.GetValue()+10)%360)
             else:
                 self.hdg.SetValue((self.hdg.GetValue()+1)%360)
-        elif event.m_keyCode==ord('C'):
+        elif event.m_keyCode==ord('C') or (platform=='darwin' and event.m_keyCode==ord('J') and event.m_metaDown):
             self.parent.loc=[self.lat.GetValue(),self.lon.GetValue()]
-            if event.CmdDown():
+            if event.m_shiftDown:
                 self.parent.hdg=self.hdg.GetValue()
             self.parent.canvas.goto(self.parent.loc, self.parent.hdg, self.parent.elev, self.parent.dist)
         else:
@@ -958,12 +655,61 @@ class MainWindow(wx.Frame):
         
         if platform=='win32':
             self.SetIcon(wx.Icon('win32/%s.ico' % appname, wx.BITMAP_TYPE_ICO))
+            self.menubar=None
         elif platform.lower().startswith('linux'):	# PNG supported by GTK
             self.SetIcon(wx.Icon('Resources/%s.png' % appname,
                                  wx.BITMAP_TYPE_PNG))
+            self.menubar=None
         elif platform=='darwin':
-            pass	# icon pulled from Resources via Info.plist
-        
+            # icon pulled from Resources via Info.plist. Need minimal menu
+            # http://developer.apple.com/documentation/UserExperience/Conceptual/OSXHIGuidelines/XHIGMenus/chapter_16_section_4.html
+            self.menubar = wx.MenuBar()
+            filemenu = wx.Menu()
+            filemenu.Append(wx.ID_NEW, u'New\u2026\tCtrl-N')
+            wx.EVT_MENU(self, wx.ID_NEW, self.OnNew)
+            filemenu.Append(wx.ID_OPEN, u'Open\u2026\tCtrl-O')
+            wx.EVT_MENU(self, wx.ID_OPEN, self.OnOpen)
+            filemenu.Append(wx.ID_SAVE, u'Save\tCtrl-S')
+            wx.EVT_MENU(self, wx.ID_SAVE, self.OnSave)
+            filemenu.AppendSeparator()
+            filemenu.Append(wx.ID_PASTE, u'Import\u2026')
+            wx.EVT_MENU(self, wx.ID_PASTE, self.OnImport)
+            # ID_EXIT moved to application menu
+            filemenu.Append(wx.ID_EXIT, u'Quit %s\tCtrl-Q' % appname)
+            wx.EVT_MENU(self, wx.ID_EXIT, self.OnClose)	# generates commnd evt
+            self.menubar.Append(filemenu, 'File')
+
+            editmenu = wx.Menu()
+            editmenu.Append(wx.ID_UNDO, u'Undo\tCtrl-Z')
+            wx.EVT_MENU(self, wx.ID_UNDO, self.OnUndo)
+            editmenu.AppendSeparator()
+            editmenu.Append(wx.ID_ADD, u'Add\tEnter')
+            wx.EVT_MENU(self, wx.ID_ADD, self.OnAdd)
+            editmenu.Append(wx.ID_DELETE, u'Delete')
+            wx.EVT_MENU(self, wx.ID_DELETE, self.OnDelete)
+            # ID_PREFERENCES moved to application menu
+            editmenu.Append(wx.ID_PREFERENCES, u'Preferences\tCtrl-,')
+            wx.EVT_MENU(self, wx.ID_PREFERENCES, self.OnPrefs)
+            self.menubar.Append(editmenu, u'Edit')
+
+            viewmenu = wx.Menu()
+            viewmenu.Append(wx.ID_PREVIEW, u'Background\u2026')
+            wx.EVT_MENU(self, wx.ID_PREVIEW, self.OnBackground)
+            viewmenu.Append(wx.ID_REFRESH, u'Reload')
+            wx.EVT_MENU(self, wx.ID_REFRESH, self.OnReload)
+            viewmenu.Append(wx.ID_FORWARD, u'Go To\u2026')
+            wx.EVT_MENU(self, wx.ID_FORWARD, self.OnGoto)
+            self.menubar.Append(viewmenu, u'View')
+
+            helpmenu = wx.Menu()
+            helpmenu.Append(wx.ID_HELP, u'%s Help\tCtrl-?'  % appname)
+            wx.EVT_MENU(self, wx.ID_HELP, self.OnHelp)
+            # ID_ABOUT moved to application menu
+            helpmenu.Append(wx.ID_ABOUT, u'About %s'  % appname)
+            wx.EVT_MENU(self, wx.ID_ABOUT, self.OnAbout)
+            self.menubar.Append(helpmenu, u'&Help')
+            self.SetMenuBar(self.menubar)
+
         self.toolbar=self.CreateToolBar(wx.TB_HORIZONTAL|wx.STATIC_BORDER|wx.TB_FLAT|wx.TB_NODIVIDER)
         # Note colours>~(245,245,245) get replaced by transparent
         newbitmap=wx.Bitmap("Resources/new.png", wx.BITMAP_TYPE_PNG)
@@ -987,6 +733,12 @@ class MainWindow(wx.Frame):
                                   wx.NullBitmap, 0,
                                   'Save scenery package')
         wx.EVT_TOOL(self.toolbar, wx.ID_SAVE, self.OnSave)
+        self.toolbar.AddLabelTool(wx.ID_PASTE, 'Import',
+                                  wx.Bitmap("Resources/import.png",
+                                            wx.BITMAP_TYPE_PNG),
+                                  wx.NullBitmap, 0,
+                                  'Import objects from another package')
+        wx.EVT_TOOL(self.toolbar, wx.ID_PASTE, self.OnImport)
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_ADD, 'Add',
                                   wx.Bitmap("Resources/add.png",
@@ -998,7 +750,7 @@ class MainWindow(wx.Frame):
                                   wx.Bitmap("Resources/delete.png",
                                             wx.BITMAP_TYPE_PNG),
                                   wx.NullBitmap, 0,
-                                  'Delete selected object')
+                                  'Delete selected object(s)')
         wx.EVT_TOOL(self.toolbar, wx.ID_DELETE, self.OnDelete)
         self.toolbar.AddLabelTool(wx.ID_UNDO, 'Undo',
                                   wx.Bitmap("Resources/undo.png",
@@ -1019,12 +771,6 @@ class MainWindow(wx.Frame):
                                   wx.NullBitmap, 0,
                                   "Reload package's objects, textures and airports")
         wx.EVT_TOOL(self.toolbar, wx.ID_REFRESH, self.OnReload)
-        self.toolbar.AddLabelTool(wx.ID_PASTE, 'Import',
-                                  wx.Bitmap("Resources/import.png",
-                                            wx.BITMAP_TYPE_PNG),
-                                  wx.NullBitmap, 0,
-                                  'Import objects from another package')
-        wx.EVT_TOOL(self.toolbar, wx.ID_PASTE, self.OnImport)
         self.toolbar.AddLabelTool(wx.ID_FORWARD, 'Go To',
                                   wx.Bitmap("Resources/goto.png",
                                             wx.BITMAP_TYPE_PNG),
@@ -1032,12 +778,12 @@ class MainWindow(wx.Frame):
                                   'Go to airport')
         wx.EVT_TOOL(self.toolbar, wx.ID_FORWARD, self.OnGoto)
         self.toolbar.AddSeparator()
-        self.toolbar.AddLabelTool(wx.ID_SETUP, 'Preferences',
+        self.toolbar.AddLabelTool(wx.ID_PREFERENCES, 'Preferences',
                                   wx.Bitmap("Resources/prefs.png",
                                             wx.BITMAP_TYPE_PNG),
                                   wx.NullBitmap, 0,
                                   'Preferences')
-        wx.EVT_TOOL(self.toolbar, wx.ID_SETUP, self.OnPrefs)
+        wx.EVT_TOOL(self.toolbar, wx.ID_PREFERENCES, self.OnPrefs)
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_HELP, 'Help',
                                   wx.Bitmap("Resources/help.png",
@@ -1054,6 +800,14 @@ class MainWindow(wx.Frame):
         self.toolbar.EnableTool(wx.ID_PREVIEW, False)
         self.toolbar.EnableTool(wx.ID_REFRESH, False)
         self.toolbar.EnableTool(wx.ID_PASTE, False)
+        if self.menubar:
+            self.menubar.Enable(wx.ID_SAVE, False)
+            self.menubar.Enable(wx.ID_ADD, False)
+            self.menubar.Enable(wx.ID_DELETE, False)
+            self.menubar.Enable(wx.ID_UNDO, False)
+            self.menubar.Enable(wx.ID_PREVIEW, False)
+            self.menubar.Enable(wx.ID_REFRESH, False)
+            self.menubar.Enable(wx.ID_PASTE, False)
 
         # Hack: Use zero-sized first field to hide toolbar button long help
         self.statusbar=self.CreateStatusBar(3, wx.ST_SIZEGRIP)
@@ -1078,6 +832,14 @@ class MainWindow(wx.Frame):
         wx.EVT_SPLITTER_SASH_POS_CHANGING(self.splitter, self.splitter.GetId(), self.OnSashPositionChanging)
 
         self.Show(True)
+
+        if platform=='darwin':
+            # Hack! Change name on application menu. wxMac always uses id 1.
+            try:
+                Menu.GetMenuHandle(1).SetMenuTitleWithCFString(appname)
+            except:
+                pass
+
         self.splitter.SetSashPosition(self.canvas.GetClientSize()[1], True)
         self.canvas.glInit()	# Must be after show
         self.palette.glInit()	# Must be after show
@@ -1100,9 +862,11 @@ class MainWindow(wx.Frame):
             else:
                 self.palette.set(names[0])
             self.toolbar.EnableTool(wx.ID_DELETE, True)
+            if self.menubar: self.menubar.Enable(wx.ID_DELETE, True)
         else:
             self.palette.set(None)
             self.toolbar.EnableTool(wx.ID_DELETE, False)
+            if self.menubar: self.menubar.Enable(wx.ID_DELETE, False)
         self.statusbar.SetStatusText(string, 2)
 
     def OnSize(self, event):
@@ -1122,100 +886,110 @@ class MainWindow(wx.Frame):
     def OnKeyDown(self, event):
         changed=False
         cursors=[wx.WXK_UP, wx.WXK_RIGHT, wx.WXK_DOWN, wx.WXK_LEFT,
-                 ord('W'), ord('D'), ord('S'), ord('A')]
-        if event.m_keyCode in cursors:
-            if event.m_shiftDown:
+                 wx.WXK_NUMPAD_UP, wx.WXK_NUMPAD_RIGHT, wx.WXK_NUMPAD_DOWN, wx.WXK_NUMPAD_LEFT,
+                 ord('W'), ord('D'), ord('S'), ord('A'),
+                 wx.WXK_NUMPAD8, wx.WXK_NUMPAD6, wx.WXK_NUMPAD2, wx.WXK_NUMPAD4]
+
+        if platform=='darwin' and event.m_keyCode==ord('A') and event.m_metaDown:
+            # Mac Cmd special
+            self.canvas.allsel(event.m_shiftDown)
+        elif event.m_keyCode in cursors:
+            if event.m_controlDown:
                 xinc=zinc=minres
             else:
                 zinc=self.dist/10000000
                 if zinc<minres: zinc=minres
-                if event.CmdDown(): zinc*=10
+                if event.m_shiftDown: zinc*=10
                 xinc=zinc/cos(d2r*self.loc[0])
-            hr=d2r*((self.hdg + [0,90,180,270,0,90,180,270][cursors.index(event.m_keyCode)])%360)
-            if cursors.index(event.m_keyCode)<4:
+            hr=d2r*((self.hdg + [0,90,180,270][cursors.index(event.m_keyCode)%4])%360)
+            if cursors.index(event.m_keyCode)<8:
                 self.loc=[round2res(self.loc[0]+zinc*cos(hr)),
                           round2res(self.loc[1]+xinc*sin(hr))]
             else:
                 changed=self.canvas.movesel(round2res(zinc*cos(hr)),
                                             round2res(xinc*sin(hr)))
-        elif event.m_keyCode==ord('C'):
+        elif event.m_keyCode in [ord('C'), wx.WXK_NUMPAD5]:
             (names,string,lat,lon,hdg)=self.canvas.getsel()
             if lat==None: return
             self.loc=[round2res(lat),round2res(lon)]
-            if hdg!=None and event.CmdDown():
+            if hdg!=None and event.m_shiftDown:
                 self.hdg=hdg
-        elif event.m_keyCode==ord('Q'):
-            if event.CmdDown():
+        elif event.m_keyCode in [ord('Q'), wx.WXK_NUMPAD7]:
+            if event.m_shiftDown:
                 changed=self.canvas.movesel(0, 0, -5)
             else:
                 changed=self.canvas.movesel(0, 0, -1)
-        elif event.m_keyCode==ord('E'):
-            if event.CmdDown():
+        elif event.m_keyCode in [ord('E'), wx.WXK_NUMPAD1]:
+            if event.m_shiftDown:
                 changed=self.canvas.movesel(0, 0, 5)
             else:
                 changed=self.canvas.movesel(0, 0, 1)
-        elif event.m_keyCode==ord('R'):
-            if event.CmdDown():
+        elif event.m_keyCode in [ord('R'), wx.WXK_MULTIPLY, wx.WXK_NUMPAD_MULTIPLY, wx.WXK_NUMPAD9]:
+            if event.m_shiftDown:
                 changed=self.canvas.movesel(0, 0, 0, 5)
             else:
                 changed=self.canvas.movesel(0, 0, 0, 1)
-        elif event.m_keyCode==ord('F'):
-            if event.CmdDown():
+        elif event.m_keyCode in [ord('F'), wx.WXK_DIVIDE, wx.WXK_NUMPAD_DIVIDE, wx.WXK_NUMPAD3]:
+            if event.m_shiftDown:
                 changed=self.canvas.movesel(0, 0, 0, -5)
             else:
                 changed=self.canvas.movesel(0, 0, 0, -1)
-        elif event.m_keyCode==wx.WXK_END:
-            if event.CmdDown():
-                self.hdg=(self.hdg-5)%360
-            else:
-                self.hdg=(self.hdg-1)%360
-        elif event.m_keyCode==wx.WXK_HOME:
-            if event.CmdDown():
+        elif event.m_keyCode in [wx.WXK_HOME, wx.WXK_NUMPAD_HOME]:
+            if event.m_shiftDown:
                 self.hdg=(self.hdg+5)%360
             else:
                 self.hdg=(self.hdg+1)%360
-        elif event.m_keyCode in [ord('+'), ord('='), ord('5')]:	# +
-            if event.CmdDown():
+        elif event.m_keyCode in [wx.WXK_END, wx.WXK_NUMPAD_END]:
+            if event.m_shiftDown:
+                self.hdg=(self.hdg-5)%360
+            else:
+                self.hdg=(self.hdg-1)%360
+        elif event.m_keyCode in [ord('+'), ord('='), wx.WXK_ADD, wx.WXK_NUMPAD_ADD]:
+            if event.m_shiftDown:
                 self.dist/=2
             else:
                 self.dist/=1.4142
             if self.dist<1.0: self.dist=1.0
-        elif event.m_keyCode==45:	# -
-            if event.CmdDown():
+        elif event.m_keyCode in [ord('-'), wx.WXK_NUMPAD_SUBTRACT]:
+            if event.m_shiftDown:
                 self.dist*=2
             else:
                 self.dist*=1.4142
             if self.dist>maxzoom: self.dist=maxzoom
-        elif event.m_keyCode in [wx.WXK_PAGEDOWN, wx.WXK_NEXT]:
-            if event.CmdDown():
-                self.elev-=5
-            else:
-                self.elev-=1
-            if self.elev<2: self.elev=2	# not 1 cos clipping
-        elif event.m_keyCode in [wx.WXK_PAGEUP, wx.WXK_PRIOR]:
-            if event.CmdDown():
+        elif event.m_keyCode in [wx.WXK_PAGEUP, wx.WXK_PRIOR, wx.WXK_NUMPAD_PAGEUP, wx.WXK_NUMPAD_PRIOR]:
+            if event.m_shiftDown:
                 self.elev+=5
             else:
                 self.elev+=1
             if self.elev>90: self.elev=90
-        elif event.m_keyCode==wx.WXK_INSERT:
+        elif event.m_keyCode in [wx.WXK_PAGEDOWN, wx.WXK_NEXT, wx.WXK_NUMPAD_PAGEDOWN, wx.WXK_NUMPAD_NEXT]:
+            if event.m_shiftDown:
+                self.elev-=5
+            else:
+                self.elev-=1
+            if self.elev<2: self.elev=2	# not 1 cos clipping
+        elif event.m_keyCode in [wx.WXK_INSERT, wx.WXK_RETURN, wx.WXK_NUMPAD_INSERT, wx.WXK_NUMPAD_ENTER]:
             name=self.palette.get()
             if prefs.package and name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg):
                 changed=True
-        elif event.m_keyCode==wx.WXK_DELETE:
+        elif event.m_keyCode in [wx.WXK_DELETE, wx.WXK_BACK, wx.WXK_NUMPAD_DELETE]: # wx.WXK_NUMPAD_DECIMAL]:
             changed=self.canvas.delsel()
         elif event.m_keyCode==wx.WXK_SPACE:
-            self.canvas.allsel(event.CmdDown())
-        elif event.m_keyCode==ord('N'):
+            self.canvas.allsel(event.m_controlDown)
+        elif event.m_keyCode==ord('N') or (platform=='darwin' and event.m_keyCode==ord('J') and event.m_metaDown):
             name=self.palette.get()
             if name:
-                loc=self.canvas.nextsel(name, event.CmdDown())
+                loc=self.canvas.nextsel(name, event.m_controlDown)
                 if loc: self.loc=loc
-        elif event.m_keyCode==ord('Z') and (event.CmdDown()):
+        elif event.m_keyCode==ord('Z') and event.CmdDown():
             if prefs.package:
                 if not self.canvas.undo():
                     self.toolbar.EnableTool(wx.ID_UNDO, False)
+                    if self.menubar: self.menubar.Enable(wx.ID_UNDO, False)
+        elif event.m_keyCode==wx.WXK_F1 and platform!='darwin':
+            self.OnHelp(event)
         else:
+            if __debug__: print "Unknown key", event.m_keyCode
             event.Skip(True)
             return
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
@@ -1224,17 +998,20 @@ class MainWindow(wx.Frame):
         if changed:
             self.toolbar.EnableTool(wx.ID_SAVE, True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_SAVE, True)
+                self.menubar.Enable(wx.ID_UNDO, True)
         event.Skip(True)
     
     def OnMouseWheel(self, event):
         if event.m_wheelRotation>0:
-            if event.CmdDown():
+            if event.m_shiftDown:
                 self.dist/=2
             else:
                 self.dist/=1.4142
             if self.dist<1.0: self.dist=1.0
         elif event.m_wheelRotation<0:
-            if event.CmdDown():
+            if event.m_shiftDown:
                 self.dist*=2
             else:
                 self.dist*=1.4142
@@ -1264,8 +1041,12 @@ class MainWindow(wx.Frame):
                         break
                 else:
                     self.toolbar.EnableTool(wx.ID_SAVE, False)
-                    self.toolbar.EnableTool(wx.ID_ADD, False)
+                    self.toolbar.EnableTool(wx.ID_ADD,  False)
                     self.toolbar.EnableTool(wx.ID_UNDO, False)
+                    if self.menubar:
+                        self.menubar.Enable(wx.ID_SAVE, False)
+                        self.menubar.Enable(wx.ID_ADD,  False)
+                        self.menubar.Enable(wx.ID_UNDO, False)
                     mkdir(join(base,v))
                     mkdir(join(base,v,'Earth nav data'))
                     prefs.package=v
@@ -1308,8 +1089,12 @@ class MainWindow(wx.Frame):
         dlg.Destroy()
         if r==wx.ID_OK:
             self.toolbar.EnableTool(wx.ID_SAVE, False)
-            self.toolbar.EnableTool(wx.ID_ADD, False)
+            self.toolbar.EnableTool(wx.ID_ADD,  False)
             self.toolbar.EnableTool(wx.ID_UNDO, False)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_SAVE, False)
+                self.menubar.Enable(wx.ID_ADD,  False)
+                self.menubar.Enable(wx.ID_UNDO, False)
             self.loc=None
             self.hdg=0
             if platform=='darwin':
@@ -1352,24 +1137,32 @@ class MainWindow(wx.Frame):
                              wx.ICON_ERROR|wx.OK, None)
                 return
         self.toolbar.EnableTool(wx.ID_SAVE, False)
+        if self.menubar: self.menubar.Enable(wx.ID_SAVE, False)
         
     def OnAdd(self, event):
         # Assumes that only one object selected
         if self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg):
             self.toolbar.EnableTool(wx.ID_SAVE, True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_SAVE, True)
+                self.menubar.Enable(wx.ID_UNDO, True)
 
     def OnDelete(self, event):
         if self.canvas.delsel():
             self.toolbar.EnableTool(wx.ID_SAVE, True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_SAVE, True)
+                self.menubar.Enable(wx.ID_UNDO, True)
 
     def OnUndo(self, event):
         if not self.canvas.undo():
             self.toolbar.EnableTool(wx.ID_UNDO, False)
+            if self.menubar: self.menubar.Enable(wx.ID_UNDO, False)
 
     def OnBackground(self, event):
-        #self.canvas.clearsel()
+        self.canvas.clearsel()
         self.bkgd=BackgroundDialog(self, wx.ID_ANY, "Background image")
         self.bkgd.ShowModal()
         #self.bkgd.Destroy()	# Destroys itself
@@ -1378,6 +1171,7 @@ class MainWindow(wx.Frame):
         
     # Load or reload current package
     def OnReload(self, event):
+        # if event!=None this is a reload
         progress=wx.ProgressDialog('Loading', '', 5, self, wx.PD_APP_MODAL)
         self.palette.flush()
         pkgnavdata=None
@@ -1386,63 +1180,46 @@ class MainWindow(wx.Frame):
             if glob(join(pkgdir, gnavdata)):
                 pkgnavdata=glob(join(pkgdir, gnavdata))[0]
         else:
+            pkgdir=None
             self.toolbar.EnableTool(wx.ID_PREVIEW, False)
             self.toolbar.EnableTool(wx.ID_REFRESH, False)
-            self.toolbar.EnableTool(wx.ID_PASTE, False)
+            self.toolbar.EnableTool(wx.ID_PASTE,   False)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_PREVIEW, False)
+                self.menubar.Enable(wx.ID_REFRESH, False)
+                self.menubar.Enable(wx.ID_PASTE,   False)
         progress.Update(0, 'Global nav data')
-        if not self.airports:	# Default apt.dat
+        if False:# XXX not self.airports:	# Default apt.dat
             (self.airports,self.nav,foo)=readApt(glob(join(prefs.xplane, gmainaptdat))[0])
             self.nav.extend(readNav(glob(join(prefs.xplane,gmainnavdat))[0]))
         progress.Update(1, 'Overlay DSFs')
         if not event:
             # Load, not reload
             placements={}
-            polygons={}
             if pkgnavdata:
-                try:
+                if 1:#XXXtry:
                     dsfs=glob(join(pkgnavdata, '[+-][0-9]0[+-][01][0-9]0', '[+-][0-9][0-9][+-][01][0-9][0-9].[dD][sS][fF]'))
                     if not dsfs:
                         if glob(join(pkgnavdata, '[+-][0-9]0[+-][01][0-9]0', '[+-][0-9][0-9][+-][01][0-9][0-9].[eE][nN][vV]')): raise IOError, (0, 'This package uses v7 "ENV" files')
                     for f in dsfs:
-                        (props, o, p, foo)=readDSF(join(pkgnavdata,f))
-                        isoverlay=False
-                        for (kind, val) in props:
-                            if kind=='sim/south': lat=int(val)
-                            elif kind=='sim/west': lon=int(val)
-                            elif kind=='sim/overlay' and int(val):
-                                isoverlay=True
-                            elif kind in Polygon.EXCLUDE_NAME:
-                                # Convert exclusions to polygons and put first
-                                if ',' in val:	# Fix for FS2XPlane 0.99
-                                    c=[float(i) for i in val.split(',')]
-                                else:
-                                    c=[float(i) for i in val.split('/')]
-                                p.insert(0,
-                                         Polygon(Polygon.EXCLUDE_NAME[kind],
-                                                 Polygon.EXCLUDE, 0,
-                                                 [[(c[0],c[1]),(c[2],c[1]),
-                                                   (c[2],c[3]),(c[0],c[3])]]))
-                        if not isoverlay: raise IOError (0, "%s is not an overlay." % basename(f))
+                        (lat, lon, p, foo)=readDSF(f)	#join(pkgnavdata,f)
                         tile=(lat,lon)
-                        placements[tile]=o
-                        polygons[tile]=p
-                except IOError, e:	# Bad DSF - restore to unloaded state
+                        placements[tile]=p
+                elif 0:#except IOError, e:	# Bad DSF - restore to unloaded state
                     myMessageBox(e.strerror, "Can't edit this package.",
                                  wx.ICON_ERROR|wx.OK, None)
                     self.SetTitle(appname)
                     prefs.package=None
                     pkgnavdata=None
                     placements={}
-                    polygons={}
-                except:		# Bad DSF - restore to unloaded state
-                    myMessageBox('', "Can't edit this package", wx.ICON_ERROR|wx.OK, None)
+                else:#except:		# Bad DSF - restore to unloaded state
+                    myMessageBox("Failed to read %s." % basename(f), "Can't edit this package.", wx.ICON_ERROR|wx.OK, None)
                     self.SetTitle(appname)
                     prefs.package=None
                     pkgnavdata=None
                     placements={}
-                    polygons={}
         else:
-            placements=polygons=None	# keep existing
+            placements=None	# keep existing
         progress.Update(2, 'Airports')
         airports=dict(self.airports)
         nav=list(self.nav)
@@ -1451,7 +1228,7 @@ class MainWindow(wx.Frame):
         apts=glob(join(prefs.xplane, gcustom, '*', gaptdat))
         for apt in apts:
             # Package-specific apt.dat
-            try:
+            if 1:#XXXtry:
                 (thisapt,thisnav,thiscode)=readApt(apt)
                 # Merge lists - remove package airports from global
                 # But runways in custom scenery are cumulative
@@ -1464,13 +1241,13 @@ class MainWindow(wx.Frame):
                     else:
                         runways[tile].append(run)
                 nav.extend(thisnav)
-                if prefs.package and apt[:-23].endswith(prefs.package) and thiscode and not pkgloc:
+                if prefs.package and apt[:-23].endswith(sep+prefs.package) and thiscode and not pkgloc:
                     # get start location
                     (name, loc, run)=thisapt[thiscode]
                     pkgloc=[round2res(loc[0]),round2res(loc[1])]
-            except:
-                if prefs.package and apt[:-23].endswith(prefs.package):
-                    myMessageBox("The apt.dat file in this package is invalid.", "Can't load airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
+            else:#except:
+                if prefs.package and apt[:-23].endswith(sep+prefs.package):
+                    myMessageBox("The apt.dat file in this package is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
         for code, stuff in airports.iteritems():
             (name, (lat,lon), run)=stuff
             if not run: continue
@@ -1485,34 +1262,34 @@ class MainWindow(wx.Frame):
         # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
         # search order is: custom libraries, default libraries, scenery package
         progress.Update(3, 'Libraries')
+        lookupbylib={}	# {name: path} by libname
+        lookup={}		# {name: path}
+        terrain={}	# {name: path}
+
+        clibs=glob(join(prefs.xplane, gcustom, '*', glibrary))
+        clibs.sort()	# asciibetical
+        glibs=glob(join(prefs.xplane, gdefault, '*', glibrary))
+        glibs.sort()	# asciibetical
+        libpaths=clibs+glibs
+        for lib in libpaths: readLib(lib, lookupbylib, terrain)
+        libs=lookupbylib.keys()
+        sortfolded(libs)	# dislay order in palette
+        for lib in libs: lookup.update(lookupbylib[lib])
+
         objects={}
         if prefs.package:
             for path, dirs, files in walk(pkgdir):
                 for f in files:
-                    seq=['.obj','.fac','.for']#,'.pol'] # XXX
-                    if f[-4:].lower() in seq and f[0]!='.':
+                    if f[-4:].lower() in KnownDefs and f[0]!='.':
                         name=join(path,f)[len(pkgdir)+1:-4].replace('\\','/')+f[-4:].lower()
-                        if name.lower().startswith('custom objects'):
-                            name=name[15:]
-                        if not name in objects:	# library takes precedence
+                        if not name in lookup:	# library takes precedence
                             objects[name]=join(path,f)
-        self.palette.load('Objects', objects)
+        self.palette.load('Objects', objects, pkgdir)
+        lookup.update(objects)
 
-        objectsbylib={}	# (name, path) by libname
-        terrain={}	# path by name
-        libs=glob(join(prefs.xplane, gcustom, '*', glibrary))+glob(join(prefs.xplane, gdefault, '*', glibrary))
-        libs.sort()	# asciibetical
-        for lib in libs: readLib(lib, objectsbylib, terrain)
-        libobjs={}
-        libs=objectsbylib.keys()
-        sortfolded(libs)
-        for lib in libs:
-            objs=objectsbylib[lib]
-            self.palette.load(lib, objs)
-            libobjs.update(objs)
-        objects.update(libobjs)	# libs take precedence
+        for lib in libs: self.palette.load(lib, lookupbylib[lib], None)
 
-        self.palette.load('Exclusions', dict([(Polygon.EXCLUDE_NAME[x], x) for x in Polygon.EXCLUDE_NAME.keys()]))
+        self.palette.load('Exclusions', dict([(Exclude.NAMES[x], x) for x in Exclude.NAMES.keys()]), None)
 
         if prefs.package and prefs.package in prefs.packageprops:
             (image, lat, lon, hdg, width, length, opacity)=prefs.packageprops[prefs.package]
@@ -1525,7 +1302,7 @@ class MainWindow(wx.Frame):
         else:
             background=None
         self.canvas.reload(event!=None, prefs.options,
-                           runways, nav, objects, placements, polygons,
+                           runways, nav, lookup, placements,
                            background, terrain,
                            [join(prefs.xplane, gcustom),
                             join(prefs.xplane, gdefault)])
@@ -1536,15 +1313,10 @@ class MainWindow(wx.Frame):
             else:
                 for p in placements.values():
                     if p:
-                        self.loc=[p[0].lat,p[0].lon]
+                        self.loc=p[0].location()
                         break
-                else:
-                    for p in polygons.values():
-                        if p:
-                            self.loc=[p[0].nodes[0][0][1],p[0].nodes[0][0][0]]
-                            break
-                    else:	# Fallback
-                        self.loc=[34.096694,-117.248376]	# KSBD
+                else:	# Fallback
+                    self.loc=[34.096694,-117.248376]	# KSBD
         self.loc=[round2res(self.loc[0]),round2res(self.loc[1])]
         progress.Destroy()
         
@@ -1553,13 +1325,17 @@ class MainWindow(wx.Frame):
         if prefs.package:
             self.toolbar.EnableTool(wx.ID_PREVIEW, True)
             self.toolbar.EnableTool(wx.ID_REFRESH, True)
-            self.toolbar.EnableTool(wx.ID_PASTE, True)
+            self.toolbar.EnableTool(wx.ID_PASTE,   True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_PREVIEW, True)
+                self.menubar.Enable(wx.ID_REFRESH, True)
+                self.menubar.Enable(wx.ID_PASTE,   True)
 
         # redraw
         self.Refresh()
 
     def OnImport(self, event):
-        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Facades, Forests and Polygons|*.obj;*.fac;*.for;*.pol|Object files (*.obj)|*.obj|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|Draped polygon files (*.pol)|*.pol|All files|*.*", wx.OPEN|wx.MULTIPLE|wx.HIDE_READONLY)
+        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Draped, Facades, Forests|*.obj;*.pol;*.fac;*.for|Object files (*.obj)|*.obj|Draped polygon files (*.pol)|*.pol|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|All files|*.*", wx.OPEN|wx.MULTIPLE)
         if dlg.ShowModal()!=wx.ID_OK:
             dlg.Destroy()
             return
@@ -1577,9 +1353,8 @@ class MainWindow(wx.Frame):
                 msg=''
             else:
                 name=newpath[len(pkgpath)+1:].replace(sep, '/')
-                if name.lower().startswith('custom objects'): name=name[15:]
                 self.canvas.vertexcache.add(name, newpath)
-                self.palette.add(name, newpath)
+                self.palette.add(name, pkgpath)
                 continue
             myMessageBox(msg, "Can't import %s." % path,
                          wx.ICON_ERROR|wx.OK, self)
@@ -1598,8 +1373,9 @@ class MainWindow(wx.Frame):
     def OnPrefs(self, event):
         dlg=PreferencesDialog(self, wx.ID_ANY, "Preferences")
         dlg.CenterOnParent()	# Otherwise is top-left on Mac
-        if dlg.ShowModal()!=wx.ID_OK:
-            dlg.Destroy()
+        x=dlg.ShowModal()
+        if x!=wx.ID_OK:            
+            if x: dlg.Destroy()
             return
         if dlg.display.GetSelection()==1:
             prefs.options=Prefs.TERRAIN
@@ -1610,10 +1386,15 @@ class MainWindow(wx.Frame):
         if dlg.path.GetValue()!=prefs.xplane:
             prefs.xplane=dlg.path.GetValue()
             prefs.package=None
-            self.toolbar.EnableTool(wx.ID_SAVE, False)
-            self.toolbar.EnableTool(wx.ID_ADD, False)
+            self.toolbar.EnableTool(wx.ID_SAVE,   False)
+            self.toolbar.EnableTool(wx.ID_ADD,    False)
             self.toolbar.EnableTool(wx.ID_DELETE, False)
-            self.toolbar.EnableTool(wx.ID_UNDO, False)
+            self.toolbar.EnableTool(wx.ID_UNDO,   False)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_SAVE,   False)
+                self.menubar.Enable(wx.ID_ADD,    False)
+                self.menubar.Enable(wx.ID_DELETE, False)
+                self.menubar.Enable(wx.ID_UNDO,   False)
             self.SetTitle(appname)
             dlg.Destroy()
             self.airports={}	# force reload
@@ -1631,12 +1412,16 @@ class MainWindow(wx.Frame):
                 filename=filename.encode('utf-8')
             webbrowser.open("file:"+quote(filename))
 
+    def OnAbout(self, evt):
+        AboutBox(self)
+
     def OnClose(self, event):
-        if not self.SaveDialog(event.CanVeto()):
+        cancancel=isinstance(event, wx.CloseEvent) and event.CanVeto()
+        if not self.SaveDialog(cancancel):
             event.Veto()
             return False
         prefs.write()
-        self.goto.Close()
+        if self.goto: self.goto.Close()
         self.Destroy()
         return True
 
@@ -1645,13 +1430,13 @@ class MainWindow(wx.Frame):
         style=wx.YES_NO
         if cancancel: style|=wx.CANCEL
         if self.toolbar.GetToolEnabled(wx.ID_SAVE):
-            if platform=='win32':
-                r=myMessageBox('Do you want to save the changes?',
-                               '"%s" has been modified.' % prefs.package,
-                               wx.ICON_EXCLAMATION|style, self)
-            else:
+            if platform=='darwin':
                 r=myMessageBox("If you don't save, your changes will be lost.",
                                'Save scenery package "%s"?' % prefs.package,
+                               wx.ICON_EXCLAMATION|style, self)
+            else:
+                r=myMessageBox('Do you want to save the changes?',
+                               '"%s" has been modified.' % prefs.package,
                                wx.ICON_EXCLAMATION|style, self)
             if r==wx.YES:
                 self.OnSave(None)
@@ -1674,15 +1459,21 @@ app.SetTopWindow(frame)
 # user prefs
 prefs=Prefs()
 if not prefs.xplane or not glob(join(prefs.xplane,gcustom)):
-    if platform!='win32':	# prompt is not displayed on Mac
+    if platform.startswith('linux'):	# prompt is not displayed on Linux
         myMessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder", wx.ICON_INFORMATION|wx.OK, frame)
     if platform=='win32' and glob(join('C:\\X-Plane', gcustom)) and glob(join('C:\\X-Plane', gmainaptdat)):
         prefs.xplane='C:\\X-Plane'
     elif platform=='win32':
         prefs.xplane='C:\\'
-    elif platform.startswith('linux') and isdir(join(expanduser('~'), 'X-Plane')):
+    elif isdir(join(expanduser('~'), 'X-Plane')):
         prefs.xplane=join(expanduser('~'), 'X-Plane')
-    elif platform.startswith('linux'):
+    elif isdir(join(expanduser('~'), 'Desktop', 'X-Plane')):
+        prefs.xplane=join(expanduser('~'), 'Desktop', 'X-Plane')
+    elif isdir(join(sep, 'Applications', 'X-Plane')):
+        prefs.xplane=join(sep, 'Applications', 'X-Plane')
+    elif platform=='darwin':
+        prefs.xplane=join(sep, 'Applications')
+    else:
         prefs.xplane=expanduser('~')
     dlg=PreferencesDialog(frame, wx.ID_ANY, '')
     if dlg.OnBrowse(None)!=wx.ID_OK: exit(1)	# User cancelled

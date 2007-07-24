@@ -14,10 +14,12 @@ from sys import exit, platform, maxint, version
 import wx
 import wx.glcanvas
 
-from files import VertexCache, sortfolded, Prefs, ExcludeDef, FacadeDef, ForestDef
-from DSFLib import Object, Polygon, resolution, maxres, round2res
+from files import VertexCache, sortfolded
+from clutter import Polygon, resolution, maxres, round2res
+from clutterdef import ClutterDef
 from MessageBox import myMessageBox
-from version import appname, debug
+from prefs import Prefs
+from version import appname
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 d2r=pi/180.0
@@ -48,8 +50,27 @@ class UndoEntry:
     def __init__(self, tile, kind, data):
         self.tile=tile
         self.kind=kind
-        self.data=data
+        self.data=data		# [(layer, idx, placement)]
 
+    def equals(self, other):
+        # ignore placement details
+        if self.tile!=other.tile or self.kind!=other.kind: return False
+        if self.data==other.data==None: return True
+        if not (self.data and other.data and len(self.data)==len(other.data)):
+            return False
+        for i in range(len(self.data)):
+            if self.data[i][0]!=other.data[i][0] or self.data[i][1]!=other.data[i][1]:
+                return False
+        return True
+
+
+class ClickModes:
+    Undecided=1
+    DragBox=2
+    Drag=3
+    DragNode=4
+    Scroll=5
+    
 
 # OpenGL Window
 class MyGL(wx.glcanvas.GLCanvas):
@@ -67,22 +88,28 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.airports={}	# [(lat,lon,hdg,length,width)] by code
         self.runways={}		# diplay list by tile
         self.navaids=[]		# (type, lat, lon, hdg)
-        self.objects={}		# [(name,lat,lon,hdg,height)] by tile
-        self.polygons={}	# [(name, parameter, [windings])] by tile
-        self.objectslist=0
+        #self.objects={}		# [(name,lat,lon,hdg,height)] by tile
+        #self.polygons={}	# [(name, parameter, [windings])] by tile
+        self.lookup={}		# virtual name -> filename (may be duplicates)
+        self.defs={}		# loaded ClutterDefs by filename
+        self.placements={}	# [[Clutter]] by tile
+        self.unsorted={}	# [Clutter] by tile
+        self.clutterlist=0
         self.background=None
         self.meshlist=0
         
-        self.selected=[]	# Indices into self.objects[self.tile]
-        self.selections=[]	# List for picking
-        self.selectlist=0
-        self.selectctrl=False	# Ctrl/Cmd was held down
-        self.selectanchor=None	# Drag mode: Start of drag
-        self.selectsaved=None	# Selection at start of drag
-        self.selectnode=False	# Polygon selection mode
+        self.mousenow=None	# Current position (used in timer and drag)
+        self.picklist=0
+        self.selected=[]	# selected placements
+        self.clickmode=None
+        self.clickpos=None	# Location of mouse down
+        self.clickctrl=False	# Ctrl was held down
         self.selectednode=None	# Selected node
-        self.selectmove=None	# Move mode
-        self.mousenow=None	# Current position
+        self.selections=[]	# List for picking
+        self.selectsaved=None	# Selection at start of ctrl drag box
+        self.draginert=True
+        self.dragx=wx.SystemSettings_GetMetric(wx.SYS_DRAG_X)
+        self.dragy=wx.SystemSettings_GetMetric(wx.SYS_DRAG_Y)
 
         self.undostack=[]
 
@@ -94,6 +121,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.e=90
         self.d=3333.25
         self.cliprat=1000
+        self.polyhack=# 1 #256	# XXX
 
         self.context=wx.glcanvas.GLContext
 
@@ -109,7 +137,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             #wx.glcanvas.WX_GL_MIN_ALPHA, 4,
             wx.glcanvas.WX_GL_DEPTH_SIZE, 24])	# ATI on Mac defaults to 16
         if self.GetId()==-1:
-            # Failed - try with smaller depth buffer
+            # Failed - try with default depth buffer
             wx.glcanvas.GLCanvas.__init__(self, parent,
                                           style=GL_RGBA|GL_DOUBLEBUFFER|GL_DEPTH|wx.FULL_REPAINT_ON_RESIZE,
                                           attribList=[wx.glcanvas.WX_GL_RGBA,wx.glcanvas.WX_GL_DOUBLEBUFFER])
@@ -144,9 +172,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_DEPTH_TEST)
         glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
+        glLineWidth(2.0)
+        #if debugapt: glLineWidth(2.0)
         #glLineStipple(1, 0x0f0f)	# for selection drag
-        if debugapt: glLineWidth(2.0)
-        glPointSize(3.0)		# for nodes
+        glPointSize(4.0)		# for nodes
         glFrontFace(GL_CW)
         glCullFace(GL_BACK)
         glPixelStorei(GL_UNPACK_ALIGNMENT,1)	# byte aligned
@@ -163,12 +192,18 @@ class MyGL(wx.glcanvas.GLCanvas):
         pass	# Prevent flicker when resizing / painting on MSW
 
     def OnKeyDown(self, event):
-        # Manually propagate
-        self.frame.OnKeyDown(event)
+        if self.clickmode:
+            event.Skip()
+        else:
+            # Manually propagate
+            self.frame.OnKeyDown(event)
 
     def OnMouseWheel(self, event):
-        # Manually propagate
-        self.frame.OnMouseWheel(event)
+        if self.clickmode:
+            event.Skip()
+        else:
+            # Manually propagate
+            self.frame.OnMouseWheel(event)
 
     def OnTimer(self, event):
         # mouse scroll - fake up a key event and pass it up
@@ -176,7 +211,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         posx=self.mousenow[0]
         posy=self.mousenow[1]
         keyevent=wx.KeyEvent()
-        keyevent.m_controlDown=keyevent.m_metaDown=self.selectctrl
+        keyevent.m_shiftDown=wx.GetKeyState(wx.WXK_SHIFT)
         if posx<sband:
             keyevent.m_keyCode=wx.WXK_LEFT
         elif posy<sband:
@@ -190,39 +225,49 @@ class MyGL(wx.glcanvas.GLCanvas):
         
     def OnLeftDown(self, event):
         #event.Skip(False)	# don't change focus
-        self.mousenow=[event.m_x,event.m_y]
-        self.selectctrl=event.CmdDown()
+        self.mousenow=self.clickpos=[event.m_x,event.m_y]
+        self.draginert=True
+        self.clickctrl=event.m_controlDown
         self.CaptureMouse()
         size = self.GetClientSize()
         if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
             # mouse scroll
+            self.clickmode=ClickModes.Scroll
             self.timer.Start(50)
         else:
+            self.clickmode=ClickModes.Undecided
             self.select()
 
     def OnLeftUp(self, event):
+        print "up", ClickModes.DragNode
         if self.HasCapture(): self.ReleaseMouse()
-        if self.selectnode:
-            self.updatepoly(self.currentpolygons()[self.selected[0]&MSKPOLY])
-        self.trashlists(True)	# recompute obj and select lists
-        self.selectanchor=None
-        self.selectnode=False
-        self.selectmove=None
         self.timer.Stop()
-        self.SetCursor(wx.NullCursor)
+        if self.clickmode==ClickModes.DragNode:
+            self.selectednode=self.selected[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
+            self.trashlists(True)	# recompute obj and pick lists
+            self.SetCursor(wx.NullCursor)
+        elif self.clickmode==ClickModes.Drag:
+            for thing in self.selected:
+                thing.layout(self.tile, self.options, self.vertexcache)
+            self.trashlists(True)	# recompute obj and pick lists
+        elif self.clickmode==ClickModes.DragBox:
+            self.trashlists()		# selection changed
+        self.clickmode=None
         self.Refresh()	# get rid of drag box
         event.Skip()
             
     def OnIdle(self, event):
         if self.valid:	# can get Idles during reload under X
-            if self.selectnode:
-                self.updatepoly(self.currentpolygons()[self.selected[0]&MSKPOLY])
+            if self.clickmode==ClickModes.DragNode:
+                self.selectednode=self.selected[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
                 self.Refresh()
-            if not self.selectlist: self.prepareselect()
+            elif not self.clickmode and not self.picklist:
+                # no update during node drag since will have to be recomputed
+                self.prepareselect()
         event.Skip()
 
     def OnMouseMotion(self, event):
-        if (self.timer.IsRunning() or self.selectanchor or self.selectnode or self.selectmove) and not event.LeftIsDown():
+        if self.clickmode and not event.LeftIsDown():
             # Capture unreliable on Mac, so may have missed LeftUp event. See
             # https://sourceforge.net/tracker/?func=detail&atid=109863&aid=1489131&group_id=9863
             self.OnLeftUp(event)
@@ -233,119 +278,91 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.mousenow=[event.m_x,event.m_y]		# not known in timer
             return
 
-        if event.LeftIsDown():
-            #if not abs(event.m_x-self.mousenow[0]) or not abs(event.m_y-self.mousenow[1]):
-            #    return
-
-            # Drag/node/move
-            if self.selectednode!=None:
-                # Start/continue node drag
-                self.SetCursor(self.dragcursor)
-                self.selectnode=True
-                poly=self.currentpolygons()[self.selected[0]&MSKPOLY]
-                (lat,lon)=self.getworldloc(event.m_x, event.m_y)
-                lat=max(self.tile[0], min(self.tile[0]+maxres, lat))
-                lon=max(self.tile[1], min(self.tile[1]+maxres, lon))
-                if not (self.undostack and self.undostack[-1].kind==UndoEntry.MOVE and self.undostack[-1].tile==self.tile and len(self.undostack[-1].data)==1 and self.undostack[-1].data[0][0]==self.selected[0]):
-                    self.undostack.append(UndoEntry(self.tile, UndoEntry.MOVE, [(self.selected[0], poly.clone())]))
-                    self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
-                    self.frame.toolbar.EnableTool(wx.ID_UNDO, True)
-                poly.nodes=[poly.nodes[0]]	# Destroy other windings
-                poly.nodes[0][self.selectednode]=(lon,lat)
-                if poly.kind==Polygon.EXCLUDE:
-                    if self.selectednode&1:
-                        poly.nodes[0][(self.selectednode-1)%4]=(poly.nodes[0][(self.selectednode-1)%4][0], lat)
-                        poly.nodes[0][(self.selectednode+1)%4]=(lon, poly.nodes[0][(self.selectednode+1)%4][1])
-                    else:
-                        poly.nodes[0][(self.selectednode+1)%4]=(poly.nodes[0][(self.selectednode+1)%4][0], lat)
-                        poly.nodes[0][(self.selectednode-1)%4]=(lon, poly.nodes[0][(self.selectednode-1)%4][1])
-                    self.updatepoly(poly)
-                else:	# just do this point - postpone update to Idle/Leftup
-                    (x,z)=self.latlon2m(poly.nodes[0][self.selectednode][1],
-                                        poly.nodes[0][self.selectednode][0])
-                    y=self.vertexcache.height(self.tile,self.options,x,z)
-                    poly.points[self.selectednode]=(x,y,z)
-                    
-                self.Refresh()	# show updated node
-                self.frame.ShowSel()
-                return
-                    
-            elif not self.selectanchor and not self.selectmove and self.selected and not self.selectctrl:
-                # Start move drag
-                self.selectmove=self.getworldloc(self.mousenow[0],self.mousenow[1])		# location of LeftDown
-
-            elif not self.selectanchor and not self.selectmove:
-                # Start selection drag
-                self.selectanchor=self.mousenow		# location of LeftDown
-                self.selectsaved=self.selected
-                self.trashlists(True)	# Recompute everything
+        if not self.clickmode:
+            size = self.GetClientSize()
             
-        if self.selectmove:
+            # Change cursor if over a window border
+            if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
+                self.SetCursor(self.movecursor)
+                return
+
+            # Change cursor if over a node
+            if len(self.selected)==1 and isinstance(self.selected[0], Polygon):
+                glViewport(0, 0, *size)
+                glMatrixMode(GL_PROJECTION)
+                glPushMatrix()
+                glLoadIdentity()
+                viewport=glGetIntegerv(GL_VIEWPORT)
+                gluPickMatrix(event.m_x,
+                              size[1]-1-event.m_y, 5,5,
+                              (0, 0, size[0], size[1]))
+                glOrtho(-self.d, self.d,
+                        -self.d*size.y/size.x, self.d*size.y/size.x,
+                        -self.d*self.cliprat, self.d*self.cliprat)
+                glMatrixMode(GL_MODELVIEW)
+                glSelectBuffer(65536)	# = 16384 selections?
+                glRenderMode(GL_SELECT)
+                glInitNames()
+                glPushName(0)
+                self.selected[0].picknodes()
+                selections=glRenderMode(GL_RENDER)
+                # Restore state for unproject
+                glMatrixMode(GL_PROJECTION)
+                glPopMatrix()	
+                glMatrixMode(GL_MODELVIEW)
+                if selections:
+                    self.SetCursor(self.dragcursor)	# hovering over node
+                    return
+                
+            self.SetCursor(wx.NullCursor)
+            return
+
+        assert (self.clickmode!=ClickModes.Undecided)
+
+        if self.draginert and abs(event.m_x-self.clickpos[0])<self.dragx and abs(event.m_y-self.clickpos[1])<self.dragx:
+            return
+        else:
+            self.draginert=False
+            
+        if self.clickmode==ClickModes.DragNode:
+            # Start/continue node drag
+            self.SetCursor(self.dragcursor)
+            poly=self.selected[0]
+            (lat,lon)=self.getworldloc(event.m_x, event.m_y)
+            lat=max(self.tile[0], min(self.tile[0]+maxres, lat))
+            lon=max(self.tile[1], min(self.tile[1]+maxres, lon))
+            layer=poly.definition.layer
+            newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(layer, self.currentplacements()[layer].index(poly), poly.clone())])
+            if not (self.undostack and self.undostack[-1].equals(newundo)):
+                self.undostack.append(newundo)
+                self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
+                self.frame.toolbar.EnableTool(wx.ID_UNDO, True)
+                if self.frame.menubar:
+                    self.frame.menubar.Enable(wx.ID_SAVE, True)
+                    self.frame.menubar.Enable(wx.ID_UNDO, True)
+            self.selectednode=poly.updatenode(self.selectednode, lat, lon, self.tile, self.options, self.vertexcache)
+            self.Refresh()	# show updated node
+            self.frame.ShowSel()
+            return
+
+        elif self.clickmode==ClickModes.Drag:
             # Continue move drag
             (lat,lon)=self.getworldloc(event.m_x, event.m_y)
             if (lat>self.tile[0] and lat<self.tile[0]+maxres and
                 lon>self.tile[1] and lon<self.tile[1]+maxres):
-                self.movesel(lat-self.selectmove[0], lon-self.selectmove[1], 0)
+                (oldlat,oldlon)=self.getworldloc(*self.mousenow)
+                self.movesel(lat-oldlat, lon-oldlon, 0)
                 self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
                 self.frame.toolbar.EnableTool(wx.ID_UNDO, True)
-                self.selectmove=(lat,lon)
+                if self.frame.menubar:
+                    self.frame.menubar.Enable(wx.ID_SAVE, True)
+                    self.frame.menubar.Enable(wx.ID_UNDO, True)
             
-        elif self.selectanchor:
-            # Continue selection drag
-            self.mousenow=[event.m_x,event.m_y]		# not known in paint
-            self.selected=list(self.selectsaved)	# reset each time
+        elif self.clickmode==ClickModes.DragBox:
             self.select()
-            
-        elif not self.selectnode and not self.selectanchor and len(self.selected)==1 and self.selected[0]&MSKSEL:
-            #if not self.currentpolygons():
-            #    return
 
-            size = self.GetClientSize()
-            glSelectBuffer(65536)	# number of objects appears to be this/4
-            glRenderMode(GL_SELECT)
-            glViewport(0, 0, *size)
-            glMatrixMode(GL_PROJECTION)
-            glPushMatrix()
-            glLoadIdentity()
-            viewport=glGetIntegerv(GL_VIEWPORT)
-            gluPickMatrix(event.m_x,
-                          size[1]-1-event.m_y, 5,5,
-                          (0, 0, size[0], size[1]))
-            glOrtho(-self.d, self.d,
-                    -self.d*size.y/size.x, self.d*size.y/size.x,
-                    -self.d*self.cliprat, self.d*self.cliprat)
-            glMatrixMode(GL_MODELVIEW)
+        self.mousenow=[event.m_x,event.m_y]		# not known in paint
 
-            glInitNames()
-            glPushName(0)
-            poly=self.currentpolygons()[self.selected[0]&MSKPOLY]
-            for point in poly.points:
-                glBegin(GL_POINTS)
-                glVertex3f(point[0], point[1], point[2])
-                glEnd()
-            try:
-                if glRenderMode(GL_RENDER):
-                    self.SetCursor(self.dragcursor)	# hovering over node
-                else:	# not over node
-                    # Change cursor if over a node or at window border
-                    if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
-                        self.SetCursor(self.movecursor)
-                    else:
-                        self.SetCursor(wx.NullCursor)
-            except:	# overflow
-                pass
-            # Restore state for unproject
-            glMatrixMode(GL_PROJECTION)
-            glPopMatrix()	
-            glMatrixMode(GL_MODELVIEW)
-
-        else:
-            # Change cursor if over a node or at window border
-            size = self.GetClientSize()
-            if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
-                self.SetCursor(self.movecursor)
-            else:
-                self.SetCursor(wx.NullCursor)
 
     def OnPaint(self, event):
         #print "Canvas Paint"
@@ -391,10 +408,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             return
 
         self.vertexcache.realize(self)
-        objects=self.currentobjects()
-        polygons=self.currentpolygons()
 
-        # Ground
+        # Ground terrain
         if not self.meshlist:
             self.meshlist=glGenLists(1)
             glNewList(self.meshlist, GL_COMPILE)
@@ -412,8 +427,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if poly:		# eg overlaid photoscenery
                     if polystate!=poly:
                         glDepthMask(GL_FALSE)	# offset mustn't update depth
-                        glPolygonOffset(-10*poly, -10*poly)
                         glEnable(GL_POLYGON_OFFSET_FILL)
+                        glPolygonOffset(-10*poly, -10*self.polyhack*poly)
                     polystate=poly
                 else:
                     if polystate:
@@ -429,91 +444,36 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEndList()
         glCallList(self.meshlist)
 
-        # Runways
-        key=(self.tile[0],self.tile[1],self.options&Prefs.ELEVATION)
-        if key in self.runways: glCallList(self.runways[key])
-
         # Objects and Polygons
-        if not self.objectslist:
-            self.objectslist=glGenLists(1)
-            glNewList(self.objectslist, GL_COMPILE)
-
-            glEnable(GL_CULL_FACE)
-            cullstate=True
-            glEnable(GL_TEXTURE_2D)
-            glEnable(GL_DEPTH_TEST)
+        placements=self.currentplacements()
+        if not self.clutterlist:
+            print "list"
+            self.clutterlist=glGenLists(1)
+            glNewList(self.clutterlist, GL_COMPILE)
             glDisable(GL_POLYGON_OFFSET_FILL)
-            for i in range(len(polygons)):
-                if (i|MSKSEL) in self.selected and not self.selectanchor:
-                    continue	# don't have to recompute on move
-                poly=polygons[i]
-                if poly.kind==Polygon.FACADE:
-                    fac=self.vertexcache.get(poly.name)
-                    glBindTexture(GL_TEXTURE_2D, fac.texture)
-                    glColor3f(0.8, 0.8, 0.8)	# Unpainted
-                    glEnable(GL_DEPTH_TEST)
-                    if fac.two_sided:
-                        if cullstate: glDisable(GL_CULL_FACE)
-                        cullstate=False
-                    else:
-                        if not cullstate: glEnable(GL_CULL_FACE)
-                        cullstate=True
-                    glBegin(GL_QUADS)
-                    for p in poly.quads:
-                        glTexCoord2f(p[3],p[4])
-                        glVertex3f(p[0],p[1],p[2])
-                    glEnd()
-                    if poly.roof:
-                        glBegin(GL_TRIANGLE_FAN)	# Better for concave
-                        for p in poly.roof+[poly.roof[1]]:
-                            glTexCoord2f(p[3],p[4])
-                            glVertex3f(p[0],p[1],p[2])
-                        glEnd()
-                else:
-                    if poly.kind==Polygon.EXCLUDE:
-                        glColor3f(0.5, 0.125, 0.125)
-                    elif poly.kind==Polygon.FOREST:
-                        glColor3f(0.125, 0.4, 0.125)
-                    else:
-                        glColor3f(0.25, 0.25, 0.25)	# Unknown
-                    glBindTexture(GL_TEXTURE_2D, 0)
-                    glDisable(GL_DEPTH_TEST)
-                    glBegin(GL_LINE_LOOP)
-                    for p in poly.points:
-                        glVertex3f(p[0],p[1],p[2])
-                    glEnd()
+
+            # Generic polygons need to show through terrain
+            #glDisable(GL_DEPTH_TEST)
+            #print 0, placements[0]
+            for placement in placements[0]:
+                if self.clickmode==ClickModes.DragBox or not placement in self.selected:
+                    placement.draw(False, False, None)
+
             glColor3f(0.8, 0.8, 0.8)	# Unpainted
-            glEnable(GL_DEPTH_TEST)
-            polystate=0
-            for i in range(len(objects)):
-                if i in self.selected and not self.selectanchor:
-                    continue	# don't have to recompute on move
-                obj=objects[i]
-                (x,z)=self.latlon2m(obj.lat, obj.lon)
-                (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(obj.name)
-                if poly:
-                    if polystate!=poly:
-                        glPolygonOffset(-1*poly, -1*poly)
-                        glEnable(GL_POLYGON_OFFSET_FILL)
-                    polystate=poly
-                else:
-                    if polystate: glDisable(GL_POLYGON_OFFSET_FILL)
-                    polystate=0
-                glPushMatrix()
-                glTranslatef(x, obj.height, z)
-                glRotatef(-obj.hdg, 0.0,1.0,0.0)
-                glBindTexture(GL_TEXTURE_2D, texno)
-                if culled:
-                    if not cullstate: glEnable(GL_CULL_FACE)
-                    cullstate=True
-                    glDrawArrays(GL_TRIANGLES, base, culled)
-                if nocull:
-                    if cullstate: glDisable(GL_CULL_FACE)
-                    cullstate=False
-                    glDrawArrays(GL_TRIANGLES, base+culled, nocull)
-                glPopMatrix()
+            #glEnable(GL_DEPTH_TEST)
+            for layer in range(1,ClutterDef.LAYERCOUNT):
+                if layer==ClutterDef.RUNWAYSLAYER:
+                    # Runways
+                    key=(self.tile[0],self.tile[1],self.options&Prefs.ELEVATION)
+                    if key in self.runways: glCallList(self.runways[key])
+
+                #print layer, placements[layer]
+                for placement in placements[layer]:
+                    if self.clickmode==ClickModes.DragBox or not placement in self.selected:
+                        placement.draw(False, False, None)
+
             glEndList()
-        glCallList(self.objectslist)
+        glCallList(self.clutterlist)
 
         # Overlays
         glDisable(GL_POLYGON_OFFSET_FILL)
@@ -523,7 +483,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.background:
             (image, lat, lon, hdg, width, length, opacity, height)=self.background
             if [int(floor(lat)),int(floor(lon))]==self.tile:
-                texno=self.vertexcache.texcache.get(image, False, True)
+                texno=self.vertexcache.texcache.get(image, False, False, True)
                 (x,z)=self.latlon2m(lat, lon)
                 glPushMatrix()
                 glTranslatef(x, height, z)
@@ -571,83 +531,20 @@ class MyGL(wx.glcanvas.GLCanvas):
         glTranslatef(-self.x, -self.y, -self.z)	# set up for picking
 
         # Selections
-        if self.frame.bkgd:
-            # Don't show if setting background image
-            glColor3f(0.8, 0.8, 0.8)	# Unpainted
-        else:
-            glColor3f(1.0, 0.5, 1.0)
-
+        glColor3f(1.0, 0.5, 1.0)
         glDisable(GL_CULL_FACE)
         glEnable(GL_DEPTH_TEST)
-        glPolygonOffset(-3, -3)
-        glEnable(GL_POLYGON_OFFSET_FILL)
-        for i in self.selected:
-            if i&MSKSEL:
-                poly=polygons[i&MSKPOLY]
-                if poly.kind==Polygon.FACADE:
-                    fac=self.vertexcache.get(poly.name)
-                    glBindTexture(GL_TEXTURE_2D, fac.texture)
-                    glBegin(GL_QUADS)
-                    for p in poly.quads:
-                        glTexCoord2f(p[3],p[4])
-                        glVertex3f(p[0],p[1],p[2])
-                    glEnd()
-                    if poly.roof:
-                        glBegin(GL_TRIANGLE_FAN)	# Better for concave
-                        for p in poly.roof+[poly.roof[1]]:
-                            glTexCoord2f(p[3],p[4])
-                            glVertex3f(p[0],p[1],p[2])
-                        glEnd()
-                else:
-                    glBindTexture(GL_TEXTURE_2D, 0)
-                    glDisable(GL_DEPTH_TEST)
-                    glBegin(GL_LINE_LOOP)
-                    for p in poly.points:
-                        glVertex3f(p[0],p[1],p[2])
-                    glEnd()
-                    glEnable(GL_DEPTH_TEST)
-            else:
-                # assumes cache is already properly set up
-                obj=objects[i]
-                (x,z)=self.latlon2m(obj.lat, obj.lon)
-                (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(obj.name)
-                glPushMatrix()
-                glTranslatef(x, obj.height, z)
-                glRotatef(-obj.hdg, 0.0,1.0,0.0)
-                glBindTexture(GL_TEXTURE_2D, texno)
-                glDrawArrays(GL_TRIANGLES, base, culled+nocull)
-                glBindTexture(GL_TEXTURE_2D, 0)
-                glBegin(GL_LINES)
-                glVertex3f(-0.5,0,0)
-                glVertex3f( 0.5,0,0)
-                glVertex3f(0,0,-0.5)
-                glVertex3f(0,0, 0.5)
-                glVertex3f(0,0,-0.5)
-                glVertex3f(0.125,0,-0.375)
-                glVertex3f(0,0,-0.5)
-                glVertex3f(-0.125,0,-0.375)
-                glEnd()
-                glPopMatrix()
-        if len(self.selected)==1 and self.selected[0]&MSKSEL:
-            poly=polygons[self.selected[0]&MSKPOLY]
-            glDisable(GL_DEPTH_TEST)
-            glBindTexture(GL_TEXTURE_2D, 0)
-            glBegin(GL_LINE_LOOP)
-            for p in poly.points:
-                glVertex3f(p[0],p[1],p[2])
-            glEnd()
-            glBegin(GL_POINTS)
-            for i in range(len(poly.points)):
-                if self.selectednode!=None and i==self.selectednode:
-                    glColor3f(1.0, 1.0, 1.0)
-                else:
-                    glColor3f(1.0, 0.5, 1.0)
-                glVertex3f(poly.points[i][0], poly.points[i][1], poly.points[i][2])
-            glEnd()
-        glDisable(GL_POLYGON_OFFSET_FILL)
+        if len(self.selected)==1:
+            selone=True
+        else:
+            selone=False
+        for placement in self.selected:
+            placement.draw(True, selone, self.selectednode)
+        glEnable(GL_CULL_FACE)
+        glEnable(GL_DEPTH_TEST)
 
 	# drag box
-        if self.selectanchor:
+        if self.clickmode==ClickModes.DragBox:
             #print "drag"
             glColor3f(0.25, 0.125, 0.25)
             glDisable(GL_TEXTURE_2D)
@@ -657,8 +554,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             glMatrixMode(GL_MODELVIEW)
             glPushMatrix()
             glLoadIdentity()
-            x0=float(self.selectanchor[0]*2)/size.x-1
-            y0=1-float(self.selectanchor[1]*2)/size.y
+            x0=float(self.clickpos[0]*2)/size.x-1
+            y0=1-float(self.clickpos[1]*2)/size.y
             x1=float(self.mousenow[0]*2)/size.x-1
             y1=1-float(self.mousenow[1]*2)/size.y
             glBegin(GL_LINE_LOOP)
@@ -680,61 +577,28 @@ class MyGL(wx.glcanvas.GLCanvas):
 
 
     def prepareselect(self):
-        return # XXX
-        # Pre-prepare selection list - assumes self.selectlist==0
-        #print "prep"
-        objects=self.currentobjects()
-        polygons=self.currentpolygons()
-        self.selectlist=glGenLists(1)
-        glNewList(self.selectlist, GL_COMPILE)
+        # Pre-prepare selection list - assumes self.picklist==0
+        print "prep"
+        self.picklist=glGenLists(1)
+        glNewList(self.picklist, GL_COMPILE)
         glInitNames()
         glPushName(0)
         glDisable(GL_TEXTURE_2D)
         glDisable(GL_DEPTH_TEST)
         glDisable(GL_CULL_FACE)
-        for i in range(len(objects)):
-            glLoadName(i)
-            obj=objects[i]
-            (x,z)=self.latlon2m(obj.lat, obj.lon)
-            (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(obj.name)
-            glPushMatrix()
-            glTranslatef(x, obj.height, z)
-            glRotatef(-obj.hdg, 0.0,1.0,0.0)
-            glDrawArrays(GL_TRIANGLES, base, culled+nocull)
-            glPopMatrix()
-        for i in range(len(polygons)):
-            poly=polygons[i]
-            if poly.kind not in [Polygon.EXCLUDE, Polygon.FACADE, Polygon.FOREST]: continue
-            glLoadName(i|MSKSEL)
-            glBegin(GL_LINE_LOOP)
-            for p in poly.points:
-                glVertex3f(p[0],p[1],p[2])
-            glEnd()
-            if poly.kind==Polygon.FACADE:
-                glBegin(GL_QUADS)
-                for p in poly.quads:
-                    glTexCoord2f(p[3],p[4])
-                    glVertex3f(p[0],p[1],p[2])
-                glEnd()
-                if poly.roof:
-                    glBegin(GL_TRIANGLE_FAN)	# Better for concave
-                    for p in poly.roof+[poly.roof[1]]:
-                        glTexCoord2f(p[3],p[4])
-                        glVertex3f(p[0],p[1],p[2])
-                    glEnd()
+        placements=self.currentplacements()
+        for i in range(len(placements)):
+            for j in range(len(placements[i])):
+                glLoadName((i<<24)+j)
+                placements[i][j].draw(True, True, None)
         glEnable(GL_DEPTH_TEST)
         glEndList()
 
             
     def select(self):
-        #print "sel"
-        if not self.currentobjects():
-            self.selections=[]	# Can't remember
-
-        if not self.selectlist: self.prepareselect()
-        
-        glSelectBuffer(65536)	# number of objects appears to be this/4
-        glRenderMode(GL_SELECT)
+        #print "sel", 
+        #if not self.currentobjects():
+        #    self.selections=[]	# Can't remember
 
         size = self.GetClientSize()
         glViewport(0, 0, *size)
@@ -742,64 +606,76 @@ class MyGL(wx.glcanvas.GLCanvas):
         glPushMatrix()
         glLoadIdentity()
         viewport=glGetIntegerv(GL_VIEWPORT)
-        if self.selectanchor:	# drag
+        if self.clickmode==ClickModes.DragBox:
             # maths goes wrong if zero-sized box
-            if self.selectanchor[0]==self.mousenow[0]: self.mousenow[0]+=1
-            if self.selectanchor[1]==self.mousenow[1]: self.mousenow[1]+=1
-            gluPickMatrix((self.selectanchor[0]+self.mousenow[0])/2,
-                          size[1]-1-(self.selectanchor[1]+self.mousenow[1])/2,
-                          abs(self.selectanchor[0]-self.mousenow[0]),
-                          abs(self.selectanchor[1]-self.mousenow[1]),
+            if self.clickpos[0]==self.mousenow[0]: self.mousenow[0]+=1
+            if self.clickpos[1]==self.mousenow[1]: self.mousenow[1]-=1
+            gluPickMatrix((self.clickpos[0]+self.mousenow[0])/2,
+                          size[1]-1-(self.clickpos[1]+self.mousenow[1])/2,
+                          abs(self.clickpos[0]-self.mousenow[0]),
+                          abs(self.clickpos[1]-self.mousenow[1]),
                           (0, 0, size[0], size[1]))
-        else:	# click
-            gluPickMatrix(self.mousenow[0],
-                          size[1]-1-self.mousenow[1], 5,5,
+        else:	# at point
+            gluPickMatrix(self.clickpos[0],
+                          size[1]-1-self.clickpos[1], 5,5,
                           (0, 0, size[0], size[1]))
         glOrtho(-self.d, self.d,
                 -self.d*size.y/size.x, self.d*size.y/size.x,
                 -self.d*self.cliprat, self.d*self.cliprat)
         glMatrixMode(GL_MODELVIEW)
-        
-        glCallList(self.selectlist)
 
-        # Select poly node?
-        if not self.selectanchor and len(self.selected)==1 and self.selected[0]&MSKSEL:
-            poly=self.currentpolygons()[self.selected[0]&MSKPOLY]
-            for i in range(len(poly.points)):
-                glLoadName(i|MSKNODE)
-                glBegin(GL_POINTS)
-                glVertex3f(poly.points[i][0], poly.points[i][1], poly.points[i][2])
-                glEnd()
-
+        placements=self.currentplacements()
+        if not self.picklist: self.prepareselect()
+        glSelectBuffer(65536)	# = 16384 selections?
+        glRenderMode(GL_SELECT)
+        glCallList(self.picklist)
         selections=[]
         try:
             for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
-                selections.append(int(names))
+                selections.append(placements[int(names)>>24][int(names)&0xffffff])
         except:	# overflow
             pass
+
+        # Select poly node?
+        self.selectednode=None
+        if self.clickmode==ClickModes.Undecided:
+            if len(self.selected)==1 and isinstance(self.selected[0], Polygon) and self.selected[0] in selections:
+                trysel=self.selected[0]
+            elif len(selections)==1 and isinstance(selections[0], Polygon):
+                trysel=selections[0]
+            else:
+                trysel=None
+            if trysel:
+                print "selnodes",
+                # First look for nodes in same polygon
+                glSelectBuffer(65536)	# = 16384 selections?
+                glRenderMode(GL_SELECT)
+                glInitNames()
+                glPushName(0)
+                trysel.picknodes()
+                selectnodes=[]
+                try:
+                    for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
+                        selectnodes.append((int(names)>>8, int(names)&0xff))
+                except:	# overflow
+                    pass
+                print selectnodes
+                if selectnodes:
+                    self.clickmode=ClickModes.DragNode
+                    self.selected=[trysel]
+                    self.selectednode=selectnodes[0]
+            
         # Restore state for unproject
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()	
         glMatrixMode(GL_MODELVIEW)
 
-        # Select poly node?
-        if not self.selectanchor and len(selections)==1 and selections[0]&MSKSEL and self.selected!=selections:
-            # selected a poly, now try again for a node
-            self.selected=[selections[0]]
-            self.select()
-            self.trashlists(True)	# Manually draw just this object
-            self.Refresh()
+        if self.selectednode:
             return
-        for i in selections:
-            if i&MSKNODE:
-                self.selectednode=i&MSKPOLY
-                self.frame.ShowSel()
-                return
-        else:
-            self.selectednode=None
-            
-        if self.selectanchor:	# drag - add or remove all
-            if self.selectctrl:
+
+        if self.clickmode==ClickModes.DragBox:	# drag - add or remove all
+            if self.clickctrl:
+                self.selected=list(self.selectsaved)	# reset each time
                 for i in selections:
                     if not i in self.selected:
                         self.selected.append(i)
@@ -808,8 +684,13 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 self.selected=list(selections)
         else:			# click - Add or remove one
-            self.trashlists(True)	# recompute obj and select lists
-            if self.selectctrl:
+            if not selections:
+                self.clickmode=ClickModes.DragBox
+                self.selectsaved=self.selected
+            else:
+                self.clickmode=ClickModes.Drag
+            self.trashlists()	# selection changes
+            if self.clickctrl:
                 for i in selections:
                     if not i in self.selected:
                         self.selected.append(i)
@@ -841,19 +722,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         return(((lon-self.centre[1])*(onedeg+8)*cos(d2r*lat),
                 (self.centre[0]-lat)*(onedeg-2)))
 
-    def currentobjects(self):
-        key=(self.tile[0],self.tile[1])
-        if key in self.objects:
-            return self.objects[key]
-        else:
-            return []
-    
-    def currentpolygons(self):
-        key=(self.tile[0],self.tile[1])
-        if key in self.polygons:
-            return self.polygons[key]
-        else:
-            return []
+    def currentplacements(self):
+        return self.placements[(self.tile[0],self.tile[1])]
     
     def setbackground(self, background):
         if background:
@@ -946,65 +816,26 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.frame.ShowSel()
         return True
 
-    def movesel(self, dlat, dlon, dhdg=0, dheight=0):
+    def movesel(self, dlat, dlon, dhdg=0, dparam=0):
         # returns True if changed something
         if not self.selected: return False
-        if not self.selectmove: self.trashlists()
-        objects=self.currentobjects()
-        polygons=self.currentpolygons()
+        if not self.clickmode: self.trashlists(True)
         moved=[]
-        for i in self.selected:
-            if i&MSKSEL:
-                thing=polygons[i&MSKPOLY]
-                moved.append((i, thing.clone()))
-                thing.param+=dheight
-                if thing.param<1: thing.param=1
-                elif thing.kind==Polygon.FACADE and thing.param>32767:
-                    thing.param=32767	# unit16
-                elif thing.kind==Polygon.FOREST and thing.param>255:
-                    thing.param=255
-                thing.nodes=[thing.nodes[0]]	# Destroy other windings
-                if self.selectednode!=None:
-                    thing.nodes[0][self.selectednode]=(max(self.tile[1], min(self.tile[1]+maxres, thing.nodes[0][self.selectednode][0]+dlon)),
-                                                       max(self.tile[0], min(self.tile[0]+maxres, thing.nodes[0][self.selectednode][1]+dlat)))
-                    
-                    if thing.kind==Polygon.EXCLUDE:
-                        if self.selectednode&1:
-                            thing.nodes[0][(self.selectednode-1)%4]=(thing.nodes[0][(self.selectednode-1)%4][0], thing.nodes[0][self.selectednode][1])
-                            thing.nodes[0][(self.selectednode+1)%4]=(thing.nodes[0][self.selectednode][0], thing.nodes[0][(self.selectednode+1)%4][1])
-                        else:
-                            thing.nodes[0][(self.selectednode+1)%4]=(thing.nodes[0][(self.selectednode+1)%4][0], thing.nodes[0][self.selectednode][1])
-                            thing.nodes[0][(self.selectednode-1)%4]=(thing.nodes[0][self.selectednode][0], thing.nodes[0][(self.selectednode-1)%4][1])
-                else:
-                    for n in range(len(thing.nodes[0])):
-                        if dhdg and thing.kind!=Polygon.EXCLUDE:
-                            h=atan2(thing.nodes[0][n][0]-thing.lon,
-                                    thing.nodes[0][n][1]-thing.lat)+d2r*dhdg
-                            l=hypot(thing.nodes[0][n][0]-thing.lon,
-                                    thing.nodes[0][n][1]-thing.lat)
-                            thing.nodes[0][n]=(round2res(thing.lon+sin(h)*l),
-                                               round2res(thing.lat+cos(h)*l))
-                        thing.nodes[0][n]=(max(self.tile[1], min(self.tile[1]+maxres, thing.nodes[0][n][0]+dlon)),
-                                           max(self.tile[0], min(self.tile[0]+maxres, thing.nodes[0][n][1]+dlat)))
-                self.updatepoly(thing)
+        for thing in self.selected:
+            layer=thing.definition.layer
+            moved.append((layer, self.currentplacements()[layer].index(thing), thing.clone()))
+            if self.selectednode:
+                self.selectednode=thing.movenode(self.selectednode, dlat, dlon, self.tile, self.options, self.vertexcache)
+                assert self.selectednode
             else:
-                thing=objects[i]
-                moved.append((i, thing.clone()))
-                thing.lat=max(self.tile[0], min(self.tile[0]+maxres, thing.lat+dlat))
-                thing.lon=max(self.tile[1], min(self.tile[1]+maxres, thing.lon+dlon))
-                thing.hdg=(thing.hdg+dhdg)%360
-                (x,z)=self.latlon2m(thing.lat,thing.lon)
-                thing.height=self.vertexcache.height(self.tile,self.options,x,z)
+                thing.move(dlat, dlon, dhdg, dparam, self.tile, self.options, self.vertexcache)
         self.Refresh()
         self.frame.ShowSel()
-        if self.undostack and self.undostack[-1].kind==UndoEntry.MOVE and self.undostack[-1].tile==self.tile and len(self.undostack[-1].data)==len(self.selected):
-            for j in range(len(self.selected)):
-                (i, p)=self.undostack[-1].data[j]
-                if self.selected[j]!=i:
-                    break
-            else:
-                return True
-        self.undostack.append(UndoEntry(self.tile, UndoEntry.MOVE, moved))
+
+        newundo=UndoEntry(self.tile, UndoEntry.MOVE, moved)
+        if not (self.undostack and self.undostack[-1].equals(newundo)):
+            self.undostack.append(newundo)
+
         return True
 
     def delsel(self):
@@ -1108,7 +939,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.Refresh()
         self.selected=[]
         self.selectednode=None
-        self.trashlists(True)
+        self.trashlists()	# selection changed
 
     def allsel(self, withctrl):
         # fake up mouse drag
@@ -1118,11 +949,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.mousenow=[size.x-1,size.y-1]
         self.select()
         self.selectanchor=None
-        self.trashlists(True)	# recompute obj and select lists
+        self.trashlists()	# selection changed
 
     def nextsel(self, name, withctrl):
         loc=None
-        self.trashlists(self.selected)	# recompute obj and select lists
+        self.trashlists()	# selection changed
         # we have 0 or more items of the same type selected
         if not self.vertexcache.load(name):
             thing=None	# can't load
@@ -1169,40 +1000,21 @@ class MyGL(wx.glcanvas.GLCanvas):
     def getsel(self):
         # return current selection, or average
         if not self.selected: return ([], '', None, None, None)
-        objects=self.currentobjects()
-        polygons=self.currentpolygons()
-        lat=lon=0
-        names=[]
-        for i in self.selected:
-            if i&MSKSEL:
-                thing=polygons[i&MSKPOLY]
-            else:
-                thing=objects[i]
-            names.append(thing.name)
-            lat+=thing.lat
-            lon+=thing.lon
 
         if len(self.selected)==1:
-            if self.selected[0]&MSKSEL:
-                if self.selectednode!=None:
-                    (lon,lat)=thing.nodes[0][self.selectednode]
-                    if self.options&Prefs.ELEVATION and thing.kind!=Polygon.EXCLUDE:
-                        return (names, "Lat: %-10.6f  Lon: %-11.6f  Elv: %-6.1f  Node %d" % (lat, lon, thing.points[self.selectednode][1], self.selectednode), lat, lon, None)
-                    else:
-                        return (names, "Lat: %-10.6f  Lon: %-11.6f  Node %d" % (lat, lon, self.selectednode), lat, lon, None)
-                else:
-                    if thing.kind==Polygon.FACADE:
-                        return (names, 'Lat: %-10.6f  Lon: %-11.6f  Height: %-4d  (%d nodes)' % (lat, lon, thing.param, len(thing.points)), lat, lon, None)
-                    elif thing.kind==Polygon.FOREST:
-                        return (names, 'Lat: %-10.6f  Lon: %-11.6f  Density: %-4.1f%%  (%d nodes)' % (lat, lon, thing.param/2.55, len(thing.points)), lat, lon, None)
-                    else:
-                        return (names, 'Lat: %-10.6f  Lon: %-11.6f  (%d nodes)' % (lat, lon, len(thing.points)), lat, lon, None)
+            thing=self.selected[0]
+            if isinstance(thing, Polygon):
+                return ([thing.name], thing.locationstr(self.selectednode), thing.lat, thing.lon, None)
             else:
-                if self.options&Prefs.ELEVATION:
-                    return (names, "Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f  Elv: %-6.1f" % (lat, lon, thing.hdg, thing.height), lat, lon, thing.hdg)
-                else:
-                    return (names, "Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f" % (lat, lon, thing.hdg), lat, lon, thing.hdg)
+                return ([thing.name], thing.locationstr(), thing.lat, thing.lon, thing.hdg)
         else:
+            lat=lon=0
+            names=[]
+            for thing in self.selected:
+                names.append(thing.name)
+                (tlat,tlon)=thing.location()
+                lat+=tlat
+                lon+=tlon
             lat/=len(self.selected)
             lon/=len(self.selected)
             return (names, "Lat: %-10.6f  Lon: %-11.6f  (%d objects)" % (lat, lon, len(self.selected)), lat, lon, None)
@@ -1212,48 +1024,40 @@ class MyGL(wx.glcanvas.GLCanvas):
         return self.y
 
     def reload(self, reload, options, airports, navaids,
-               objectmap, objects, polygons,
+               lookup, placements,
                background, terrain, dsfdirs):
         self.valid=False
         self.options=options
         self.airports=airports	# [runways] by tile
         self.navaids=navaids
-        self.vertexcache.flushObjs(objectmap, terrain, dsfdirs)
+        self.lookup=lookup
+        self.defs={}
+        self.vertexcache.reset(terrain, dsfdirs)
         self.trashlists(True, True)
-        self.tile=[0,999]	# force reload
+        self.tile=[0,999]	# force reload on next goto
 
         for key in self.runways.keys():	# need to re-layout runways
             glDeleteLists(self.runways.pop(key), 1)
 
-        if objects!=None:
-            self.objects=objects
-            self.polygons=polygons
+        if placements!=None:
+            self.placements={}
+            self.unsorted=placements
 
-        # Silently correct case of missing object refs
-        for objs in self.objects.values():
-            for obj in objs:
-                if obj.name not in objectmap:
-                    for existing in objectmap.keys():
-                        if obj.name.lower()==existing.lower():
-                            obj.name=existing
-                            break
-
-        # force polygons to recompute
-        for polygons in self.polygons.values():
-            for poly in polygons:
-                poly.points=[]
+        # force polygons to recompute XXX
+        #for polygons in self.polygons.values():
+        #    for poly in polygons:
+        #        poly.points=[]
 
         if background:
             (image, lat, lon, hdg, width, length, opacity)=background
             self.background=(image, lat, lon, hdg, width, length, opacity,None)
         else:
             self.background=None
+        self.undostack=[]	# layers might have changed
         self.selected=[]	# may not have same indices in new list
         self.selectednode=None
-        if not reload:
-            self.undostack=[]
 
-        if 0:	# debug
+        if __debug__:
             print "Frame:\t%s"  % self.frame.GetId()
             print "Toolb:\t%s"  % self.frame.toolbar.GetId()
             print "Parent:\t%s" % self.parent.GetId()
@@ -1284,8 +1088,12 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.valid=False
             self.tile=newtile
             self.vertexcache.flush()
+            # flush all array allocations
+            for Def in self.defs.values(): Def.flush()
+            self.selections=[]
             self.trashlists(True, True)
-            progress=wx.ProgressDialog('Loading', 'Terrain', 18, self, wx.PD_APP_MODAL)
+
+            progress=wx.ProgressDialog('Loading', 'Terrain', 17, self, wx.PD_APP_MODAL)
             self.vertexcache.loadMesh(newtile, options)
 
             progress.Update(1, 'Terrain textures')
@@ -1294,45 +1102,48 @@ class MyGL(wx.glcanvas.GLCanvas):
             progress.Update(2, 'Mesh')
             self.vertexcache.getMeshdata(newtile, options)
 
-            if options!=self.options:
-                # invalidate all heights
-                for objects in self.objects.values():
-                    for obj in objects:
-                        obj.height=None
-                for polygons in self.polygons.values():
-                    for poly in polygons:
-                        poly.points=[]
-            self.options=options
-
             # Limit progress dialog to 10 updates
             #clock=time.clock()	# Processor time
-            objects=self.currentobjects()
-            p=len(objects)/10+1
+            
+            # load placements and assign to layers
+            key=(newtile[0],newtile[1])
+            if key in self.placements:
+                placements=reduce(lambda x,y: x+y, self.placements.pop(key))
+                if options!=self.options:
+                    # invalidate all heights
+                    for placement in placements:
+                        placement.clearlayout()
+            elif key in self.unsorted:
+                placements=self.unsorted.pop(key)
+            else:
+                placements=[]
+            self.options=options
+            self.placements[key]=[[] for i in range(ClutterDef.LAYERCOUNT)]
+
+            p=len(placements)/10+1
             n=0
             i=0
-            for i in range(len(objects)):
-                obj=objects[i]
+            for i in range(len(placements)):
                 if i==n:
                     progress.Update(3+i/p, 'Objects')
                     n+=p
-                if not self.vertexcache.load(obj.name,True) and not obj.name in errobjs:
-                    errobjs.append(obj.name)
-                if obj.height==None:
-                    (x,z)=self.latlon2m(obj.lat, obj.lon)
-                    obj.height=self.vertexcache.height(newtile,options,x,z)
+                placement=placements[i]
+
+                # Silently correct virtual names' cases
+                if placement.name not in self.lookup:
+                    for existing in self.lookup.keys():
+                        if placement.name.lower()==existing.lower():
+                            placement.name=existing
+                            break
+
+                if not placement.load(self.lookup, self.defs, self.vertexcache, True):
+                    errobjs.append(placement.name)
+                placement.layout(newtile, options, self.vertexcache)
+                self.placements[key][placement.definition.layer].append(placement)
             #print "%s CPU time" % (time.clock()-clock)
 
-            progress.Update(13, 'Polygons')
-            polygons=self.currentpolygons()
-            for poly in polygons:
-                if poly.kind in [Polygon.EXCLUDE, Polygon.FACADE, Polygon.FOREST]:
-                    if not self.vertexcache.load(poly.name,True) and not poly.name in errobjs:
-                        errobjs.append(poly.name)
-                if not poly.points:
-                    self.updatepoly(poly)
-
             # Lay out runways
-            progress.Update(14, 'Runways')
+            progress.Update(13, 'Runways')
             key=(newtile[0],newtile[1],options&Prefs.ELEVATION)
             if key not in self.runways:
                 airports=[]
@@ -1381,7 +1192,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 else:
                     glColor3f(*runwaycolour)
                 glDisable(GL_TEXTURE_2D)
-                glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
+                glPolygonOffset(-10, -100*self.polyhack)	# Stupid value cos not coplanar
                 glEnable(GL_POLYGON_OFFSET_FILL)
                 if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
                 glEnable(GL_CULL_FACE)
@@ -1506,10 +1317,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                     except GLUerror, e:
                         pass
                 gluDeleteTess(tessObj)
-                glDisable(GL_POLYGON_OFFSET_FILL)
                 if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
                 
-                progress.Update(15, 'Navaids')
+                progress.Update(14, 'Navaids')
                 objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
                       3:  'lib/airport/NAVAIDS/VOR.obj',
                       4:  'lib/airport/NAVAIDS/ILS.obj',
@@ -1532,16 +1342,17 @@ class MyGL(wx.glcanvas.GLCanvas):
                       215:'lib/airport/lights/slow/VASI3.obj',
                       216:'lib/airport/lights/slow/rway_guard.obj',
                       }
-                for name in objs.values():
-                    self.vertexcache.load(name, True)	# skip errors
-                self.vertexcache.realize(self)
+                #for name in objs.values():
+                #    self.vertexcache.load(name, True)	# skip errors
+                #self.vertexcache.realize(self)
+                glDisable(GL_POLYGON_OFFSET_FILL)
                 glDepthMask(GL_TRUE)
                 glEnable(GL_CULL_FACE)
                 cullstate=True
                 glColor3f(0.8, 0.8, 0.8)	# Unpainted
                 glEnable(GL_TEXTURE_2D)
                 polystate=0
-                for (i, lat, lon, hdg) in self.navaids:
+                if 0:#XXX for (i, lat, lon, hdg) in self.navaids:
                     if [int(floor(lat)),int(floor(lon))]==newtile and i in objs:
                         name=objs[i]
                         (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(name)
@@ -1553,7 +1364,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         glBindTexture(GL_TEXTURE_2D, texno)
                         if poly:
                             if polystate!=poly:
-                                glPolygonOffset(-1*poly, -1*poly)
+                                glPolygonOffset(-1*poly, -1*self.polyhack*poly)
                                 glEnable(GL_POLYGON_OFFSET_FILL)
                             polystate=poly
                         else:
@@ -1584,7 +1395,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glEndList()
 
             # Done
-            progress.Update(16, 'Done')
+            progress.Update(15, 'Done')
             if self.background:
                 (image, lat, lon, hdg, width, length, opacity, height)=self.background
                 if [int(floor(lat)),int(floor(lon))]==self.tile:
@@ -1660,16 +1471,19 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             raise ArithmeticError
         
-    def trashlists(self, objectstoo=False, terraintoo=False):
+    def trashlists(self, picktoo=False, terraintoo=False):
+        # Should be called when selection changed
+        # - with picktoo if objects have changed
+        # - with terraintoo if vertexcache has been flushed
         #print "i", objectstoo, runwaysandterraintoo
         if terraintoo:
             if self.meshlist: glDeleteLists(self.meshlist, 1)
             self.meshlist=0
-        if objectstoo:
-            if self.objectslist: glDeleteLists(self.objectslist, 1)
-            self.objectslist=0
-        if self.selectlist: glDeleteLists(self.selectlist, 1)
-        self.selectlist=0
+        if picktoo:
+            if self.picklist: glDeleteLists(self.picklist, 1)
+            self.picklist=0
+        if self.clutterlist: glDeleteLists(self.clutterlist, 1)
+        self.clutterlist=0
 
     def setopts(self, options):
         self.goto(options=options)
@@ -1741,223 +1555,4 @@ class MyGL(wx.glcanvas.GLCanvas):
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         return img.Mirror(False)
-
-
-    def updatepoly(self, poly, bailearly=False):
-
-        def subdiv(size, scale, divs, ends, isvert):
-            trgsize=size/scale
-            cumsize=0
-            if ends[0]+ends[1]>=len(divs):
-                points=range(len(divs))
-                for i in points: cumsize+=divs[i][1]-divs[i][0]
-                if cumsize==0: return (points,1)
-                return (points,size/cumsize)
-
-            if isvert:
-                points1=range(ends[0])
-                points2=range(len(divs)-ends[1], len(divs))
-            else:
-                points1=range(len(divs)-ends[1])
-                points2=range(ends[0],len(divs))
-            for i in points1+points2: cumsize+=divs[i][1]-divs[i][0]
-            if cumsize<trgsize or isvert:
-                points=range(ends[0], len(divs)-ends[1])
-                extsize=0
-                for i in points: extsize+=divs[i][1]-divs[i][0]
-                i=int((trgsize-cumsize)/extsize)
-                cumsize+=extsize*i
-                points=points1 + points*i
-                for i in range(ends[0], len(divs)-ends[1]):
-                    if cumsize+divs[i][1]-divs[i][0] > trgsize: break
-                    cumsize+=divs[i][1]-divs[i][0]
-                    points.append(i)
-                points.extend(points2)
-            else:
-                points=points1+points2
-                while cumsize>trgsize and (isvert or len(points)>1):
-                    i=max(0,min((len(points)-1+ends[0]-ends[1])/2, len(points)-1))
-                    cumsize-=(divs[points[i]][1]-divs[points[i]][0])
-                    points.pop(i)
-            if isvert:
-                #if points: points[-1]=len(divs)-1	# always end with roof
-                return (points,scale)
-            else:
-                return (points,size/cumsize)
-
-
-        poly.lat=poly.lon=count=0
-        poly.points=[]
-
-        n=len(poly.nodes[0])
-        a=0
-        for i in range(n):
-            (x,z)=self.latlon2m(poly.nodes[0][i][1], poly.nodes[0][i][0])
-            y=self.vertexcache.height(self.tile,self.options,x,z)
-            poly.points.append((x,y,z))
-            poly.lon+=poly.nodes[0][i][0]
-            poly.lat+=poly.nodes[0][i][1]
-            a+=poly.nodes[0][i][0]*poly.nodes[0][(i+1)%n][1]-poly.nodes[0][(i+1)%n][0]*poly.nodes[0][i][1]
-        poly.lat=round2res(poly.lat/len(poly.nodes[0]))
-        poly.lon=round2res(poly.lon/len(poly.nodes[0]))
-
-        if a<0:
-            # Nodes are clockwise, should be ccw
-            poly.nodes[0].reverse()
-            poly.points.reverse()
-            if self.selectednode!=None: self.selectednode=n-1-self.selectednode
-
-        # Show secondary windings
-        for j in range(1,len(poly.nodes)):
-            for i in range(len(poly.nodes[j])):
-                (x,z)=self.latlon2m(poly.nodes[j][i][1], poly.nodes[j][i][0])
-                y=self.vertexcache.height(self.tile,self.options,x,z)
-                poly.points.append((x,y,z))
-
-        if poly.kind!=Polygon.FACADE: return
-        fac=self.vertexcache.get(poly.name)
-        if not isinstance(fac, FacadeDef): return	# unknown
-
-        n=len(poly.points)
-
-        if bailearly:
-            # rough estimate of number of quads
-            pts=0
-            for i in range(n-1+fac.ring):
-                pts+=(hypot(poly.points[i][0]-poly.points[(i+1)%n][0],
-                            poly.points[i][0]-poly.points[(i+1)%n][0])*len(fac.horiz))/(hscale*(fac.horiz[-1][1]-fac.horiz[0][0]))
-            if pts*(1+int((poly.param*len(fac.vert))/(fac.vscale*(fac.vert[-1][1]-fac.vert[0][0]))))>1000:
-                return
-
-        poly.quads=[]
-        poly.roof=[]
-        (vert,vscale)=subdiv(poly.param, fac.vscale, fac.vert,fac.vends, True)
-
-        roofheight=0
-        for i in range(len(vert)):
-            roofheight+=(fac.vert[vert[i]][1]-fac.vert[vert[i]][0])
-        roofheight*=fac.vscale	# not scaled to fit
-        
-        if fac.roof_slope:
-            roofpts=[]
-            dist=sin(d2r*fac.roof_slope)*fac.vscale*(fac.vert[vert[-1]][1]-fac.vert[vert[-1]][0])
-            for i in range(n):
-                if i==n-1 and not fac.ring:
-                    tonext=(poly.points[i][0]-poly.points[i-1][0],
-                            poly.points[i][2]-poly.points[i-1][2])
-                else:
-                    tonext=(poly.points[(i+1)%n][0]-poly.points[i][0],
-                            poly.points[(i+1)%n][2]-poly.points[i][2])
-                m=hypot(*tonext)
-                tonext=(tonext[0]/m, tonext[1]/m)
-                toprev=(poly.points[(i-1)%n][0]-poly.points[i][0],
-                        poly.points[(i-1)%n][2]-poly.points[i][2])
-                m=hypot(*toprev)
-                toprev=(toprev[0]/m, toprev[1]/m)
-                d=toprev[0]*tonext[1]-toprev[1]*tonext[0]
-                if n==2 or d==0 or (not fac.ring and (i==0 or i==n-1)):
-                    roofpts.append((poly.points[i][0]+dist*tonext[1],
-                                    poly.points[i][1]+roofheight,
-                                    poly.points[i][2]-dist*tonext[0]))
-                else:
-                    # http://astronomy.swin.edu.au/~pbourke/geometry/lineline2d
-                    u=(toprev[0]*(dist*tonext[0]+dist*toprev[0])+
-                       toprev[1]*(dist*tonext[1]+dist*toprev[1]))/d
-                    roofpts.append((poly.points[i][0]+dist*tonext[1]+u*tonext[0],
-                                    poly.points[i][1]+roofheight,
-                                    poly.points[i][2]-dist*tonext[0]+u*tonext[1]))
-        else:
-            roofpts=[(poly.points[i][0], poly.points[i][1]+roofheight, poly.points[i][2]) for i in range(n)]
-
-        for wall in range(n-1+fac.ring):
-            size=hypot(poly.points[(wall+1)%n][0]-poly.points[wall][0],
-                       poly.points[(wall+1)%n][2]-poly.points[wall][2])
-            h=((poly.points[(wall+1)%n][0]-poly.points[wall][0])/size,
-               (poly.points[(wall+1)%n][1]-poly.points[wall][1])/size,
-               (poly.points[(wall+1)%n][2]-poly.points[wall][2])/size)
-            r=((roofpts[(wall+1)%n][0]-roofpts[wall][0])/size,
-               (roofpts[(wall+1)%n][1]-roofpts[wall][1])/size,
-               (roofpts[(wall+1)%n][2]-roofpts[wall][2])/size)
-            (horiz,hscale)=subdiv(size, fac.hscale, fac.horiz, fac.hends,False)
-            cumheight=0
-            for i in range(len(vert)-1):
-                heightinc=fac.vscale*(fac.vert[vert[i]][1]-fac.vert[vert[i]][0])
-                cumwidth=0
-                for j in range(len(horiz)):
-                    widthinc=hscale*(fac.horiz[horiz[j]][1]-fac.horiz[horiz[j]][0])
-                    poly.quads.append((poly.points[wall][0]+h[0]*cumwidth,
-                                       poly.points[wall][1]+h[1]*cumwidth+cumheight,
-                                       poly.points[wall][2]+h[2]*cumwidth,
-                                       fac.horiz[horiz[j]][0],
-                                       fac.vert[vert[i]][0]))
-                    poly.quads.append((poly.points[wall][0]+h[0]*cumwidth,
-                                       poly.points[wall][1]+h[1]*cumwidth+cumheight+heightinc,
-                                       poly.points[wall][2]+h[2]*cumwidth,
-                                       fac.horiz[horiz[j]][0],
-                                       fac.vert[vert[i]][1]))
-                    poly.quads.append((poly.points[wall][0]+h[0]*(cumwidth+widthinc),
-                                       poly.points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight+heightinc,
-                                       poly.points[wall][2]+h[2]*(cumwidth+widthinc),
-                                       fac.horiz[horiz[j]][1],
-                                       fac.vert[vert[i]][1]))
-                    poly.quads.append((poly.points[wall][0]+h[0]*(cumwidth+widthinc),
-                                       poly.points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight,
-                                       poly.points[wall][2]+h[2]*(cumwidth+widthinc),
-                                       fac.horiz[horiz[j]][1],
-                                       fac.vert[vert[i]][0]))
-                    cumwidth+=widthinc
-                cumheight+=heightinc
-            # penthouse
-            cumwidth=0
-            for j in range(len(horiz)):
-                if not len(vert): continue
-                widthinc=hscale*(fac.horiz[horiz[j]][1]-fac.horiz[horiz[j]][0])
-                poly.quads.append((poly.points[wall][0]+h[0]*cumwidth,
-                                   poly.points[wall][1]+h[1]*cumwidth+cumheight,
-                                   poly.points[wall][2]+h[2]*cumwidth,
-                                   fac.horiz[horiz[j]][0],
-                                   fac.vert[vert[-1]][0]))
-                poly.quads.append((roofpts[wall][0]+r[0]*cumwidth,
-                                   roofpts[wall][1]+r[1]*cumwidth,
-                                   roofpts[wall][2]+r[2]*cumwidth,
-                                   fac.horiz[horiz[j]][0],
-                                   fac.vert[vert[-1]][1]))
-                poly.quads.append((roofpts[wall][0]+r[0]*(cumwidth+widthinc),
-                                   roofpts[wall][1]+r[1]*(cumwidth+widthinc),
-                                   roofpts[wall][2]+r[2]*(cumwidth+widthinc),
-                                   fac.horiz[horiz[j]][1],
-                                   fac.vert[vert[-1]][1]))
-                poly.quads.append((poly.points[wall][0]+h[0]*(cumwidth+widthinc),
-                                   poly.points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight,
-                                   poly.points[wall][2]+h[2]*(cumwidth+widthinc),
-                                   fac.horiz[horiz[j]][1],
-                                   fac.vert[vert[-1]][0]))
-                cumwidth+=widthinc
-
-        # roof
-        if n<=2 or not fac.ring or not fac.roof: return
-        minx=minz=maxint
-        maxx=maxz=-maxint
-        for i in roofpts:
-            minx=min(minx,i[0])
-            maxx=max(maxx,i[0])
-            minz=min(minz,i[2])
-            maxz=max(maxz,i[2])
-        xscale=(fac.roof[2][0]-fac.roof[0][0])/(maxx-minx)
-        zscale=(fac.roof[2][1]-fac.roof[0][1])/(maxz-minz)
-        (x,z)=self.latlon2m(poly.lat,poly.lon)
-        y=self.vertexcache.height(self.tile,self.options,x,z)+roofheight
-        poly.roof=[(x, y, z,
-                    fac.roof[0][0] + (x-minx)*xscale,
-                    fac.roof[0][1] + (z-minz)*zscale)]
-        if n<=4:
-            for i in range(len(roofpts)-1, -1, -1):
-                poly.roof.append((roofpts[i][0], roofpts[i][1], roofpts[i][2],
-                                  fac.roof[3-i][0], fac.roof[3-i][1]))
-            return
-        for i in range(len(roofpts)-1, -1, -1):
-            poly.roof.append((roofpts[i][0], roofpts[i][1], roofpts[i][2],
-                              fac.roof[0][0] + (roofpts[i][0]-minx)*xscale,
-                              fac.roof[0][1] + (roofpts[i][2]-minz)*zscale))
-            
 

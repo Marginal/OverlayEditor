@@ -1,10 +1,14 @@
+Use of control or cmd in Finder for selection drag?
+Multiple tiles
+Show airports on all tiles that they intersect
+Airport slope at height when overlapping edge of tile - eg KPHX
+Beziers in polygons? - not for .bch, .for, .fac - yes for .lin, .pol, .str
+delete from inner windings
 middle mouse move
-eddn_overlay
-Object prioritisation (detect poly_os clash for ver<8.50)
-Bezier polygons
+eddn_overlay ?
+Object prioritisation
 boundary (130)
-Clean export - only used 
-Info popup - name, source .obj file, source texture
-roads
-LSPK ?
-Mutliple add
+Info popup - name, source .obj file, source texture, editable location, info.txt
+roads / networks
+beaches
+taxilines
