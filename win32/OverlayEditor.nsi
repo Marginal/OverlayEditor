@@ -5,6 +5,8 @@
 
 !define MUI_ABORTWARNING
 
+SetCompressor /SOLID lzma
+
 Name "OverlayEditor $%VERSION%"
 Caption "OverlayEditor $%VERSION% Installer"
 OutFile "OverlayEditor_$%VER%_win32.exe"

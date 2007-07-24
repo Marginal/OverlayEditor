@@ -99,7 +99,7 @@ setup(name='OverlayEditor',
                             'dll_excludes':['w9xpopen.exe'],
                             'bundle_files':True,
                             'compressed':True,
-                            'excludes':['tcl', 'Tkinter', 'mx','socket','urllib','webbrowser'],
+                            'excludes':['Carbon', 'tcl', 'Tkinter', 'mx','socket','urllib','webbrowser'],
                             'packages':['encodings.mbcs','encodings.utf_8','encodings.latin_1'],	# latin_1 for wx.lib.masked.NumCtrl
                             'optimize':2,
                             },
