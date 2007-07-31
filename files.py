@@ -5,6 +5,7 @@ try:
     from OpenGL.GL.ARB.texture_non_power_of_two import glInitTextureNonPowerOfTwoARB
 except:	# not in 2.0.0.44
     def glInitTextureNonPowerOfTwoARB(): return False
+
 import codecs
 from glob import glob
 from math import cos, log, pi, fabs
@@ -38,6 +39,8 @@ def sortfolded(seq):
 class Prefs:
     TERRAIN=1
     ELEVATION=2
+    DRAW=TERRAIN|ELEVATION
+    DMS=4
     
     def __init__(self):
         self.filename=None
@@ -144,7 +147,7 @@ def readApt(filename):
             if not loc: loc=[lat,lon]
             stop=c[7].split('.')
             if len(stop)<2: stop.append(0)
-            if len(c)<11: surface=0
+            if len(c)<11: surface=int(c[9])/1000000	# v6
             else: surface=int(c[10])
             run.append((lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]),
                         f2m*float(stop[0]),f2m*float(stop[1]),surface))
@@ -342,13 +345,13 @@ class TexCache:
             glTexImage2D(GL_TEXTURE_2D, 0, format, image.size[0], image.size[1], 0, format, GL_UNSIGNED_BYTE, data)
             self.texs[path]=id
             return id
-        except IOError, (errno, e):
+        except IOError, args:
             self.texs[path]=0
             if __debug__:
-                if errno==2:
+                if isinstance(args, tuple) and args[1]==2:
                     print 'Failed to find texture "%s"' % basename(path)
                 else:
-                    print 'Failed to load texture "%s" - %s' % (basename(path), e)
+                    print 'Failed to load texture "%s" - %s' % (basename(path), args)
         except:
             self.texs[path]=0
             if __debug__: print 'Failed to load texture "%s"' % basename(path)
@@ -810,7 +813,7 @@ class VertexCache:
                 while True:
                     line=h.readline()
                     if not line: break
-                    c=line.split('#')[0].split()
+                    c=line.split('#')[0].split('//')[0].split()
                     if not c: continue
                     if c[0]=='TEXTURE':
                         if len(c)>1:

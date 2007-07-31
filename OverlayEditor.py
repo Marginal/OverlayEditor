@@ -13,20 +13,22 @@ else:
     try:
         import wx
     except:
-        import Tkinter, tkMessageBox
-        Tkinter.Tk().withdraw()	# make and suppress top-level window
         if platform=='darwin':
-            tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\nwxPython2.5.3-py%s or later." % version[:3], icon="question", type="ok")
+            from EasyDialogs import Message
+            Message("wxPython is not installed. This application\nrequires wxPython2.5.3-py%s or later." % version[:3])
         else:	# linux
-            tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\npython wxgtk2.5.3 or later.", icon="error", type="ok")
+            import tkMessageBox
+            tkMessageBox._show("Error", "wxPython is not installed. This application\nrequires python wxgtk2.5.3 or later.", icon="error", type="ok")
         exit(1)
     try:
         import OpenGL
     except:
-        import Tkinter
-        import tkMessageBox
-        Tkinter.Tk().withdraw()	# make and suppress top-level window
-        tkMessageBox._show("Error", "PyOpenGL is not installed.\nThis application requires\nPyOpenGL2 or later.", icon="error", type="ok")
+        if platform=='darwin':
+            from EasyDialogs import Message
+            Message("PyOpenGL is not installed. This application\nrequires PyOpenGL2 or later.")
+        else:	# linux
+            import tkMessageBox
+            tkMessageBox._show("Error", "PyOpenGL is not installed. This application\nrequires PyOpenGL2 or later.", icon="error", type="ok")
         exit(1)
 from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
 from OpenGL.GL import *
@@ -634,7 +636,7 @@ class PreferencesDialog(wx.Dialog):
         box1.Add(browsebtn, 0, wx.ALIGN_RIGHT|wx.ALL, 4)
         panel1.SetSizer(box1)
 
-        self.display = wx.RadioBox(panel2, -1, "Display", style=wx.VERTICAL,
+        self.display = wx.RadioBox(panel2, -1, "Terrain", style=wx.VERTICAL,
                                    choices=["No terrain", "Show terrain", "Show terrain and elevation"])
         if prefs.options&Prefs.TERRAIN:
             if prefs.options&Prefs.ELEVATION:
@@ -645,12 +647,20 @@ class PreferencesDialog(wx.Dialog):
         box2.Add(self.display, 1)
         panel2.SetSizer(box2)
 
-        box3=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
+        self.latlon = wx.RadioBox(panel3, -1, "Latitude && Longitude", style=wx.VERTICAL,
+                                   choices=["Decimal", u"dd\u00B0mm'ss\""])
+        if prefs.options&Prefs.DMS: self.latlon.SetSelection(1)
+        box3 = wx.BoxSizer()
+        box3.Add(self.latlon, 1)
+        panel3.SetSizer(box3)
+
+        box4=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
 
         box0 = wx.BoxSizer(wx.VERTICAL)
-        box0.Add(panel1, 0, wx.ALL|wx.EXPAND, 10)
-        box0.Add(panel2, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, 10)
-        box0.Add(box3, 0, wx.ALL|wx.EXPAND, 10)
+        box0.Add(panel1, 0, wx.LEFT|wx.RIGHT|wx.TOP|wx.EXPAND, 10)
+        box0.Add(panel2, 0, wx.LEFT|wx.RIGHT|wx.TOP|wx.EXPAND, 10)
+        box0.Add(panel3, 0, wx.LEFT|wx.RIGHT|wx.TOP|wx.EXPAND, 10)
+        box0.Add(box4, 0, wx.ALL|wx.EXPAND, 10)
 
         wx.EVT_BUTTON(self, browsebtn.GetId(), self.OnBrowse)
         self.SetSizerAndFit(box0)
@@ -1009,7 +1019,7 @@ class MainWindow(wx.Frame):
             self.menubar.Append(editmenu, u'Edit')
 
             viewmenu = wx.Menu()
-            viewmenu.Append(wx.ID_PREVIEW, u'Background\u2026')
+            viewmenu.Append(wx.ID_PREVIEW, u'Background image\u2026')
             wx.EVT_MENU(self, wx.ID_PREVIEW, self.OnBackground)
             viewmenu.Append(wx.ID_REFRESH, u'Reload')
             wx.EVT_MENU(self, wx.ID_REFRESH, self.OnReload)
@@ -1128,7 +1138,7 @@ class MainWindow(wx.Frame):
 
         # Hack: Use zero-sized first field to hide toolbar button long help
         self.statusbar=self.CreateStatusBar(3, wx.ST_SIZEGRIP)
-        (x,y)=self.statusbar.GetTextExtent("  Lat: 999.999999  Lon: 9999.999999  Hdg: 999  Elv: 9999.9  ")
+        (x,y)=self.statusbar.GetTextExtent(u'  Lat: 99\u00B099\'99.999"W  Lon: 999\u00B099\'99.999"W  Hdg: 999  Elv: 9999.9  ')
         self.statusbar.SetStatusWidths([0, x+50,-1])
 
         self.splitter=wx.SplitterWindow(self, wx.ID_ANY,
@@ -1165,9 +1175,9 @@ class MainWindow(wx.Frame):
 
     def ShowLoc(self):
         if prefs.options&Prefs.ELEVATION:
-            self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f  Elv: %-6.1f" %(self.loc[0], self.loc[1], self.hdg, self.canvas.getheight()), 1)
+            self.statusbar.SetStatusText("%s  Hdg: %-3.0f  Elv: %-6.1f" % (self.canvas.latlondisp(self.loc[0], self.loc[1]), self.hdg, self.canvas.getheight()), 1)
         else:
-            self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f" %(self.loc[0], self.loc[1], self.hdg), 1)
+            self.statusbar.SetStatusText("%s  Hdg: %-3.0f" % (self.canvas.latlondisp(self.loc[0], self.loc[1]), self.hdg), 1)
 
     def ShowSel(self):
         (names,string,lat,lon,hdg)=self.canvas.getsel()
@@ -1285,7 +1295,7 @@ class MainWindow(wx.Frame):
             else:
                 self.elev-=1
             if self.elev<2: self.elev=2	# not 1 cos clipping
-        elif event.m_keyCode in [wx.WXK_INSERT, wx.WXK_NUMPAD_INSERT]: # wx.WXK_NUMPAD0]:
+        elif event.m_keyCode in [wx.WXK_INSERT, wx.WXK_RETURN, wx.WXK_NUMPAD_INSERT, wx.WXK_NUMPAD_ENTER]:
             name=self.palette.get()
             if prefs.package and name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg):
                 changed=True
@@ -1687,7 +1697,7 @@ class MainWindow(wx.Frame):
         self.Refresh()
 
     def OnImport(self, event):
-        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Facades, Forests and Polygons|*.obj;*.fac;*.for;*.pol|Object files (*.obj)|*.obj|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|Draped polygon files (*.pol)|*.pol|All files|*.*", wx.OPEN|wx.MULTIPLE)
+        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Facades, Forests and Polygons|*.obj;*.fac;*.for;*.pol|Object files (*.obj)|*.obj|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|Draped polygon files (*.pol)|*.pol|All files|*.*", wx.OPEN|wx.MULTIPLE|wx.HIDE_READONLY)
         if dlg.ShowModal()!=wx.ID_OK:
             dlg.Destroy()
             return
@@ -1736,6 +1746,8 @@ class MainWindow(wx.Frame):
             prefs.options=Prefs.TERRAIN|Prefs.ELEVATION
         else:
             prefs.options=0
+        if dlg.latlon.GetSelection():
+            prefs.options|=Prefs.DMS
         if dlg.path.GetValue()!=prefs.xplane:
             prefs.xplane=dlg.path.GetValue()
             prefs.package=None
