@@ -6,14 +6,6 @@ try:
 except:	# not in 2.0.0.44
     def glInitTextureNonPowerOfTwoARB(): return False
 
-from OpenGL.GLU import *
-try:
-    # apparently older PyOpenGL version didn't define gluTessVertex
-    gluTessVertex
-except NameError:
-    from OpenGL import GLU
-    gluTessVertex = GLU._gluTessVertex
-
 import codecs
 from glob import glob
 from math import cos, log, pi
@@ -28,6 +20,7 @@ if __debug__:
 
 #from Numeric import array
 
+from clutter import BBox
 from clutterdef import KnownDefs, SkipDefs
 from DSFLib import readDSF
 from prefs import Prefs
@@ -170,7 +163,7 @@ def readLib(filename, objects, terrain):
         builtinhack=True
     else:
         builtinhack=False
-    if 1:#XXXtry:
+    try:
         h=file(filename, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
@@ -217,7 +210,7 @@ def readLib(filename, objects, terrain):
                     else:
                         objects[lib]={}
                     objects[lib][name]=obj
-    else:#except:
+    except:
         if h: h.close()
             
 
@@ -226,6 +219,7 @@ class TexCache:
     def __init__(self):
         self.blank=0	#self.get(join('Resources','blank.png'))
         self.texs={}
+        self.terraintexs=[]	# terrain textures will not be reloaded
         # Must be after init
         self.npot=glInitTextureNonPowerOfTwoARB()
         if glGetString(GL_VERSION) >= '1.2':
@@ -238,11 +232,15 @@ class TexCache:
             # Hack round suspected memory leak causing SegFault on SUSE
             pass
         else:
-            if self.texs:
-                glDeleteTextures(self.texs.values())
-            self.texs={}
+            a=[]
+            for name in self.texs.keys():
+                if self.texs[name] not in self.terraintexs:
+                    a.append(self.texs[name])
+                    self.texs.pop(name)
+            if a:
+                glDeleteTextures(a)
 
-    def get(self, path, downsample=False, wrap=True, fixsize=False):
+    def get(self, path, wrap=True, alpha=True, downsample=False, fixsize=False):
         if not path: return 0
         if path in self.texs:
             return self.texs[path]
@@ -258,8 +256,10 @@ class TexCache:
                 if size!=[image.size[0],image.size[1]]:
                     image=image.resize((size[0], size[1]), BICUBIC)
 
+            if (downsample or not alpha) and image.mode!='RGB':
+                image=image.convert('RGB')
+                
             if downsample:
-                if image.mode!='RGB': image=image.convert('RGB')
                 image=image.resize((image.size[0]/4,image.size[1]/4), NEAREST)
                 data = image.tostring("raw", 'RGB', 0, -1)
                 format=GL_RGB
@@ -280,21 +280,23 @@ class TexCache:
 
             id=glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, id)
-            if not wrap:
+            if wrap:
+                glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT)
+                glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT)
+            else:
                 glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,self.clampmode)
                 glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,self.clampmode)
-            #else:
-            #    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT)
-            #    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glTexImage2D(GL_TEXTURE_2D, 0, format, image.size[0], image.size[1], 0, format, GL_UNSIGNED_BYTE, data)
             self.texs[path]=id
+            if downsample:
+                self.terraintexs.append(id)
             return id
-        except IOError, (errno, e):
+        except IOError, e:
             self.texs[path]=0
             if __debug__:
-                if errno==2:
+                if e.errno==2:
                     print 'Failed to find texture "%s"' % basename(path)
                 else:
                     print 'Failed to load texture "%s" - %s' % (basename(path), e)
@@ -320,14 +322,6 @@ class VertexCache:
         self.valid=False
         self.dsfdirs=None	# [custom, default]
 
-        # General purpose tessellator
-        self.tess=gluNewTess()
-        gluTessNormal(self.tess, 0, -1, 0)
-        gluTessCallback(self.tess, GLU_TESS_EDGE_FLAG, self.tessedge)	# no strips
-
-    def tessedge(self, flag):
-        pass	# dummy
-
     def reset(self, terrain, dsfdirs):
         # invalidate geometry and textures
         self.ter=terrain
@@ -351,8 +345,8 @@ class VertexCache:
                 glVertexPointerf(self.varray)
                 glTexCoordPointerf(self.tarray)
             else:	# need something or get conversion error
-                glVertexPointerf([[0,0,0],[0,0,0],[0,0,0]])
-                glTexCoordPointerf([[0,0],[0,0]])
+                glVertexPointerf([[0,0,0]])
+                glTexCoordPointerf([[0,0]])
             self.valid=True
 
     def allocate(self, vdata, tdata):
@@ -422,7 +416,7 @@ class VertexCache:
             base=len(self.varray)
             self.varray.extend(v)
             self.tarray.extend(t)
-            texno=self.texcache.get(texture, flags&1, flags&1)
+            texno=self.texcache.get(texture, True, False, flags&1)
             self.meshcache.append((base, len(v), texno, flags/2))
         if __debug__: print "%s CPU time in getMesh" % (time.clock()-clock)
         self.valid=False	# new geometry -> need to update OpenGL
@@ -432,20 +426,19 @@ class VertexCache:
 
     # create sets of bounding boxes for height testing
     def getMeshdata(self, tile, options):
+        if not options&Prefs.ELEVATION:
+            return [(BBox(-maxint,maxint,-maxint,maxint),
+                     [([[-maxint,0,-maxint],
+                        [-maxint,0, maxint],
+                        [ maxint,0,-maxint]],[0,0,0,0])])]
         key=(tile[0],tile[1],options&Prefs.ELEVATION)
         if key in self.meshdata:
             return self.meshdata[key]	# don't reload
-        if not options&Prefs.ELEVATION:
-            meshdata=[([-maxint,maxint,-maxint,maxint],
-                       [([[-maxint,0,-maxint],
-                          [-maxint,0, maxint],
-                          [ maxint,0,-maxint]],[0,0,0,0])])]
-            self.meshdata[key]=meshdata
-            return meshdata
         meshdata=[]
         tot=0
         if __debug__: clock=time.clock()	# Processor time
         for (texture, flags, v, t) in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
+            if flags>1: continue	# not interested in overlays
             minx=minz=maxint
             maxx=maxz=-maxint
             tris=[]
@@ -455,25 +448,12 @@ class VertexCache:
                 minz=min(minz, v[i][2], v[i+1][2], v[i+2][2])
                 maxz=max(maxz, v[i][2], v[i+1][2], v[i+2][2])
                 tris.append(([v[i], v[i+1], v[i+2]], [0,0,0,0]))
-            meshdata.append(([minx, maxx, minz, maxz], tris))
+            meshdata.append((BBox(minx, maxx, minz, maxz), tris))
             tot+=len(tris)
         if __debug__: print "%s CPU time in getMeshdata" % (time.clock()-clock)
         #print len(meshdata), "patches,", tot, "tris,", tot/len(meshdata), "av"
         self.meshdata[key]=meshdata
         return meshdata
-            
-
-    # tessellate
-    def tessellate(self, tile, options):
-        # XXX assert(options&Prefs.ELEVATION)	# don't call me if no elevaton
-        for (texture, flags, v, t) in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
-            if flags>1: continue	# not interested in overlays
-            for i in range(0,len(v),3):
-                gluTessBeginContour(self.tess)
-                gluTessVertex(self.tess, [v[i][0],0,v[i][2]], (v[i],None))
-                gluTessVertex(self.tess, [v[i+1][0],0,v[i+1][2]],(v[i+1],None))
-                gluTessVertex(self.tess, [v[i+2][0],0,v[i+2][2]],(v[i+2],None))
-                gluTessEndContour(self.tess)
             
 
     def height(self, tile, options, x, z, likely=None):
@@ -490,7 +470,7 @@ class VertexCache:
 
         # test all patches then
         for (bbox, tris) in self.getMeshdata(tile,options):
-            if x<bbox[0] or x>bbox[1] or z<bbox[2] or z>bbox[3]: continue
+            if x<bbox.minx or x>bbox.maxx or z<bbox.minz or z>bbox.maxz: continue
             h=self.heighttest(tris, x, z)
             if h!=None: return h
         
@@ -661,7 +641,7 @@ def importObj(pkgpath, path):
                 break	# Stop at first non-texture statement
 
     # Write new OBJ
-    newfile=join(newpath,basename(path))
+    newfile=join(newpath,basename(path)[:-4]+path[-4:].lower())
     w=file(newfile, 'wU')
     w.write(header)
     for line in h:

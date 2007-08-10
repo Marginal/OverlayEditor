@@ -8,7 +8,7 @@ import types
 
 import wx
 
-from clutter import Object, PolygonFactory, Exclude, minres
+from clutter import PolygonFactory, Object, Polygon, Draped, Exclude, minres
 from version import appname, appversion
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
@@ -441,7 +441,7 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
     return (texture,flags,v,t)
 
 
-def writeDSF(dsfdir, key, objects, polygons):
+def writeDSF(dsfdir, key, placements):
     (south,west)=key
     tiledir=join(dsfdir, "%+02d0%+03d0" % (int(south/10), int(west/10)))
     if not isdir(tiledir): mkdir(tiledir)
@@ -452,7 +452,7 @@ def writeDSF(dsfdir, key, objects, polygons):
     if exists(tilename+'.DSF'):
         if exists(tilename+'.DSF.BAK'): unlink(tilename+'.DSF.BAK')
         rename(tilename+'.DSF', tilename+'.DSF.BAK')
-    if not (objects or polygons): return
+    if not (placements): return
 
     tmp=join(gettempdir(), "%+03d%+04d.txt" % (south,west))
     h=file(tmp, 'wt')
@@ -462,13 +462,18 @@ def writeDSF(dsfdir, key, objects, polygons):
     h.write('PROPERTY\tsim/require_object\t1/0\n')
     h.write('PROPERTY\tsim/require_facade\t1/0\n')
     h.write('PROPERTY\tsim/creation_agent\t%s %4.2f\n' % (appname, appversion))
-    for poly in polygons:
-        if poly.kind==Polygon.EXCLUDE:
-            for k in Exclude.NAMES.keys():
-                if Polygon.NAMES[k]==poly.name:
+
+    objects=[]
+    polygons=[]
+    for placement in placements:
+        if isinstance(placement,Object):
+            objects.append(placement)
+        elif isinstance(placement,Exclude):
+            for k in Exclude.NAMES:
+                if Exclude.NAMES[k]==placement.name:
                     minlat=minlon=maxint
                     maxlat=maxlon=-maxint
-                    for n in poly.nodes[0]:
+                    for n in placement.nodes[0]:
                         minlon=min(minlon,n[0])
                         maxlon=max(maxlon,n[0])
                         minlat=min(minlat,n[1])
@@ -476,9 +481,13 @@ def writeDSF(dsfdir, key, objects, polygons):
                     h.write('PROPERTY\t%s\t%11.6f/%10.6f/%11.6f/%10.6f\n' % (
                         k, minlon, minlat, maxlon, maxlat))
                     break
-    h.write('PROPERTY\tsim/west\t%d\n' %  west)
+        else:
+            polygons.append(placement)
+
+    # must be final properties
+    h.write('PROPERTY\tsim/west\t%d\n' %   west)
     h.write('PROPERTY\tsim/east\t%d\n' %  (west+1))
-    h.write('PROPERTY\tsim/north\t%d\n' %  (south+1))
+    h.write('PROPERTY\tsim/north\t%d\n' % (south+1))
     h.write('PROPERTY\tsim/south\t%d\n' %  south)
     h.write('\n')
 
@@ -491,10 +500,9 @@ def writeDSF(dsfdir, key, objects, polygons):
 
     polydefs=[]
     for poly in polygons:
-        if poly.kind!=Polygon.EXCLUDE:
-            if not poly.name in polydefs:
-                polydefs.append(poly.name)
-                h.write('POLYGON_DEF\t%s\n' % poly.name)
+        if not poly.name in polydefs:
+            polydefs.append(poly.name)
+            h.write('POLYGON_DEF\t%s\n' % poly.name)
     if polydefs: h.write('\n')
 
     for obj in objects:
@@ -503,8 +511,6 @@ def writeDSF(dsfdir, key, objects, polygons):
     if objects: h.write('\n')
     
     for poly in polygons:
-        if poly.kind==Polygon.EXCLUDE:
-            continue
         h.write('BEGIN_POLYGON\t%d %d %d\n' % (
             polydefs.index(poly.name), poly.param, len(poly.nodes[0][0])))
             #polydefs.index(poly.name), poly.param, 2))
@@ -513,7 +519,7 @@ def writeDSF(dsfdir, key, objects, polygons):
             for p in w:
                 h.write('POLYGON_POINT\t')
                 for n in range(len(p)):
-                    if poly.param==65535 and len(p)-n<=2:
+                    if isinstance(poly,Draped) and poly.param==65535 and len(p)-n<=2:
                         h.write('%12.7f ' % p[n]) # don't adjust UV coords
                     elif n&1:	# lat
                         h.write('%12.7f ' % min(south+1, p[n]+minres/2))
@@ -549,7 +555,7 @@ def writeDSF(dsfdir, key, objects, polygons):
     err=e.read()
     o.close()
     e.close()
-    #unlink(tmp)
+    if not __debug__: unlink(tmp)
     if err or not exists(tilename+'.dsf'):
         if exists(tilename+'.dsf.bak'):
             rename(tilename+'.dsf.bak', tilename+'.dsf')

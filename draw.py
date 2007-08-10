@@ -7,7 +7,7 @@ except NameError:
     from OpenGL import GLU
     gluTessVertex = GLU._gluTessVertex
 
-from math import acos, atan2, cos, sin, floor, hypot, pi
+from math import acos, atan2, cos, sin, floor, hypot, pi, radians
 from os.path import join
 from sys import exit, platform, maxint, version
 #import time
@@ -15,14 +15,14 @@ import wx
 import wx.glcanvas
 
 from files import VertexCache, sortfolded
-from clutter import Polygon, resolution, maxres, round2res
-from clutterdef import ClutterDef
+from fixed8x13 import fixed8x13
+from clutter import BBox, PolygonFactory, Draped, Facade, Object, Polygon, Exclude, resolution, maxres, round2res, latlondisp
+from clutterdef import ClutterDef, ObjectDef
 from MessageBox import myMessageBox
 from prefs import Prefs
 from version import appname
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
-d2r=pi/180.0
 twopi=pi+pi
 f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
@@ -44,7 +44,8 @@ else:
 class UndoEntry:
     ADD=0
     DEL=1
-    MOVE=2
+    MODIFY=2
+    MOVE=3
     def __init__(self, tile, kind, data):
         self.tile=tile
         self.kind=kind
@@ -52,7 +53,7 @@ class UndoEntry:
 
     def equals(self, other):
         # ignore placement details
-        if self.tile!=other.tile or self.kind!=other.kind: return False
+        if self.tile!=other.tile or not (self.kind==other.kind==UndoEntry.MOVE): return False
         if self.data==other.data==None: return True
         if not (self.data and other.data and len(self.data)==len(other.data)):
             return False
@@ -81,11 +82,14 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.valid=False	# do we have valid data for a redraw?
         self.options=0		# display options
-        self.tile=[0,999]	# [lat,lon] of SW
+        self.tile=(0,999)	# [lat,lon] of SW
         self.centre=None	# [lat,lon] of centre
-        self.airports={}	# [(lat,lon,hdg,length,width)] by code
-        self.runways={}		# diplay list by tile
+        self.airports={}	# [runways] by tile
+        self.runways={}		# arrays by tile
+        self.runwaydata=None	# indices into cache (pavebase, pavelen, runwlen)
         self.navaids=[]		# (type, lat, lon, hdg)
+        self.codes=[]		# [(code, loc)] by tile
+        self.codeslist=0	# airport labels
         #self.objects={}		# [(name,lat,lon,hdg,height)] by tile
         #self.polygons={}	# [(name, parameter, [windings])] by tile
         self.lookup={}		# virtual name -> filename (may be duplicates)
@@ -119,7 +123,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.e=90
         self.d=3333.25
         self.cliprat=1000
-        self.polyhack=1		# 256 for Radeon 96xx on Mac?
 
         self.context=wx.glcanvas.GLContext
 
@@ -129,10 +132,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                                       attribList=[
             wx.glcanvas.WX_GL_RGBA,
             wx.glcanvas.WX_GL_DOUBLEBUFFER,
-            #wx.glcanvas.WX_GL_MIN_RED, 4,
-            #wx.glcanvas.WX_GL_MIN_GREEN, 4,
-            #wx.glcanvas.WX_GL_MIN_BLUE, 4,
-            #wx.glcanvas.WX_GL_MIN_ALPHA, 4,
             wx.glcanvas.WX_GL_DEPTH_SIZE, 24])	# ATI on Mac defaults to 16
         if self.GetId()==-1:
             # Failed - try with default depth buffer
@@ -145,6 +144,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                          "Can't initialise OpenGL.",
                          wx.ICON_ERROR|wx.OK, self)
             exit(1)
+
+        # Can't use polygon offset in display list on some Macs
+        # Not sure if this is a bug in 10.3.x or in OSX 1.5 OpenGL drivers
+        self.nopolyosinlist=(platform=='darwin' and glGetString(GL_VERSION)<'2')
 
         self.vertexcache=VertexCache()	# member so can free resources
 
@@ -166,14 +169,15 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Setup state. Under X must be called after window is shown
         self.SetCurrent()
         #glClearDepth(1.0)
-        glDepthFunc(GL_LESS)
         glEnable(GL_DEPTH_TEST)
+        glDepthFunc(GL_LESS)
         glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
         if debugapt: glLineWidth(2.0)
         #glLineStipple(1, 0x0f0f)	# for selection drag
         glPointSize(4.0)		# for nodes
         glFrontFace(GL_CW)
+        glPolygonMode(GL_FRONT, GL_FILL)
         glCullFace(GL_BACK)
         glPixelStorei(GL_UNPACK_ALIGNMENT,1)	# byte aligned
         glReadBuffer(GL_BACK)	# for unproject
@@ -224,7 +228,6 @@ class MyGL(wx.glcanvas.GLCanvas):
     def OnLeftDown(self, event):
         #event.Skip(False)	# don't change focus
         self.mousenow=self.clickpos=[event.m_x,event.m_y]
-        self.draginert=True
         self.clickctrl=event.m_controlDown
         self.CaptureMouse()
         size = self.GetClientSize()
@@ -235,13 +238,14 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             self.clickmode=ClickModes.Undecided
             self.select()
+            self.draginert=(self.clickmode!=ClickModes.DragNode)
 
     def OnLeftUp(self, event):
-        print "up", ClickModes.DragNode
+        #print "up", ClickModes.DragNode
         if self.HasCapture(): self.ReleaseMouse()
         self.timer.Stop()
         if self.clickmode==ClickModes.DragNode:
-            self.selectednode=self.selected[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
+            #self.selectednode=self.selected[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
             self.trashlists(True)	# recompute obj and pick lists
             self.SetCursor(wx.NullCursor)
         elif self.clickmode==ClickModes.Drag:
@@ -258,6 +262,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.valid:	# can get Idles during reload under X
             if self.clickmode==ClickModes.DragNode:
                 self.selectednode=self.selected[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
+                assert self.selectednode
                 self.Refresh()
             elif not self.clickmode and not self.picklist:
                 # no update during node drag since will have to be recomputed
@@ -330,7 +335,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             lat=max(self.tile[0], min(self.tile[0]+maxres, lat))
             lon=max(self.tile[1], min(self.tile[1]+maxres, lon))
             layer=poly.definition.layer
-            newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(layer, self.currentplacements()[layer].index(poly), poly.clone())])
+            newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(layer, self.placements[self.tile][layer].index(poly), poly.clone())])
             if not (self.undostack and self.undostack[-1].equals(newundo)):
                 self.undostack.append(newundo)
                 self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
@@ -338,7 +343,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if self.frame.menubar:
                     self.frame.menubar.Enable(wx.ID_SAVE, True)
                     self.frame.menubar.Enable(wx.ID_UNDO, True)
-            self.selectednode=poly.updatenode(self.selectednode, lat, lon, self.tile, self.options, self.vertexcache)
+            poly.updatenode(self.selectednode, lat, lon, self.tile, self.options, self.vertexcache)
             self.Refresh()	# show updated node
             self.frame.ShowSel()
             return
@@ -384,10 +389,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         glRotatef(self.h, 0.0,1.0,0.0)
         glTranslatef(-self.x, -self.y, -self.z)
 
-        glEnable(GL_TEXTURE_2D)
-        glEnable(GL_CULL_FACE)
-        glDisable(GL_DEPTH_TEST)
-
         # Ground terrain
 
         if not self.valid:
@@ -397,82 +398,54 @@ class MyGL(wx.glcanvas.GLCanvas):
             glColor3f(0.25, 0.25, 0.50)
             glBindTexture(GL_TEXTURE_2D, 0)
             glBegin(GL_QUADS)
-            glVertex3f( onedeg*cos(d2r*(1+self.tile[0]))/2, 0, -onedeg/2)
-            glVertex3f( onedeg*cos(d2r*self.tile[0])/2, 0,  onedeg/2)
-            glVertex3f(-onedeg*cos(d2r*self.tile[0])/2, 0,  onedeg/2)
-            glVertex3f(-onedeg*cos(d2r*(1+self.tile[0]))/2, 0, -onedeg/2)
+            glVertex3f( onedeg*cos(radians(1+self.tile[0]))/2, 0, -onedeg/2)
+            glVertex3f( onedeg*cos(radians(self.tile[0]))/2, 0,  onedeg/2)
+            glVertex3f(-onedeg*cos(radians(self.tile[0]))/2, 0,  onedeg/2)
+            glVertex3f(-onedeg*cos(radians(1+self.tile[0]))/2, 0, -onedeg/2)
             glEnd()
             self.SwapBuffers()
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
             return
 
         self.vertexcache.realize(self)
-        if not self.meshlist:
-            self.meshlist=glGenLists(1)
-            glNewList(self.meshlist, GL_COMPILE)
-            glColor3f(0.8, 0.8, 0.8)	# Unpainted
-            glEnable(GL_TEXTURE_2D)
-            glEnable(GL_DEPTH_TEST)
-            glDepthMask(GL_TRUE)
-            glDepthFunc(GL_LESS)
-            glDisable(GL_POLYGON_OFFSET_FILL)
-            polystate=0
-            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
-            glEnable(GL_CULL_FACE)
-            if not self.options&Prefs.ELEVATION:
-                glPushMatrix()
-                glScalef(1,0,1)		# Defeat elevation data
-            for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
-                if poly:		# eg overlaid photoscenery
-                    if polystate!=poly:
-                        glDepthMask(GL_FALSE)	# offset mustn't update depth
-                        glDepthFunc(GL_LEQUAL)
-                        glEnable(GL_POLYGON_OFFSET_FILL)
-                        glPolygonOffset(-10*poly, -10*self.polyhack*poly)
-                    polystate=poly
-                else:
-                    if polystate:
-                        glDepthMask(GL_TRUE)
-                        glDepthFunc(GL_LESS)
-                        glDisable(GL_POLYGON_OFFSET_FILL)
-                    polystate=0
-                glBindTexture(GL_TEXTURE_2D, texno)
-                glDrawArrays(GL_TRIANGLES, base, number)
-            glDepthMask(GL_TRUE)
-            if not self.options&Prefs.ELEVATION:
-                glPopMatrix()
-            if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
-            glEndList()
+
+        # Static stuff: mesh, runways, navaids
         glCallList(self.meshlist)
 
         # Objects and Polygons
-        placements=self.currentplacements()
+        placements=self.placements[self.tile]
         if not self.clutterlist:
-            print "list"
+            #print "list"
             self.clutterlist=glGenLists(1)
             glNewList(self.clutterlist, GL_COMPILE)
+            glEnable(GL_CULL_FACE)
+            glPolygonOffset(-2, -2)
             glDisable(GL_POLYGON_OFFSET_FILL)
-
-            # Generic polygons need to show through terrain
-            #glDisable(GL_DEPTH_TEST)
-            #print 0, placements[0]
-            for placement in placements[0]:
-                if self.clickmode==ClickModes.DragBox or not placement in self.selected:
-                    placement.draw(False, False, None)
 
             glColor3f(0.8, 0.8, 0.8)	# Unpainted
             #glEnable(GL_DEPTH_TEST)
-            for layer in range(1,ClutterDef.LAYERCOUNT):
-                if layer==ClutterDef.RUNWAYSLAYER:
-                    # Runways
-                    key=(self.tile[0],self.tile[1],self.options&Prefs.ELEVATION)
-                    if key in self.runways: glCallList(self.runways[key])
-
+            for layer in range(ClutterDef.LAYERCOUNT):
                 #print layer, placements[layer]
                 for placement in placements[layer]:
                     if self.clickmode==ClickModes.DragBox or not placement in self.selected:
-                        placement.draw(False, False, None)
-
+                        placement.draw(False, False, self.nopolyosinlist)
+                # runways
+                if layer==ClutterDef.RUNWAYSLAYER and self.runwaydata:
+                    (pavebase, pavelen, runwlen)=self.runwaydata
+                    glDepthMask(GL_FALSE)
+                    if self.nopolyosinlist:
+                        glDisable(GL_DEPTH_TEST)
+                    else:
+                        glEnable(GL_POLYGON_OFFSET_FILL)
+                        glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
+                    if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+                    glBindTexture(GL_TEXTURE_2D, self.vertexcache.texcache.get('Resources/surfaces.png'))
+                    if pavelen: glDrawArrays(GL_TRIANGLES, pavebase, pavelen)
+                    if runwlen: glDrawArrays(GL_QUADS, pavebase+pavelen, runwlen)
+                    glDepthMask(GL_TRUE)
+                    glEnable(GL_DEPTH_TEST)
+                    glDisable(GL_POLYGON_OFFSET_FILL)
+                    if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
             glEndList()
         glCallList(self.clutterlist)
 
@@ -484,8 +457,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Background
         if self.background:
             (image, lat, lon, hdg, width, length, opacity, height)=self.background
-            if [int(floor(lat)),int(floor(lon))]==self.tile:
-                texno=self.vertexcache.texcache.get(image, False, False, True)
+            if (int(floor(lat)),int(floor(lon)))==self.tile:
+                texno=self.vertexcache.texcache.get(image, False, True, False, True)
                 (x,z)=self.latlon2m(lat, lon)
                 glPushMatrix()
                 glTranslatef(x, height, z)
@@ -514,6 +487,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                     glEnd()
                 glPopMatrix()
 
+        # labels
+        if self.d>2000:	# arbitrary
+            glCallList(self.codeslist)
+
         # Position centre
         glColor3f(1.0, 0.25, 0.25)	# Cursor
         glLoadIdentity()
@@ -534,22 +511,20 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Selections
         glColor3f(1.0, 0.5, 1.0)
-        glDisable(GL_CULL_FACE)
         glEnable(GL_DEPTH_TEST)
-        if len(self.selected)==1:
-            selone=True
-        else:
-            selone=False
+        glDepthMask(GL_TRUE)
+        glPolygonOffset(-2, -2)
+        glEnable(GL_POLYGON_OFFSET_FILL)
         for placement in self.selected:
-            placement.draw(True, selone, self.selectednode)
-        glEnable(GL_CULL_FACE)
-        glEnable(GL_DEPTH_TEST)
+            placement.draw(True, False)
+        if len(self.selected)==1:
+            placement.drawnodes(self.selectednode)
 
 	# drag box
         if self.clickmode==ClickModes.DragBox:
             #print "drag"
-            glColor3f(0.25, 0.125, 0.25)
-            glDisable(GL_TEXTURE_2D)
+            glColor3f(0.5, 0.25, 0.5)
+            glBindTexture(GL_TEXTURE_2D, 0)
             glMatrixMode(GL_PROJECTION)
             glPushMatrix()
             glLoadIdentity()
@@ -571,6 +546,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             glPopMatrix()
             glMatrixMode(GL_MODELVIEW)
 
+        glDepthMask(GL_TRUE)
+
         # Display
         self.SwapBuffers()
 
@@ -580,7 +557,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def prepareselect(self):
         # Pre-prepare selection list - assumes self.picklist==0
-        print "prep"
+        #print "prep"
         self.picklist=glGenLists(1)
         glNewList(self.picklist, GL_COMPILE)
         glInitNames()
@@ -588,11 +565,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         glDisable(GL_TEXTURE_2D)
         glDisable(GL_DEPTH_TEST)
         glDisable(GL_CULL_FACE)
-        placements=self.currentplacements()
-        for i in range(len(placements)):
+        placements=self.placements[self.tile]
+        for i in range(len(placements)-1,-1,-1):	# favour higher layers
             for j in range(len(placements[i])):
                 glLoadName((i<<24)+j)
-                placements[i][j].draw(True, True, None)
+                placements[i][j].draw(False, True)
         glEnable(GL_DEPTH_TEST)
         glEndList()
 
@@ -626,7 +603,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 -self.d*self.cliprat, self.d*self.cliprat)
         glMatrixMode(GL_MODELVIEW)
 
-        placements=self.currentplacements()
+        placements=self.placements[self.tile]
         if not self.picklist: self.prepareselect()
         glSelectBuffer(65536)	# = 16384 selections?
         glRenderMode(GL_SELECT)
@@ -648,7 +625,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 trysel=None
             if trysel:
-                print "selnodes",
+                #print "selnodes",
                 # First look for nodes in same polygon
                 glSelectBuffer(65536)	# = 16384 selections?
                 glRenderMode(GL_SELECT)
@@ -658,10 +635,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 selectnodes=[]
                 try:
                     for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
-                        selectnodes.append((int(names)>>8, int(names)&0xff))
+                        selectnodes.append((int(names)>>24, int(names)&0xffffff))
                 except:	# overflow
                     pass
-                print selectnodes
                 if selectnodes:
                     self.clickmode=ClickModes.DragNode
                     self.selected=[trysel]
@@ -674,6 +650,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         glMatrixMode(GL_MODELVIEW)
 
         if self.selectednode:
+            self.trashlists()	# selection changes
+            self.Refresh()
+            self.frame.ShowSel()
             return
 
         if self.clickmode==ClickModes.DragBox:	# drag - add or remove all
@@ -717,21 +696,18 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.frame.ShowSel()
         
     def latlon2m(self, lat, lon):
-        return(((lon-self.centre[1])*onedeg*cos(d2r*lat),
+        return(((lon-self.centre[1])*onedeg*cos(radians(lat)),
                 (self.centre[0]-lat)*onedeg))
 
     def aptlatlon2m(self, lat, lon):
         # version of the above with fudge factors for runways/taxiways
-        return(((lon-self.centre[1])*(onedeg+8)*cos(d2r*lat),
+        return(((lon-self.centre[1])*(onedeg+8)*cos(radians(lat)),
                 (self.centre[0]-lat)*(onedeg-2)))
 
-    def currentplacements(self):
-        return self.placements[(self.tile[0],self.tile[1])]
-    
     def setbackground(self, background):
         if background:
             (image, lat, lon, hdg, width, length, opacity)=background
-            if [int(floor(lat)),int(floor(lon))]==self.tile:
+            if (int(floor(lat)),int(floor(lon)))==self.tile:
                 (x,z)=self.latlon2m(lat,lon)
                 height=self.vertexcache.height(self.tile,self.options,x,z)
             else:
@@ -741,201 +717,153 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.background=None
         self.Refresh()
 
-    def add(self, name, lat, lon, hdg):
-        if not self.vertexcache.load(name):
-            wx.MessageBox("Can't read %s." % name, 'Cannot add this object.',
-                          wx.ICON_ERROR|wx.OK, self.frame)
-            return False
-        self.trashlists(self.selected)
-        thing=self.vertexcache.get(name)
-        if self.selectednode!=None:
-            poly=self.currentpolygons()[self.selected[0]&MSKPOLY]
-            if poly.kind==Polygon.EXCLUDE: return False
-            if not (self.undostack and self.undostack[-1].kind==UndoEntry.MOVE and self.undostack[-1].tile==self.tile and len(self.undostack[-1].data)==1 and self.undostack[-1].data[0][0]==self.selected[0]):
-                self.undostack.append(UndoEntry(self.tile, UndoEntry.MOVE, [(self.selected[0], poly.clone())]))
-            n=len(poly.nodes[0])
-            self.selectednode+=1
-            poly.nodes=[poly.nodes[0]]	# Destroy other windings
-            poly.nodes[0].insert(self.selectednode,
-                                 (round2res((poly.nodes[0][self.selectednode-1][0]+poly.nodes[0][(self.selectednode)%n][0])/2),
-                                  round2res((poly.nodes[0][self.selectednode-1][1]+poly.nodes[0][(self.selectednode)%n][1])/2)))
-            self.updatepoly(poly)
-        elif isinstance(thing,ExcludeDef):
-            polygons=self.currentpolygons()
-            poly=Polygon(name, Polygon.EXCLUDE, 0,
-                         [[(lon-0.001,lat-0.001), (lon+0.001,lat-0.001),
-                           (lon+0.001,lat+0.001), (lon-0.001,lat+0.001)]])
-            self.updatepoly(poly)
-            self.selected=[MSKSEL]
-            self.selectednode=None
-            polygons.insert(0, poly)
-            self.polygons[(self.tile[0],self.tile[1])]=polygons
-            self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD,
-                                            self.selected))
-        elif isinstance(thing,FacadeDef):
-            polygons=self.currentpolygons()
-            poly=Polygon(name, Polygon.FACADE, 10, [[]])
-            h=d2r*hdg
-            for i in [h+5*pi/4, h+3*pi/4, h+pi/4, h+7*pi/4]:
-                poly.nodes[0].append((round2res(lon+sin(i)*0.00014142),
-                                      round2res(lat+cos(i)*0.00014142)))
-            self.updatepoly(poly)
-            self.selected=[len(polygons)|MSKSEL]
-            self.selectednode=None
-            polygons.append(poly)
-            self.polygons[(self.tile[0],self.tile[1])]=polygons
-            self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD,
-                                            self.selected))
-        elif isinstance(thing,ForestDef):
-            polygons=self.currentpolygons()
-            poly=Polygon(name, Polygon.FOREST, 128, [[]])
-            h=d2r*hdg
-            for i in [h+5*pi/4, h+3*pi/4, h+pi/4, h+7*pi/4]:
-                poly.nodes[0].append((round2res(lon+sin(i)*0.0014142),
-                                      round2res(lat+cos(i)*0.0014142)))
-            self.updatepoly(poly)
-            self.selected=[len(polygons)|MSKSEL]
-            self.selectednode=None
-            polygons.append(poly)
-            self.polygons[(self.tile[0],self.tile[1])]=polygons
-            self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD,
-                                            self.selected))
-        else:
-            (base,culled,nocull,texno,poly,bsize)=thing	# for poly
-            (x,z)=self.latlon2m(lat,lon)
-            height=self.vertexcache.height(self.tile,self.options,x,z)
-            objects=self.currentobjects()
-            if poly:
-                self.selected=[0]
-                objects.insert(0, Object(name, lat, lon, hdg, height))
+
+    def add(self, name, lat, lon, hdg, ctrl, shift):
+        if self.selectednode or (shift and len(self.selected)==1 and isinstance(self.selected[0], Polygon)):
+            # Add new node/winding
+            placement=self.selected[0]
+            layer=placement.definition.layer
+            newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
+            if shift:
+                newnode=placement.addwinding(self.tile, self.options, self.vertexcache, hdg)
             else:
-                self.selected=[len(objects)]
-                objects.append(Object(name, lat, lon, hdg, height))
-            self.selectednode=None
-            self.objects[(self.tile[0],self.tile[1])]=objects
-            self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD,
-                                            self.selected))
+                newnode=placement.addnode(self.tile, self.options, self.vertexcache, self.selectednode, ctrl)
+            if newnode:
+                self.undostack.append(newundo)
+                if not self.selectednode:
+                    self.selected=[placement]
+                self.selectednode=newnode
+            else:
+                return False
+        else:
+            # Add new clutter
+            if name.lower().endswith('.obj'):
+                placement=Object(name, lat, lon, hdg)
+            else:
+                placement=PolygonFactory(name, None, lat, lon, hdg)
+            
+            if not placement.load(self.lookup, self.defs, self.vertexcache):
+                myMessageBox("Can't read %s." %name, 'Cannot add this object.',
+                             wx.ICON_ERROR|wx.OK, self.frame)
+                return False
+
+            if isinstance(placement, Draped) and placement.definition.ortho:
+                placement.param=65535
+                for i in range(4):
+                    placement.nodes[0][i].extend([(i+1)/2%2,i/2])
+                
+            placement.layout(self.tile, self.options, self.vertexcache)
+            layer=placement.definition.layer
+            placements=self.placements[self.tile][layer]
+            self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD, [(layer, len(placements), placement)]))
+            placements.append(placement)
+            self.selected=[placement]
+
+        self.trashlists(True)	# selection changes
         self.Refresh()
         self.frame.ShowSel()
         return True
+
 
     def movesel(self, dlat, dlon, dhdg=0, dparam=0):
         # returns True if changed something
         if not self.selected: return False
-        if not self.clickmode: self.trashlists(True)
-        moved=[]
-        for thing in self.selected:
-            layer=thing.definition.layer
-            moved.append((layer, self.currentplacements()[layer].index(thing), thing.clone()))
-            if self.selectednode:
-                self.selectednode=thing.movenode(self.selectednode, dlat, dlon, self.tile, self.options, self.vertexcache)
-                assert self.selectednode
-            else:
-                thing.move(dlat, dlon, dhdg, dparam, self.tile, self.options, self.vertexcache)
+        if self.selectednode:
+            placement=self.selected[0]
+            layer=placement.definition.layer
+            newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
+            self.selectednode=placement.movenode(self.selectednode, dlat, dlon, self.tile, self.options, self.vertexcache, False)
+            assert self.selectednode
+            self.undostack.append(newundo)
+        else:
+            moved=[]
+            placements=self.placements[self.tile]
+            for placement in self.selected:
+                layer=placement.definition.layer
+                moved.append((layer, placements[layer].index(placement), placement.clone()))
+                placement.move(dlat, dlon, dhdg, dparam, self.tile, self.options, self.vertexcache)
+            newundo=UndoEntry(self.tile, UndoEntry.MOVE, moved)
+            if not (self.undostack and self.undostack[-1].equals(newundo)):
+                self.undostack.append(newundo)
+
+        if self.picklist: glDeleteLists(self.picklist, 1)
+        self.picklist=0
         self.Refresh()
         self.frame.ShowSel()
-
-        newundo=UndoEntry(self.tile, UndoEntry.MOVE, moved)
-        if not (self.undostack and self.undostack[-1].equals(newundo)):
-            self.undostack.append(newundo)
-
         return True
 
-    def delsel(self):
+
+    def delsel(self, ctrl, shift):
         # returns True if deleted something
-        if not self.selected: return False
-        objects=self.currentobjects()
-        polygons=self.currentpolygons()
-        if self.selectednode!=None:
-            #print "node"
-            poly=polygons[self.selected[0]&MSKPOLY]
-            if poly.kind==Polygon.EXCLUDE or len(poly.nodes[0])<=2:
-                return False
-            if not (self.undostack and self.undostack[-1].kind==UndoEntry.MOVE and self.undostack[-1].tile==self.tile and len(self.undostack[-1].data)==1 and self.undostack[-1].data[0][0]==self.selected[0]):
-                self.undostack.append(UndoEntry(self.tile, UndoEntry.MOVE, [(self.selected[0], poly.clone())]))
-            poly.nodes=[poly.nodes[0]]	# Destroy other windings
-            poly.nodes[0].pop(self.selectednode)
-            self.selectednode=self.selectednode%len(poly.nodes[0])
-            self.updatepoly(poly)
+        if not self.selected:
+            return False
+        elif self.selectednode:
+            # Delete node/winding
+            placement=self.selected[0]
+            layer=placement.definition.layer
+            newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
+            if shift:
+                newnode=placement.delwinding(self.tile, self.options, self.vertexcache, self.selectednode)
+            else:
+                newnode=placement.delnode(self.tile, self.options, self.vertexcache, self.selectednode, ctrl)
+            if newnode:
+                self.undostack.append(newundo)
+                self.selectednode=newnode
+                assert self.selectednode
         else:
-            newobjects=[]
-            newpolygons=[]
             deleted=[]
-            for i in range(len(objects)):
-                if not i in self.selected:
-                    newobjects.append(objects[i])
-                else:
-                    deleted.append((i, objects[i]))
-            for i in range(len(polygons)):
-                if not i|MSKSEL in self.selected:
-                    newpolygons.append(polygons[i])
-                else:
-                    deleted.append((i|MSKSEL, polygons[i]))
-            self.objects[(self.tile[0],self.tile[1])]=newobjects
-            self.polygons[(self.tile[0],self.tile[1])]=newpolygons
+            placements=self.placements[self.tile]
+            for placement in self.selected:
+                layer=placement.definition.layer
+                i=placements[layer].index(placement)
+                deleted.insert(0,(layer, i, placement))	# LIFO
+                placements[layer].pop(i)
             self.undostack.append(UndoEntry(self.tile, UndoEntry.DEL, deleted))
             self.selected=[]
-        self.trashlists(True)
+
+        self.trashlists(True)	# selection changes
         self.Refresh()
         self.frame.ShowSel()
         return True
 
+
     def undo(self):
-        # returns True if undostack still not empty
+        # returns new location
         if not self.undostack: return False	# can't happen
         undo=self.undostack.pop()
-        if (undo.tile[0],undo.tile[1]) in self.objects:
-            objects=self.objects[undo.tile[0],undo.tile[1]]
-        if (undo.tile[0],undo.tile[1]) in self.polygons:
-            polygons=self.polygons[undo.tile[0],undo.tile[1]]
+        self.trashlists(True)
+        self.goto(undo.tile)	# force assignment of placements to layers
         avlat=0
         avlon=0
-        self.trashlists(True)
         self.selected=[]
         self.selectednode=None
+        placements=self.placements[undo.tile]
+
         if undo.kind==UndoEntry.ADD:
-            for i in undo.data:
-                if i&MSKSEL:
-                    thing=polygons[i&MSKPOLY]
-                    polygons.pop(i&MSKPOLY)	# Only works if just one item
-                else:
-                    thing=objects[i]
-                    objects.pop(i)		# Only works if just one item
-                avlat+=thing.lat
-                avlon+=thing.lon
+            for (layer,i,placement) in undo.data:
+                placements[layer].pop(i)	# Only works if just one item
+            avlat+=placement.lat
+            avlon+=placement.lon
         elif undo.kind==UndoEntry.DEL:
-            for (i, thing) in undo.data:
-                if not self.vertexcache.load(thing.name, True):	# may have reloaded
-                    myMessageBox("Can't read %s." % thing.name, 'Using a placeholder.', wx.ICON_EXCLAMATION|wx.OK, self.frame)
-                if i&MSKSEL:
-                    self.updatepoly(thing)
-                    polygons.insert(i&MSKPOLY, thing)
-                else:
-                    (x,z)=self.latlon2m(thing.lat, thing.lon)
-                    thing.height=self.vertexcache.height(self.tile,self.options,x,z)
-                    objects.insert(i, thing)
-                avlat+=thing.lat
-                avlon+=thing.lon
-                self.selected.append(i)
-        elif undo.kind==UndoEntry.MOVE:
-            for (i, thing) in undo.data:
-                if i&MSKSEL:
-                    self.updatepoly(thing)
-                    polygons[i&MSKPOLY]=thing
-                else:
-                    (x,z)=self.latlon2m(thing.lat, thing.lon)
-                    thing.height=self.vertexcache.height(self.tile,self.options,x,z)
-                    objects[i]=thing
-                avlat+=thing.lat
-                avlon+=thing.lon
-                self.selected.append(i)
+            for (layer, i, placement) in undo.data:
+                placement.load(self.lookup, self.defs, self.vertexcache, True)
+                placement.layout(undo.tile, self.options, self.vertexcache)
+                placements[layer].insert(i, placement)
+                avlat+=placement.lat
+                avlon+=placement.lon
+                self.selected.append(placement)
+        else:
+            for (layer, i, placement) in undo.data:
+                placement.load(self.lookup, self.defs, self.vertexcache, True)
+                placement.layout(undo.tile, self.options, self.vertexcache)
+                placements[layer][i]=placement
+                avlat+=placement.lat
+                avlon+=placement.lon
+                self.selected.append(placement)
         avlat/=len(undo.data)
         avlon/=len(undo.data)
-        self.goto([avlat,avlon])
-        self.frame.loc=[avlat,avlon]
-        self.frame.ShowLoc()
-        self.frame.ShowSel()
-        return self.undostack!=[]
+        self.goto((avlat,avlon))
+        return (avlat,avlon)
         
     def clearsel(self):
         if self.selected:
@@ -955,101 +883,91 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.trashlists()	# selection changed
 
     def nextsel(self, name, withctrl):
-        loc=None
-        self.trashlists()	# selection changed
+        # returns new location or None
         # we have 0 or more items of the same type selected
-        if not self.vertexcache.load(name):
-            thing=None	# can't load
-        else:
-            thing=self.vertexcache.get(name)
-        if isinstance(thing, tuple) or not thing:
-            objects=self.currentobjects()
-            start=-1
-            for i in self.selected:
-                if not i&MSKSEL and objects[i].name==name: start=i
-            for i in range(start+1, len(objects)+start+1):
-                if objects[i%len(objects)].name==name:
-                    i=i%len(objects)
-                    if withctrl:
-                        if i in self.selected:
-                            self.selected.remove(i)
-                        else:
-                            self.selected.append(i)
-                    else:
-                        self.selected=[i]
-                    loc=(objects[i].lat, objects[i].lon)
+        if not self.lookup[name] in self.defs:
+            return None	# can't exist in this tile if not loaded
+        definition=self.defs[self.lookup[name]]
+        placements=self.placements[self.tile][definition.layer]
+        if withctrl:
+            for placement in placements:
+                if placement.definition==definition and placement not in self.selected:
+                    self.selected.append(placement)
                     break
+            else:
+                return None
         else:
-            polygons=self.currentpolygons()
             start=-1
-            for i in self.selected:
-                if polygons[i&MSKPOLY].name==name: start=i&MSKPOLY
-            for i in range(start+1, len(polygons)+start+1):
-                if polygons[i%len(polygons)].name==name:
-                    i=i%len(polygons)
-                    if withctrl:
-                        if (i|MSKSEL) in self.selected:
-                            self.selected.remove(i|MSKSEL)
-                        else:
-                            self.selected.append(i|MSKSEL)
-                    else:
-                        self.selected=[i|MSKSEL]
-                    loc=(polygons[i].lat, polygons[i].lon)
+            for placement in self.selected:
+                start=max(start,placements.index(placement))
+            for i in range(start+1, len(placements)+start+1):
+                placement=placements[i%len(placements)]
+                if placement.definition==definition:
+                    self.selected=[placement]
                     break
+            else:
+                return None
+        self.trashlists(True)	# selection changes
         self.selectednode=None
         self.frame.ShowSel()
-        return loc
+        return (placement.lat, placement.lon)
 
-    def getsel(self):
+    def getsel(self, dms):
         # return current selection, or average
         if not self.selected: return ([], '', None, None, None)
 
-        if len(self.selected)==1:
-            thing=self.selected[0]
-            if isinstance(thing, Polygon):
-                return ([thing.name], thing.locationstr(self.selectednode), thing.lat, thing.lon, None)
+        if self.selectednode:
+            placement=self.selected[0]
+            (i,j)=self.selectednode
+            return ([placement.name], placement.locationstr(dms, self.selectednode), placement.nodes[i][j][1], placement.nodes[i][j][0], None)
+        elif len(self.selected)==1:
+            placement=self.selected[0]
+            if isinstance(placement, Polygon):
+                return ([placement.name], placement.locationstr(dms), placement.lat, placement.lon, None)
             else:
-                return ([thing.name], thing.locationstr(), thing.lat, thing.lon, thing.hdg)
+                return ([placement.name], placement.locationstr(dms), placement.lat, placement.lon, placement.hdg)
         else:
             lat=lon=0
             names=[]
-            for thing in self.selected:
-                names.append(thing.name)
-                (tlat,tlon)=thing.location()
+            for placement in self.selected:
+                names.append(placement.name)
+                (tlat,tlon)=placement.location()
                 lat+=tlat
                 lon+=tlon
             lat/=len(self.selected)
             lon/=len(self.selected)
-            return (names, "Lat: %-10.6f  Lon: %-11.6f  (%d objects)" % (lat, lon, len(self.selected)), lat, lon, None)
+            return (names, "%s  (%d objects)" % (latlondisp(dms, lat, lon), len(self.selected)), lat, lon, None)
 
     def getheight(self):
         # return current height
         return self.y
 
-    def reload(self, reload, options, airports, navaids,
+    def reload(self, reload, options, airports, navaids, codes,
                lookup, placements,
                background, terrain, dsfdirs):
         self.valid=False
         self.options=options
         self.airports=airports	# [runways] by tile
         self.navaids=navaids
+        self.codes=codes	# [(code, loc)] by tile
         self.lookup=lookup
         self.defs={}
         self.vertexcache.reset(terrain, dsfdirs)
         self.trashlists(True, True)
-        self.tile=[0,999]	# force reload on next goto
+        self.tile=(0,999)	# force reload on next goto
+        self.runways={}		# need to re-layout runways
 
-        for key in self.runways.keys():	# need to re-layout runways
-            glDeleteLists(self.runways.pop(key), 1)
-
-        if placements!=None:
+        if placements:
             self.placements={}
             self.unsorted=placements
-
-        # force polygons to recompute XXX
-        #for polygons in self.polygons.values():
-        #    for poly in polygons:
-        #        poly.points=[]
+        else:
+            # clear layers
+            for key in self.placements.keys():
+                placements=reduce(lambda x,y: x+y, self.placements.pop(key))
+                self.unsorted[key]=placements
+                # invalidate all heights
+                for placement in placements:
+                    placement.clearlayout()
 
         if background:
             (image, lat, lon, hdg, width, length, opacity)=background
@@ -1071,9 +989,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                 print "Choice:\t%s" %self.frame.palette.GetChoiceCtrl().GetId()
 
     def goto(self, loc=None, hdg=None, elev=None, dist=None, options=None):
+        #print "goto", loc
         errobjs=[]
         if loc!=None:
-            newtile=[int(floor(loc[0])),int(floor(loc[1]))]
+            newtile=(int(floor(loc[0])),int(floor(loc[1])))
             self.centre=[newtile[0]+0.5, newtile[1]+0.5]
             (self.x, self.z)=self.latlon2m(loc[0],loc[1])
         else:
@@ -1083,7 +1002,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if dist!=None: self.d=dist
         if options==None: options=self.options
 
-        if newtile!=self.tile or options!=self.options:
+        if newtile!=self.tile or options&Prefs.DRAW!=self.options&Prefs.DRAW:
             if newtile!=self.tile:
                 self.selected=[]
                 self.selectednode=None
@@ -1096,7 +1015,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.selections=[]
             self.trashlists(True, True)
 
-            progress=wx.ProgressDialog('Loading', 'Terrain', 17, self, wx.PD_APP_MODAL)
+            progress=wx.ProgressDialog('Loading', 'Terrain', 16, self, wx.PD_APP_MODAL)
             self.vertexcache.loadMesh(newtile, options)
 
             progress.Update(1, 'Terrain textures')
@@ -1105,66 +1024,70 @@ class MyGL(wx.glcanvas.GLCanvas):
             progress.Update(2, 'Mesh')
             self.vertexcache.getMeshdata(newtile, options)
 
-            # Limit progress dialog to 10 updates
-            #clock=time.clock()	# Processor time
-            
-            # load placements and assign to layers
-            key=(newtile[0],newtile[1])
-            if key in self.placements:
-                placements=reduce(lambda x,y: x+y, self.placements.pop(key))
-                if options!=self.options:
+            if options&Prefs.DRAW!=self.options&Prefs.DRAW:
+                # clear layers
+                for key in self.placements.keys():
+                    placements=reduce(lambda x,y:x+y, self.placements.pop(key))
+                    self.unsorted[key]=placements
                     # invalidate all heights
                     for placement in placements:
                         placement.clearlayout()
-            elif key in self.unsorted:
-                placements=self.unsorted.pop(key)
+                
+            # load placements and assign to layers
+            if not newtile in self.placements:
+                self.placements[newtile]=[[] for i in range(ClutterDef.LAYERCOUNT)]
+            if newtile in self.unsorted:
+                #clock=time.clock()	# Processor time
+                placements=self.unsorted.pop(newtile)
+                # Limit progress dialog to 10 updates
+                p=len(placements)/10+1
+                n=0
+                i=0
+                for i in range(len(placements)):
+                    if i==n:
+                        progress.Update(3+i/p, 'Objects')
+                        n+=p
+                    placement=placements[i]
+
+                    # Silently correct virtual names' cases
+                    if placement.name not in self.lookup:
+                        for existing in self.lookup.keys():
+                            if placement.name.lower()==existing.lower():
+                                placement.name=existing
+                                break
+
+                    if not placement.load(self.lookup, self.defs, self.vertexcache, True) and placement.name not in errobjs:
+                        errobjs.append(placement.name)
+                    if not placement.islaidout():
+                        placement.layout(newtile, options, self.vertexcache)
+                    self.placements[newtile][placement.definition.layer].append(placement)
+                #print "%s CPU time in goto" % (time.clock()-clock)
             else:
-                placements=[]
+                for placements in self.placements[newtile]:
+                    for placement in placements:
+                        placement.definition.allocate(self.vertexcache)
             self.options=options
-            self.placements[key]=[[] for i in range(ClutterDef.LAYERCOUNT)]
-
-            p=len(placements)/10+1
-            n=0
-            i=0
-            for i in range(len(placements)):
-                if i==n:
-                    progress.Update(3+i/p, 'Objects')
-                    n+=p
-                placement=placements[i]
-
-                # Silently correct virtual names' cases
-                if placement.name not in self.lookup:
-                    for existing in self.lookup.keys():
-                        if placement.name.lower()==existing.lower():
-                            placement.name=existing
-                            break
-
-                if not placement.load(self.lookup, self.defs, self.vertexcache, True):
-                    errobjs.append(placement.name)
-                placement.layout(newtile, options, self.vertexcache)
-                self.placements[key][placement.definition.layer].append(placement)
-            #print "%s CPU time" % (time.clock()-clock)
 
             # Lay out runways
             progress.Update(13, 'Runways')
+            surfaces={0:  [0.125, 0.125],	# unknown
+                      1:  [0.375, 0.125],	# asphalt
+                      2:  [0.625, 0.125],	# concrete
+                      3:  [0.875, 0.125],	# grass
+                      4:  [0.125, 0.375],	# dirt,
+                      5:  [0.375, 0.375],	# gravel
+                      12: [0.125, 0.875],	# lakebed
+                      13: [0.375, 0.875],	# water
+                      14: [0.625, 0.875],	# ice
+                      15: [0.875, 0.875]}	# transparent
             key=(newtile[0],newtile[1],options&Prefs.ELEVATION)
-            surfaces={0:  (0.25, 0.25, 0.25, 1.0),	# unknown
-                      1:  (0.4,  0.4,  0.4,  1.0),	# asphalt
-                      2:  (0.5,  0.5,  0.45, 1.0),	# concrete
-                      3:  (0.25, 0.3,  0.15, 1.0),	# grass
-                      4:  (0.45, 0.4,  0.35, 1.0),	# dirt,
-                      5:  (0.45, 0.45, 0.4,  1.0),	# gravel
-                      12: (0.55, 0.45, 0.35, 1.0),	# lakebed
-                      13: (0.0,  0.0,  0.5,  0.25),	# water
-                      14: (0.75, 0.75, 0.75, 1.0),	# ice
-                      15: (0.33, 0.33, 0.33, 0.25)}	# transparent
             if key not in self.runways:
                 airports=[]
                 pavements=[]
                 # Find bounding boxes of airport runways in this tile
-                if not (newtile[0],newtile[1]) in self.airports:
-                    self.airports[(newtile[0],newtile[1])]=[]
-                for apt in self.airports[(newtile[0],newtile[1])]:
+                if not newtile in self.airports:
+                    self.airports[newtile]=[]
+                for apt in self.airports[newtile]:
                     minx=minz=maxint
                     maxx=maxz=-maxint
                     runways=[]
@@ -1175,7 +1098,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 (cx,cz)=self.aptlatlon2m(lat,lon)
                                 length1=length/2+stop1
                                 length2=length/2+stop2
-                                h=d2r*h
+                                h=radians(h)
                                 coshdg=cos(h)
                                 sinhdg=sin(h)
                                 p1=[cx-length1*sinhdg, 0, cz+length1*coshdg]
@@ -1200,63 +1123,26 @@ class MyGL(wx.glcanvas.GLCanvas):
                             runways.append((p1,p2, width/2*coshdg,width/2*sinhdg, col, {}))
                         else:
                             pavements.append(thing)
-                    airports.append(([minx, maxx, minz, maxz], runways))
+                    airports.append((BBox(minx, maxx, minz, maxz), runways))
     
-                self.runways[key]=glGenLists(1)
-                glNewList(self.runways[key], GL_COMPILE)
-                #if debugapt:
-                #    glColor3f(0.5,0.5,0.5)
-                #else:
-                #    runwaycolour=(0.333,0.333,0.333)
-                #    glColor3f(*runwaycolour)
-                glDisable(GL_TEXTURE_2D)
-                glEnable(GL_DEPTH_TEST)
-                glDepthMask(GL_FALSE)	# offset mustn't update depth
-                glDepthFunc(GL_LEQUAL)
-                glEnable(GL_POLYGON_OFFSET_FILL)
-                glPolygonOffset(-10, -10*self.polyhack)	# Stupid value cos not coplanar
-                if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
-                glDisable(GL_CULL_FACE)
-
                 # Pavements
-                oldtess=True
-                try:
-                    if gluGetString(GLU_VERSION) >= '1.2' and GLU_VERSION_1_2:
-                        oldtess=False
-                except:
-                    pass
-                
                 tessObj = gluNewTess()
-                if oldtess:
-                    # untested
-                    gluTessCallback(tessObj, GLU_BEGIN,  self.tessbegin)
-                    gluTessCallback(tessObj, GLU_VERTEX, self.tessvertex)
-                    gluTessCallback(tessObj, GLU_END,    self.tessend)
-                else:
-                    gluTessNormal(tessObj, 0, -1, 0)
-                    #if debugapt: gluTessProperty(tessObj,GLU_TESS_BOUNDARY_ONLY,GL_TRUE)
-                    gluTessCallback(tessObj, GLU_TESS_BEGIN,  self.tessbegin)
-                    gluTessCallback(tessObj, GLU_TESS_VERTEX, self.tessvertex)
-                    gluTessCallback(tessObj, GLU_TESS_END,    self.tessend)
-                    gluTessCallback(tessObj, GLU_TESS_COMBINE,self.tesscombine)
+                gluTessNormal(tessObj, 0, -1, 0)
+                gluTessCallback(tessObj, GLU_TESS_VERTEX_DATA, self.tessvertex)
+                gluTessCallback(tessObj, GLU_TESS_COMBINE,self.tesscombine)
+                gluTessCallback(tessObj, GLU_TESS_EDGE_FLAG, self.tessedge)	# no strips
+
+                varray=[]
+                tarray=[]
                 for pave in pavements:
                     try:
-                        if oldtess:
-                            gluBeginPolygon(tessObj)
-                        else:
-                            gluTessBeginPolygon(tessObj, None)
+                        gluTessBeginPolygon(tessObj, (varray,tarray))
                         if pave[0] in surfaces:
                             col=surfaces[pave[0]]
                         else:
                             col=surfaces[0]
                         for i in range(1,len(pave)):
-                            if oldtess:
-                                if i==1:
-                                    gluNextContour(tessObj, GLU_CW)
-                                else:
-                                    gluNextContour(tessObj, GLU_CCW)
-                            else:
-                                gluTessBeginContour(tessObj)
+                            gluTessBeginContour(tessObj)
                             edge=pave[i]
                             n=len(edge)
                             last=None
@@ -1271,34 +1157,26 @@ class MyGL(wx.glcanvas.GLCanvas):
                                         cpoints.append((2*edge[(j+1)%n][0]-edge[(j+1)%n][2],2*edge[(j+1)%n][1]-edge[(j+1)%n][3]))
                                             
                                     cpoints.append((edge[(j+1)%n][0],edge[(j+1)%n][1]))
-                                    points=[self.bez(cpoints, u/8.0) for u in range(8)]	# X-Plane stops at or before 8
+                                    points=[self.bez(cpoints, u/4.0) for u in range(4)]	# X-Plane stops at or before 8
                                 for pt in points:
                                     if pt==last: continue
                                     last=pt
                                     (x,z)=self.latlon2m(*pt)
                                     y=self.vertexcache.height(newtile,options,x,z)
                                     pt3=[x,y,z]
-                                    #if debugapt and i>1:
-                                    #    gluTessVertex(tessObj, pt3,
-                                    #                  (pt3, (0,0,0,0)))
-                                    #else:
                                     gluTessVertex(tessObj, pt3, (pt3, col))
-                            if not oldtess:
-                                gluTessEndContour(tessObj)
-                        if oldtess:
-                            gluEndPolygon(tessObj)
-                        else:
-                            gluTessEndPolygon(tessObj)
+                            gluTessEndContour(tessObj)
+                        gluTessEndPolygon(tessObj)
                     except GLUerror, e:
                         pass
                 gluDeleteTess(tessObj)
-                
+                pavelen=len(varray)
+                assert(len(varray)==len(tarray))                
 
                 # runways
                 for (bbox, tris) in self.vertexcache.getMeshdata(newtile,options):
                     for (abox, runways) in airports:
-                        if (bbox[0] >= abox[1] or bbox[2] >= abox[3] or bbox[1] <= abox[0] or bbox[3] <= abox[2]):
-                            continue
+                        if not bbox.intersects(abox): continue
                         for tri in tris:
                             for (p1, p2, xinc, zinc, col, cuts) in runways:
                                 (pt, coeffs)=tri
@@ -1323,114 +1201,190 @@ class MyGL(wx.glcanvas.GLCanvas):
                                     p1[1]=self.vertexcache.height(newtile,options,p1[0],p1[2],tri)
                                 if i2:	# p2 is enclosed by this tri
                                     p2[1]=self.vertexcache.height(newtile,options,p2[0],p2[2],tri)
+
                 # strip out bounding box and add cuts
                 for (abox, runways) in airports:
                     for (p1, p2, xinc, zinc, col, cuts) in runways:
-                        glColor4f(*col)
-                        glBegin(GL_QUAD_STRIP)
+                        cols=[col,col,col,col]
                         a=cuts.keys()
                         a.sort()
-                        glVertex3f(p1[0]+xinc, p1[1], p1[2]+zinc)
-                        glVertex3f(p1[0]-xinc, p1[1], p1[2]-zinc)
+                        varray.append([p1[0]+xinc, p1[1], p1[2]+zinc])
+                        varray.append([p1[0]-xinc, p1[1], p1[2]-zinc])
                         if len(a) and a[0]>0.01:
-                            glVertex3f(cuts[a[0]][0]+xinc, cuts[a[0]][1], cuts[a[0]][2]+zinc)
-                            glVertex3f(cuts[a[0]][0]-xinc, cuts[a[0]][1], cuts[a[0]][2]-zinc)
+                            p=cuts[a[0]]
+                            varray.append([p[0]-xinc, p[1], p[2]-zinc])
+                            varray.append([p[0]+xinc, p[1], p[2]+zinc])
+                            varray.append([p[0]+xinc, p[1], p[2]+zinc])
+                            varray.append([p[0]-xinc, p[1], p[2]-zinc])
+                            tarray.extend(cols)
                         for i in range(1, len(a)):
                             if a[i]-a[i-1]>0.01:
-                                glVertex3f(cuts[a[i]][0]+xinc, cuts[a[i]][1], cuts[a[i]][2]+zinc)
-                                glVertex3f(cuts[a[i]][0]-xinc, cuts[a[i]][1], cuts[a[i]][2]-zinc)
-                        glVertex3f(p2[0]+xinc, p2[1], p2[2]+zinc)
-                        glVertex3f(p2[0]-xinc, p2[1], p2[2]-zinc)
-                        glEnd()
+                                p=cuts[a[i]]
+                                varray.append([p[0]-xinc, p[1], p[2]-zinc])
+                                varray.append([p[0]+xinc, p[1], p[2]+zinc])
+                                varray.append([p[0]+xinc, p[1], p[2]+zinc])
+                                varray.append([p[0]-xinc, p[1], p[2]-zinc])
+                                tarray.extend(cols)
+                        varray.append([p2[0]-xinc, p2[1], p2[2]-zinc])
+                        varray.append([p2[0]+xinc, p2[1], p2[2]+zinc])
+                        tarray.extend(cols)
+                assert(len(varray)==len(tarray))
+                self.runways[key]=(varray,tarray,pavelen)
+            else:
+                (varray,tarray,pavelen)=self.runways[key]
+            if varray:
+                self.runwaydata=(len(self.vertexcache.varray), pavelen, len(varray)-pavelen)
+                self.vertexcache.varray.extend(varray)
+                self.vertexcache.tarray.extend(tarray)
+            else:
+                self.runwaydata=None
 
-                progress.Update(14, 'Navaids')
-                objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
-                      3:  'lib/airport/NAVAIDS/VOR.obj',
-                      4:  'lib/airport/NAVAIDS/ILS.obj',
-                      5:  'lib/airport/NAVAIDS/ILS.obj',
-                      6:  'lib/airport/NAVAIDS/glideslope.obj',
-                      7:  'lib/airport/NAVAIDS/Marker1.obj',
-                      8:  'lib/airport/NAVAIDS/Marker2.obj',
-                      9:  'lib/airport/NAVAIDS/Marker2.obj',
-                      18: 'lib/airport/landscape/beacon2.obj',
-                      19: '*windsock.obj',
-                      181:'lib/airport/beacons/beacon_airport.obj',
-                      182:'lib/airport/beacons/beacon_seaport.obj',
-                      183:'lib/airport/beacons/beacon_heliport.obj',
-                      184:'lib/airport/beacons/beacon_mil.obj',
-                      185:'lib/airport/beacons/beacon_airport.obj',
-                      211:'lib/airport/lights/slow/VASI.obj',
-                      212:'lib/airport/lights/slow/PAPI.obj',
-                      213:'lib/airport/lights/slow/PAPI.obj',
-                      214:'lib/airport/lights/slow/PAPI.obj',
-                      215:'lib/airport/lights/slow/VASI3.obj',
-                      216:'lib/airport/lights/slow/rway_guard.obj',
-                      }
-                #for name in objs.values(): XXX
-                #    self.vertexcache.load(name, True)	# skip errors
-                #self.vertexcache.realize(self)
-                glColor3f(0.8, 0.8, 0.8)	# Unpainted
-                glEnable(GL_TEXTURE_2D)
-                #glEnable(GL_DEPTH_TEST)	# already enabled
-                glDepthMask(GL_TRUE)
-                glDepthFunc(GL_LESS)
-                glDisable(GL_POLYGON_OFFSET_FILL)
-                if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
-                glEnable(GL_CULL_FACE)
-                cullstate=True
-                polystate=0
-                if 0:#XXX for (i, lat, lon, hdg) in self.navaids:
-                    if [int(floor(lat)),int(floor(lon))]==newtile and i in objs:
-                        name=objs[i]
-                        (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(name)
-                        coshdg=cos(d2r*hdg)
-                        sinhdg=sin(d2r*hdg)
-                        (x,z)=self.latlon2m(lat,lon)
-                        y=self.vertexcache.height(newtile,options,x,z)
-
-                        glBindTexture(GL_TEXTURE_2D, texno)
-                        if poly:
-                            if polystate!=poly:
-                                glDepthMask(GL_FALSE)
-                                glDepthFunc(GL_LEQUAL)
-                                glPolygonOffset(-1*poly, -1*self.polyhack*poly)
-                                glEnable(GL_POLYGON_OFFSET_FILL)
-                            polystate=poly
+            progress.Update(14, 'Navaids')
+            objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
+                  3:  'lib/airport/NAVAIDS/VOR.obj',
+                  4:  'lib/airport/NAVAIDS/ILS.obj',
+                  5:  'lib/airport/NAVAIDS/ILS.obj',
+                  6:  'lib/airport/NAVAIDS/glideslope.obj',
+                  7:  'lib/airport/NAVAIDS/Marker1.obj',
+                  8:  'lib/airport/NAVAIDS/Marker2.obj',
+                  9:  'lib/airport/NAVAIDS/Marker2.obj',
+                  18: 'lib/airport/landscape/beacon2.obj',
+                  19: '*windsock.obj',
+                  181:'lib/airport/beacons/beacon_airport.obj',
+                  182:'lib/airport/beacons/beacon_seaport.obj',
+                  183:'lib/airport/beacons/beacon_heliport.obj',
+                  184:'lib/airport/beacons/beacon_mil.obj',
+                  185:'lib/airport/beacons/beacon_airport.obj',
+                  211:'lib/airport/lights/slow/VASI.obj',
+                  212:'lib/airport/lights/slow/PAPI.obj',
+                  213:'lib/airport/lights/slow/PAPI.obj',
+                  214:'lib/airport/lights/slow/PAPI.obj',
+                  215:'lib/airport/lights/slow/VASI3.obj',
+                  216:'lib/airport/lights/slow/rway_guard.obj',
+                  }
+            for name in objs.values():
+                if name[0]=='*':
+                    filename=name
+                else:
+                    filename=self.lookup[name]
+                if filename in self.defs:
+                    self.defs[filename].allocate(self.vertexcache)
+                else:
+                    self.defs[filename]=ObjectDef(filename, self.vertexcache)
+                
+            # Prepare static stuff: mesh, navaids
+            progress.Update(15, 'Done')
+            self.vertexcache.realize(self)
+            self.meshlist=glGenLists(1)
+            glNewList(self.meshlist, GL_COMPILE)
+            glColor3f(0.8, 0.8, 0.8)	# Unpainted
+            glEnable(GL_TEXTURE_2D)
+            glEnable(GL_DEPTH_TEST)
+            glDepthMask(GL_TRUE)
+            glEnable(GL_CULL_FACE)
+            glDisable(GL_POLYGON_OFFSET_FILL)
+            polystate=0
+            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+            if not self.options&Prefs.ELEVATION:
+                glPushMatrix()
+                glScalef(1,0,1)		# Defeat elevation data
+            for (base,number,texno,poly) in self.vertexcache.getMesh(newtile,options):
+                if poly:		# eg overlaid photoscenery
+                    if polystate!=poly:
+                        glDepthMask(GL_FALSE)	# offset mustn't update depth
+                        if self.nopolyosinlist:
+                            glDisable(GL_DEPTH_TEST)
                         else:
-                            if polystate:
-                                glDepthMask(GL_TRUE)
-                                glDepthFunc(GL_LESS)
-                                glDisable(GL_POLYGON_OFFSET_FILL)
-                            polystate=0
-                        
-                        if i==211:
-                            seq=[(1,75),(-1,75),(1,-75),(-1,-75)]
-                        elif i in range(212,215):
-                            seq=[(12,0),(4,0),(-4,0),(-12,0)]
+                            glEnable(GL_POLYGON_OFFSET_FILL)
+                            glPolygonOffset(-10*poly, -10*poly)
+                    polystate=poly
+                else:
+                    if polystate:
+                        glDepthMask(GL_TRUE)
+                        if self.nopolyosinlist:
+                            glEnable(GL_DEPTH_TEST)
                         else:
-                            seq=[(0,0)]
-                        for (xinc,zinc) in seq:
-                            glPushMatrix()
-                            glTranslatef(x+xinc*coshdg-zinc*sinhdg, y,
-                                         z+xinc*sinhdg+zinc*coshdg)
-                            glRotatef(-hdg, 0.0,1.0,0.0)
-                            if culled:
-                                if not cullstate: glEnable(GL_CULL_FACE)
-                                cullstate=True
-                                glDrawArrays(GL_TRIANGLES, base, culled)
-                            if nocull:
-                                if cullstate: glDisable(GL_CULL_FACE)
-                                cullstate=False
-                                glDrawArrays(GL_TRIANGLES, base+culled, nocull)
-                            glPopMatrix()
+                            glDisable(GL_POLYGON_OFFSET_FILL)
+                    polystate=0
+                glBindTexture(GL_TEXTURE_2D, texno)
+                glDrawArrays(GL_TRIANGLES, base, number)
+            if not self.options&Prefs.ELEVATION:
+                glPopMatrix()
+            if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
 
-                glEndList()
+            # navaids
+            glEnable(GL_DEPTH_TEST)
+            glDepthMask(GL_TRUE)
+            #glEnable(GL_CULL_FACE)	# already enabled
+            cullstate=True
+            glDisable(GL_POLYGON_OFFSET_FILL)
+            polystate=0
+            for (i, lat, lon, hdg) in self.navaids:
+                if (int(floor(lat)),int(floor(lon)))==newtile and i in objs:
+                    if objs[i][0]=='*':
+                        definition=self.defs[objs[i]]
+                    else:
+                        definition=self.defs[self.lookup[objs[i]]]
+                    coshdg=cos(radians(hdg))
+                    sinhdg=sin(radians(hdg))
+                    (x,z)=self.latlon2m(lat,lon)
+                    y=self.vertexcache.height(newtile,options,x,z)
+                    glBindTexture(GL_TEXTURE_2D, definition.texture)
+                    if definition.poly and not self.nopolyosinlist and not polystate:
+                        glPolygonOffset(-1, -1)
+                        glEnable(GL_POLYGON_OFFSET_FILL)
+                        polystate=definition.poly
+                    elif polystate:
+                        glDisable(GL_POLYGON_OFFSET_FILL)
+                        polystate=0
+                    if i==211:
+                        seq=[(1,75),(-1,75),(1,-75),(-1,-75)]
+                    elif i in range(212,215):
+                        seq=[(12,0),(4,0),(-4,0),(-12,0)]
+                    else:
+                        seq=[(0,0)]
+                    for (xinc,zinc) in seq:
+                        if self.nopolyosinlist:
+                            glDisable(GL_DEPTH_TEST)
+                        else:
+                            glEnable(GL_POLYGON_OFFSET_FILL)
+                        glPushMatrix()
+                        glTranslatef(x+xinc*coshdg-zinc*sinhdg, y,
+                                     z+xinc*sinhdg+zinc*coshdg)
+                        glRotatef(-hdg, 0.0,1.0,0.0)
+                        if definition.culled:
+                            if not cullstate: glEnable(GL_CULL_FACE)
+                            cullstate=True
+                            glDrawArrays(GL_TRIANGLES, definition.base, definition.culled)
+                        if definition.nocull:
+                            if cullstate: glDisable(GL_CULL_FACE)
+                            cullstate=False
+                            glDrawArrays(GL_TRIANGLES, definition.base+definition.culled, definition.nocull)
+                        glPopMatrix()
+            if not cullstate: glEnable(GL_CULL_FACE)
+            if polystate: glDisable(GL_POLYGON_OFFSET_FILL)
+            glEndList()
+
+            # labels
+            self.codeslist=glGenLists(1)
+            glNewList(self.codeslist, GL_COMPILE)
+            glColor3f(1.0, 0.25, 0.25)	# Labels are pink
+            glBindTexture(GL_TEXTURE_2D, 0)
+            if not newtile in self.codes:
+                self.codes[newtile]=[]
+            for (code, (lat,lon)) in self.codes[self.tile]:
+                (x,z)=self.latlon2m(lat,lon)
+                y=self.vertexcache.height(self.tile,self.options,x,z)
+                glRasterPos3f(x, y, z)
+                code=code.encode('latin1', 'replace')
+                for c in code:
+                    glBitmap(8,13, 16,6, 8,0, fixed8x13[ord(c)])
+            glEndList()
 
             # Done
-            progress.Update(15, 'Done')
             if self.background:
                 (image, lat, lon, hdg, width, length, opacity, height)=self.background
-                if [int(floor(lat)),int(floor(lon))]==self.tile:
+                if (int(floor(lat)),int(floor(lon)))==self.tile:
                     (x,z)=self.latlon2m(lat,lon)
                     height=self.vertexcache.height(self.tile,options,x,z)
                 else:
@@ -1440,6 +1394,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.valid=True
 
         # cursor position
+        self.options=options
         self.y=self.vertexcache.height(self.tile,self.options,self.x,self.z)
 
         # Redraw can happen under MessageBox, so do this last
@@ -1449,44 +1404,29 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.Refresh()
 
-    def tessbegin(self, datatype):
-        glBegin(datatype)
-    
-    def tessvertex(self, (vertex, colour)):
-        glColor4f(*colour)
-        if debugapt:
-            glVertex3f(vertex[0], vertex[1]+0.1, vertex[2])
-        else:
-            glVertex3f(*vertex)
+    def tessvertex(self, (vertex,colour), (varray,tarray)):
+        varray.append(vertex)
+        tarray.append(colour)
 
     def tesscombine(self, coords, vertex, weight):
         # vertex = array of (coords),(colour)
-        #if not debugapt:
-        #    return ((coords[0], coords[1], coords[2]), runwaycolour)
-
         if weight[2] or vertex[0][0][0]!=vertex[1][0][0] or vertex[0][0][2]!=vertex[1][0][2]:
-            if debugapt:
-                lat=self.centre[0]-coords[2]/onedeg
-                lon=self.centre[1]+coords[0]/(onedeg*cos(d2r*lat))
-                print "Combine %.6f %.6f" % (lat, lon)
-                for i in range(len(weight)):
-                    if not weight[i]: break
-                    lat=self.centre[0]-vertex[i][0][2]/onedeg
-                    lon=self.centre[1]+vertex[i][0][0]/(onedeg*cos(d2r*lat))
-                    print "%.6f %.6f %5.3f" % (lat, lon, weight[i])
-            return ((coords[0], coords[1], coords[2]),(1.0,0.33,0.33,1.0))
+            if __debug__:
+                if debugapt:
+                    lat=self.centre[0]-coords[2]/onedeg
+                    lon=self.centre[1]+coords[0]/(onedeg*cos(radians(lat)))
+                    print "Combine %.6f %.6f" % (lat, lon)
+                    for i in range(len(weight)):
+                        if not weight[i]: break
+                        lat=self.centre[0]-vertex[i][0][2]/onedeg
+                        lon=self.centre[1]+vertex[i][0][0]/(onedeg*cos(radians(lat)))
+                        print "%.6f %.6f %5.3f" % (lat, lon, weight[i])
+            return ((coords[0], coords[1], coords[2]), [0.625,0.625]) # red
         else:	# Same point
-            colour=[0.0,0.0,0.0,0.0]
-            for i in range(len(weight)):
-                if not weight[i]: break
-                colour[0]+=vertex[i][1][0]*weight[i]
-                colour[1]+=vertex[i][1][1]*weight[i]
-                colour[2]+=vertex[i][1][2]*weight[i]
-                colour[3]+=vertex[i][1][3]*weight[i]
-            return ((coords[0], coords[1], coords[2]),tuple(colour))
+            return ((coords[0], coords[1], coords[2]), vertex[0][1])
 
-    def tessend(self):
-        glEnd()
+    def tessedge(self, flag):
+        pass	# dummy
 
     def bez(self, p, mu):
         # http://local.wasp.uwa.edu.au/~pbourke/curves/bezier/index.html
@@ -1512,6 +1452,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         if terraintoo:
             if self.meshlist: glDeleteLists(self.meshlist, 1)
             self.meshlist=0
+            if self.codeslist: glDeleteLists(self.codeslist, 1)
+            self.codeslist=0
         if picktoo:
             if self.picklist: glDeleteLists(self.picklist, 1)
             self.picklist=0
@@ -1530,7 +1472,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         my=max(0, min(size[1]-1, size[1]-1-my))
         glDisable(GL_TEXTURE_2D)
         glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)
-        glEnable(GL_CULL_FACE)
         glEnable(GL_DEPTH_TEST)
         glCallList(self.meshlist)	# Terrain only
         #glFinish()	# redundant
@@ -1542,51 +1483,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
         glClear(GL_DEPTH_BUFFER_BIT)
         lat=round2res(self.centre[0]-z/onedeg)
-        lon=round2res(self.centre[1]+x/(onedeg*cos(d2r*lat)))
+        lon=round2res(self.centre[1]+x/(onedeg*cos(radians(lat))))
         #print "%3d %3d %5.3f, %5d %5.1f %5d, %10.6f %11.6f" % (mx,my,mz, x,y,z, lat,lon)
         return (lat,lon)
 
-    def snapshot(self, name):
-        if not self.vertexcache.load(name, 0): return None
-        self.SetCurrent()
-        glViewport(0, 0, 300, 300)
-        glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        self.vertexcache.realize(self)
-        (base,culled,nocull,texno,poly,bsize)=self.vertexcache.get(name)
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
-        glLoadIdentity()
-        maxsize=1.2*bsize
-        glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
-        glMatrixMode(GL_MODELVIEW)
-        glPushMatrix()
-        glLoadIdentity()
-        glRotatef( 30, 1,0,0)
-        glRotatef(-30, 0,1,0)
-        glColor3f(0.8, 0.8, 0.8)	# Unpainted
-        glEnable(GL_TEXTURE_2D)
-        glEnable(GL_DEPTH_TEST)
-        glBindTexture(GL_TEXTURE_2D, texno)
-        if culled:
-            glEnable(GL_CULL_FACE)
-            glDrawArrays(GL_TRIANGLES, base, culled)
-        if nocull:
-            glDisable(GL_CULL_FACE)
-            glDrawArrays(GL_TRIANGLES, base+culled, nocull)
-        #glFinish()	# redundant
-        data=glReadPixels(0,0, 300,300, GL_RGB, GL_UNSIGNED_BYTE)
-        img=wx.EmptyImage(300, 300, False)
-        img.SetData(data)
-        
-        # Restore state for unproject & selection
-        glPopMatrix()
-        glMatrixMode(GL_PROJECTION)
-        glPopMatrix()	
-        glMatrixMode(GL_MODELVIEW)
-
-        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        self.Refresh()	# Mac draws from the front buffer w/out paint event
-        return img.Mirror(False)
 

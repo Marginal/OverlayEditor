@@ -37,7 +37,6 @@ if platform=='win32':
     import py2exe
     platdata=[('win32',
                ['win32/DSFTool.exe',
-                'win32/OverlayEditor.ico',
                 ]),
               ]
 
@@ -90,6 +89,7 @@ setup(name='OverlayEditor',
                     'Resources/unknown.png',
                     'Resources/airport0_000.png',
                     'Resources/Sea01.png',
+                    'Resources/surfaces.png',
                     'Resources/OverlayEditor.png',
                     'Resources/screenshot.jpg',
                     'Resources/800library.txt',

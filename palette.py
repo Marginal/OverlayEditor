@@ -1,10 +1,10 @@
 from sys import platform
 import wx
 
-from os.path import join
+from os.path import dirname, exists, join
 
 from files import sortfolded
-from clutterdef import PolygonDef, KnownDefs, UnknownDefs
+from clutterdef import PolygonDefFactory, ObjectDef, PolygonDef, KnownDefs, UnknownDefs
 
 class PaletteListBox(wx.VListBox):
 
@@ -259,11 +259,11 @@ class Palette(wx.SplitterWindow):
     def load(self, tabname, objects, pkgdir):
         self.cb.load(tabname, objects, pkgdir)
     
-    def add(self, name, path, pkgdir):
+    def add(self, name, pkgdir):
         #print "add", name
         # Add to objects tab - assumes that this is first tab
         self.lastkey=name
-        self.cb.add(name, path, pkgdir)
+        self.cb.add(name, pkgdir)
         self.preview.Refresh()
 
     def get(self):
@@ -287,59 +287,74 @@ class Palette(wx.SplitterWindow):
             self.previewkey=None
             return
 
-        if False: #XXX self.previewkey!=self.lastkey:
+        if self.previewkey!=self.lastkey:
             # New
             self.previewkey=self.lastkey
             self.previewimg=self.previewbmp=None
 
-            if not self.previewkey:
+            if not self.previewkey or self.previewkey not in self.frame.canvas.lookup:
                 self.preview.SetBackgroundColour(wx.NullColour)
                 self.preview.ClearBackground()
-                return
+                return	# unknown object - can't do anything
             
             # Look for built-in screenshot
             newfile=self.previewkey.replace('/', '_')[:-3]+'jpg'
             if newfile[0]=='_': newfile=newfile[1:]
             newfile=join('Resources', 'previews', newfile)
-            if exists(newfile):
-                try:
+            try:
+                if exists(newfile):
                     self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
+            except:
+                pass
+
+            if not self.previewimg:
+                # Look for library screenshot - object.jpg or screenshot.jpg
+                newfile=self.frame.canvas.lookup[self.previewkey][:-3]+'jpg'
+                try:
+                    if exists(newfile):
+                        self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
                 except:
                     pass
-            else:
-                # Look for library screenshot - object.jpg or screenshot.jpg
-                if not self.previewkey in self.frame.canvas.vertexcache.obj:
-                    self.preview.SetBackgroundColour(wx.NullColour)
-                    self.preview.ClearBackground()
-                    return	# unknown object - can't do anything
-                newfile=self.frame.canvas.vertexcache.obj[self.previewkey][:-3]+'jpg'
-                if exists(newfile):
-                    try:
-                        self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
-                    except:
-                        pass
-                else:
-                    newfile=join(dirname(newfile), 'screenshot.jpg')
+            
+            if not self.previewimg:
+                newfile=join(dirname(newfile), 'screenshot.jpg')
+                try:
                     if exists(newfile):
-                        try:
-                            self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
-                        except:
-                            pass
+                        self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
+                except:
+                    pass
 
-            if not self.previewimg and self.previewkey.endswith('.obj'):
-                # Display object data
-                self.preview.SetBackgroundColour(wx.Colour(77,128,153))
-                self.preview.ClearBackground()
-                self.previewimg=self.frame.canvas.snapshot(self.previewkey)
-                
-            elif self.previewimg:
-                self.preview.SetBackgroundColour(wx.Colour(self.previewimg.GetRed(0,0), self.previewimg.GetGreen(0,0), self.previewimg.GetBlue(0,0)))
-                self.preview.ClearBackground()
-                
-            if not self.previewimg:	# Nowt
+            # loading clutter can be slow so clear while loading
+            if not self.previewimg:
                 self.preview.SetBackgroundColour(wx.NullColour)
                 self.preview.ClearBackground()
-                
+
+            if self.previewimg:
+                pass
+
+            elif self.previewkey.endswith('.obj'):
+                # Display object data
+                filename=self.frame.canvas.lookup[self.previewkey]
+                try:
+                    if filename in self.frame.canvas.defs:
+                        definition=self.frame.canvas.defs[filename]
+                    else:
+                        self.frame.canvas.defs[filename]=definition=ObjectDef(filename, self.frame.canvas.vertexcache)
+                    self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)
+                except:
+                    pass
+
+            else:
+                filename=self.frame.canvas.lookup[self.previewkey]
+                try:
+                    if filename in self.frame.canvas.defs:
+                        definition=self.frame.canvas.defs[filename]
+                    else:
+                        self.frame.canvas.defs[filename]=definition=PolygonDefFactory(filename, self.frame.canvas.vertexcache)
+                    self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)                
+                except:
+                    pass
+
         if self.previewimg:
             # rescale if necessary
             if (dc.GetSize().x >= self.previewimg.GetWidth() and
@@ -363,5 +378,7 @@ class Palette(wx.SplitterWindow):
             dc.DrawBitmap(self.previewbmp,
                           (dc.GetSize().x-self.previewsize[0])/2,
                           (dc.GetSize().y-self.previewsize[1])/2, True)
-
+        else:
+            self.preview.SetBackgroundColour(wx.NullColour)
+            self.preview.ClearBackground()
 

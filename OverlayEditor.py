@@ -5,7 +5,7 @@ from math import cos, floor, sin, pi
 import os	# for startfile
 from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
-from sys import exit, argv, platform, version
+from sys import exit, argv, executable, platform, version
 
 if platform=='win32':
     import wx
@@ -13,23 +13,25 @@ else:
     try:
         import wx
     except:
-        import Tkinter, tkMessageBox
-        Tkinter.Tk().withdraw()	# make and suppress top-level window
         if platform=='darwin':
-            tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\nwxPython2.5.3-py%s or later." % version[:3], icon="question", type="ok")
+            from EasyDialogs import Message
+            Message("wxPython is not installed. This application\nrequires wxPython2.5.3-py%s or later." % version[:3])
         else:	# linux
-            tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires\npython wxgtk2.5.3 or later.", icon="error", type="ok")
+            import tkMessageBox
+            tkMessageBox._show("Error", "wxPython is not installed. This application\nrequires python wxgtk2.5.3 or later.", icon="error", type="ok")
         exit(1)
     try:
         import OpenGL
     except:
-        import Tkinter
-        import tkMessageBox
-        Tkinter.Tk().withdraw()	# make and suppress top-level window
-        tkMessageBox._show("Error", "PyOpenGL is not installed.\nThis application requires\nPyOpenGL2 or later.", icon="error", type="ok")
+        if platform=='darwin':
+            from EasyDialogs import Message
+            Message("PyOpenGL is not installed. This application\nrequires PyOpenGL2 or later.")
+        else:	# linux
+            import tkMessageBox
+            tkMessageBox._show("Error", "PyOpenGL is not installed. This application\nrequires PyOpenGL2 or later.", icon="error", type="ok")
         exit(1)
 from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
-from OpenGL.GL import *
+#from OpenGL.GL import *
 
 if not 'startfile' in dir(os):
     import types
@@ -37,7 +39,7 @@ if not 'startfile' in dir(os):
     from urllib import quote
     import webbrowser
 
-from clutter import round2res, minres, Exclude	# for loading exclusions into palette
+from clutter import round2res, minres, latlondisp, Exclude	# for loading exclusions into palette
 from clutterdef import KnownDefs
 from draw import MyGL
 from files import importObj, readApt, readNav,readLib, sortfolded
@@ -253,34 +255,84 @@ class GotoDialog(wx.Dialog):
             self.aptcode['%s - %s' % (code, name)]=loc
             self.aptname['%s - %s' % (name, code)]=loc
 
-        wx.Dialog.__init__(self, parent, wx.ID_ANY, "Go to airport")
+        wx.Dialog.__init__(self, parent, wx.ID_ANY, "Go to")
         wx.EVT_CLOSE(self, self.OnClose)
-        grid1=wx.FlexGridSizer(0, 2, 14, 14)
+
+        numid=wx.NewId()
+        if platform=='darwin':
+            bg=wx.Colour(254,254,254)	# Odd colours = black on wxMac !!!
+        else:
+            bg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_WINDOW)
+        fg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
+
+        grid1=wx.FlexGridSizer(0, 2, 0, 0)
         grid1.AddGrowableCol(1,1)
-        grid1.Add(wx.StaticText(self, wx.ID_ANY, "Airports by name:"),
-                  0, wx.ALIGN_CENTER_VERTICAL)
-        grid1.Add(wx.StaticText(self, wx.ID_ANY, "Airports by code:"),
-                  0, wx.ALIGN_CENTER_VERTICAL)
+        box1 = wx.StaticBoxSizer(wx.StaticBox(self, -1, "Airports by name"),
+                                 wx.VERTICAL)
+        box2 = wx.StaticBoxSizer(wx.StaticBox(self, -1, "Airports by code"),
+                                 wx.VERTICAL)
+        box3 = wx.StaticBoxSizer(wx.StaticBox(self, -1, "Location"),
+                                 wx.VERTICAL)
         choices=self.aptname.keys()
         sortfolded(choices)
         self.list1=myListBox(self,wx.ID_ANY, style=wx.LB_SINGLE, choices=choices)
-        grid1.Add(self.list1, 1, wx.ALIGN_CENTER_VERTICAL|wx.ALL|wx.EXPAND, pad)
+        box1.Add(self.list1, 1, wx.ALL|wx.EXPAND, pad)
+        grid1.Add(box1, 0, wx.TOP|wx.LEFT|wx.BOTTOM, 14) #
         (x,y)=self.list1.GetTextExtent("[H] Delray Community Hosp Emergency Helist - 48FD")	# Maybe longest string
         x+=wx.SystemSettings_GetMetric(wx.SYS_VSCROLL_X)+8
         self.list1.SetMinSize((x,16*y))
         wx.EVT_LISTBOX(self, self.list1.GetId(), self.OnName)
+        wx.EVT_SET_FOCUS(self.list1, self.OnName)
+        
         choices=self.aptcode.keys()
         sortfolded(choices)
         self.list2=myListBox(self,wx.ID_ANY, style=wx.LB_SINGLE,choices=choices)
-        grid1.Add(self.list2, 1, wx.ALIGN_CENTER_VERTICAL|wx.ALL|wx.EXPAND, pad)
+        #grid1.Add(self.list2, 1, wx.ALIGN_CENTER_VERTICAL|wx.ALL|wx.EXPAND, pad)
+        box2.Add(self.list2, 1, wx.ALL|wx.EXPAND, pad)
+        grid1.Add(box2, 0, wx.ALL, 14) #
         self.list2.SetMinSize((x,16*y))
         wx.EVT_LISTBOX(self, self.list2.GetId(), self.OnCode)
-        box1=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
-        self.FindWindowById(wx.ID_OK).Disable()
-        box0=wx.BoxSizer(wx.VERTICAL)
-        box0.Add(grid1, 1, wx.ALL|wx.EXPAND, 14)
-        box0.Add(box1, 0, wx.ALL|wx.EXPAND, 14)
-        self.SetSizerAndFit(box0)
+        wx.EVT_SET_FOCUS(self.list2, self.OnCode)
+
+        locbox=wx.GridSizer(0, 2, 6, 6)
+        locbox.Add(wx.StaticText(self, -1, '  Latitude:'), 1, wx.ALIGN_CENTER_VERTICAL|wx.ALIGN_LEFT|wx.ALL, pad)
+        self.lat=NumCtrl(self, numid, 0, integerWidth=3, fractionWidth=6,
+                         min=-89.999999, max=89.999999, limited=True,
+                         selectOnEntry=False,
+                         foregroundColour=fg, signedForegroundColour=fg,
+                         validBackgroundColour = bg,
+                         invalidBackgroundColour = "Red")
+        if platform=='darwin':	# auto-size broken - wrong font?
+            (c,y)=self.lat.GetSize()
+            (x,c)=self.lat.GetTextExtent("-888.8888888")
+            numsize=(x,y)
+        else:
+            numsize=self.lat.GetSize()
+        self.lat.SetMinSize(numsize)
+        locbox.Add(self.lat, 1, wx.BOTTOM|wx.RIGHT|wx.EXPAND, pad)
+        
+        locbox.Add(wx.StaticText(self, -1, '  Longitude:'), 1, wx.ALIGN_CENTER_VERTICAL|wx.ALIGN_LEFT|wx.ALL, pad)
+        self.lon=NumCtrl(self, numid, 0, integerWidth=3, fractionWidth=6,
+                         min=-179.999999, max=179.999999, limited=True,
+                         selectOnEntry=False,
+                         foregroundColour=fg, signedForegroundColour=fg,
+                         validBackgroundColour = bg,
+                         invalidBackgroundColour = "Red")
+        self.lon.SetMinSize(numsize)
+        locbox.Add(self.lon, 1, wx.BOTTOM|wx.RIGHT|wx.EXPAND, pad)
+        box3.Add(locbox, 1, wx.ALL|wx.EXPAND, pad)
+        EVT_NUM(self, numid, self.OnLoc)	# All numeric fields
+        grid1.Add(box3, 0, wx.LEFT|wx.BOTTOM|wx.EXPAND, 14) #
+        
+        box4=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
+        self.ok=self.FindWindowById(wx.ID_OK)
+        self.ok.Disable()
+        #box0=wx.BoxSizer(wx.VERTICAL)
+        #box0.Add(grid1, 1, wx.ALL|wx.EXPAND, 14)
+        #box0.Add(box4, 0, wx.ALL|wx.EXPAND, 14)
+        #self.SetSizerAndFit(box0)
+        grid1.Add(box4, 1, wx.ALL|wx.ALIGN_RIGHT|wx.ALIGN_BOTTOM, 14)
+        self.SetSizerAndFit(grid1)
 
     def OnClose(self, event):
         # Prevent kill focus event causing refresh on wxMac 2.5
@@ -289,12 +341,30 @@ class GotoDialog(wx.Dialog):
         self.Destroy()
 
     def OnName(self, event):
-        self.choice=self.aptname[event.GetEventObject().GetStringSelection()]
-        self.FindWindowById(wx.ID_OK).Enable()
+        choice=event.GetEventObject().GetStringSelection()
+        if choice:
+            self.choice=self.aptname[choice]
+            self.ok.Enable()
+        event.Skip()
 
     def OnCode(self, event):
-        self.choice=self.aptcode[event.GetEventObject().GetStringSelection()]
-        self.FindWindowById(wx.ID_OK).Enable()
+        choice=event.GetEventObject().GetStringSelection()
+        if choice:
+            self.choice=self.aptcode[choice]
+            self.ok.Enable()
+        event.Skip()
+
+    def OnLoc(self, event):
+        self.choice=(self.lat.GetValue(), self.lon.GetValue())
+        self.ok.Enable()
+
+    def show(self, loc):
+        self.lat.SetValue(loc[0])
+        self.lon.SetValue(loc[1])
+        self.ok.Disable()
+        self.choice=None
+        if self.ShowModal()!=wx.ID_OK: return None
+        return self.choice
 
 
 class PreferencesDialog(wx.Dialog):
@@ -318,7 +388,7 @@ class PreferencesDialog(wx.Dialog):
         box1.Add(browsebtn, 0, wx.ALIGN_RIGHT|wx.ALL, 4)
         panel1.SetSizer(box1)
 
-        self.display = wx.RadioBox(panel2, -1, "Display", style=wx.VERTICAL,
+        self.display = wx.RadioBox(panel2, -1, "Terrain", style=wx.VERTICAL,
                                    choices=["No terrain", "Show terrain", "Show terrain and elevation"])
         if prefs.options&Prefs.TERRAIN:
             if prefs.options&Prefs.ELEVATION:
@@ -329,12 +399,20 @@ class PreferencesDialog(wx.Dialog):
         box2.Add(self.display, 1)
         panel2.SetSizer(box2)
 
-        box3=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
+        self.latlon = wx.RadioBox(panel3, -1, "Latitude && Longitude", style=wx.VERTICAL,
+                                   choices=["Decimal", u"dd\u00B0mm'ss\""])
+        if prefs.options&Prefs.DMS: self.latlon.SetSelection(1)
+        box3 = wx.BoxSizer()
+        box3.Add(self.latlon, 1)
+        panel3.SetSizer(box3)
+
+        box4=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
 
         box0 = wx.BoxSizer(wx.VERTICAL)
-        box0.Add(panel1, 0, wx.ALL|wx.EXPAND, 10)
-        box0.Add(panel2, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, 10)
-        box0.Add(box3, 0, wx.ALL|wx.EXPAND, 10)
+        box0.Add(panel1, 0, wx.LEFT|wx.RIGHT|wx.TOP|wx.EXPAND, 10)
+        box0.Add(panel2, 0, wx.LEFT|wx.RIGHT|wx.TOP|wx.EXPAND, 10)
+        box0.Add(panel3, 0, wx.LEFT|wx.RIGHT|wx.TOP|wx.EXPAND, 10)
+        box0.Add(box4, 0, wx.ALL|wx.EXPAND, 10)
 
         wx.EVT_BUTTON(self, browsebtn.GetId(), self.OnBrowse)
         self.SetSizerAndFit(box0)
@@ -654,7 +732,7 @@ class MainWindow(wx.Frame):
         wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
         
         if platform=='win32':
-            self.SetIcon(wx.Icon('win32/%s.ico' % appname, wx.BITMAP_TYPE_ICO))
+            self.SetIcon(wx.Icon(executable, wx.BITMAP_TYPE_ICO))
             self.menubar=None
         elif platform.lower().startswith('linux'):	# PNG supported by GTK
             self.SetIcon(wx.Icon('Resources/%s.png' % appname,
@@ -693,7 +771,7 @@ class MainWindow(wx.Frame):
             self.menubar.Append(editmenu, u'Edit')
 
             viewmenu = wx.Menu()
-            viewmenu.Append(wx.ID_PREVIEW, u'Background\u2026')
+            viewmenu.Append(wx.ID_PREVIEW, u'Background image\u2026')
             wx.EVT_MENU(self, wx.ID_PREVIEW, self.OnBackground)
             viewmenu.Append(wx.ID_REFRESH, u'Reload')
             wx.EVT_MENU(self, wx.ID_REFRESH, self.OnReload)
@@ -811,7 +889,7 @@ class MainWindow(wx.Frame):
 
         # Hack: Use zero-sized first field to hide toolbar button long help
         self.statusbar=self.CreateStatusBar(3, wx.ST_SIZEGRIP)
-        (x,y)=self.statusbar.GetTextExtent("  Lat: 999.999999  Lon: 9999.999999  Hdg: 999  Elv: 9999.9  ")
+        (x,y)=self.statusbar.GetTextExtent(u'  Lat: 99\u00B099\'99.999"W  Lon: 999\u00B099\'99.999"W  Hdg: 999  Elv: 9999.9  ')
         self.statusbar.SetStatusWidths([0, x+50,-1])
 
         self.splitter=wx.SplitterWindow(self, wx.ID_ANY,
@@ -848,12 +926,12 @@ class MainWindow(wx.Frame):
 
     def ShowLoc(self):
         if prefs.options&Prefs.ELEVATION:
-            self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f  Elv: %-6.1f" %(self.loc[0], self.loc[1], self.hdg, self.canvas.getheight()), 1)
+            self.statusbar.SetStatusText("%s  Hdg: %-3.0f  Elv: %-6.1f" % (latlondisp(prefs.options&Prefs.DMS, self.loc[0], self.loc[1]), self.hdg, self.canvas.getheight()), 1)
         else:
-            self.statusbar.SetStatusText("Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f" %(self.loc[0], self.loc[1], self.hdg), 1)
+            self.statusbar.SetStatusText("%s  Hdg: %-3.0f" % (latlondisp(prefs.options&Prefs.DMS, self.loc[0], self.loc[1]), self.hdg), 1)
 
     def ShowSel(self):
-        (names,string,lat,lon,hdg)=self.canvas.getsel()
+        (names,string,lat,lon,hdg)=self.canvas.getsel(prefs.options&Prefs.DMS)
         if names:
             for name in names:
                 if name!=names[0]:
@@ -909,7 +987,7 @@ class MainWindow(wx.Frame):
                 changed=self.canvas.movesel(round2res(zinc*cos(hr)),
                                             round2res(xinc*sin(hr)))
         elif event.m_keyCode in [ord('C'), wx.WXK_NUMPAD5]:
-            (names,string,lat,lon,hdg)=self.canvas.getsel()
+            (names,string,lat,lon,hdg)=self.canvas.getsel(prefs.options&Prefs.DMS)
             if lat==None: return
             self.loc=[round2res(lat),round2res(lon)]
             if hdg!=None and event.m_shiftDown:
@@ -970,26 +1048,31 @@ class MainWindow(wx.Frame):
             if self.elev<2: self.elev=2	# not 1 cos clipping
         elif event.m_keyCode in [wx.WXK_INSERT, wx.WXK_RETURN, wx.WXK_NUMPAD_INSERT, wx.WXK_NUMPAD_ENTER]:
             name=self.palette.get()
-            if prefs.package and name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg):
+            if prefs.package and name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg, event.m_controlDown, event.m_shiftDown):
                 changed=True
         elif event.m_keyCode in [wx.WXK_DELETE, wx.WXK_BACK, wx.WXK_NUMPAD_DELETE]: # wx.WXK_NUMPAD_DECIMAL]:
-            changed=self.canvas.delsel()
+            changed=self.canvas.delsel(event.m_controlDown, event.m_shiftDown)
         elif event.m_keyCode==wx.WXK_SPACE:
             self.canvas.allsel(event.m_controlDown)
         elif event.m_keyCode==ord('N') or (platform=='darwin' and event.m_keyCode==ord('J') and event.m_metaDown):
             name=self.palette.get()
             if name:
                 loc=self.canvas.nextsel(name, event.m_controlDown)
-                if loc: self.loc=loc
+                if loc:
+                    self.loc=loc
+                    self.ShowSel()
         elif event.m_keyCode==ord('Z') and event.CmdDown():
-            if prefs.package:
-                if not self.canvas.undo():
-                    self.toolbar.EnableTool(wx.ID_UNDO, False)
-                    if self.menubar: self.menubar.Enable(wx.ID_UNDO, False)
+            loc=self.canvas.undo()
+            if loc:
+                self.loc=loc
+                self.frame.ShowSel()
+            if not self.canvas.undostack:
+                self.toolbar.EnableTool(wx.ID_UNDO, False)
+                if self.menubar: self.menubar.Enable(wx.ID_UNDO, False)
         elif event.m_keyCode==wx.WXK_F1 and platform!='darwin':
             self.OnHelp(event)
         else:
-            if __debug__: print "Unknown key", event.m_keyCode
+            #if __debug__: print "Unknown key", event.m_keyCode
             event.Skip(True)
             return
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
@@ -1117,15 +1200,12 @@ class MainWindow(wx.Frame):
             mkdir(join(base,'Earth nav data'))
         dsfdir=glob(join(prefs.xplane,gcustom,prefs.package,gnavdata))[0]
 
-        stuff=dict(self.canvas.objects)
-        stuff.update(self.canvas.polygons)
+        stuff=dict(self.canvas.unsorted)
+        for (key,placements) in self.canvas.placements.iteritems():
+            stuff[key]=reduce(lambda x,y: x+y, placements)
         for key in stuff.keys():
             try:
-                if key in self.canvas.objects: objects=self.canvas.objects[key]
-                else: objects=[]
-                if key in self.canvas.polygons: polygons=self.canvas.polygons[key]
-                else: polygons=[]
-                writeDSF(dsfdir, key, objects, polygons)
+                writeDSF(dsfdir, key, stuff[key])
             except IOError, e:
                 myMessageBox(str(e.strerror),
                              "Can't save %+03d%+04d.dsf." % (key[0], key[1]), 
@@ -1141,7 +1221,7 @@ class MainWindow(wx.Frame):
         
     def OnAdd(self, event):
         # Assumes that only one object selected
-        if self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg):
+        if self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg, wx.GetKeyState(wx.WXK_CONTROL), wx.GetKeyState(wx.WXK_SHIFT)):
             self.toolbar.EnableTool(wx.ID_SAVE, True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:
@@ -1149,7 +1229,7 @@ class MainWindow(wx.Frame):
                 self.menubar.Enable(wx.ID_UNDO, True)
 
     def OnDelete(self, event):
-        if self.canvas.delsel():
+        if self.canvas.delsel(wx.GetKeyState(wx.WXK_CONTROL), wx.GetKeyState(wx.WXK_SHIFT)):
             self.toolbar.EnableTool(wx.ID_SAVE, True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:
@@ -1157,7 +1237,14 @@ class MainWindow(wx.Frame):
                 self.menubar.Enable(wx.ID_UNDO, True)
 
     def OnUndo(self, event):
-        if not self.canvas.undo():
+        loc=self.canvas.undo()
+        if loc:
+            self.loc=loc
+            self.ShowSel()
+            self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
+            self.Update()		# Let window draw first
+            self.ShowLoc()
+        if not self.canvas.undostack:
             self.toolbar.EnableTool(wx.ID_UNDO, False)
             if self.menubar: self.menubar.Enable(wx.ID_UNDO, False)
 
@@ -1188,8 +1275,11 @@ class MainWindow(wx.Frame):
                 self.menubar.Enable(wx.ID_PREVIEW, False)
                 self.menubar.Enable(wx.ID_REFRESH, False)
                 self.menubar.Enable(wx.ID_PASTE,   False)
-        progress.Update(0, 'Global nav data')
-        if False:# XXX not self.airports:	# Default apt.dat
+        self.toolbar.EnableTool(wx.ID_UNDO, False)
+        if self.menubar:
+            self.menubar.Enable(wx.ID_UNDO, False)
+        progress.Update(0, 'Global airports')
+        if not self.airports:	# Default apt.dat
             try:
                 (self.airports,self.nav,foo)=readApt(glob(join(prefs.xplane, gmainaptdat))[0])
             except:
@@ -1205,7 +1295,7 @@ class MainWindow(wx.Frame):
             # Load, not reload
             placements={}
             if pkgnavdata:
-                if 1:#XXXtry:
+                try:
                     dsfs=glob(join(pkgnavdata, '[+-][0-9]0[+-][01][0-9]0', '[+-][0-9][0-9][+-][01][0-9][0-9].[dD][sS][fF]'))
                     if not dsfs:
                         if glob(join(pkgnavdata, '[+-][0-9]0[+-][01][0-9]0', '[+-][0-9][0-9][+-][01][0-9][0-9].[eE][nN][vV]')): raise IOError, (0, 'This package uses v7 "ENV" files')
@@ -1213,14 +1303,14 @@ class MainWindow(wx.Frame):
                         (lat, lon, p, foo)=readDSF(f)	#join(pkgnavdata,f)
                         tile=(lat,lon)
                         placements[tile]=p
-                elif 0:#except IOError, e:	# Bad DSF - restore to unloaded state
+                except IOError, e:	# Bad DSF - restore to unloaded state
                     myMessageBox(e.strerror, "Can't edit this package.",
                                  wx.ICON_ERROR|wx.OK, None)
                     self.SetTitle(appname)
                     prefs.package=None
                     pkgnavdata=None
                     placements={}
-                else:#except:		# Bad DSF - restore to unloaded state
+                except:		# Bad DSF - restore to unloaded state
                     myMessageBox("Failed to read %s." % basename(f), "Can't edit this package.", wx.ICON_ERROR|wx.OK, None)
                     self.SetTitle(appname)
                     prefs.package=None
@@ -1232,38 +1322,50 @@ class MainWindow(wx.Frame):
         airports=dict(self.airports)
         nav=list(self.nav)
         runways={}
+        pkgapts={}
+        codes={}
         pkgloc=None
         apts=glob(join(prefs.xplane, gcustom, '*', gaptdat))
         for apt in apts:
-            # Package-specific apt.dat
-            if 1:#XXXtry:
+            # Package-specific apt.dats
+            try:
                 (thisapt,thisnav,thiscode)=readApt(apt)
-                # Merge lists - remove package airports from global
-                # But runways in custom scenery are cumulative
+                # Remove custom airports from global - last custom wins
                 for code, stuff in thisapt.iteritems():
                     (name, (lat,lon), run)=stuff
-                    airports[code]=(name, (lat,lon), None)
+                    airports.pop(code, None)
+                    pkgapts[code]=(name, (lat,lon), None)
+                    # But custom runways are cumulative
                     tile=(int(floor(lat)),int(floor(lon)))
                     if not tile in runways:
                         runways[tile]=[run]
+                        codes[tile]=[(code, (lat,lon))]
                     else:
                         runways[tile].append(run)
+                        codes[tile].append((code, (lat,lon)))
                 nav.extend(thisnav)
                 if prefs.package and apt[:-23].endswith(sep+prefs.package) and thiscode and not pkgloc:
                     # get start location
                     (name, loc, run)=thisapt[thiscode]
                     pkgloc=[round2res(loc[0]),round2res(loc[1])]
-            else:#except:
+            except:
                 if prefs.package and apt[:-23].endswith(sep+prefs.package):
                     myMessageBox("The apt.dat file in this package is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
+
+        # Remaining global airports
         for code, stuff in airports.iteritems():
             (name, (lat,lon), run)=stuff
             if not run: continue
             tile=(int(floor(lat)),int(floor(lon)))
             if not tile in runways:
                 runways[tile]=[run]
+                codes[tile]=[(code, (lat,lon))]
             else:
                 runways[tile].append(run)
+                codes[tile].append((code, (lat,lon)))
+
+        # Merge in custom airports
+        airports.update(pkgapts)
 
         if self.goto: self.goto.Close()	# Needed on wxMac 2.5
         self.goto=GotoDialog(self, airports)	# build only
@@ -1310,7 +1412,7 @@ class MainWindow(wx.Frame):
         else:
             background=None
         self.canvas.reload(event!=None, prefs.options,
-                           runways, nav, lookup, placements,
+                           runways, nav, codes, lookup, placements,
                            background, terrain,
                            [join(prefs.xplane, gcustom),
                             join(prefs.xplane, gdefault)])
@@ -1343,7 +1445,7 @@ class MainWindow(wx.Frame):
         self.Refresh()
 
     def OnImport(self, event):
-        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Draped, Facades, Forests|*.obj;*.pol;*.fac;*.for|Object files (*.obj)|*.obj|Draped polygon files (*.pol)|*.pol|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|All files|*.*", wx.OPEN|wx.MULTIPLE)
+        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Draped, Facades, Forests|*.obj;*.pol;*.fac;*.for|Object files (*.obj)|*.obj|Draped polygon files (*.pol)|*.pol|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|All files|*.*", wx.OPEN|wx.MULTIPLE|wx.HIDE_READONLY)
         if dlg.ShowModal()!=wx.ID_OK:
             dlg.Destroy()
             return
@@ -1361,7 +1463,7 @@ class MainWindow(wx.Frame):
                 msg=''
             else:
                 name=newpath[len(pkgpath)+1:].replace(sep, '/')
-                self.canvas.vertexcache.add(name, newpath)
+                self.canvas.lookup[name]=newpath
                 self.palette.add(name, pkgpath)
                 continue
             myMessageBox(msg, "Can't import %s." % path,
@@ -1369,12 +1471,10 @@ class MainWindow(wx.Frame):
 
     def OnGoto(self, event):
         self.goto.CenterOnParent()	# Otherwise is centred on screen
-        if self.goto.ShowModal()==wx.ID_OK and self.goto.choice:
-            self.loc=[round2res(self.goto.choice[0]),
-                      round2res(self.goto.choice[1])]
-            #self.hdg=0
-            #self.elev=45
-            #self.dist=3000
+        choice=self.goto.show(self.loc)
+        if choice:
+            self.loc=[round2res(choice[0]),
+                      round2res(choice[1])]
             self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
             self.ShowLoc()
 
@@ -1391,6 +1491,8 @@ class MainWindow(wx.Frame):
             prefs.options=Prefs.TERRAIN|Prefs.ELEVATION
         else:
             prefs.options=0
+        if dlg.latlon.GetSelection():
+            prefs.options|=Prefs.DMS
         if dlg.path.GetValue()!=prefs.xplane:
             prefs.xplane=dlg.path.GetValue()
             prefs.package=None

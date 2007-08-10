@@ -76,7 +76,7 @@ files are backed up with the extension <code>.dsf.bak</code></td>
 The imported objects are placed in<code> custom&nbsp;objects </code>or<code> objects </code>if either of these folders exist, otherwise in the package's top-level folder. 
 The texture path names in the imported objects are fixed up as required.<br>
 Before you import objects from another scenery package you should first check
-the licensing terms; these often prohibit re-distribution of individual
+the license terms; these often prohibit re-distribution of individual
 objects.</td>
     </tr>
     <tr>
@@ -112,7 +112,7 @@ to appear in the <a href="#objectlist">list of objects</a>.
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><a name="preferences"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Preferences" src="Resources/prefs.png"></a></td>
-      <td>Change X-Plane's top-level folder and whether to show terrain and elevation data.<br>
+      <td>Change X-Plane's top-level folder and display options.<br>
 Do not change the location of X-Plane's top-level folder while you are editing a scenery package, otherwise your unsaved changes will be lost.</td>
     </tr>
     <tr>
@@ -185,18 +185,18 @@ To select objects:</p>
 <p>If you select a single polygon (facade, forest, draped or exclusion region)
 you can click on an individual node (<i>ie</i> corner) to select it.
 The selected node is highlighted in white.</p>
-<p>These keys affect the selected objects or the selected node.
+<p>These keys affect the selected objects or the selected polygon node.
 Hold down <samp>Shift</samp> for bigger steps or <samp>Ctrl</samp>
 for tiny steps:</p>
 <table style="margin-left: 40px; width: 100%;" border="0">
   <tbody>
     <tr>
       <td style="width: 33%;">Mouse click and drag</td>
-      <td>Move object or node</td>
+      <td>Move object or polygon node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
-      <td>Move selected objects or node</td>
+      <td>Move selected objects or polygon node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Q</samp>, <samp>E</samp></td>
@@ -208,22 +208,34 @@ for tiny steps:</p>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>C</samp></td>
-      <td>Centre on selected objects or node</td>
+      <td>Centre on selected objects or polygon node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>N</samp></td>
       <td>Centre on and select the next use of this object</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Insert/Enter</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
-      <td>Add new node object or node</small></td>
+      <td style="width: 33%;"><samp>Insert</samp>/<samp>Enter</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
+      <td>Add new object or polygon node</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Ctrl Insert</samp>/<samp>Enter</samp> or <samp>Ctrl</samp> <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
+      <td>Add new polygon node, going clockwise</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Shift Insert</samp>/<samp>Enter</samp> or <samp>Shift</samp> <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
+      <td>Add a hole in a forest or draped polygon</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
-      <td>Delete selected objects or node</td>
+      <td>Delete selected objects or polygon node</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Ctrl</samp>/<samp>Cmd</samp> and <samp>Z</samp>, or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
+      <td style="width: 33%;"><samp>Shift Delete</samp> or <samp>Shift</samp> <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
+      <td>Delete selected hole in a polygon</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Ctrl</samp>/<samp>Cmd Z</samp>, or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
       <td>Undo the last edit.</td>
     </tr>
   </tbody>
@@ -274,7 +286,7 @@ windows to make the preview picture smaller.</p>
 
 <h4>Status bar</h4>
 <p>This shows your current location, heading, elevation and, if you have
-selected an object or node, the object or node's location, heading and
+selected an object or polygon node, the object or node's location, heading and
 elevation (or average location if you have selected more than one object).</p>
 
 <h3>Differences between this application and X-Plane</h3>
@@ -296,14 +308,13 @@ depending on the contents of the <code>.pol</code> file:
       <li>A draped polygon (<code>.pol</code>) file that contains a
 <code>TEXTURE_NOWRAP</code> statement is assumed to be intended for use as a quadrilateral <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later).</li>
     </ul>
-However X-Plane lets you use the same draped polygon (<code>.pol</code>) file
-for either purpose (but you may see artifacts if your <code>.pol</code> file
-doesn't contain the correct <code>TEXTURE</code>/<code>TEXTURE_NOWRAP</code>
-statement).</li>
+X-Plane lets you use the same draped polygon (<code>.pol</code>) file
+for either purpose but you will see visual artifacts if you use a
+<code>TEXTURE</code> statement in an orthophoto or use a
+<code>TEXTURE_NOWRAP</code> statement in a repeating texture.</li>
   <li>X-Plane allows some types of polygons to use bezier curves,
 however this application does not understand or display bezier polygon curves.
-If you edit a polygon node then any corresponding bezier control point will
-be deleted.</li>
+Any bezier control points will be deleted when you edit the polygon.</li>
   <li>Terrain textures are simplified - no beaches or overlay textures.</li>
   <li>No flattening of terrain around airports. Terrain is displayed as if the
 X-Plane "allow sloped runways" rendering option is turned on.</li>
@@ -334,30 +345,53 @@ Many objects in the <code>global8</code> library exist in multiple versions
 exists in eight different versions in X-Plane 8.40; if you use that object
 in your scenery package then this application will always display the same
 version, but X-Plane will display one of the eight versions chosen at random.<p>
+
 <h3>Troubleshooting</h3>
+
+<h4>OverlayEditor is too slow</h4>
+<p>OverlayEditor needs to load lots of textures and uses much more memory
+if the preferences are set to display terrain. Closing other applications,
+particularly applications like X-Plane that also make heavy use of textures,
+will make OverlayEditor load faster. Or you can tell OverlayEditor not to
+display terrain; press
+<a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
+and select "No terrain".</p>
+<p>Editing is slower when the preferences are set to display terrain elevation.
+This is particularly noticable when editing polygons because OverlayEditor
+has to fit the polygons to the terrain mesh. OverlayEditor runs much
+faster if you tell it not to display elevation; press
+<a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
+and select "No terrain" or "Show terrain".</p>
+
 <h4>OverlayEditor complains that it "Can't read one or more objects"</h4>
-Neither X-Plane nor OverlayEditor can read objects designed for X-Plane v5.
+<p>Neither X-Plane nor OverlayEditor can read objects designed for X-Plane v5.
 You can identify objects by looking at them in a text editor;
 the second line should start with <code>2</code>, <code>700</code> or a larger
 number and the third line should start with <code>OBJ</code>.
 Otherwise this is either an X-Plane v5 object or it is not an X-Plane
 object at all.<br>
 If the object looks OK then please report the problem to the
-<a href="mailto:x-plane@marginal.org.uk">author</a>.
+<a href="mailto:x-plane@marginal.org.uk">author</a>.</p>
 
 <h4>My scenery object just appears as a small grey blob in OverlayEditor</h4>
-OverlayEditor doesn't draw lights or lines - objects that only contain
+<p>OverlayEditor doesn't draw lights or lines - objects that only contain
 lights or lines are displayed as small "placeholder" cubes.
-This is a limitation of the application.
+This is a limitation of the application.</p>
+    
+<h4>My forest/draped polygon just appears as a red outline in OverlayEditor</h4>
+<p>In X-Plane polygons must be "<a href="http://en.wikipedia.org/wiki/Simple_polygon">simple</a>",
+<i>ie</i> a polygon's sides must not intersect each other.
+X-Plane won't display non-simple polygons.
+OverlayEditor displays non-simple polygons as a bright red outline.</p>
     
 <h4>My scenery object has the right shape, but appears grey/untextured in OverlayEditor</h4>
-This happens when OverlayEditor fails to find or read the texture file
+<p>This happens when OverlayEditor fails to find or read the texture file
 listed in your object.<br>
 OverlayEditor expects the texture filename to have the correct case -
 edit your object to correct the texture filename.<br>
 OverlayEditor cannot read palletised or interlaced PNG files - save your
 PNG file in 24bit or 32bit non-interlaced format.<br>
-Then press <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> to tell OverlayEditor to re-read your object.
+Then press <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> to tell OverlayEditor to re-read your object.</p>
 
 <h4>My scenery objects don't show up in X-Plane</h4>
 <dl>

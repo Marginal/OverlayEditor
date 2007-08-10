@@ -1,18 +1,53 @@
-# Virtual class for ground clutter - ie editable stuff
-#
 # Derived classes expected to have following members:
 # __init__
 # __str__
-# clone -> make a new copy
+# clone -> make a new copy, minus layout
 # load -> read definition
 # location -> returns (average) lat/lon
 # layout -> fit to terrain
 # clearlayout -> clear above
+# move -> move and layout
+# movenode -> move - no layout
+# updatenode -> move node - no layout
+
 #
+# 3 draw modes: normal, selected, picking:
+#
+# normal:
+#   called in display list
+#   GL_TEXTURE_2D enabled
+#   CULL_FACE enabled
+#   GL_POLYGON_OFFSET_FILL disabled
+#   can use PolygonOffset -1 (unless MacOS 10.3)
+#   GL_DEPTH_TEST: enabled
+#   glDepthMask enabled
+#   glColor3f(unpainted colour)
+#
+# selected / drawnodes:
+#   NOT called in display list
+#   GL_TEXTURE_2D enabled
+#   CULL_FACE enabled
+#   GL_POLYGON_OFFSET_FILL enabled
+#   PolygonOffset -2 (so overwrites in drag select)
+#   GL_DEPTH_TEST: enabled
+#   glDepthMask enabled
+#   glColor3f(selected colour)
+#
+# picking:
+#   called in display list
+#   GL_TEXTURE_2D disabled
+#   CULL_FACE disabled (so can select reverse)
+#   GL_POLYGON_OFFSET_FILL disabled
+#   don't use PolygonOffset
+#   GL_DEPTH_TEST: enabled
+#   glDepthMask enabled
+#
+
 
 from math import atan2, cos, floor, hypot, pi, radians, sin
 from OpenGL.GL import *
 from OpenGL.GLU import *
+from sys import maxint
 try:
     # apparently older PyOpenGL version didn't define gluTessVertex
     gluTessVertex
@@ -20,7 +55,7 @@ except NameError:
     from OpenGL import GLU
     gluTessVertex = GLU._gluTessVertex
 
-from clutterdef import ObjectDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, DrapedFallback, FacadeFallback, SkipDefs
+from clutterdef import ObjectDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, DrapedFallback, FacadeFallback, ForestFallback, SkipDefs
 from prefs import Prefs
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
@@ -29,37 +64,53 @@ resolution=8*65535
 minres=1.0/resolution
 maxres=1-minres
 
+class BBox:
+
+    def __init__(self, minx, maxx, minz, maxz):
+        self.minx=minx
+        self.maxx=maxx
+        self.minz=minz
+        self.maxz=maxz
+
+    def intersects(self, other):
+        return ((self.minx < other.maxx) and (self.maxx > other.minx) and
+                (self.minz < other.maxz) and (self.maxz > other.minz))
+
+
 def round2res(x):
     i=floor(x)
     return i+round((x-i)*resolution,0)*minres
 
 
-def PolygonFactory(name, param, nodes):
+def PolygonFactory(name, param, nodes, lon=None, hdg=None):
     "creates and initialises appropriate Polgon subclass based on file extension"
     # would like to have made this a 'static' method of Polygon
     if name.startswith(PolygonDef.EXCLUDE):
-        return Exclude(name, param, nodes)
+        return Exclude(name, param, nodes, lon, hdg)
     ext=name.lower()[-4:]
     if ext==PolygonDef.DRAPED:
-        return Draped(name, param, nodes)
+        return Draped(name, param, nodes, lon, hdg)
     elif ext==PolygonDef.FACADE:
-        return Facade(name, param, nodes)
+        return Facade(name, param, nodes, lon, hdg)
     elif ext==PolygonDef.FOREST:
-        return Forest(name, param, nodes)
+        return Forest(name, param, nodes, lon, hdg)
     elif ext==PolygonDef.BEACH:
-        return Beach(name, param, nodes)
+        return Beach(name, param, nodes, lon, hdg)
     elif ext==ObjectDef.OBJECT:
         raise IOError		# not a polygon
     elif ext in SkipDefs:
         raise IOError		# what's this doing here?
     else:	# unknown polygon type
-        return Polygon(name, param, nodes)
+        return Polygon(name, param, nodes, lon, hdg)
 
 
 class Clutter:
 
-    def __init__(self, name):
+    def __init__(self, name, lat=None, lon=None):
         self.name=name		# virtual name
+        self.definition=None
+        self.lat=lat		# For centreing etc
+        self.lon=lon
         
     def position(self, lat, lon):
         # returns (x,z) position relative to centre of enclosing tile
@@ -71,11 +122,8 @@ class Clutter:
 class Object(Clutter):
 
     def __init__(self, name, lat, lon, hdg, y=None):
-        Clutter.__init__(self, name)
-        self.lat=lat
-        self.lon=lon
+        Clutter.__init__(self, name, lat, lon)
         self.hdg=hdg
-        self.definition=None
         self.x=self.z=None
         self.y=y
 
@@ -87,15 +135,15 @@ class Object(Clutter):
         return Object(self.name, self.lat, self.lon, self.hdg, self.y)
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
-        if 1:#XXX try:
+        try:
             filename=lookup[self.name]
             if filename in defs:
                 self.definition=defs[filename]
-                self.definition.allocate(vertexcache)
+                self.definition.allocate(vertexcache)	# ensure allocated
             else:
                 defs[filename]=self.definition=ObjectDef(filename, vertexcache)
             return True
-        else:#except:
+        except:
             # virtual name not found or can't load physical file
             if usefallback:
                 filename=ObjectDef.FALLBACK
@@ -109,41 +157,46 @@ class Object(Clutter):
     def location(self):
         return [self.lat, self.lon]
 
-    def locationstr(self, node=None):
+    def locationstr(self, dms, node=None):
         if self.y:
-            return 'Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f  Elv: %-6.1f' % (self.lat, self.lon, self.hdg, self.y)
+            return '%s  Hdg: %-3.0f  Elv: %-6.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg, self.y)
         else:
-            return 'Lat: %-10.6f  Lon: %-11.6f  Hdg: %-3.0f' % (self.lat, self.lon, self.hdg)
+            return '%s  Hdg: %-3.0f' % (latlondisp(dms, self.lat, self.lon), self.hdg)
 
-    def draw(self, selected, withnodes, selectednode):
+    def draw(self, selected, picking, nopoly=False):
         obj=self.definition
-        poly=obj.poly
-        if selected: poly+=1
-        if poly:
-            glEnable(GL_POLYGON_OFFSET_FILL)
-            glPolygonOffset(-1*poly, -1*poly)
-            #glDepthMask(GL_FALSE)	# offset mustn't update depth
-        glBindTexture(GL_TEXTURE_2D, obj.texture)
         glPushMatrix()
         glTranslatef(self.x, self.y, self.z)
         glRotatef(-self.hdg, 0.0,1.0,0.0)
-        if selected:
-            # cull face enabled
+        if picking:
+            # cull face disabled
             glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
         else:
+            glBindTexture(GL_TEXTURE_2D, obj.texture)
+            if obj.poly and not (selected or picking or nopoly):
+                glDepthMask(GL_FALSE)	# offset mustn't update depth
+                glEnable(GL_POLYGON_OFFSET_FILL)
+                glPolygonOffset(-1, -1)
             if obj.culled:
                 glEnable(GL_CULL_FACE)
                 glDrawArrays(GL_TRIANGLES, obj.base, obj.culled)
             if obj.nocull:
                 glDisable(GL_CULL_FACE)
                 glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
+                glEnable(GL_CULL_FACE)
+            if obj.poly and not (selected or picking or nopoly):
+                glDepthMask(GL_TRUE)
+                glDisable(GL_POLYGON_OFFSET_FILL)
         glPopMatrix()
-        if poly:
-            glDisable(GL_POLYGON_OFFSET_FILL)
-            #glDepthMask(GL_TRUE)
+
+    def drawnodes(self, selectednode):
+        pass
 
     def clearlayout(self):
         self.x=self.y=self.z=None
+
+    def islaidout(self):
+        return self.x!=None
 
     def layout(self, tile, options, vertexcache):
         (self.x,self.z)=self.position(self.lat, self.lon)
@@ -158,14 +211,20 @@ class Object(Clutter):
 
 class Polygon(Clutter):
 
-    def __init__(self, name, param, nodes):
-        Clutter.__init__(self, name)
-        self.lat=self.lon=0	# For centreing etc
+    def __init__(self, name, param, nodes, lon=None, hdg=None):
+        if param==None: param=0
+        if lon==None:
+            Clutter.__init__(self, name)
+            self.nodes=nodes		# [[(lon,lat,...)]]
+        else:
+            Clutter.__init__(self, name, nodes, lon)
+            h=radians(hdg)
+            self.nodes=[[]]
+            for i in [h+5*pi/4, h+3*pi/4, h+pi/4, h+7*pi/4]:
+                self.nodes[0].append((round2res(self.lon+sin(i)*0.00014142),
+                                      round2res(self.lat+cos(i)*0.00014142)))
         self.param=param
-        self.nodes=nodes	# [[(lon,lat,...)]]
-        self.definition=None
-        self.lat=self.lon=None	# cached location
-        self.points=[[]]	# list of windings in world space (x,y,z)
+        self.points=[]		# list of windings in world space (x,y,z)
 
     def __str__(self):
         return '<"%s" %d %s>' % (self.name,self.param,self.points)
@@ -192,39 +251,52 @@ class Polygon(Clutter):
             self.lon=self.lon/n
         return [self.lat, self.lon]
 
-    def locationstr(self, node):
+    def locationstr(self, dms, node=None):
         if node:
             (i,j)=node
-            if self.points[i][j]:
-                return 'Lat: %-10.6f  Lon: %-11.6f  Elv: %-6.1f  Node %d' % (self.nodes[i][j][1], self.nodes[i][j][0], self.points[i][j][1], j)
+            hole=['', 'Hole '][i and 1]
+            if self.points[i][j][1]:
+                return '%s  Elv: %-6.1f  %sNode %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), self.points[i][j][1], hole, j)
             else:
-                return 'Lat: %-10.6f  Lon: %-11.6f  Node %d' % (self.nodes[i][j][1], self.nodes[i][j][0], j)
+                return '%s  %sNode %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), hole, j)
         else:
-            return 'Lat: %-10.6f  Lon: %-11.6f  Param: %-4d  (%d nodes)' % (self.lat, self.lon, self.param, len(self.nodes[0]))
+            return '%s  Param: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, withnodes, selectednode):
-        # just draw lines
-        if not selected: glColor3f(0.25, 0.25, 0.25)
-        glBindTexture(GL_TEXTURE_2D, 0)
-        if withnodes: glDisable(GL_DEPTH_TEST)
+    def draw(self, selected, picking, nopoly=False, col=(0.25, 0.25, 0.25)):
+        # just draw outline
+        if not picking:
+            glBindTexture(GL_TEXTURE_2D, 0)
+        glDisable(GL_DEPTH_TEST)
         for winding in self.points:
             glBegin(GL_LINE_LOOP)
             for p in winding:
+                if not selected and not picking: glColor3f(*col)
                 glVertex3f(p[0],p[1],p[2])
             glEnd()
-        if withnodes:
-            glBegin(GL_POINTS)
-            for i in range(len(self.points)):
-                for j in range(len(self.points[i])):
-                    if selectednode==(i,j):
-                        glColor3f(1.0, 1.0, 1.0)
-                    else:
-                        glColor3f(1.0, 0.5, 1.0)
-                    glVertex3f(*self.points[i][j])
-            glEnd()
+        glEnable(GL_DEPTH_TEST)
+        if not selected and not picking:
+            glColor3f(0.8, 0.8, 0.8)	# restore
 
+    def drawnodes(self, selectednode):
+        Polygon.draw(self, True, False)
+        glBindTexture(GL_TEXTURE_2D, 0)
+        glDisable(GL_DEPTH_TEST)
+        glBegin(GL_POINTS)
+        for i in range(len(self.points)):
+            for j in range(len(self.points[i])):
+                if selectednode==(i,j):
+                    glColor3f(1.0, 1.0, 1.0)
+                else:
+                    glColor3f(1.0, 0.5, 1.0)
+                glVertex3f(*self.points[i][j])
+        glEnd()
+        glEnable(GL_DEPTH_TEST)        
+        
     def clearlayout(self):
         self.points=[]
+
+    def islaidout(self):
+        return self.points and True
 
     def layout(self, tile, options, vertexcache, selectednode=None):
 
@@ -253,9 +325,43 @@ class Polygon(Clutter):
 
         self.lat=self.lat/len(self.nodes[0])
         self.lon=self.lon/len(self.nodes[0])
-        if selectednode: return selectednode
+        return selectednode
+
+    def addnode(self, tile, options, vertexcache, selectednode, clockwise):
+        (i,j)=selectednode
+        n=len(self.nodes[i])
+        if (i and clockwise) or (not i and not clockwise):
+            newnode=nextnode=(j+1)%n
+        else:
+            newnode=j
+            nextnode=(j-1)%n
+        selectednode=(i,newnode)
+        self.nodes[i].insert(newnode,
+                             (round2res((self.nodes[i][j][0]+self.nodes[i][nextnode][0])/2),
+                              round2res((self.nodes[i][j][1]+self.nodes[i][nextnode][1])/2)))
+        self.layout(tile, options, vertexcache, selectednode)
+        return selectednode
+
+    def delnode(self, tile, options, vertexcache, selectednode, clockwise):
+        (i,j)=selectednode
+        if len(self.nodes[i])<4:
+            return False
+        self.nodes[i].pop(j)
+        if (i and clockwise) or (not i and not clockwise):
+            selectednode=(i,(j-1)%len(self.nodes[i]))
+        else:
+            selectednode=(i,j%len(self.nodes[i]))
+        self.layout(tile, options, vertexcache, selectednode)
+        return selectednode
+
+    def addwinding(self, tile, options, vertexcache, hdg):
+        return False	# most polygon types don't support additional windings
+        
+    def delwinding(self, tile, options, vertexcache, selectednode):
+        return False	# most polygon types don't support additional windings
 
     def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
+        # do layout if changed
         for i in range(len(self.nodes)):
             for j in range(len(self.nodes[i])):
                 self.movenode((i,j), dlat, dlon, tile, options, vertexcache)
@@ -266,25 +372,29 @@ class Polygon(Clutter):
                             self.nodes[i][j][1]-self.lat)+radians(dhdg)
                     l=hypot(self.nodes[i][j][0]-self.lon,
                             self.nodes[i][j][1]-self.lat)
-                    self.nodes[i][j]=(max(floor(self.nodes[i][j][0]), min(floor(self.nodes[i][j][0])+maxres, self.nodes[i][j][0]+round2res(cos(h)*l))),
-                                      max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, self.nodes[i][j][1]+round2res(sin(h)*l))))	# note trashes other values
+                    self.nodes[i][j]=(max(floor(self.nodes[i][j][0]), min(floor(self.nodes[i][j][0])+maxres, round2res(self.lon+sin(h)*l))),
+                                      max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, round2res(self.lat+cos(h)*l))))	# trashes other parameters
         if dparam:
             self.param+=dparam
-            if self.param<1: self.param=1
-        elif self.param>65535: self.param=65535	# uint16
-        self.layout(tile, options, vertexcache)
+            if self.param<0: self.param=0
+            elif self.param>65535: self.param=65535	# uint16
+        if dlat or dlon or dhdg or dparam:
+            self.layout(tile, options, vertexcache)
         
-    def movenode(self, node, dlat, dlon, tile, options, vertexcache):
+    def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=True):
         # defer layout
         (i,j)=node
         self.nodes[i][j]=(max(floor(self.nodes[i][j][0]), min(floor(self.nodes[i][j][0])+maxres, self.nodes[i][j][0]+dlon)),
-                          max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, self.nodes[i][j][1]+dlat)))	# note trashes other values
-        return self.layout(tile, options, vertexcache, node)
+                          max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, self.nodes[i][j][1]+dlat)))	# trashes other parameters
+        if defer:
+            return node
+        else:
+            return self.layout(tile, options, vertexcache, node)
         
     def updatenode(self, node, lat, lon, tile, options, vertexcache):
         # update node height but defer full layout. Assumes lat,lon is valid
         (i,j)=node
-        self.nodes[i][j]=(lon,lat)
+        self.nodes[i][j]=(lon,lat)	# trashes other parameters
         (x,z)=self.position(lat, lon)
         y=vertexcache.height(tile,options,x,z)
         self.points[i][j]=(x,y,z)
@@ -293,46 +403,47 @@ class Polygon(Clutter):
     def picknodes(self):
         for i in range(len(self.points)):
             for j in range(len(self.points[i])):
-                glLoadName((i<<8)+j)
+                glLoadName((i<<24)+j)
                 glBegin(GL_POINTS)
                 glVertex3f(*self.points[i][j])
                 glEnd()
 
 
 class Beach(Polygon):
-    # Editing would zap extra vertex parameters, so make a dummy type
-    # to prevent selection and therefore editing
+    # Editing would zap extra vertex parameters that we don't understand,
+    # so make a dummy type to prevent selection and therefore editing
 
-    def __init__(self, name, param, nodes):
-        Polygon.__init__(self, name, param, nodes)
+    def __init__(self, name, param, nodes, lon=None, hdg=None):
+        Polygon.__init__(self, name, param, nodes, lon, hdg)
 
     def load(self, lookup, defs, vertexcache, usefallback=True):
         Polygon.load(self, lookup, defs, vertexcache, usefallback=True)
         self.definition.layer=ClutterDef.BEACHESLAYER
 
-    def draw(self, selected, withnodes, selectednode):
+    def draw(self, selected, picking, nopoly=False):
         # Don't draw selected so can't be picked
-        if not selected: Polygon.draw(self, selected, withnodes, selectednode)
+        if not picking: Polygon.draw(self, selected, picking, nopoly)
     
 
 class Draped(Polygon):
 
-    def __init__(self, name, param, nodes):
-        Polygon.__init__(self, name, param, nodes)
+    def __init__(self, name, param, nodes, lon=None, hdg=None):
+        Polygon.__init__(self, name, param, nodes, lon, hdg)
         self.tris=[]	# tesellated tris
+        self.nonsimple=False
 
     def clone(self):
         return Draped(self.name, self.param, [list(w) for w in self.nodes])
         
     def load(self, lookup, defs, vertexcache, usefallback=False):
-        if 1:#XXX try:
+        try:
             filename=lookup[self.name]
             if filename in defs:
                 self.definition=defs[filename]
             else:
                 defs[filename]=self.definition=DrapedDef(filename, vertexcache)
             return True
-        else:#except:
+        except:
             if usefallback:
                 # don't put in defs, so will get another error if
                 # physical file is used again
@@ -343,49 +454,92 @@ class Draped(Polygon):
                 self.definition=DrapedFallback(filename, vertexcache)
             return False
 
-    def locationstr(self, node):
+    def locationstr(self, dms, node=None):
         if node:
-            return Polygon.locationstr(self, node)
+            return Polygon.locationstr(self, dms, node)
         elif self.param==65535:
-            return 'Lat: %-10.6f  Lon: %-11.6f  (%d nodes)' % (self.lat, self.lon, len(self.nodes[0]))
+            return '%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
         else:
-            return 'Lat: %-10.6f  Lon: %-11.6f  Tex hdg: %-3d  (%d nodes)' % (self.lat, self.lon, self.param, len(self.nodes[0]))
+            return '%s  Tex hdg: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, withnodes, selectednode):
-        # XXX placeholder
+    def draw(self, selected, picking, nopoly=False):
         drp=self.definition
-        glBindTexture(GL_TEXTURE_2D, drp.texture)
-        glEnable(GL_POLYGON_OFFSET_FILL)
-        if selected:
-            glPolygonOffset(-3, -3)
+        if self.nonsimple:
+            Polygon.draw(self, selected, picking, nopoly, (1.0,0.25,0.25))
+            return
+        elif picking:
+            Polygon.draw(self, selected, picking, nopoly)	# for outline
         else:
-            glPolygonOffset(-2, -2)
-        #for winding in self.points:
-        #    glBegin(GL_POLYGON)
-        #    for p in winding:
-        #        glVertex3f(p[0],p[1],p[2])
-        #    glEnd()
+            glBindTexture(GL_TEXTURE_2D, drp.texture)
+        if not (selected or picking or nopoly):
+            glDepthMask(GL_FALSE)	# offset mustn't update depth
+            glEnable(GL_POLYGON_OFFSET_FILL)
+            glPolygonOffset(-1, -1)
         glBegin(GL_TRIANGLES)
-        for i in range(len(self.tris)):
-            glTexCoord2f(*self.tris[i][1])
-            glVertex3f(*self.tris[i][0])
+        if picking:
+            for t in self.tris:
+                glVertex3f(*t[0])
+        else:
+            for t in self.tris:
+                glTexCoord2f(*t[2])
+                glVertex3f(*t[0])
         glEnd()
-        glDisable(GL_POLYGON_OFFSET_FILL)
-        if selected:
-            # Add lines & points
-            Polygon.draw(self, selected, withnodes, selectednode)
+        if not (selected or picking or nopoly):
+            glDepthMask(GL_TRUE)
+            glDisable(GL_POLYGON_OFFSET_FILL)
         
     def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
         if self.param==65535:
-            # XXX Preserve node texture co-ords.
-            # XXX rotate texture co-ords.
-            pass
+            n=len(self.nodes[0])
+            if dparam>0:
+                # rotate texture co-ords.
+                if len(self.nodes[0][0])>=6:
+                    uv0=self.nodes[0][0][4:6]
+                else:
+                    uv0=self.nodes[0][0][2:4]
+                for j in range(n-1):
+                    if len(self.nodes[0][j+1])>=6:
+                        uv=self.nodes[0][j+1][4:6]
+                    else:
+                        uv=self.nodes[0][j+1][2:4]
+                    self.nodes[0][j]=self.nodes[0][j][:2]+uv
+                self.nodes[0][n-1]=self.nodes[0][n-1][:2]+uv0
+            elif dparam<0:
+                if len(self.nodes[0][n-1])>=6:
+                    uv0=self.nodes[0][n-1][4:6]
+                else:
+                    uv0=self.nodes[0][n-1][2:4]
+                for j in range(n-1,0,-1):
+                    if len(self.nodes[0][j-1])>=6:
+                        uv=self.nodes[0][j-1][4:6]
+                    else:
+                        uv=self.nodes[0][j-1][2:4]
+                    self.nodes[0][j]=self.nodes[0][j][:2]+uv
+                self.nodes[0][0]=self.nodes[0][0][:2]+uv0
         else:
             # rotate texture
             self.param=(self.param+dparam+dhdg)%360
-        Polygon.move(self, dlat, dlon, dhdg, 0, tile, options, vertexcache)
+        if dhdg:
+            # preserve textures
+            for i in range(len(self.nodes)):
+                for j in range(len(self.nodes[i])):
+                    if len(self.nodes[i][j])>=6:
+                        # Ben says: a bezier polygon has 8 coords (lon lat of point, lon lat of control, ST of point, ST of control)
+                        uv=self.nodes[i][j][4:6]
+                    else:
+                        uv=self.nodes[i][j][2:4]
+                    h=atan2(self.nodes[i][j][0]-self.lon,
+                            self.nodes[i][j][1]-self.lat)+radians(dhdg)
+                    l=hypot(self.nodes[i][j][0]-self.lon,
+                            self.nodes[i][j][1]-self.lat)
+                    self.nodes[i][j]=(max(floor(self.nodes[i][j][0]), min(floor(self.nodes[i][j][0])+maxres, round2res(self.lon+sin(h)*l))),
+                                      max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, round2res(self.lat+cos(h)*l))))+uv
+        if dlat or dlon:
+            Polygon.move(self, dlat, dlon, 0, 0, tile, options, vertexcache)
+        elif dhdg or dparam:
+            self.layout(tile, options, vertexcache)
 
-    def movenode(self, node, dlat, dlon, tile, options, vertexcache):
+    def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=True):
         # defer layout
         if self.param==65535:
             # Preserve node texture co-ords
@@ -397,92 +551,176 @@ class Draped(Polygon):
                 uv=self.nodes[i][j][2:4]
             self.nodes[i][j]=(max(floor(self.nodes[i][j][0]), min(floor(self.nodes[i][j][0])+maxres, self.nodes[i][j][0]+dlon)),
                               max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, self.nodes[i][j][1]+dlat)))+uv
-            return self.layout(tile, options, vertexcache, node)
+            if defer:
+                return node
+            else:
+                return self.layout(tile, options, vertexcache, node)
         else:
-            return Polygon.movenode(self, node, dlat, dlon, tile, options, vertexcache)
+            return Polygon.movenode(self, node, dlat, dlon, tile, options, vertexcache, defer)
+
+    def updatenode(self, node, lat, lon, tile, options, vertexcache):
+        # update node height but defer full layout. Assumes lat,lon is valid
+        if self.param==65535:
+            # Preserve node texture co-ords
+            (i,j)=node
+            if len(self.nodes[i][j])>=6:
+                # Ben says: a bezier polygon has 8 coords (lon lat of point, lon lat of control, ST of point, ST of control)
+                uv=self.nodes[i][j][4:6]
+            else:
+                uv=self.nodes[i][j][2:4]
+            self.nodes[i][j]=(lon,lat)+uv
+            (x,z)=self.position(lat, lon)
+            y=vertexcache.height(tile,options,x,z)
+            self.points[i][j]=(x,y,z)
+            return node
+        else:
+            return Polygon.updatenode(self, node, lat, lon, tile, options, vertexcache)
 
     def layout(self, tile, options, vertexcache, selectednode=None):
+        global tess, csgt
+        self.nonsimple=False
         selectednode=Polygon.layout(self, tile, options, vertexcache, selectednode)
-        self.tris=[]
-        drp=self.definition
-        tess=vertexcache.tess
-        #gluTessCallback(tess, GLU_TESS_BEGIN_DATA,  self.tessbegin)
-        gluTessCallback(tess, GLU_TESS_VERTEX_DATA, self.tessvertex)
-        #gluTessCallback(tess, GLU_TESS_END_DATA,    self.tessend)
-        gluTessCallback(tess, GLU_TESS_COMBINE,     self.tesscombine)
-        gluTessBeginPolygon(tess, self.tris)
-        if options&Prefs.ELEVATION:
-            gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
-            vertexcache.tessellate(tile, options)	# do terrain
+        # tessellate. This is just to get UV data and check polygon is simple
+        isforest=isinstance(self, Forest)
+        if isforest:
+            uv=None
         else:
-            gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
-        for i in range(len(self.nodes)):
-            #self.tris.append([])
-            n=len(self.nodes[i])
-            gluTessBeginContour(tess)
+            drp=self.definition
             if self.param!=65535:
-                ub=self.points[i][0][0]/drp.hscale
-                vb=self.points[i][0][2]/drp.hscale
-            for j in range(n-1,-1,-1): # XXX n
-                if self.param==65535:
-                    if len(self.nodes[i][j])>=6:	# has beziers
+                ch=cos(radians(self.param))
+                sh=sin(radians(self.param))
+        try:
+            tris=[]
+            gluTessBeginPolygon(tess, tris)
+            for i in range(len(self.nodes)):
+                n=len(self.nodes[i])
+                gluTessBeginContour(tess)
+                for j in range(n):
+                    if isforest:
+                        pass
+                    elif self.param==65535:
+                        if len(self.nodes[i][j])>=6:
+                            uv=self.nodes[i][j][4:6]
+                        else:
+                            uv=self.nodes[i][j][2:4]
+                    else:
+                        uv=((self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale,
+                            (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale)
+                    gluTessVertex(tess, [self.points[i][j][0], 0, self.points[i][j][2]], (self.points[i][j], False, uv))
+                gluTessEndContour(tess)
+            gluTessEndPolygon(tess)
+
+            if not options&Prefs.ELEVATION:
+                self.tris=tris
+                return selectednode
+        except:
+            # Combine required -> not simple
+            self.tris=[]
+            self.nonsimple=True
+            return selectednode
+
+        # tessellate again, this time in CSG mode against terrain
+        minx=minz=maxint
+        maxx=maxz=-maxint
+        self.tris=[]
+        gluTessBeginPolygon(csgt, self.tris)
+        for i in range(len(self.nodes)):
+            n=len(self.nodes[i])
+            gluTessBeginContour(csgt)
+            for j in range(n-1,-1,-1): # why not n?
+                if not i:
+                    minx=min(minx, self.points[i][j][0])
+                    maxx=max(maxx, self.points[i][j][0])
+                    minz=min(minz, self.points[i][j][2])
+                    maxz=max(maxz, self.points[i][j][2])
+                if isforest:
+                    pass
+                elif self.param==65535:
+                    if len(self.nodes[i][j])>=6:
                         uv=self.nodes[i][j][4:6]
                     else:
                         uv=self.nodes[i][j][2:4]
                 else:
-                    u=self.points[i][j][0]/drp.hscale-ub
-                    v=-self.points[i][j][2]/drp.vscale+vb
-                    h=radians(self.param)
-                    uv=[u*cos(h)+v*sin(h),u*sin(h)+v*cos(h)]
-                gluTessVertex(tess, [self.points[i][j][0], 0, self.points[i][j][2]], (self.points[i][j], uv))
-                print self.points[i][j], uv
-            gluTessEndContour(tess)
-        gluTessEndPolygon(tess)
+                    uv=((self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale,
+                        (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale)
+                gluTessVertex(csgt, [self.points[i][j][0], 0, self.points[i][j][2]], (self.points[i][j], False, uv))
+            gluTessEndContour(csgt)
+        abox=BBox(minx, maxx, minz, maxz)
 
-    def tesscombine(self, coords, vertex, weight):
-        p1=p2=None
-        y=0
-        dump=((vertex[0] and vertex[0][1]) or (vertex[1] and vertex[1][1]) or (vertex[2] and vertex[2][1]) or (vertex[3] and vertex[3][1]))
-        if dump: print '->', coords
-        # interesting input points are those with uv data
-        # linearly interpolate uv at coords
-        # relies on undocumented assumption that vertices are supplied in pairs
-        for i in range(4):
-            if dump: print "%.2f" % weight[i], vertex[i]
-            if weight[i]: y+=vertex[i][0][1]*weight[i]
-        if weight[0] and vertex[0][1] and weight[1] and vertex[1][1]:
-            p1=0
-            p2=1
-        elif weight[2] and vertex[2][1] and weight[3] and vertex[3][1]:
-            p1=2
-            p2=3
-        else:
-            uv=None #assert(0)
-        if p2:
-            ratio=(hypot(coords[0]-vertex[p1][0][0],
-                         coords[2]-vertex[p1][0][2])/      
-                   hypot(vertex[p2][0][0]-vertex[p1][0][0],
-                         vertex[p2][0][2]-vertex[p1][0][2]))
-            uv=[vertex[p1][1][0]+ratio*(vertex[p2][1][0]-vertex[p1][1][0]),
-                vertex[p1][1][1]+ratio*(vertex[p2][1][1]-vertex[p1][1][1])]
-        if dump: print '<-', [coords[0],y,coords[2]], uv
-        return ([coords[0],y,coords[2]], uv)
+        for (bbox, meshtris) in vertexcache.getMeshdata(tile,options):
+            if not bbox.intersects(abox): continue
+            for meshtri in meshtris:
+                (meshpt, coeffs)=meshtri
+                gluTessBeginContour(csgt)
+                for m in range(3):
+                    x=meshpt[m][0]
+                    z=meshpt[m][2]
+                    if isforest:
+                        gluTessVertex(csgt, [x,0,z], (meshpt[m],True, None))
+                        continue
+                    # check if mesh point is inside a polygon triangle
+                    # http://astronomy.swin.edu.au/~pbourke/geometry/insidepoly
+                    for t in range(0,len(tris),3):
+                        c=False
+                        ptj=tris[t+2][0]
+                        for i in range(t,t+3):
+                            pti=tris[i][0]
+                            if ((((pti[2] <= z) and (z < ptj[2])) or
+                                 ((ptj[2] <= z) and (z < pti[2]))) and
+                                (x < (ptj[0]-pti[0]) * (z - pti[2]) / (ptj[2] - pti[2]) + pti[0])):
+                                c = not c
+                            ptj=pti
+                        if c:	# point is inside polygon triange tris[t:t+3]
+                            x0=tris[t][0][0]
+                            z0=tris[t][0][2]
+                            x1=tris[t+1][0][0]-x0
+                            z1=tris[t+1][0][2]-z0
+                            x2=tris[t+2][0][0]-x0
+                            z2=tris[t+2][0][2]-z0
+                            xp=x-x0
+                            zp=z-z0
+                            a=(xp*z2-x2*zp)/(x1*z2-x2*z1)
+                            b=(xp*z1-x1*zp)/(x2*z1-x1*z2)
+                            uv=(tris[t][2][0]+a*(tris[t+1][2][0]-tris[t][2][0])+b*(tris[t+2][2][0]-tris[t][2][0]),
+                                tris[t][2][1]+a*(tris[t+1][2][1]-tris[t][2][1])+b*(tris[t+2][2][1]-tris[t][2][1]))
+                            break
+                    else:
+                        uv=None
+                    gluTessVertex(csgt, [x,0,z], (meshpt[m],True, uv))
+                gluTessEndContour(csgt)
 
-    #def tessbegin(datatype, data):
-    #    assert(datatype==GL_TRIANGLES)
-    #    data[-1].append([])
+        gluTessEndPolygon(csgt)
+        return selectednode
 
-    def tessvertex(self, vertex, data):
-        data.append(vertex)
+    def addnode(self, tile, options, vertexcache, selectednode, clockwise):
+        if self.param==65535:
+            return False	# we don't support new nodes in orthos
+        return Polygon.addnode(self, tile, options, vertexcache, selectednode, clockwise)
 
-    def tessend(self, data):
-        # check that this is an interesting triangle - ie has location
-        print data
-        for i in range(-3,0):
-            if data[i] and data[i][0]:
-                break
-        else:	# not interesting
-            data[-3:]=[]
+    def delnode(self, tile, options, vertexcache, selectednode, clockwise):
+        if self.param==65535:
+            return False	# we don't support new nodes in orthos
+        return Polygon.delnode(self, tile, options, vertexcache, selectednode, clockwise)
+
+    def addwinding(self, tile, options, vertexcache, hdg):
+        if self.param==65535:
+            return False	# we don't support holes in orthos
+        minrad=0.001
+        for j in self.nodes[0]:
+            minrad=min(minrad, abs(self.lon-j[0]), abs(self.lat-j[1]))
+        i=len(self.nodes)
+        h=radians(hdg)
+        self.nodes.append([])
+        for j in [h+5*pi/4, h+7*pi/4, h+pi/4, h+3*pi/4]:
+            self.nodes[i].append((round2res(self.lon+sin(j)*minrad),
+                                  round2res(self.lat+cos(j)*minrad)))
+        return self.layout(tile, options, vertexcache, (i,0))
+
+    def delwinding(self, tile, options, vertexcache, selectednode):
+        (i,j)=selectednode
+        if not i: return False	# don't delete outer winding
+        self.nodes.pop(i)
+        return self.layout(tile, options, vertexcache, (i-1,0))
 
 
 class Exclude(Polygon):
@@ -495,8 +733,18 @@ class Exclude(Polygon):
            'sim/exclude_net': 'Exclude: Networks (Powerlines, Railways & Roads)',
            'sim/exclude_str': 'Exclude: Strings'}
 
-    def __init__(self, name, param, nodes):
-        Polygon.__init__(self, name, param, nodes)
+    def __init__(self, name, param, nodes, lon=None, hdg=None):
+        if lon==None:
+            Clutter.__init__(self, name)
+            self.nodes=nodes		# [[(lon,lat,...)]]
+        else:
+            Clutter.__init__(self, name, nodes, lon)
+            self.nodes=[[(self.lon-0.001,self.lat-0.001),
+                         (self.lon+0.001,self.lat-0.001),
+                         (self.lon+0.001,self.lat+0.001),
+                         (self.lon-0.001,self.lat+0.001)]]
+        self.param=param
+        self.points=[]		# list of windings in world space (x,y,z)
 
     def clone(self):
         return Exclude(self.name, self.param, [list(w) for w in self.nodes])
@@ -505,13 +753,30 @@ class Exclude(Polygon):
         self.definition=ExcludeDef(None, vertexcache)
         return True
 
-    def locationstr(self, node):
+    def locationstr(self, dms, node=None):
+        # no elevation
         if node:
             (i,j)=node
-            return 'Lat: %-10.6f  Lon: %-11.6f  Node %d' % (self.nodes[i][j][1], self.nodes[i][j][0], j)
-            return Polygon.locationstr(self, node)
+            return '%s  Node %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), j)
         else:
-            return 'Lat: %-10.6f  Lon: %-11.6f' % (self.lat, self.lon)
+            return '%s' % (latlondisp(dms, self.lat, self.lon))
+
+    def addnode(self, tile, options, vertexcache, selectednode, clockwise):
+        return False
+
+    def delnode(self, tile, options, vertexcache, selectednode, clockwise):
+        return False
+
+    def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
+        # no rotation
+        Polygon.move(self, dlat, dlon, 0, 0, tile, options, vertexcache)
+
+    def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=False):
+        # changes adjacent nodes, so always do full layout immediately
+        (i,j)=node
+        lon=max(floor(self.nodes[i][j][0]), min(floor(self.nodes[i][j][0])+maxres, self.nodes[i][j][0]+dlon))
+        lat=max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, self.nodes[i][j][1]+dlat))
+        return self.updatenode(node, lat, lon, tile, options, vertexcache)
 
     def updatenode(self, node, lat, lon, tile, options, vertexcache):
         (i,j)=node
@@ -522,29 +787,18 @@ class Exclude(Polygon):
         else:
             self.nodes[i][(j+1)%4]=(self.nodes[i][(j+1)%4][0], lat)
             self.nodes[i][(j-1)%4]=(lon, self.nodes[i][(j-1)%4][1])
-        # changed adjacenet nodes, so do full layout immediately
+        # changed adjacent nodes, so do full layout immediately
         return self.layout(tile, options, vertexcache, node)
 
-    def draw(self, selected, withnodes, selectednode):
-        if selected:
-            Polygon.draw(self, selected, withnodes, selectednode)
-        else:
-            glBindTexture(GL_TEXTURE_2D, 0)
-            glColor3f(0.5, 0.125, 0.125)
-            glBegin(GL_LINE_LOOP)
-            for p in self.points[0]:
-                glVertex3f(p[0],p[1],p[2])
-            glEnd()
-
-    def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
-        # no rotation
-        Polygon.move(self, dlat, dlon, 0, 0, tile, options, vertexcache)
+    def draw(self, selected, picking, nopoly=False):
+        Polygon.draw(self, selected, picking, nopoly, (0.75, 0.25, 0.25))
 
 
 class Facade(Polygon):
 
-    def __init__(self, name, param, nodes):
-        Polygon.__init__(self, name, param, nodes)
+    def __init__(self, name, param, nodes, lon=None, hdg=None):
+        if not param: param=1
+        Polygon.__init__(self, name, param, nodes, lon, hdg)
         self.quads=[]		# list of points (x,y,z,s,t)
         self.roof=[]		# list of points (x,y,z,s,t)
 
@@ -552,14 +806,14 @@ class Facade(Polygon):
         return Facade(self.name, self.param, [list(w) for w in self.nodes])
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
-        if 1:#XXX try:
+        try:
             filename=lookup[self.name]
             if filename in defs:
                 self.definition=defs[filename]
             else:
                 defs[filename]=self.definition=FacadeDef(filename, vertexcache)
             return True
-        else:#except:
+        except:
             if usefallback:
                 # don't put in defs, so will get another error if
                 # physical file is used again
@@ -570,23 +824,20 @@ class Facade(Polygon):
                 self.definition=FacadeFallback(filename, vertexcache)
             return False
 
-    def locationstr(self, node):
+    def locationstr(self, dms, node=None):
         if node:
-            return Polygon.locationstr(self, node)
+            return Polygon.locationstr(self, dms, node)
         else:
-            return 'Lat: %-10.6f  Lon: %-11.6f  Height: %-3d  (%d nodes)' % (self.lat, self.lon, self.param, len(self.nodes[0]))
+            return '%s  Height: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, withnodes, selectednode):
-        if selected:
-            glEnable(GL_POLYGON_OFFSET_FILL)
-            glPolygonOffset(-1, -1)
-            glDepthMask(GL_FALSE)	# offset mustn't update depth
+    def draw(self, selected, picking, nopoly=False):
         fac=self.definition
-        glBindTexture(GL_TEXTURE_2D, fac.texture)
-        if fac.two_sided:
-            glDisable(GL_CULL_FACE)
-        else:
-            glEnable(GL_CULL_FACE)
+        if picking or not self.quads:
+            Polygon.draw(self, selected, picking, nopoly, (1.0,0.25,0.25))
+        if not picking:
+            glBindTexture(GL_TEXTURE_2D, fac.texture)
+            if fac.two_sided:
+                glDisable(GL_CULL_FACE)
         glBegin(GL_QUADS)
         for p in self.quads:
             glTexCoord2f(p[3],p[4])
@@ -598,12 +849,12 @@ class Facade(Polygon):
                 glTexCoord2f(p[3],p[4])
                 glVertex3f(p[0],p[1],p[2])
             glEnd()
-        if selected:
-            # Add lines & points
-            glDisable(GL_POLYGON_OFFSET_FILL)
-            glDepthMask(GL_TRUE)
-            Polygon.draw(self, selected, withnodes, selectednode)
-            
+        if not picking and fac.two_sided:
+            glEnable(GL_CULL_FACE)
+        
+    def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
+        dparam=max(dparam, 1-self.param)	# can't have height 0
+        Polygon.move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache)
         
     # Helper for layout
     def subdiv(self, size, scale, divs, ends, isvert):
@@ -658,7 +909,6 @@ class Facade(Polygon):
         n=len(points)
 
         (vert,vscale)=self.subdiv(self.param, fac.vscale, fac.vert,fac.vends, True)
-
         roofheight=0
         for i in range(len(vert)):
             roofheight+=(fac.vert[vert[i]][1]-fac.vert[vert[i]][0])
@@ -771,8 +1021,8 @@ class Facade(Polygon):
             maxz=max(maxz,i[2])
         xscale=(fac.roof[2][0]-fac.roof[0][0])/(maxx-minx)
         zscale=(fac.roof[2][1]-fac.roof[0][1])/(maxz-minz)
-        (x,z)=self.latlon2m(self.lat,self.lon)
-        y=self.vertexcache.height(self.tile,self.options,x,z)+roofheight
+        (x,z)=self.position(self.lat,self.lon)
+        y=vertexcache.height(tile,options,x,z)+roofheight
         self.roof=[(x, y, z,
                     fac.roof[0][0] + (x-minx)*xscale,
                     fac.roof[0][1] + (z-minz)*zscale)]
@@ -788,23 +1038,24 @@ class Facade(Polygon):
         return selectednode
 
 
-class Forest(Polygon):
+class Forest(Draped):	# inherit from Draped for layout
 
-    def __init__(self, name, param, nodes):
-        Polygon.__init__(self, name, param, nodes)
+    def __init__(self, name, param, nodes, lon=None, hdg=None):
+        if param==None: param=127
+        Polygon.__init__(self, name, param, nodes, lon, hdg)
 
     def clone(self):
         return Forest(self.name, self.param, [list(w) for w in self.nodes])
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
-        if 1:#XXX try:
+        try:
             filename=lookup[self.name]
             if filename in defs:
                 self.definition=defs[filename]
             else:
                 defs[filename]=self.definition=ForestDef(filename, vertexcache)
             return True
-        else:#except:
+        except:
             if usefallback:
                 # don't put in defs, so will get another error if
                 # physical file is used again
@@ -815,27 +1066,148 @@ class Forest(Polygon):
                 self.definition=ForestFallback(filename, vertexcache)
             return False
 
-    def locationstr(self, node):
+    def locationstr(self, dms, node=None):
         if node:
-            return Polygon.locationstr(self, node)
+            return Polygon.locationstr(self, dms, node)
         else:
-            return 'Lat: %-10.6f  Lon: %-11.6f  Density: %-4.1f%%  (%d nodes)' % (self.lat, self.lon, self.param/2.55, len(self.nodes[0]))
+            return '%s  Density: %-4.1f%%  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
 
-    def draw(self, selected, withnodes, selectednode):
-        glBindTexture(GL_TEXTURE_2D, 0)
-        glColor3f(0.125, 0.4, 0.125)
-        if selected:
-            # XXX fill interior
-            # Add lines & points
-            glColor3f(0.8, 0.8, 0.8)	# Unpainted
-            Polygon.draw(self, selected, withnodes, selectednode)
+    def draw(self, selected, picking, nopoly=False):
+        if self.nonsimple:
+            Polygon.draw(self, selected, picking, nopoly, (1.0,0.25,0.25))
+        elif picking:
+            Draped.draw(self, selected, picking, nopoly)
         else:
-            for winding in self.points:
-                glBegin(GL_LINE_LOOP)
-                for p in winding:
-                    glVertex3f(p[0],p[1],p[2])
-                glEnd()
+            Polygon.draw(self, selected, picking, nopoly, (0.25,0.75,0.25))
+
+    def drawnodes(self, selectednode):
+        glBindTexture(GL_TEXTURE_2D, 0)
+        alpha=.25+self.param/768.0
+        glBegin(GL_TRIANGLES)
+        for t in self.tris:
+            glColor4f(1.0, 0.5, 1.0, alpha)
+            glVertex3f(*t[0])
+        glEnd()
+        glColor3f(1.0, 0.5, 1.0)	# restore
+        Polygon.drawnodes(self, selectednode)
 
     def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache)
         if self.param>255: self.param=255
+
+
+def latlondisp(dms, lat, lon):
+    if dms:
+        if lat>=0:
+            sgnlat='N'
+        else:
+            sgnlat='S'
+        abslat=abs(lat)
+        mmlat=(abslat-int(abslat)) * 60.0
+        sslat=(mmlat-int(mmlat)) * 60.0
+        if lon>=0:
+            sgnlon='E'
+        else:
+            sgnlon='W'
+        abslon=abs(lon)
+        mmlon=(abslon-int(abslon)) * 60.0
+        sslon=(mmlon-int(mmlon)) * 60.0
+        return u'Lat: %s%02d\u00B0%02d\'%06.3f"  Lon: %s%03d\u00B0%02d\'%06.3f"' % (sgnlat, abslat, mmlat, sslat, sgnlon, abslon, mmlon, sslon)
+    else:
+        return "Lat: %.6f  Lon: %.6f" % (lat, lon)
+
+
+
+# Tessellators for draped polygons
+
+def tessvertex(vertex, data):
+    data.append(vertex)
+
+def tesscombine(coords, vertex, weight):
+    # Linearly interp height & uv from vertices (location, ismesh, uv)
+    # Will only be called if polygon is not simple (and therefore illegal)
+    p1=vertex[0]
+    p2=vertex[1]
+    d=hypot(p2[0][0]-p1[0][0], p2[0][2]-p1[0][2])
+    if not d:
+        return p1	# p1 and p2 are colocated
+    else:
+        ratio=hypot(coords[0]-p1[0][0], coords[2]-p1[0][2])/d
+        y=p1[0][1]+ratio*(p2[0][1]-p1[0][1])
+        if p1[2]:
+            return ([coords[0],y,coords[2]], False, (p1[2][0]+ratio*(p2[2][0]-p1[2][0]), (p1[2][1]+ratio*(p2[2][1]-p1[2][1]))))
+        else:
+            return ([coords[0],y,coords[2]], False, None)	# forest
+    
+def tessedge(flag):
+    pass	# dummy
+
+tess=gluNewTess()
+gluTessNormal(tess, 0, -1, 0)
+gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
+gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
+gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
+
+
+def csgtvertex(vertex, data):
+    data.append(vertex)
+
+def csgtcombine(coords, vertex, weight):
+    # interp height & UV at coords from vertices (location, ismesh, uv)
+    
+    # check for just two adjacent mesh triangles
+    if vertex[0]==vertex[1]:
+        # common case, or non-simple
+        #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
+        return vertex[0]
+    elif vertex[0][0][0]==vertex[1][0][0] and vertex[0][0][2]==vertex[1][0][2] and vertex[0][1]:
+        # Height discontinuity in terrain mesh - eg LIEE - wtf!
+        assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
+        return vertex[0]
+
+    # intersection of two lines - use terrain mesh line for height
+    elif vertex[0][1]:
+        #assert weight[0] and weight[1] and weight[2] and weight[3] and vertex[1][1]
+        p1=vertex[0]
+        p2=vertex[1]
+        p3=vertex[2]
+        p4=vertex[3]
+    else:
+        assert weight[0] and weight[1] and weight[2] and weight[3]
+        p1=vertex[2]
+        p2=vertex[3]
+        p3=vertex[0]
+        p4=vertex[1]
+
+    # height
+    d=hypot(p2[0][0]-p1[0][0], p2[0][2]-p1[0][2])
+    if not d:
+        y=p1[0][1]
+    else:
+        ratio=(hypot(coords[0]-p1[0][0], coords[2]-p1[0][2])/d)
+        y=p1[0][1]+ratio*(p2[0][1]-p1[0][1])
+
+    # UV
+    if not p3[2]:
+        uv=None
+    else:
+        d=hypot(p4[0][0]-p3[0][0], p4[0][2]-p3[0][2])
+        if not d:
+            uv=p3[2]
+        else:
+            ratio=(hypot(coords[0]-p3[0][0], coords[2]-p3[0][2])/d)
+            uv=(p3[2][0]+ratio*(p4[2][0]-p3[2][0]),
+                p3[2][1]+ratio*(p4[2][1]-p3[2][1]))
+    
+    return ([coords[0],y,coords[2]], True, uv)
+
+def csgtedge(flag):
+    pass	# dummy
+
+csgt=gluNewTess()
+gluTessNormal(csgt, 0, -1, 0)
+gluTessProperty(csgt, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
+gluTessCallback(csgt, GLU_TESS_VERTEX_DATA,  csgtvertex)
+gluTessCallback(csgt, GLU_TESS_COMBINE,      csgtcombine)
+gluTessCallback(csgt, GLU_TESS_EDGE_FLAG,    csgtedge)	# no strips
+

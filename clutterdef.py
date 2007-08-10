@@ -2,6 +2,9 @@ from math import fabs
 from os import listdir
 from os.path import abspath, dirname, exists, join, sep
 
+from OpenGL.GL import *
+import wx
+
 # Virtual class for ground clutter definitions
 #
 # Derived classes expected to have following members:
@@ -35,13 +38,13 @@ def PolygonDefFactory(filename, vertexcache):
 
 class ClutterDef:
     LAYERNAMES=['terrain', 'beaches', 'shoulders', 'taxiways', 'runways', 'markings', 'roads', 'objects', 'light_objects', 'cars']
-    LAYERCOUNT=len(LAYERNAMES)*11+1-5
-    EXCLUDELAYER=0	# before terrain -5
-    TERRAINLAYER=LAYERNAMES.index('terrain')*11+1
-    BEACHESLAYER=LAYERNAMES.index('beaches')*11+1
-    TAXIWAYLAYER=LAYERNAMES.index('taxiways')*11+1
-    RUNWAYSLAYER=LAYERNAMES.index('runways')*11+1
-    DEFAULTLAYER=LAYERNAMES.index('objects')*11+1
+    LAYERCOUNT=len(LAYERNAMES)*11
+    TERRAINLAYER=LAYERNAMES.index('terrain')*11+5
+    BEACHESLAYER=LAYERNAMES.index('beaches')*11+5
+    TAXIWAYLAYER=LAYERNAMES.index('taxiways')*11+5
+    RUNWAYSLAYER=LAYERNAMES.index('runways')*11+5
+    OUTLINELAYER=LAYERNAMES.index('roads')*11+5	# for draped & exclusions
+    DEFAULTLAYER=LAYERNAMES.index('objects')*11+5
 
     def __init__(self, filename, vertexcache):
         self.filename=filename
@@ -64,13 +67,13 @@ class ClutterDef:
         if not -5<=n<=5: raise IOError
         if layer=='airports':
             if n==0:
-                layer='runways'	# undefined!
+                layer='runways'	# undefined behaviour!
             elif n<0:
                 layer='shoulders'
             elif n>0:
                 layer='markings'
-        self.layer=ClutterDef.LAYERNAMES.index(layer)*11+n
-        if self.layer<=0 or self.layer>=ClutterDef.LAYERCOUNT: raise IOError
+        self.layer=ClutterDef.LAYERNAMES.index(layer)*11+5+n
+        if self.layer<0 or self.layer>=ClutterDef.LAYERCOUNT: raise IOError
 
     def layername(self):
         return "%s %+d" % (ClutterDef.LAYERNAMES[self.layer/11],
@@ -142,6 +145,7 @@ class ObjectDef(ClutterDef):
                 elif c[0] in ['6','7']:	# smoke
                     for i in range(4): h.readline()
                 elif c[0]=='3':
+                    # sst, clockwise, start with left top?
                     uv=[float(c[1]), float(c[2]), float(c[3]), float(c[4])]
                     v=[]
                     for i in range(3):
@@ -173,6 +177,7 @@ class ObjectDef(ClutterDef):
                         current.append(v[i])
                         tcurrent.append(t[i])
                 else:	# quads: type 4, 5, 6, 7, 8
+                    # sst, clockwise, start with right top
                     uv=[float(c[1]), float(c[2]), float(c[3]), float(c[4])]
                     v=[]
                     for i in range(4):
@@ -205,7 +210,7 @@ class ObjectDef(ClutterDef):
                     self.poly=max(self.poly,int(float(c[1])))
                 elif c[0]=='ATTR_cull':
                     current=culled
-                    tcurrent=self.tculled
+                    tcurrent=tculled
                 elif c[0]=='ATTR_no_cull':
                     current=nocull
                     tcurrent=tnocull
@@ -341,6 +346,47 @@ class ObjectDef(ClutterDef):
     def flush(self):
         self.base=None
 
+    def preview(self, canvas, vertexcache):
+        self.allocate(vertexcache)
+        vertexcache.realize(canvas)
+        canvas.SetCurrent()
+        glViewport(0, 0, 300, 300)
+        glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        maxsize=1.2*self.maxsize
+        glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+        glRotatef( 30, 1,0,0)
+        glRotatef(-30, 0,1,0)
+        glColor3f(0.8, 0.8, 0.8)	# Unpainted
+        glBindTexture(GL_TEXTURE_2D, self.texture)
+        if self.culled:
+            glDrawArrays(GL_TRIANGLES, self.base, self.culled)
+        if self.nocull:
+            glDisable(GL_CULL_FACE)
+            glDrawArrays(GL_TRIANGLES, self.base+self.culled, self.nocull)
+            glEnable(GL_CULL_FACE)
+        #glFinish()	# redundant
+        data=glReadPixels(0,0, 300,300, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(300, 300, False)
+        img.SetData(data)
+        
+        # Restore state for unproject & selection
+        glPopMatrix()
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()	
+        glMatrixMode(GL_MODELVIEW)
+
+        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        canvas.Refresh()	# Mac draws from the back buffer w/out paint event
+        return img.Mirror(False)
+        
 
 class PolygonDef(ClutterDef):
 
@@ -353,6 +399,45 @@ class PolygonDef(ClutterDef):
     def __init__(self, filename, texcache):
         ClutterDef.__init__(self, filename, texcache)
 
+    def preview(self, canvas, vertexcache, l=0, b=0, r=1, t=1):
+        if not self.texture: return None
+        canvas.SetCurrent()
+        glViewport(0, 0, 300, 300)
+        glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+        glColor3f(1.0, 1.0, 1.0)
+        glBindTexture(GL_TEXTURE_2D, self.texture)
+        glBegin(GL_QUADS)
+        glTexCoord2f(l,b)
+        glVertex3f(-1,  1, 0)
+        glTexCoord2f(r,b)
+        glVertex3f( 1,  1, 0)
+        glTexCoord2f(r,t)
+        glVertex3f( 1, -1, 0)
+        glTexCoord2f(l,t)
+        glVertex3f(-1, -1, 0)
+        glEnd()
+        data=glReadPixels(0,0, 300,300, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(300, 300, False)
+        img.SetData(data)
+        
+        # Restore state for unproject & selection
+        glPopMatrix()
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()	
+        glMatrixMode(GL_MODELVIEW)
+
+        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        canvas.Refresh()	# Mac draws from the back buffer w/out paint event
+        return img
+
 
 class DrapedDef(PolygonDef):
 
@@ -362,6 +447,8 @@ class DrapedDef(PolygonDef):
         self.ortho=False
         self.hscale=100
         self.vscale=100
+        alpha=True
+        texture=None
     
         h=file(filename, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
@@ -377,15 +464,17 @@ class DrapedDef(PolygonDef):
             if not c: continue
             if c[0] in ['TEXTURE', 'TEXTURE_NOWRAP']:
                 if c[0]=='TEXTURE_NOWRAP': self.ortho=True
-                tex=abspath(join(self.texpath, line[len(c[0]):].strip().replace(':', sep).replace('/', sep)))
-                self.texture=vertexcache.texcache.get(tex)
+                texture=line[len(c[0]):].strip().replace(':', sep).replace('/', sep)
             elif c[0]=='SCALE':
-                self.hscale=float(c[1])
-                self.vscale=float(c[2])
+                self.hscale=float(c[1]) or 1
+                self.vscale=float(c[2]) or 1
             elif c[0]=='LAYER_GROUP':
                 self.setlayer(c[1], int(c[2]))
-            # XXX NO_ALPHA
+            elif c[0]=='NO_ALPHA':
+                alpha=False
         h.close()
+        self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)), not self.ortho, alpha)
+
 
 class DrapedFallback(PolygonDef):
     def __init__(self, filename, vertexcache):
@@ -403,7 +492,7 @@ class ExcludeDef(PolygonDef):
         # PolygonDef.__init__(self, filename, vertexcache) - don't fanny about with tex paths
         self.filename=filename
         self.texture=0
-        self.layer=ClutterDef.EXCLUDELAYER
+        self.layer=ClutterDef.OUTLINELAYER
 
 
 class FacadeDef(PolygonDef):
@@ -418,8 +507,8 @@ class FacadeDef(PolygonDef):
         self.roof_slope=0
         self.hscale=100
         self.vscale=100
-        self.horiz=[(0,1.0)]
-        self.vert=[(0,1.0)]
+        self.horiz=[]
+        self.vert=[]
         self.hends=[0,0]
         self.vends=[0,0]
     
@@ -489,19 +578,25 @@ class FacadeDef(PolygonDef):
         if not self.horiz or not self.vert:
             raise IOError
 
+    def preview(self, canvas, vertexcache):
+        return PolygonDef.preview(self, canvas, vertexcache,
+                                  self.horiz[0][0], self.vert[0][0],
+                                  self.horiz[-1][1], self.vert[-1][1])
+
+
 class FacadeFallback(PolygonDef):
     def __init__(self, filename, vertexcache):
         self.filename=filename
         self.texture=0
         self.layer=ClutterDef.DEFAULTLAYER
         self.ring=1
-        self.two_sided=False
+        self.two_sided=True
         self.roof=[]
         self.roof_slope=0
-        self.hscale=100
-        self.vscale=100
-        self.horiz=[]
-        self.vert=[]
+        self.hscale=1
+        self.vscale=1
+        self.horiz=[(0.0,1.0)]
+        self.vert=[(0.0,1.0)]
         self.hends=[0,0]
         self.vends=[0,0]
 
@@ -510,13 +605,51 @@ class ForestDef(PolygonDef):
 
     def __init__(self, filename, vertexcache):
         PolygonDef.__init__(self, filename, vertexcache)
-        # XXX parse for preview
+        self.layer=ClutterDef.OUTLINELAYER
+        self.ortho=False	# cos Forest derives from Draped
+        self.tree=None
+        scalex=scaley=1
+        best=0
+        
+        h=file(self.filename, 'rU')
+        if not h.readline().strip()[0] in ['I','A']:
+            raise IOError
+        if not h.readline().split('#')[0].strip() in ['800']:
+            raise IOError
+        if not h.readline().strip() in ['FOREST']:
+            raise IOError
+        while True:
+            line=h.readline()
+            if not line: break
+            c=line.split('#')[0].split()
+            if not c: continue
+            if c[0]=='TEXTURE' and len(c)>1:
+                tex=abspath(join(self.texpath, line[7:].strip().replace(':', sep).replace('/', sep)))
+                self.texture=vertexcache.texcache.get(tex)
+            elif c[0]=='SCALE_X':
+                scalex=float(c[1])
+            elif c[0]=='SCALE_Y':
+                scaley=float(c[1])
+            elif c[0]=='TREE':
+                if len(c)>10 and float(c[6])>best and float(c[3])/scalex>.02 and float(c[4])/scaley>.02:
+                    # choose most popular, unless it's tiny (placeholder)
+                    best=float(c[6])
+                    self.tree=(float(c[1])/scalex, float(c[2])/scaley,
+                               (float(c[1])+float(c[3]))/scalex,
+                               (float(c[2])+float(c[4]))/scaley)
+        h.close()
+        if not self.tree:
+            raise IOError
+                
+    def preview(self, canvas, vertexcache):
+        return PolygonDef.preview(self, canvas, vertexcache, *self.tree)
+
 
 class ForestFallback(PolygonDef):
     def __init__(self, filename, vertexcache):
         self.filename=filename
         self.texture=0
-        self.layer=ClutterDef.DEFAULTLAYER
+        self.layer=ClutterDef.OUTLINELAYER
 
 UnknownDefs=['.lin', '.str']	# Known unknowns
 SkipDefs=['.bch', '.net']	# Ignore in library

@@ -9,6 +9,8 @@ from version import appname, appversion
 class Prefs:
     TERRAIN=1
     ELEVATION=2
+    DRAW=TERRAIN|ELEVATION
+    DMS=4
     
     def __init__(self):
         self.filename=None

@@ -14,13 +14,13 @@ set RPM=%TMP%\overlayeditor
 if exist OverlayEditor.app rd /s /q OverlayEditor.app
 if exist "%RPM%" rd /s /q "%RPM%"
 REM >nul: 2>&1
-if exist dist rd /s /q dist >nul:  2>&1
+if exist dist rd /s /q dist >nul: 2>&1
 REM del /s /q *.bak >nul: 2>&1
 del /s /q *.pyc >nul: 2>&1
 
-@set PY=OverlayEditor.py draw.py files.py DSFLib.py MessageBox.py version.py
+@set PY=OverlayEditor.py clutter.py clutterdef.py draw.py DSFLib.py files.py fixed8x13.py MessageBox.py palette.py prefs.py version.py
 @set DATA=OverlayEditor.html
-@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.fac Resources/default.for Resources/default.obj Resources/windsock.obj Resources/windsock.png Resources/exc.png Resources/fac.png Resources/for.png Resources/obj.png Resources/ortho.png Resources/pol.png Resources/unknown.png Resources/airport0_000.png Resources/Sea01.png Resources/OverlayEditor.png Resources/screenshot.jpg Resources/800library.txt
+@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/default.fac Resources/default.for Resources/default.obj Resources/windsock.obj Resources/windsock.png Resources/exc.png Resources/fac.png Resources/for.png Resources/obj.png Resources/ortho.png Resources/pol.png Resources/unknown.png Resources/airport0_000.png Resources/Sea01.png Resources/surfaces.png Resources/OverlayEditor.png Resources/screenshot.jpg Resources/800library.txt
 @set PREV=Resources/previews
 
 @REM source
@@ -86,13 +86,11 @@ mkdir OverlayEditor.app\Contents\Resources
 for %%I in (%RSRC%) do (copy Resources\%%~nxI OverlayEditor.app\Contents\Resources\ |findstr -v "file(s) copied")
 mkdir OverlayEditor.app\Contents\Resources\previews
 for %%I in (%PREV%\*.jpg) do (copy Resources\previews\%%~nxI OverlayEditor.app\Contents\Resources\previews |findstr -v "file(s) copied")
-del  OverlayEditor.app\Contents\MacOS\OverlayEditor.html
 sed s/appversion/%VERSION%/ <OverlayEditor.app\Contents\MacOS\Info.plist >OverlayEditor.app\Contents\Info.plist
 del OverlayEditor.app\Contents\MacOS\Info.plist
 move OverlayEditor.app\Contents\MacOS\OverlayEditor.icns OverlayEditor.app\Contents\Resources\
 move OverlayEditor.app\Contents\MacOS\screenshot.jpg OverlayEditor.app\Contents\Resources\
 move /y OverlayEditor.app\Contents\MacOS\*.png OverlayEditor.app\Contents\Resources\ |findstr -vc:".png"
-zip -j OverlayEditor_%VER%_mac.zip MacOS/OverlayEditor.html |findstr -vc:"adding:"
 zip -r OverlayEditor_%VER%_mac.zip OverlayEditor.app |findstr -vc:"adding:"
 
 @REM win32
