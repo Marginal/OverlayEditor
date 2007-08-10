@@ -1048,7 +1048,7 @@ class MainWindow(wx.Frame):
             if self.elev<2: self.elev=2	# not 1 cos clipping
         elif event.m_keyCode in [wx.WXK_INSERT, wx.WXK_RETURN, wx.WXK_NUMPAD_INSERT, wx.WXK_NUMPAD_ENTER]:
             name=self.palette.get()
-            if prefs.package and name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg, event.m_controlDown, event.m_shiftDown):
+            if prefs.package and name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg, self.dist, event.m_controlDown, event.m_shiftDown):
                 changed=True
         elif event.m_keyCode in [wx.WXK_DELETE, wx.WXK_BACK, wx.WXK_NUMPAD_DELETE]: # wx.WXK_NUMPAD_DECIMAL]:
             changed=self.canvas.delsel(event.m_controlDown, event.m_shiftDown)
@@ -1065,7 +1065,7 @@ class MainWindow(wx.Frame):
             loc=self.canvas.undo()
             if loc:
                 self.loc=loc
-                self.frame.ShowSel()
+                self.ShowSel()
             if not self.canvas.undostack:
                 self.toolbar.EnableTool(wx.ID_UNDO, False)
                 if self.menubar: self.menubar.Enable(wx.ID_UNDO, False)
@@ -1221,7 +1221,7 @@ class MainWindow(wx.Frame):
         
     def OnAdd(self, event):
         # Assumes that only one object selected
-        if self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg, wx.GetKeyState(wx.WXK_CONTROL), wx.GetKeyState(wx.WXK_SHIFT)):
+        if self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg, self.dist, wx.GetKeyState(wx.WXK_CONTROL), wx.GetKeyState(wx.WXK_SHIFT)):
             self.toolbar.EnableTool(wx.ID_SAVE, True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:

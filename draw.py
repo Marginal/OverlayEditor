@@ -718,14 +718,14 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.Refresh()
 
 
-    def add(self, name, lat, lon, hdg, ctrl, shift):
+    def add(self, name, lat, lon, hdg, size, ctrl, shift):
         if self.selectednode or (shift and len(self.selected)==1 and isinstance(self.selected[0], Polygon)):
             # Add new node/winding
             placement=self.selected[0]
             layer=placement.definition.layer
             newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
             if shift:
-                newnode=placement.addwinding(self.tile, self.options, self.vertexcache, hdg)
+                newnode=placement.addwinding(self.tile, self.options, self.vertexcache, size, hdg)
             else:
                 newnode=placement.addnode(self.tile, self.options, self.vertexcache, self.selectednode, ctrl)
             if newnode:
@@ -740,7 +740,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if name.lower().endswith('.obj'):
                 placement=Object(name, lat, lon, hdg)
             else:
-                placement=PolygonFactory(name, None, lat, lon, hdg)
+                placement=PolygonFactory(name, None, lat, lon, size, hdg)
             
             if not placement.load(self.lookup, self.defs, self.vertexcache):
                 myMessageBox("Can't read %s." %name, 'Cannot add this object.',
@@ -750,7 +750,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if isinstance(placement, Draped) and placement.definition.ortho:
                 placement.param=65535
                 for i in range(4):
-                    placement.nodes[0][i].extend([(i+1)/2%2,i/2])
+                    placement.nodes[0][i]+=((i+1)/2%2,i/2)
                 
             placement.layout(self.tile, self.options, self.vertexcache)
             layer=placement.definition.layer

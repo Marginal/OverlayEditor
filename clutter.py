@@ -82,26 +82,26 @@ def round2res(x):
     return i+round((x-i)*resolution,0)*minres
 
 
-def PolygonFactory(name, param, nodes, lon=None, hdg=None):
+def PolygonFactory(name, param, nodes, lon=None, size=None, hdg=None):
     "creates and initialises appropriate Polgon subclass based on file extension"
     # would like to have made this a 'static' method of Polygon
     if name.startswith(PolygonDef.EXCLUDE):
-        return Exclude(name, param, nodes, lon, hdg)
+        return Exclude(name, param, nodes, lon, size, hdg)
     ext=name.lower()[-4:]
     if ext==PolygonDef.DRAPED:
-        return Draped(name, param, nodes, lon, hdg)
+        return Draped(name, param, nodes, lon, size, hdg)
     elif ext==PolygonDef.FACADE:
-        return Facade(name, param, nodes, lon, hdg)
+        return Facade(name, param, nodes, lon, size, hdg)
     elif ext==PolygonDef.FOREST:
-        return Forest(name, param, nodes, lon, hdg)
+        return Forest(name, param, nodes, lon, size, hdg)
     elif ext==PolygonDef.BEACH:
-        return Beach(name, param, nodes, lon, hdg)
+        return Beach(name, param, nodes, lon, size, hdg)
     elif ext==ObjectDef.OBJECT:
         raise IOError		# not a polygon
     elif ext in SkipDefs:
         raise IOError		# what's this doing here?
     else:	# unknown polygon type
-        return Polygon(name, param, nodes, lon, hdg)
+        return Polygon(name, param, nodes, lon, size, hdg)
 
 
 class Clutter:
@@ -211,18 +211,20 @@ class Object(Clutter):
 
 class Polygon(Clutter):
 
-    def __init__(self, name, param, nodes, lon=None, hdg=None):
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if param==None: param=0
         if lon==None:
             Clutter.__init__(self, name)
             self.nodes=nodes		# [[(lon,lat,...)]]
         else:
-            Clutter.__init__(self, name, nodes, lon)
+            lat=nodes
+            Clutter.__init__(self, name, lat, lon)
             h=radians(hdg)
             self.nodes=[[]]
+            size=0.000007071*size
             for i in [h+5*pi/4, h+3*pi/4, h+pi/4, h+7*pi/4]:
-                self.nodes[0].append((round2res(self.lon+sin(i)*0.00014142),
-                                      round2res(self.lat+cos(i)*0.00014142)))
+                self.nodes[0].append((max(floor(lon), min(floor(lon)+maxres, round2res(self.lon+sin(i)*size))),
+                                      (max(floor(lat), min(floor(lat)+maxres, round2res(self.lat+cos(i)*size))))))
         self.param=param
         self.points=[]		# list of windings in world space (x,y,z)
 
@@ -354,7 +356,7 @@ class Polygon(Clutter):
         self.layout(tile, options, vertexcache, selectednode)
         return selectednode
 
-    def addwinding(self, tile, options, vertexcache, hdg):
+    def addwinding(self, tile, options, vertexcache, size, hdg):
         return False	# most polygon types don't support additional windings
         
     def delwinding(self, tile, options, vertexcache, selectednode):
@@ -413,8 +415,8 @@ class Beach(Polygon):
     # Editing would zap extra vertex parameters that we don't understand,
     # so make a dummy type to prevent selection and therefore editing
 
-    def __init__(self, name, param, nodes, lon=None, hdg=None):
-        Polygon.__init__(self, name, param, nodes, lon, hdg)
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
+        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
 
     def load(self, lookup, defs, vertexcache, usefallback=True):
         Polygon.load(self, lookup, defs, vertexcache, usefallback=True)
@@ -427,8 +429,8 @@ class Beach(Polygon):
 
 class Draped(Polygon):
 
-    def __init__(self, name, param, nodes, lon=None, hdg=None):
-        Polygon.__init__(self, name, param, nodes, lon, hdg)
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
+        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
         self.tris=[]	# tesellated tris
         self.nonsimple=False
 
@@ -702,10 +704,10 @@ class Draped(Polygon):
             return False	# we don't support new nodes in orthos
         return Polygon.delnode(self, tile, options, vertexcache, selectednode, clockwise)
 
-    def addwinding(self, tile, options, vertexcache, hdg):
+    def addwinding(self, tile, options, vertexcache, size, hdg):
         if self.param==65535:
             return False	# we don't support holes in orthos
-        minrad=0.001
+        minrad=0.000007071*size
         for j in self.nodes[0]:
             minrad=min(minrad, abs(self.lon-j[0]), abs(self.lat-j[1]))
         i=len(self.nodes)
@@ -733,16 +735,21 @@ class Exclude(Polygon):
            'sim/exclude_net': 'Exclude: Networks (Powerlines, Railways & Roads)',
            'sim/exclude_str': 'Exclude: Strings'}
 
-    def __init__(self, name, param, nodes, lon=None, hdg=None):
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if lon==None:
             Clutter.__init__(self, name)
             self.nodes=nodes		# [[(lon,lat,...)]]
         else:
-            Clutter.__init__(self, name, nodes, lon)
-            self.nodes=[[(self.lon-0.001,self.lat-0.001),
-                         (self.lon+0.001,self.lat-0.001),
-                         (self.lon+0.001,self.lat+0.001),
-                         (self.lon-0.001,self.lat+0.001)]]
+            lat=nodes
+            Clutter.__init__(self, name, lat, lon)
+            self.nodes=[[]]
+            size=0.000005*size
+            for (lon,lat) in [(self.lon-size,self.lat-size),
+                              (self.lon+size,self.lat-size),
+                              (self.lon+size,self.lat+size),
+                              (self.lon-size,self.lat+size)]:
+                self.nodes[0].append((max(floor(self.lon), min(floor(self.lon)+maxres, round2res(lon))),
+                                      (max(floor(self.lat), min(floor(self.lat)+maxres, round2res(lat))))))
         self.param=param
         self.points=[]		# list of windings in world space (x,y,z)
 
@@ -796,9 +803,9 @@ class Exclude(Polygon):
 
 class Facade(Polygon):
 
-    def __init__(self, name, param, nodes, lon=None, hdg=None):
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if not param: param=1
-        Polygon.__init__(self, name, param, nodes, lon, hdg)
+        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
         self.quads=[]		# list of points (x,y,z,s,t)
         self.roof=[]		# list of points (x,y,z,s,t)
 
@@ -1040,9 +1047,9 @@ class Facade(Polygon):
 
 class Forest(Draped):	# inherit from Draped for layout
 
-    def __init__(self, name, param, nodes, lon=None, hdg=None):
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if param==None: param=127
-        Polygon.__init__(self, name, param, nodes, lon, hdg)
+        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
 
     def clone(self):
         return Forest(self.name, self.param, [list(w) for w in self.nodes])
