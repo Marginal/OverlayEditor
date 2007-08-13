@@ -1395,6 +1395,8 @@ class MainWindow(wx.Frame):
                 for f in files:
                     if f[-4:].lower() in KnownDefs and f[0]!='.':
                         name=join(path,f)[len(pkgdir)+1:-4].replace('\\','/')+f[-4:].lower()
+                        if name.lower().startswith('custom objects'):
+                            name=name[15:]
                         if not name in lookup:	# library takes precedence
                             objects[name]=join(path,f)
         self.palette.load('Objects', objects, pkgdir)
