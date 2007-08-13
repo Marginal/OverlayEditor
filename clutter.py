@@ -112,11 +112,11 @@ class Clutter:
         self.lat=lat		# For centreing etc
         self.lon=lon
         
-    def position(self, lat, lon):
+    def position(self, tile, lat, lon):
         # returns (x,z) position relative to centre of enclosing tile
         # z is positive south
-        return (((lon%1)-0.5)*onedeg*cos(d2r*lat),
-                (0.5-(lat%1))*onedeg)
+        return ((lon-tile[1]-0.5)*onedeg*cos(d2r*lat),
+                (0.5-(lat-tile[0]))*onedeg)
 
 
 class Object(Clutter):
@@ -199,12 +199,12 @@ class Object(Clutter):
         return self.x!=None
 
     def layout(self, tile, options, vertexcache):
-        (self.x,self.z)=self.position(self.lat, self.lon)
+        (self.x,self.z)=self.position(tile, self.lat, self.lon)
         self.y=vertexcache.height(tile,options,self.x,self.z)
 
     def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
-        self.lat=max(floor(self.lat), min(floor(self.lat)+maxres, self.lat+dlat))
-        self.lon=max(floor(self.lon), min(floor(self.lon)+maxres, self.lon+dlon))
+        self.lat=max(tile[0], min(tile[0]+maxres, self.lat+dlat))
+        self.lon=max(tile[1], min(tile[1]+maxres, self.lon+dlon))
         self.hdg=(self.hdg+dhdg)%360
         self.layout(tile, options, vertexcache)
         
@@ -223,8 +223,8 @@ class Polygon(Clutter):
             self.nodes=[[]]
             size=0.000007071*size
             for i in [h+5*pi/4, h+3*pi/4, h+pi/4, h+7*pi/4]:
-                self.nodes[0].append((max(floor(lon), min(floor(lon)+maxres, round2res(self.lon+sin(i)*size))),
-                                      (max(floor(lat), min(floor(lat)+maxres, round2res(self.lat+cos(i)*size))))))
+                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
+                                      (max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size))))))
         self.param=param
         self.points=[]		# list of windings in world space (x,y,z)
 
@@ -311,7 +311,7 @@ class Polygon(Clutter):
             n=len(nodes)
             a=0
             for j in range(n):
-                (x,z)=self.position(nodes[j][1], nodes[j][0])
+                (x,z)=self.position(tile, nodes[j][1], nodes[j][0])
                 y=vertexcache.height(tile,options,x,z)
                 points.append((x,y,z))
                 if not i:
@@ -374,8 +374,8 @@ class Polygon(Clutter):
                             self.nodes[i][j][1]-self.lat)+radians(dhdg)
                     l=hypot(self.nodes[i][j][0]-self.lon,
                             self.nodes[i][j][1]-self.lat)
-                    self.nodes[i][j]=(max(floor(self.nodes[i][j][0]), min(floor(self.nodes[i][j][0])+maxres, round2res(self.lon+sin(h)*l))),
-                                      max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, round2res(self.lat+cos(h)*l))))	# trashes other parameters
+                    self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(self.lon+sin(h)*l))),
+                                      max(tile[0], min(tile[0]+1, round2res(self.lat+cos(h)*l))))	# trashes other parameters
         if dparam:
             self.param+=dparam
             if self.param<0: self.param=0
@@ -386,8 +386,9 @@ class Polygon(Clutter):
     def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=True):
         # defer layout
         (i,j)=node
-        self.nodes[i][j]=(max(floor(self.nodes[i][j][0]), min(floor(self.nodes[i][j][0])+maxres, self.nodes[i][j][0]+dlon)),
-                          max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, self.nodes[i][j][1]+dlat)))	# trashes other parameters
+        # points can be on upper boundary of tile
+        self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
+                          max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))	# trashes other parameters
         if defer:
             return node
         else:
@@ -397,7 +398,7 @@ class Polygon(Clutter):
         # update node height but defer full layout. Assumes lat,lon is valid
         (i,j)=node
         self.nodes[i][j]=(lon,lat)	# trashes other parameters
-        (x,z)=self.position(lat, lon)
+        (x,z)=self.position(tile, lat, lon)
         y=vertexcache.height(tile,options,x,z)
         self.points[i][j]=(x,y,z)
         return node
@@ -534,8 +535,8 @@ class Draped(Polygon):
                             self.nodes[i][j][1]-self.lat)+radians(dhdg)
                     l=hypot(self.nodes[i][j][0]-self.lon,
                             self.nodes[i][j][1]-self.lat)
-                    self.nodes[i][j]=(max(floor(self.nodes[i][j][0]), min(floor(self.nodes[i][j][0])+maxres, round2res(self.lon+sin(h)*l))),
-                                      max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, round2res(self.lat+cos(h)*l))))+uv
+                    self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(self.lon+sin(h)*l))),
+                                      max(tile[0], min(tile[0]+1, round2res(self.lat+cos(h)*l))))+uv
         if dlat or dlon:
             Polygon.move(self, dlat, dlon, 0, 0, tile, options, vertexcache)
         elif dhdg or dparam:
@@ -551,8 +552,8 @@ class Draped(Polygon):
                 uv=self.nodes[i][j][4:6]
             else:
                 uv=self.nodes[i][j][2:4]
-            self.nodes[i][j]=(max(floor(self.nodes[i][j][0]), min(floor(self.nodes[i][j][0])+maxres, self.nodes[i][j][0]+dlon)),
-                              max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, self.nodes[i][j][1]+dlat)))+uv
+            self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
+                              max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))+uv
             if defer:
                 return node
             else:
@@ -571,7 +572,7 @@ class Draped(Polygon):
             else:
                 uv=self.nodes[i][j][2:4]
             self.nodes[i][j]=(lon,lat)+uv
-            (x,z)=self.position(lat, lon)
+            (x,z)=self.position(tile, lat, lon)
             y=vertexcache.height(tile,options,x,z)
             self.points[i][j]=(x,y,z)
             return node
@@ -781,8 +782,8 @@ class Exclude(Polygon):
     def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=False):
         # changes adjacent nodes, so always do full layout immediately
         (i,j)=node
-        lon=max(floor(self.nodes[i][j][0]), min(floor(self.nodes[i][j][0])+maxres, self.nodes[i][j][0]+dlon))
-        lat=max(floor(self.nodes[i][j][1]), min(floor(self.nodes[i][j][1])+maxres, self.nodes[i][j][1]+dlat))
+        lon=max(tile[1], min(tile[1]+maxres, self.nodes[i][j][0]+dlon))
+        lat=max(tile[0], min(tile[0]+maxres, self.nodes[i][j][1]+dlat))
         return self.updatenode(node, lat, lon, tile, options, vertexcache)
 
     def updatenode(self, node, lat, lon, tile, options, vertexcache):
@@ -1028,7 +1029,7 @@ class Facade(Polygon):
             maxz=max(maxz,i[2])
         xscale=(fac.roof[2][0]-fac.roof[0][0])/(maxx-minx)
         zscale=(fac.roof[2][1]-fac.roof[0][1])/(maxz-minz)
-        (x,z)=self.position(self.lat,self.lon)
+        (x,z)=self.position(tile, self.lat,self.lon)
         y=vertexcache.height(tile,options,x,z)+roofheight
         self.roof=[(x, y, z,
                     fac.roof[0][0] + (x-minx)*xscale,

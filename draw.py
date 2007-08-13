@@ -8,7 +8,7 @@ except NameError:
     gluTessVertex = GLU._gluTessVertex
 
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
-from os.path import join
+from os.path import basename, join
 from sys import exit, platform, maxint, version
 #import time
 import wx
@@ -108,7 +108,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.clickctrl=False	# Ctrl was held down
         self.selectednode=None	# Selected node
         self.selections=[]	# List for picking
-        self.selectsaved=None	# Selection at start of ctrl drag box
+        self.selectsaved=[]	# Selection at start of ctrl drag box
         self.draginert=True
         self.dragx=wx.SystemSettings_GetMetric(wx.SYS_DRAG_X)
         self.dragy=wx.SystemSettings_GetMetric(wx.SYS_DRAG_Y)
@@ -228,7 +228,10 @@ class MyGL(wx.glcanvas.GLCanvas):
     def OnLeftDown(self, event):
         #event.Skip(False)	# don't change focus
         self.mousenow=self.clickpos=[event.m_x,event.m_y]
-        self.clickctrl=event.m_controlDown
+        if platform=='darwin':
+            self.clickctrl=event.m_metaDown	# Cmd
+        else:
+            self.clickctrl=event.m_controlDown
         self.CaptureMouse()
         size = self.GetClientSize()
         if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
@@ -691,6 +694,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 else:
                     self.selected=[selections[0]]
         self.selections=selections
+        if __debug__:
+            for selection in self.selected:
+                print basename(selection.definition.filename), selection.definition.layer
 
         self.Refresh()
         self.frame.ShowSel()
@@ -874,12 +880,14 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def allsel(self, withctrl):
         # fake up mouse drag
-        self.selectanchor=[0,0]
-        self.selectctrl=withctrl
+        self.clickmode=ClickModes.DragBox
+        self.clickpos=[0,0]
+        self.clickctrl=withctrl
         size=self.GetClientSize()
         self.mousenow=[size.x-1,size.y-1]
         self.select()
-        self.selectanchor=None
+        self.clickmode=None
+        self.clickpos=None
         self.trashlists()	# selection changed
 
     def nextsel(self, name, withctrl):
@@ -1476,6 +1484,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glCallList(self.meshlist)	# Terrain only
         #glFinish()	# redundant
         mz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
+        if mz==1.0: mz=0.5	# treat off the tile edge as sea level
         (x,y,z)=gluUnProject(mx,my,mz,
                              glGetDoublev(GL_MODELVIEW_MATRIX),
                              glGetDoublev(GL_PROJECTION_MATRIX),

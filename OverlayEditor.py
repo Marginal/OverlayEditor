@@ -717,7 +717,7 @@ class BackgroundDialog(wx.Dialog):
 class MainWindow(wx.Frame):
     def __init__(self, parent, id, title):
 
-        self.loc=None
+        self.loc=None	# (lat,lon)
         self.hdg=0
         self.elev=45
         self.dist=3333.25
@@ -1053,7 +1053,10 @@ class MainWindow(wx.Frame):
         elif event.m_keyCode in [wx.WXK_DELETE, wx.WXK_BACK, wx.WXK_NUMPAD_DELETE]: # wx.WXK_NUMPAD_DECIMAL]:
             changed=self.canvas.delsel(event.m_controlDown, event.m_shiftDown)
         elif event.m_keyCode==wx.WXK_SPACE:
-            self.canvas.allsel(event.m_controlDown)
+            if platform=='darwin':
+                self.canvas.allsel(event.m_metaDown)
+            else:
+                self.canvas.allsel(event.m_controlDown)
         elif event.m_keyCode==ord('N') or (platform=='darwin' and event.m_keyCode==ord('J') and event.m_metaDown):
             name=self.palette.get()
             if name:
