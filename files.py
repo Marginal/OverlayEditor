@@ -117,10 +117,7 @@ def readApt(filename):
             pavement[-1].append((float(c[1]),float(c[2]),float(c[3]),float(c[4])))
             pavement.append([])
         elif id==18 and int(c[3]):	# Beacon - goes in nav
-            if ver<850:
-                nav.append((id, float(c[1]),float(c[2]), 0))
-            else:
-                nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), 0))
+            nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), 0))
         elif id==19:	# Windsock - goes in nav
             nav.append((id, float(c[1]),float(c[2]), 0))
         elif id==21:	# VASI/PAPI - goes in nav

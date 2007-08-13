@@ -90,8 +90,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.navaids=[]		# (type, lat, lon, hdg)
         self.codes=[]		# [(code, loc)] by tile
         self.codeslist=0	# airport labels
-        #self.objects={}		# [(name,lat,lon,hdg,height)] by tile
-        #self.polygons={}	# [(name, parameter, [windings])] by tile
         self.lookup={}		# virtual name -> filename (may be duplicates)
         self.defs={}		# loaded ClutterDefs by filename
         self.placements={}	# [[Clutter]] by tile
@@ -1256,13 +1254,12 @@ class MyGL(wx.glcanvas.GLCanvas):
                   7:  'lib/airport/NAVAIDS/Marker1.obj',
                   8:  'lib/airport/NAVAIDS/Marker2.obj',
                   9:  'lib/airport/NAVAIDS/Marker2.obj',
-                  18: 'lib/airport/landscape/beacon2.obj',
                   19: '*windsock.obj',
-                  181:'lib/airport/beacons/beacon_airport.obj',
+                  181:'lib/airport/landscape/beacon1.obj',
                   182:'lib/airport/beacons/beacon_seaport.obj',
                   183:'lib/airport/beacons/beacon_heliport.obj',
-                  184:'lib/airport/beacons/beacon_mil.obj',
-                  185:'lib/airport/beacons/beacon_airport.obj',
+                  184:'lib/airport/landscape/beacon2.obj',
+                  185:'lib/airport/landscape/beacon1.obj',
                   211:'lib/airport/lights/slow/VASI.obj',
                   212:'lib/airport/lights/slow/PAPI.obj',
                   213:'lib/airport/lights/slow/PAPI.obj',
@@ -1271,14 +1268,18 @@ class MyGL(wx.glcanvas.GLCanvas):
                   216:'lib/airport/lights/slow/rway_guard.obj',
                   }
             for name in objs.values():
-                if name[0]=='*':
-                    filename=name
-                else:
-                    filename=self.lookup[name]
-                if filename in self.defs:
-                    self.defs[filename].allocate(self.vertexcache)
-                else:
-                    self.defs[filename]=ObjectDef(filename, self.vertexcache)
+                try:
+                    if name[0]=='*':
+                        filename=name
+                    else:
+                        filename=self.lookup[name]
+                    if filename in self.defs:
+                        self.defs[filename].allocate(self.vertexcache)
+                    else:
+                        self.defs[filename]=ObjectDef(filename, self.vertexcache)
+                except:
+                    # Older versions of X-Plane don't have eg beacon_seaport
+                    pass
                 
             # Prepare static stuff: mesh, navaids
             progress.Update(15, 'Done')
@@ -1331,6 +1332,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if (int(floor(lat)),int(floor(lon)))==newtile and i in objs:
                     if objs[i][0]=='*':
                         definition=self.defs[objs[i]]
+                    elif objs[i] not in self.lookup:
+                        continue	# missing in this version of X-Plane
                     else:
                         definition=self.defs[self.lookup[objs[i]]]
                     coshdg=cos(radians(hdg))
