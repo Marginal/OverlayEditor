@@ -950,6 +950,7 @@ class MainWindow(wx.Frame):
     def OnSize(self, event):
         # emulate sash gravity = 1.0
         delta=event.GetSize().x-self.lastwidth
+        #print "size", delta
         pos=self.splitter.GetSashPosition()+delta
         if pos<300: pos=300	# required for preview
         self.splitter.SetSashPosition(pos, False)
@@ -957,6 +958,7 @@ class MainWindow(wx.Frame):
         event.Skip()
 
     def OnSashPositionChanging(self, event):
+        #print "sash", event.GetSashPosition()
         if event.GetSashPosition()<300:
             # One-way minimum pane size
             event.SetSashPosition(300)
@@ -1053,13 +1055,12 @@ class MainWindow(wx.Frame):
         elif event.m_keyCode in [wx.WXK_DELETE, wx.WXK_BACK, wx.WXK_NUMPAD_DELETE]: # wx.WXK_NUMPAD_DECIMAL]:
             changed=self.canvas.delsel(event.m_controlDown, event.m_shiftDown)
         elif event.m_keyCode==wx.WXK_SPACE:
-            if platform=='darwin':
-                self.canvas.allsel(event.m_metaDown)
-            else:
-                self.canvas.allsel(event.m_controlDown)
-        elif event.m_keyCode==ord('N') or (platform=='darwin' and event.m_keyCode==ord('J') and event.m_metaDown):
+            # not Cmd because Cmd-Space = Spotlight
+            self.canvas.allsel(event.m_controlDown)
+        elif event.m_keyCode==ord('N'):
             name=self.palette.get()
             if name:
+                # not Cmd because Cmd-N = new
                 loc=self.canvas.nextsel(name, event.m_controlDown)
                 if loc:
                     self.loc=loc
@@ -1468,8 +1469,10 @@ class MainWindow(wx.Frame):
                 msg=''
             else:
                 name=newpath[len(pkgpath)+1:].replace(sep, '/')
+                if name.lower().startswith('custom objects'):
+                    name=name[15:]
                 self.canvas.lookup[name]=newpath
-                self.palette.add(name, pkgpath)
+                self.palette.add(name)
                 continue
             myMessageBox(msg, "Can't import %s." % path,
                          wx.ICON_ERROR|wx.OK, self)

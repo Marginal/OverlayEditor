@@ -1,9 +1,24 @@
 from math import fabs
 from os import listdir
 from os.path import abspath, dirname, exists, join, sep
+from sys import maxint
 
 from OpenGL.GL import *
 import wx
+
+
+class BBox:
+
+    def __init__(self, minx, maxx, minz, maxz):
+        self.minx=minx
+        self.maxx=maxx
+        self.minz=minz
+        self.maxz=maxz
+
+    def intersects(self, other):
+        return ((self.minx < other.maxx) and (self.maxx > other.minx) and
+                (self.minz < other.maxz) and (self.maxz > other.minz))
+
 
 # Virtual class for ground clutter definitions
 #
@@ -62,6 +77,7 @@ class ClutterDef:
                 self.texpath=dirname(self.filename)        
         self.texture=0
         self.layer=ClutterDef.DEFAULTLAYER
+        self.canpreview=True
         
     def setlayer(self, layer, n):
         if not -5<=n<=5: raise IOError
@@ -88,7 +104,6 @@ class ClutterDef:
 class ObjectDef(ClutterDef):
 
     OBJECT='.obj'
-    FALLBACK='*default.obj'
     
     def __init__(self, filename, vertexcache):
         ClutterDef.__init__(self, filename, vertexcache)
@@ -102,7 +117,9 @@ class ObjectDef(ClutterDef):
         tnocull=[]
         tcurrent=tculled
         texture=None
-        self.maxsize=0.1	# mustn't be 0
+        minx=minz=maxint
+        maxx=maxz=-maxint
+        maxy=0.5	# musn't be 0
         self.poly=0
         h=file(self.filename, 'rU')
         if filename[0]=='*': self.filename=None
@@ -151,7 +168,11 @@ class ObjectDef(ClutterDef):
                     for i in range(3):
                         c=h.readline().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
-                        self.maxsize=max(self.maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
+                        maxx=max(maxx, v[i][0])
+                        minx=min(minx, v[i][0])
+                        maxy=max(maxy, v[i][1])
+                        maxz=max(maxz, v[i][2])
+                        minz=min(minz, v[i][2])
                     current.append(v[0])
                     tcurrent.append([uv[0],uv[3]])
                     current.append(v[1])
@@ -168,9 +189,17 @@ class ObjectDef(ClutterDef):
                     for i in range(count):
                         c=h.readline().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
-                        self.maxsize=max(self.maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
+                        maxx=max(maxx, v[-1][0])
+                        minx=min(minx, v[-1][0])
+                        maxy=max(maxy, v[-1][1])
+                        maxz=max(maxz, v[-1][2])
+                        minz=min(minz, v[-1][2])
                         v.append([float(c[3]), float(c[4]), float(c[5])])
-                        self.maxsize=max(self.maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
+                        maxx=max(maxx, v[-1][0])
+                        minx=min(minx, v[-1][0])
+                        maxy=max(maxy, v[-1][1])
+                        maxz=max(maxz, v[-1][2])
+                        minz=min(minz, v[-1][2])
                         t.append([float(c[6]), float(c[8])])
                         t.append([float(c[7]), float(c[9])])
                     for i in seq:
@@ -183,7 +212,11 @@ class ObjectDef(ClutterDef):
                     for i in range(4):
                         c=h.readline().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
-                        self.maxsize=max(self.maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
+                        maxx=max(maxx, v[i][0])
+                        minx=min(minx, v[i][0])
+                        maxy=max(maxy, v[i][1])
+                        maxz=max(maxz, v[i][2])
+                        minz=min(minz, v[i][2])
                     current.append(v[0])
                     tcurrent.append([uv[1],uv[3]])
                     current.append(v[1])
@@ -252,10 +285,19 @@ class ObjectDef(ClutterDef):
                     while i<count:
                         c=h.readline().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
-                        self.maxsize=max(self.maxsize, fabs(v[i][0]), 0.55*v[i][1], fabs(v[i][2]))	# ad-hoc
+                        maxx=max(maxx, v[i][0])
+                        minx=min(minx, v[i][0])
+                        maxy=max(maxy, v[i][1])
+                        maxz=max(maxz, v[i][2])
+                        minz=min(minz, v[i][2])
                         t.append([float(c[3]), float(c[4])])
                         if len(c)>5:	# Two per line
                             v.append([float(c[5]), float(c[6]), float(c[7])])
+                            maxx=max(maxx, v[i+1][0])
+                            minx=min(minx, v[i+1][0])
+                            maxy=max(maxy, v[i+1][1])
+                            maxz=max(maxz, v[i+1][2])
+                            minz=min(minz, v[i+1][2])
                             t.append([float(c[8]), float(c[9])])
                             i+=2
                         else:
@@ -268,9 +310,7 @@ class ObjectDef(ClutterDef):
             vtt=[]
             idx=[]
             anim=[]
-            while True:
-                line=h.readline()
-                if not line: break
+            for line in h:
                 c=line.split('#')[0].split('//')[0].split()
                 if not c: continue
                 if c[0]=='TEXTURE':
@@ -279,12 +319,16 @@ class ObjectDef(ClutterDef):
                         if '//' in tex: tex=tex[:tex.index('//')].strip()
                         texture=abspath(join(self.texpath, tex.replace(':', sep).replace('/', sep)))
                 elif c[0]=='VT':
-                        x=float(c[1])
-                        y=float(c[2])
-                        z=float(c[3])
-                        vt.append([x,y,z])
-                        vtt.append([float(c[7]), float(c[8])])
-                        self.maxsize=max(self.maxsize, fabs(x), 0.55*y, fabs(z))	# ad-hoc
+                    x=float(c[1])
+                    y=float(c[2])
+                    z=float(c[3])
+                    maxx=max(maxx, x)
+                    minx=min(minx, x)
+                    maxy=max(maxy, y)
+                    maxz=max(maxz, z)
+                    minz=min(minz, z)
+                    vt.append([x,y,z])
+                    vtt.append([float(c[7]), float(c[8])])
                 elif c[0]=='IDX':
                     idx.append(int(c[1]))
                 elif c[0]=='IDX10':
@@ -328,16 +372,19 @@ class ObjectDef(ClutterDef):
 
         if not (len(culled)+len(nocull)):
             # show empty objects as placeholders otherwise can't edit
-            fb=ObjectDef(ObjectDef.FALLBACK, vertexcache)
-            (self.vdata, self.tdata, self.culled, self.nocull, self.poly, self.maxsize, self.base, self.texture)=(fb.vdata, fb.tdata, fb.culled, fb.nocull, fb.poly, fb.maxsize, fb.base, fb.texture)
+            fb=ObjectFallback(filename, vertexcache)
+            (self.vdata, self.tdata, self.culled, self.nocull, self.poly, self.bbox, self.height, self.base, self.texture, self.canpreview)=(fb.vdata, fb.tdata, fb.culled, fb.nocull, fb.poly, fb.bbox, fb.height, fb.base, fb.texture, fb.canpreview)
+            # re-use above allocation
         else:
             self.vdata=culled+nocull
             self.tdata=tculled+tnocull
             self.culled=len(culled)
             self.nocull=len(nocull)
+            self.bbox=BBox(minx, maxx, minz, maxz)
+            self.height=maxy
             self.base=None
-            self.allocate(vertexcache)
             self.texture=vertexcache.texcache.get(texture)
+            self.allocate(vertexcache)
 
     def allocate(self, vertexcache):
         if self.base==None:
@@ -347,6 +394,7 @@ class ObjectDef(ClutterDef):
         self.base=None
 
     def preview(self, canvas, vertexcache):
+        if not self.canpreview: return None
         self.allocate(vertexcache)
         vertexcache.realize(canvas)
         canvas.SetCurrent()
@@ -356,13 +404,32 @@ class ObjectDef(ClutterDef):
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
         glLoadIdentity()
-        maxsize=1.2*self.maxsize
+        sizex=(self.bbox.maxx-self.bbox.minx)*0.5
+        sizez=(self.bbox.maxz-self.bbox.minz)*0.5
+        maxsize=max(self.height*0.7,		# height
+                    sizex*0.9 + sizez*0.52,	# width at 30degrees
+                    sizex*0.26  + sizez*0.45)	# depth at 30degrees / 2
         glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
         glMatrixMode(GL_MODELVIEW)
         glPushMatrix()
         glLoadIdentity()
         glRotatef( 30, 1,0,0)
         glRotatef(-30, 0,1,0)
+        glTranslatef(sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz)
+        if __debug__:
+            glColor3f(0.8, 0.8, 0.8)	# Unpainted
+            glBindTexture(GL_TEXTURE_2D, 0)
+            for height in [0, self.height]:
+                glBegin(GL_LINE_LOOP)
+                glVertex3f(self.bbox.minx, height, self.bbox.minz)
+                glVertex3f(self.bbox.maxx, height, self.bbox.minz)
+                glVertex3f(self.bbox.maxx, height, self.bbox.maxz)
+                glVertex3f(self.bbox.minx, height, self.bbox.maxz)
+                glEnd()
+        glColor3f(1.0, 0.25, 0.25)	# Cursor
+        glBegin(GL_POINTS)
+        glVertex3f(0, 0, 0)
+        glEnd()
         glColor3f(0.8, 0.8, 0.8)	# Unpainted
         glBindTexture(GL_TEXTURE_2D, self.texture)
         if self.culled:
@@ -388,6 +455,24 @@ class ObjectDef(ClutterDef):
         return img.Mirror(False)
         
 
+class ObjectFallback(ObjectDef):
+    def __init__(self, filename, vertexcache):
+        ClutterDef.__init__(self, filename, vertexcache)
+        self.filename=filename
+        self.texture=0
+        self.layer=ClutterDef.DEFAULTLAYER
+        self.canpreview=False
+        self.vdata=[[-0.5, 1.0, 0.5], [-0.5, 1.0, -0.5], [0.5, 1.0, -0.5], [-0.5, 1.0, 0.5], [0.5, 1.0, -0.5], [0.5, 1.0, 0.5], [-0.5, 0.0, 0.5], [-0.5, 1.0, 0.5], [0.5, 1.0, 0.5], [-0.5, 0.0, 0.5], [0.5, 1.0, 0.5], [0.5, 0.0, 0.5], [-0.5, 0.0, -0.5], [-0.5, 1.0, -0.5], [-0.5, 1.0, 0.5], [-0.5, 0.0, -0.5], [-0.5, 1.0, 0.5], [-0.5, 0.0,0.5], [0.5, 0.0, -0.5], [0.5, 1.0, -0.5], [-0.5, 1.0, -0.5], [0.5, 0.0, -0.5], [-0.5, 1.0, -0.5], [-0.5, 0.0, -0.5], [0.5, 1.0, -0.5], [0.5, 0.0, -0.5], [0.5, 0.0, 0.5], [0.5, 1.0, -0.5], [0.5, 0.0, 0.5], [0.5, 1.0, 0.5]]
+        self.tdata=[[0.0,0.0] for i in self.vdata]
+        self.culled=len(self.vdata)
+        self.nocull=0
+        self.poly=0
+        self.bbox=BBox(-0.5,0.5,-0.5,0.5)
+        self.height=1.0
+        self.base=None
+        self.allocate(vertexcache)
+
+
 class PolygonDef(ClutterDef):
 
     EXCLUDE='Exclude:'
@@ -400,7 +485,7 @@ class PolygonDef(ClutterDef):
         ClutterDef.__init__(self, filename, texcache)
 
     def preview(self, canvas, vertexcache, l=0, b=0, r=1, t=1):
-        if not self.texture: return None
+        if not self.texture or not self.canpreview: return None
         canvas.SetCurrent()
         glViewport(0, 0, 300, 300)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
@@ -481,6 +566,7 @@ class DrapedFallback(PolygonDef):
         self.filename=filename
         self.texture=0
         self.layer=ClutterDef.DEFAULTLAYER
+        self.canpreview=False
         self.ortho=False
         self.hscale=100
         self.vscale=100
@@ -493,6 +579,7 @@ class ExcludeDef(PolygonDef):
         self.filename=filename
         self.texture=0
         self.layer=ClutterDef.OUTLINELAYER
+        self.canpreview=False
 
 
 class FacadeDef(PolygonDef):
@@ -589,6 +676,7 @@ class FacadeFallback(PolygonDef):
         self.filename=filename
         self.texture=0
         self.layer=ClutterDef.DEFAULTLAYER
+        self.canpreview=False
         self.ring=1
         self.two_sided=True
         self.roof=[]
@@ -650,6 +738,7 @@ class ForestFallback(PolygonDef):
         self.filename=filename
         self.texture=0
         self.layer=ClutterDef.OUTLINELAYER
+        self.canpreview=False
 
 UnknownDefs=['.lin', '.str']	# Known unknowns
 SkipDefs=['.bch', '.net']	# Ignore in library

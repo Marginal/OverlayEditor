@@ -55,7 +55,7 @@ except NameError:
     from OpenGL import GLU
     gluTessVertex = GLU._gluTessVertex
 
-from clutterdef import ObjectDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, DrapedFallback, FacadeFallback, ForestFallback, SkipDefs
+from clutterdef import ObjectDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, SkipDefs, BBox
 from prefs import Prefs
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
@@ -63,18 +63,6 @@ d2r=pi/180.0
 resolution=8*65535
 minres=1.0/resolution
 maxres=1-minres
-
-class BBox:
-
-    def __init__(self, minx, maxx, minz, maxz):
-        self.minx=minx
-        self.maxx=maxx
-        self.minz=minz
-        self.maxz=maxz
-
-    def intersects(self, other):
-        return ((self.minx < other.maxx) and (self.maxx > other.minx) and
-                (self.minz < other.maxz) and (self.maxz > other.minz))
 
 
 def round2res(x):
@@ -146,12 +134,15 @@ class Object(Clutter):
         except:
             # virtual name not found or can't load physical file
             if usefallback:
-                filename=ObjectDef.FALLBACK
+                if self.name in lookup:
+                    filename=lookup[self.name]
+                else:
+                    filename=lookup[self.name]=self.name
                 if filename in defs:
                     self.definition=defs[filename]
-                    self.definition.allocate(vertexcache)
+                    self.definition.allocate(vertexcache)	# ensure allocated
                 else:
-                    defs[filename]=self.definition=ObjectDef(filename, vertexcache)
+                    defs[filename]=self.definition=ObjectFallback(filename, vertexcache)
             return False
         
     def location(self):
@@ -174,7 +165,7 @@ class Object(Clutter):
         else:
             glBindTexture(GL_TEXTURE_2D, obj.texture)
             if obj.poly and not (selected or picking or nopoly):
-                glDepthMask(GL_FALSE)	# offset mustn't update depth
+                #glDepthMask(GL_FALSE) - doesn't work with inwards facing faces
                 glEnable(GL_POLYGON_OFFSET_FILL)
                 glPolygonOffset(-1, -1)
             if obj.culled:
@@ -185,7 +176,7 @@ class Object(Clutter):
                 glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
                 glEnable(GL_CULL_FACE)
             if obj.poly and not (selected or picking or nopoly):
-                glDepthMask(GL_TRUE)
+                #glDepthMask(GL_TRUE)
                 glDisable(GL_POLYGON_OFFSET_FILL)
         glPopMatrix()
 
@@ -448,13 +439,14 @@ class Draped(Polygon):
             return True
         except:
             if usefallback:
-                # don't put in defs, so will get another error if
-                # physical file is used again
                 if self.name in lookup:
                     filename=lookup[self.name]
                 else:
-                    filename=None
-                self.definition=DrapedFallback(filename, vertexcache)
+                    filename=lookup[self.name]=self.name
+                if filename in defs:
+                    self.definition=defs[filename]
+                else:
+                    defs[filename]=self.definition=DrapedFallback(filename, vertexcache)
             return False
 
     def locationstr(self, dms, node=None):
@@ -758,7 +750,7 @@ class Exclude(Polygon):
         return Exclude(self.name, self.param, [list(w) for w in self.nodes])
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
-        self.definition=ExcludeDef(None, vertexcache)
+        self.definition=ExcludeDef(self.name, vertexcache)
         return True
 
     def locationstr(self, dms, node=None):
@@ -823,13 +815,14 @@ class Facade(Polygon):
             return True
         except:
             if usefallback:
-                # don't put in defs, so will get another error if
-                # physical file is used again
                 if self.name in lookup:
                     filename=lookup[self.name]
                 else:
-                    filename=None
-                self.definition=FacadeFallback(filename, vertexcache)
+                    filename=lookup[self.name]=self.name
+                if filename in defs:
+                    self.definition=defs[filename]
+                else:
+                    defs[filename]=self.definition=FacadeFallback(filename, vertexcache)
             return False
 
     def locationstr(self, dms, node=None):
@@ -1065,13 +1058,14 @@ class Forest(Draped):	# inherit from Draped for layout
             return True
         except:
             if usefallback:
-                # don't put in defs, so will get another error if
-                # physical file is used again
                 if self.name in lookup:
                     filename=lookup[self.name]
                 else:
-                    filename=None
-                self.definition=ForestFallback(filename, vertexcache)
+                    filename=lookup[self.name]=self.name
+                if filename in defs:
+                    self.definition=defs[filename]
+                else:
+                    defs[filename]=self.definition=ForestFallback(filename, vertexcache)
             return False
 
     def locationstr(self, dms, node=None):

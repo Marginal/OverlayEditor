@@ -123,13 +123,14 @@ Do not change the location of X-Plane's top-level folder while you are editing a
 </table>
 
 <h4>Main window</h4>
-<p>This shows the objects in the loaded scenery package.
-By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Preferences" src="Resources/prefs.png"></a>.
+<p>This shows the objects in a 1&deg;&times;1&deg; region of the loaded
+scenery package.</p>
+<p>By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Preferences" src="Resources/prefs.png"></a>.
 Runways, taxiways and navaids are displayed in simplified form and cannot
 be edited. "Autogen" scenery objects are not displayed at all.<p>
 <p>Navigate with the cursor keys or mouse. Hold down <samp>Shift</samp> for
 bigger steps or <samp>Ctrl</samp> for tiny steps:</p>
-<table style="margin-left: 40px; width: 100%;" border="0">
+<table style="margin-left: 40px;" border="0">
   <tbody>
     <tr>
       <td style="width: 33%;"><samp>Up</samp>, <samp>Down</samp>, <samp>Left</samp>, <samp>Right</samp></td>
@@ -156,7 +157,7 @@ bigger steps or <samp>Ctrl</samp> for tiny steps:</p>
 <p><small>Note: On a MacBook hold down </small><samp>Fn</samp><small> and use the cursor keys for the <samp>Home</samp>, <samp>End</samp>, <samp>PageUp</samp> and <samp>PageDown</samp> keys.</small></p>
 <p>Selected objects are highlighted in pink in the main window.
 To select objects:</p>
-<table style="margin-left: 40px; width: 100%;" border="0">
+<table style="margin-left: 40px;" border="0">
   <tbody>
     <tr>
       <td style="width: 33%;">Mouse click</td>
@@ -175,7 +176,7 @@ To select objects:</p>
       <td>Select all objects in the main window <small>(even if they're too small to see)</small>.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Ctrl</samp>/<samp>Cmd Space</samp></td>
+      <td style="width: 33%;"><samp>Ctrl Space</samp></td>
       <td>Toggle selection of all objects in the main window</td>
     </tr>
   </tbody>
@@ -188,7 +189,7 @@ The selected node is highlighted in white.</p>
 <p>These keys affect the selected objects or the selected polygon node.
 Hold down <samp>Shift</samp> for bigger steps or <samp>Ctrl</samp>
 for tiny steps:</p>
-<table style="margin-left: 40px; width: 100%;" border="0">
+<table style="margin-left: 40px;" border="0">
   <tbody>
     <tr>
       <td style="width: 33%;">Mouse click and drag</td>
@@ -212,7 +213,11 @@ for tiny steps:</p>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>N</samp></td>
-      <td>Centre on and select the next use of this object</td>
+      <td>Select the next use of this object in the current 1&deg;&times;1&deg; region.</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Ctrl N</samp></td>
+      <td>Add the next use of this object to the selection.</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Insert</samp>/<samp>Enter</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
@@ -254,6 +259,7 @@ The type of object is indicated by a symbol:</p>
   <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="pol" src="Resources/pol.png"></a> - Draped polygon (<code>.pol</code>) with a <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later)</dd>
   <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="ortho" src="Resources/ortho.png"></a> - Draped polygon (<code>.pol</code>) for use as an <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later)</dd>
   <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="unknown" src="Resources/unknown.png"></a> - Other polygon</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="bad" src="Resources/bad.png"></a> - Missing or unreadable object or polygon</dd>
   <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="exc" src="Resources/exc.png"></a> - Exclusion region</dd>
 </dl>
 <p>Objects that have been made available by scenery libraries, including
@@ -332,10 +338,9 @@ warn you about this problem.
 You can see the order in which X-Plane prioritises your packages
 by looking at the file <code>Log.txt</code> in X-Plane's top-level folder.</p>
 <p>When you open or reload a scenery package this application warns about any
-objects that it can't read or that are missing, but lets you edit and save
-the scenery package anyway. The unreadable or missing objects are displayed
-as small "placeholder" cubes. X-Plane will crash unless you either provide
-implementations of unreadable and missing objects, or delete them from the
+objects that are missing or that it can't read, but lets you edit and save
+the scenery package anyway. X-Plane will crash unless you either provide
+implementations of missing and unreadable objects, or delete them from the
 scenery.<p>
 <p>X-Plane supports having multiple versions of a single library object,
 and chooses which object to display at random.
@@ -365,13 +370,23 @@ faster if you tell it not to display elevation; press
 and select "No terrain" or "Show terrain".</p>
 
 <h4>OverlayEditor complains that it "Can't read one or more objects"</h4>
-<p>Neither X-Plane nor OverlayEditor can read objects designed for X-Plane v5.
-You can identify objects by looking at them in a text editor;
+<p>Your scenery package uses objects or polygons that are either missing or
+unreadable.
+Missing or unreadable objects are displayed as small grey "placeholder" cubes.
+Missing or unreadable polygons are displayed as grey "placeholder" shapes.</p>
+<dl>
+  <dt>To delete all uses of the missing or unreadable object or polygon in the current 1&deg;&times;1&deg; region:</dt>
+  <dd>Select the object or polygon in the <a href="#objectlist">list of objects</a>.</dd>
+  <dd>Repeatedly press <samp>Ctrl N</samp> until all the placeholder objects or polygons are highlighted.</dd>
+  <dd>Press <samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png">.</dd>
+</dl>
+<p>Note that neither X-Plane nor OverlayEditor can read objects designed for
+X-Plane v5. You can identify objects by looking at them in a text editor;
 the second line should start with <code>2</code>, <code>700</code> or a larger
 number and the third line should start with <code>OBJ</code>.
 Otherwise this is either an X-Plane v5 object or it is not an X-Plane
-object at all.<br>
-If the object looks OK then please report the problem to the
+object at all.</p>
+<p>If the object looks OK then please report the problem to the
 <a href="mailto:x-plane@marginal.org.uk">author</a>.</p>
 
 <h4>My scenery object just appears as a small grey blob in OverlayEditor</h4>
@@ -452,7 +467,7 @@ no obligation.</p>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 1.73 &copy; 2007 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 1.74 &copy; 2007 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-sa/2.5/"><img style="border: 0px solid ; width: 88px; height: 31px; vertical-align: text-bottom;" alt="Creative Commons License" src="http://creativecommons.org/images/public/somerights20.png"></a><br>
       </td>
     </tr>

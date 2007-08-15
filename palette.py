@@ -25,23 +25,26 @@ class PaletteListBox(wx.VListBox):
         self.height=max(13,self.height)
         self.indent=4
         names=objects.keys()
-        self.populate(parent, tabname, tabno, names, pkgdir)
+        self.pkgdir=pkgdir
+        self.populate(parent, tabname, tabno, names)
 
-    def populate(self, parent, tabname, tabno, names, pkgdir):
+    def populate(self, parent, tabname, tabno, names):
         self.choices=[]
         for i in range(len(names)):
             name=realname=names[i]
             ext=name[-4:].lower()
-            if name.startswith(PolygonDef.EXCLUDE):
+            if name in parent.bad:
+                imgno=7
+            elif name.startswith(PolygonDef.EXCLUDE):
                 imgno=5
             elif ext in UnknownDefs:
                 imgno=6
             elif ext==PolygonDef.DRAPED:
                 imgno=3
-                if tabno==0 and pkgdir:
+                if tabno==0 and self.pkgdir:
                     # find orthos - assume library objects aren't
                     try:
-                        h=file(join(pkgdir,realname), 'rU')
+                        h=file(join(self.pkgdir,realname), 'rU')
                         for line in h:
                             line=line.strip()
                             if line.startswith('TEXTURE_NOWRAP') or line.startswith('TEXTURE_LIT_NOWRAP'):
@@ -100,6 +103,7 @@ class PaletteChoicebook(wx.Choicebook):
         self.last=(-1,None)
         self.lists=[]	# child listboxs
         self.lookup={}	# name->(tabno,index)
+        self.bad={}	# name is bad
         self.imgs=wx.ImageList(12,12,True,0)
         # must be in same order as KnownDefs
         self.imgs.Add(wx.Bitmap("Resources/obj.png", wx.BITMAP_TYPE_PNG))
@@ -109,6 +113,7 @@ class PaletteChoicebook(wx.Choicebook):
         self.imgs.Add(wx.Bitmap("Resources/ortho.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/exc.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/unknown.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/bad.png", wx.BITMAP_TYPE_PNG))
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)	# appears to do nowt on Windows
         wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
         if 'GetChoiceCtrl' in dir(self):	# not available on wxMac 2.5
@@ -144,6 +149,7 @@ class PaletteChoicebook(wx.Choicebook):
             self.DeletePage(i)
         self.lists=[]
         self.lookup={}
+        self.bad={}
             
     def load(self, tabname, objects, pkgdir):
         #print "load", tabname
@@ -155,20 +161,28 @@ class PaletteChoicebook(wx.Choicebook):
         wx.EVT_KEY_DOWN(l, self.OnKeyDown)
         wx.EVT_MOUSEWHEEL(l, self.OnMouseWheel)
     
-    def add(self, name, pkgdir):
-        #print "cbadd", name
+    def add(self, name, bad):
+        #print "cbadd", name, bad
         # Add to objects tab - assumes that this is first tab
+        if bad:
+            if name in self.bad:
+                return	# already bad
+            self.bad[name]=True
+
         l=self.lists[0]
         names=[realname for (imgno, foo, realname) in l.choices]
-        names.append(name)
-        l.populate(self, 'Objects', 0, names, pkgdir)
+        if not name in names:
+            names.append(name)
+            l.populate(self, 'Objects', 0, names)
 
-        # Select added name
-        self.set(name)
-        self.frame.canvas.clearsel()
-        self.frame.statusbar.SetStatusText("", 2)
-        self.frame.toolbar.EnableTool(wx.ID_DELETE, False)
-        if self.frame.menubar: self.frame.menubar.Enable(wx.ID_DELETE, False)
+        if not bad:
+            # Select added name
+            self.set(name)
+            self.frame.canvas.clearsel()
+            self.frame.statusbar.SetStatusText("", 2)
+            self.frame.toolbar.EnableTool(wx.ID_DELETE, False)
+            if self.frame.menubar:
+                self.frame.menubar.Enable(wx.ID_DELETE, False)
 
     def get(self):
         for l in self.lists:
@@ -198,6 +212,22 @@ class PaletteChoicebook(wx.Choicebook):
             self.frame.toolbar.EnableTool(wx.ID_ADD, False)
             if self.frame.menubar: self.frame.menubar.Enable(wx.ID_ADD, False)
 
+    def markbad(self):
+        # mark current selection as bad
+        for l in self.lists:
+            i=l.GetSelection()
+            if i!=-1:
+                (imgno, name, realname)=l.choices[i]
+                if realname in self.bad:
+                    return	# already bad
+                self.bad[realname]=True
+                l.choices[i]=(7, name, realname)
+                self.Refresh()
+                break
+        else:
+            assert(0)	# not found - wtf!
+            return
+        
 
 class Palette(wx.SplitterWindow):
     
@@ -222,6 +252,7 @@ class Palette(wx.SplitterWindow):
 
     def glInit(self):
         self.sashsize=self.GetClientSize()[1]-(self.cb.GetClientSize()[1]+self.preview.GetClientSize()[1])
+        #print "sashsize", self.sashsize, self.GetSashSize(), self.preview.GetClientSize()
         self.SetSashPosition(self.GetClientSize()[1]-self.preview.GetClientSize()[0]-self.sashsize, True)
         
     def OnSize(self, event):
@@ -259,11 +290,11 @@ class Palette(wx.SplitterWindow):
     def load(self, tabname, objects, pkgdir):
         self.cb.load(tabname, objects, pkgdir)
     
-    def add(self, name, pkgdir):
+    def add(self, name, bad=False):
         #print "add", name
         # Add to objects tab - assumes that this is first tab
-        self.lastkey=name
-        self.cb.add(name, pkgdir)
+        if not bad: self.lastkey=name
+        self.cb.add(name, bad)
         self.preview.Refresh()
 
     def get(self):
@@ -342,7 +373,7 @@ class Palette(wx.SplitterWindow):
                         self.frame.canvas.defs[filename]=definition=ObjectDef(filename, self.frame.canvas.vertexcache)
                     self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)
                 except:
-                    pass
+                    self.cb.markbad()
 
             else:
                 filename=self.frame.canvas.lookup[self.previewkey]
@@ -353,7 +384,7 @@ class Palette(wx.SplitterWindow):
                         self.frame.canvas.defs[filename]=definition=PolygonDefFactory(filename, self.frame.canvas.vertexcache)
                     self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)                
                 except:
-                    pass
+                    self.cb.markbad()
 
         if self.previewimg:
             # rescale if necessary

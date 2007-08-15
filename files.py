@@ -20,8 +20,7 @@ if __debug__:
 
 #from Numeric import array
 
-from clutter import BBox
-from clutterdef import KnownDefs, SkipDefs
+from clutterdef import BBox, KnownDefs, SkipDefs
 from DSFLib import readDSF
 from prefs import Prefs
 from version import appname, appversion

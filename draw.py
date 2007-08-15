@@ -16,8 +16,8 @@ import wx.glcanvas
 
 from files import VertexCache, sortfolded
 from fixed8x13 import fixed8x13
-from clutter import BBox, PolygonFactory, Draped, Facade, Object, Polygon, Exclude, resolution, maxres, round2res, latlondisp
-from clutterdef import ClutterDef, ObjectDef
+from clutter import PolygonFactory, Draped, Facade, Object, Polygon, Exclude, resolution, maxres, round2res, latlondisp
+from clutterdef import BBox, ClutterDef, ObjectDef
 from MessageBox import myMessageBox
 from prefs import Prefs
 from version import appname
@@ -1064,6 +1064,8 @@ class MyGL(wx.glcanvas.GLCanvas):
 
                     if not placement.load(self.lookup, self.defs, self.vertexcache, True) and placement.name not in errobjs:
                         errobjs.append(placement.name)
+                        self.frame.palette.add(placement.name, True)
+                        
                     if not placement.islaidout():
                         placement.layout(newtile, options, self.vertexcache)
                     self.placements[newtile][placement.definition.layer].append(placement)
