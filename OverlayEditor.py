@@ -983,15 +983,15 @@ class MainWindow(wx.Frame):
                 xinc=zinc/cos(d2r*self.loc[0])
             hr=d2r*((self.hdg + [0,90,180,270][cursors.index(event.m_keyCode)%4])%360)
             if cursors.index(event.m_keyCode)<8:
-                self.loc=[round2res(self.loc[0]+zinc*cos(hr)),
-                          round2res(self.loc[1]+xinc*sin(hr))]
+                self.loc=(round2res(self.loc[0]+zinc*cos(hr)),
+                          round2res(self.loc[1]+xinc*sin(hr)))
             else:
                 changed=self.canvas.movesel(round2res(zinc*cos(hr)),
                                             round2res(xinc*sin(hr)))
         elif event.m_keyCode in [ord('C'), wx.WXK_NUMPAD5]:
             (names,string,lat,lon,hdg)=self.canvas.getsel(prefs.options&Prefs.DMS)
             if lat==None: return
-            self.loc=[round2res(lat),round2res(lon)]
+            self.loc=(round2res(lat),round2res(lon))
             if hdg!=None and event.m_shiftDown:
                 self.hdg=hdg
         elif event.m_keyCode in [ord('Q'), wx.WXK_NUMPAD7]:
@@ -1323,52 +1323,28 @@ class MainWindow(wx.Frame):
         else:
             placements=None	# keep existing
         progress.Update(2, 'Airports')
-        airports=dict(self.airports)
-        nav=list(self.nav)
-        runways={}
         pkgapts={}
-        codes={}
+        nav=list(self.nav)
         pkgloc=None
         apts=glob(join(prefs.xplane, gcustom, '*', gaptdat))
         for apt in apts:
             # Package-specific apt.dats
             try:
                 (thisapt,thisnav,thiscode)=readApt(apt)
-                # Remove custom airports from global - last custom wins
+                # First custom airport wins
                 for code, stuff in thisapt.iteritems():
-                    (name, (lat,lon), run)=stuff
-                    airports.pop(code, None)
-                    pkgapts[code]=(name, (lat,lon), None)
-                    # But custom runways are cumulative
-                    tile=(int(floor(lat)),int(floor(lon)))
-                    if not tile in runways:
-                        runways[tile]=[run]
-                        codes[tile]=[(code, (lat,lon))]
-                    else:
-                        runways[tile].append(run)
-                        codes[tile].append((code, (lat,lon)))
+                    if code not in pkgapts:
+                        pkgapts[code]=stuff
                 nav.extend(thisnav)
+                # get start location
                 if prefs.package and apt[:-23].endswith(sep+prefs.package) and thiscode and not pkgloc:
-                    # get start location
-                    (name, loc, run)=thisapt[thiscode]
-                    pkgloc=[round2res(loc[0]),round2res(loc[1])]
+                    (name, pkgloc, run)=thisapt[thiscode]
             except:
                 if prefs.package and apt[:-23].endswith(sep+prefs.package):
                     myMessageBox("The apt.dat file in this package is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
 
-        # Remaining global airports
-        for code, stuff in airports.iteritems():
-            (name, (lat,lon), run)=stuff
-            if not run: continue
-            tile=(int(floor(lat)),int(floor(lon)))
-            if not tile in runways:
-                runways[tile]=[run]
-                codes[tile]=[(code, (lat,lon))]
-            else:
-                runways[tile].append(run)
-                codes[tile].append((code, (lat,lon)))
-
         # Merge in custom airports
+        airports=dict(self.airports)
         airports.update(pkgapts)
 
         if self.goto: self.goto.Close()	# Needed on wxMac 2.5
@@ -1398,8 +1374,8 @@ class MainWindow(wx.Frame):
                         name=join(path,f)[len(pkgdir)+1:-4].replace('\\','/')+f[-4:].lower()
                         if name.lower().startswith('custom objects'):
                             name=name[15:]
-                        if not name in lookup:	# library takes precedence
-                            objects[name]=join(path,f)
+                        #if not name in lookup:	# library takes precedence
+                        objects[name]=join(path,f)
         self.palette.load('Objects', objects, pkgdir)
         lookup.update(objects)
 
@@ -1418,7 +1394,7 @@ class MainWindow(wx.Frame):
         else:
             background=None
         self.canvas.reload(event!=None, prefs.options,
-                           runways, nav, codes, lookup, placements,
+                           airports, nav, lookup, placements,
                            background, terrain,
                            [join(prefs.xplane, gcustom),
                             join(prefs.xplane, gdefault)])
@@ -1432,8 +1408,8 @@ class MainWindow(wx.Frame):
                         self.loc=p[0].location()
                         break
                 else:	# Fallback
-                    self.loc=[34.096694,-117.248376]	# KSBD
-        self.loc=[round2res(self.loc[0]),round2res(self.loc[1])]
+                    self.loc=(34.096694,-117.248376)	# KSBD
+        self.loc=(round2res(self.loc[0]),round2res(self.loc[1]))
         progress.Destroy()
         
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
