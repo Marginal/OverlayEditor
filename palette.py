@@ -59,14 +59,17 @@ class PaletteListBox(wx.VListBox):
                 imgno=KnownDefs.index(ext)
             else:
                 continue	# wtf?
-            if name.lower().startswith('objects/') and name[8:] not in names:
-                name=name[8:-4]
-            elif name.lower().startswith('custom objects/') and name[15:] not in names:
-                name=name[15:-4]
-            elif not name.startswith(PolygonDef.EXCLUDE):
+            if not self.pkgdir:
+                # library object
                 if name.startswith('/'): name=name[1:]
                 if name.startswith('lib/'): name=name[4:]
                 if name.startswith(tabname+'/'): name=name[len(tabname)+1:]
+                name=name[:-4]
+            elif name.lower().startswith('objects/') and name[8:] not in names:
+                name=name[8:-4]
+            elif name.lower().startswith('custom objects/') and name[15:] not in names:
+                name=name[15:-4]
+            else:
                 name=name[:-4]
             self.choices.append((imgno, name, realname))
         self.SetItemCount(len(self.choices))
@@ -75,7 +78,9 @@ class PaletteListBox(wx.VListBox):
         self.choices.sort(lambda x,y: cmp(x[1].lower(), y[1].lower()))
         for i in range(len(self.choices)):
             (imgno, name, realname)=self.choices[i]
-            parent.lookup[realname]=(tabno,i)
+            if realname not in parent.lookup:
+                # per-package objects take precedence
+                parent.lookup[realname]=(tabno,i)
 
     def OnMeasureItem(self, n):
         return self.height
