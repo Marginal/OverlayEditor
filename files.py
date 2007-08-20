@@ -8,7 +8,7 @@ except:	# not in 2.0.0.44
 
 import codecs
 from glob import glob
-from math import cos, log, pi
+from math import cos, log, pi, radians
 from os import listdir, mkdir
 from os.path import abspath, basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
@@ -30,7 +30,6 @@ from version import appname, appversion
 cantreleasetexs=(platform.startswith('linux') and 'ubuntu' not in sys.version.lower())
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
-d2r=pi/180.0
 f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 GL_CLAMP_TO_EDGE=0x812F	# Not defined in PyOpenGL 2.x
@@ -67,7 +66,6 @@ def readApt(filename):
             pavement=[]
         if loc and id in [1,16,17,99]:
             if not run: raise IOError
-            run.reverse()	# drawn in reverse order
             airports[code]=(name,loc,run)
             code=name=loc=None
             run=[]
@@ -78,25 +76,29 @@ def readApt(filename):
         elif id==14:	# Prefer tower location
             loc=[float(c[1]),float(c[2])]
         elif id==10:	# Runway / taxiway
-            # (lat,lon,h,length,width,stop1,stop2)
+            # (lat,lon,h,length,width,stop1,stop2,surface,isrunway)
             lat=float(c[1])
             lon=float(c[2])
             if not loc: loc=[lat,lon]
             stop=c[7].split('.')
             if len(stop)<2: stop.append(0)
-            if len(c)<11: surface=int(c[9])/1000000	# v6
-            else: surface=int(c[10])
+            if len(c)<11:
+                surface=int(c[9])/1000000	# v6
+            else:
+                surface=int(c[10])
+            if c[3][0]=='H': surface=surface-5
             run.append((lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]),
-                        f2m*float(stop[0]),f2m*float(stop[1]),surface))
-        elif id==102: # 850 Helipad
-            # (lat,lon,h,length,width,stop1,stop2)
+                        f2m*float(stop[0]), f2m*float(stop[1]),
+                        surface, c[3]!='xxx'))
+        elif id==102:	# 850 Helipad
+            # (lat,lon,h,length,width,stop1,stop2,surface,isrunway)
             lat=float(c[2])
             lon=float(c[3])
             if not loc: loc=[lat,lon]
             run.append((lat, lon, float(c[4]), float(c[5]),float(c[6]),
-                        0,0, float(c[7])))
-        elif id==100: # and int(c[2]) not in [13,15]: # 850 Runway
-            # ((lat1,lon1),(lat2,lon2),width,stop1,stop2)
+                        0,0, int(c[7]), True))
+        elif id==100:	# 850 Runway
+            # ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface)
             if not loc:
                 loc=[(float(c[9])+float(c[18]))/2,
                      (float(c[10])+float(c[19]))/2]
@@ -123,7 +125,6 @@ def readApt(filename):
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
     if loc:	# No terminating 99
         if not run: raise IOError
-        run.reverse()	# drawn in reverse order
         airports[code]=(name,loc,run)
     h.close()
     return (airports, nav, firstcode)
@@ -372,7 +373,7 @@ class VertexCache:
                     break
             except:
                 pass
-        if __debug__: print "%s CPU time in loadMesh" % (time.clock()-clock)
+        if __debug__: print "%6.3f time in loadMesh" % (time.clock()-clock)
         if not key in self.mesh:
             if glob(join(self.dsfdirs[1], '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))) + glob(join(self.dsfdirs[1], pardir, '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[eE][nN][vV]" % (tile[0], tile[1]))):
                 # DSF or ENV exists but can't read it
@@ -380,12 +381,12 @@ class VertexCache:
             else:
                 tex=join('Resources','Sea01.png')
             self.mesh[key]=[(tex, 1,
-                             [[-onedeg*cos(d2r*(tile[0]+1))/2, 0, -onedeg/2],
-                              [ onedeg*cos(d2r* tile[0]   )/2, 0,  onedeg/2],
-                              [-onedeg*cos(d2r* tile[0]   )/2, 0,  onedeg/2],
-                              [-onedeg*cos(d2r*(tile[0]+1))/2, 0, -onedeg/2],
-                              [ onedeg*cos(d2r*(tile[0]+1))/2, 0, -onedeg/2],
-                              [ onedeg*cos(d2r* tile[0]   )/2, 0,  onedeg/2]],
+                             [[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
+                              [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2],
+                              [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2],
+                              [-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
+                              [ onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
+                              [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],
                              [[0, 0], [100, 100], [0, 100],
                               [0, 0], [100, 0], [100, 100]])]
 
@@ -414,7 +415,7 @@ class VertexCache:
             self.tarray.extend(t)
             texno=self.texcache.get(texture, True, False, flags&1)
             self.meshcache.append((base, len(v), texno, flags/2))
-        if __debug__: print "%s CPU time in getMesh" % (time.clock()-clock)
+        if __debug__: print "%6.3f time in getMesh" % (time.clock()-clock)
         self.valid=False	# new geometry -> need to update OpenGL
         self.currenttile=tile
         return self.meshcache
@@ -423,10 +424,16 @@ class VertexCache:
     # create sets of bounding boxes for height testing
     def getMeshdata(self, tile, options):
         if not options&Prefs.ELEVATION:
-            return [(BBox(-maxint,maxint,-maxint,maxint),
-                     [([[-maxint,0,-maxint],
-                        [-maxint,0, maxint],
-                        [ maxint,0,-maxint]],[0,0,0,0])])]
+            mlat=max(abs(tile[0]),abs(tile[0]+1))
+            return [(BBox(-onedeg*cos(radians(mlat))/2, onedeg*cos(radians(mlat))/2, -onedeg/2,onedeg/2),
+                     [([[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
+                        [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2],
+                        [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],
+                       [0,0,0,0]),
+                      ([[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
+                        [ onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
+                        [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],
+                       [0,0,0,0])])]
         key=(tile[0],tile[1],options&Prefs.ELEVATION)
         if key in self.meshdata:
             return self.meshdata[key]	# don't reload
@@ -446,21 +453,21 @@ class VertexCache:
                 tris.append(([v[i], v[i+1], v[i+2]], [0,0,0,0]))
             meshdata.append((BBox(minx, maxx, minz, maxz), tris))
             tot+=len(tris)
-        if __debug__: print "%s CPU time in getMeshdata" % (time.clock()-clock)
+        if __debug__: print "%6.3f time in getMeshdata" % (time.clock()-clock)
         #print len(meshdata), "patches,", tot, "tris,", tot/len(meshdata), "av"
         self.meshdata[key]=meshdata
         return meshdata
             
 
-    def height(self, tile, options, x, z, likely=None):
+    def height(self, tile, options, x, z, likely=[]):
         # returns height of mesh at (x,z) using tri if supplied
         if not options&Prefs.ELEVATION: return 0
 
         # first test candidates
         if likely:
-            h=self.heighttest([likely], x, z)
+            h=self.heighttest(likely, x, z)
             if h!=None: return h
-        if self.lasttri and (not likely or self.lasttri!=likely):
+        if self.lasttri and (self.lasttri not in likely):
             h=self.heighttest([self.lasttri], x, z)
             if h!=None: return h
 
