@@ -9,10 +9,13 @@ except NameError:
 
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
 from os.path import basename, join
-from sys import exit, platform, maxint, version
-#import time
+from sys import exit, platform, version
 import wx
 import wx.glcanvas
+if platform=='darwin':
+    from os import uname	# not defined in win32 builds
+if __debug__:
+    import time
 
 from files import VertexCache, sortfolded
 from fixed8x13 import fixed8x13
@@ -23,7 +26,6 @@ from prefs import Prefs
 from version import appname
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
-twopi=pi+pi
 f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 sband=12	# width of mouse scroll band around edge of window
@@ -84,11 +86,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.options=0		# display options
         self.tile=(0,999)	# [lat,lon] of SW
         self.centre=None	# [lat,lon] of centre
-        self.airports={}	# [runways] by tile
-        self.runways={}		# arrays by tile
-        self.runwaydata=None	# indices into cache (pavebase, pavelen, runwlen)
+        self.airports={}	# [runways] by code
+        self.runways={}		# [runways] by tile
+        self.taxiwaydata=None	# indices into cache (base, len)
+        self.runwaysdata=None	# indices into cache (base, len)
         self.navaids=[]		# (type, lat, lon, hdg)
-        self.codes=[]		# [(code, loc)] by tile
+        self.codes={}		# [(code, loc)] by tile
         self.codeslist=0	# airport labels
         self.lookup={}		# virtual name -> filename (may be duplicates)
         self.defs={}		# loaded ClutterDefs by filename
@@ -143,9 +146,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                          wx.ICON_ERROR|wx.OK, self)
             exit(1)
 
-        # Can't use polygon offset in display list on some Macs
-        # Not sure if this is a bug in 10.3.x or in OSX 1.5 OpenGL drivers
-        self.nopolyosinlist=(platform=='darwin' and glGetString(GL_VERSION)<'2')
+        # Can't use polygon offset in display list on OSX 10.3
+        # Note 10.4 Intel 950 drivers ship with OGL 1.2
+        self.nopolyosinlist=(platform=='darwin' and uname()[2]<'8')
 
         self.vertexcache=VertexCache()	# member so can free resources
 
@@ -171,7 +174,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glDepthFunc(GL_LESS)
         glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
-        if debugapt: glLineWidth(2.0)
+        #if debugapt: glLineWidth(2.0)
         #glLineStipple(1, 0x0f0f)	# for selection drag
         glPointSize(4.0)		# for nodes
         glFrontFace(GL_CW)
@@ -430,9 +433,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 for placement in placements[layer]:
                     if self.clickmode==ClickModes.DragBox or not placement in self.selected:
                         placement.draw(False, False, self.nopolyosinlist)
-                # runways
-                if layer==ClutterDef.RUNWAYSLAYER and self.runwaydata:
-                    (pavebase, pavelen, runwlen)=self.runwaydata
+                # taxiways
+                if layer==ClutterDef.TAXIWAYLAYER and self.taxiwaydata:
+                    (base, length)=self.taxiwaydata
                     glDepthMask(GL_FALSE)
                     if self.nopolyosinlist:
                         glDisable(GL_DEPTH_TEST)
@@ -441,8 +444,23 @@ class MyGL(wx.glcanvas.GLCanvas):
                         glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
                     if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
                     glBindTexture(GL_TEXTURE_2D, self.vertexcache.texcache.get('Resources/surfaces.png'))
-                    if pavelen: glDrawArrays(GL_TRIANGLES, pavebase, pavelen)
-                    if runwlen: glDrawArrays(GL_QUADS, pavebase+pavelen, runwlen)
+                    glDrawArrays(GL_TRIANGLES, base, length)
+                    glDepthMask(GL_TRUE)
+                    glEnable(GL_DEPTH_TEST)
+                    glDisable(GL_POLYGON_OFFSET_FILL)
+                    if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
+                # runways
+                elif layer==ClutterDef.RUNWAYSLAYER and self.runwaysdata:
+                    (base, length)=self.runwaysdata
+                    glDepthMask(GL_FALSE)
+                    if self.nopolyosinlist:
+                        glDisable(GL_DEPTH_TEST)
+                    else:
+                        glEnable(GL_POLYGON_OFFSET_FILL)
+                        glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
+                    if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+                    glBindTexture(GL_TEXTURE_2D, self.vertexcache.texcache.get('Resources/surfaces.png'))
+                    glDrawArrays(GL_TRIANGLES, base, length)
                     glDepthMask(GL_TRUE)
                     glEnable(GL_DEPTH_TEST)
                     glDisable(GL_POLYGON_OFFSET_FILL)
@@ -948,20 +966,20 @@ class MyGL(wx.glcanvas.GLCanvas):
         # return current height
         return self.y
 
-    def reload(self, reload, options, airports, navaids, codes,
+    def reload(self, reload, options, airports, navaids,
                lookup, placements,
                background, terrain, dsfdirs):
         self.valid=False
         self.options=options
-        self.airports=airports	# [runways] by tile
+        self.airports=airports	# [runways] by code
+        self.runways={}		# need to re-layout airports
         self.navaids=navaids
-        self.codes=codes	# [(code, loc)] by tile
+        self.codes={}		# need to re-layout airports
         self.lookup=lookup
         self.defs={}
         self.vertexcache.reset(terrain, dsfdirs)
         self.trashlists(True, True)
         self.tile=(0,999)	# force reload on next goto
-        self.runways={}		# need to re-layout runways
 
         if placements:
             self.placements={}
@@ -1043,7 +1061,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if not newtile in self.placements:
                 self.placements[newtile]=[[] for i in range(ClutterDef.LAYERCOUNT)]
             if newtile in self.unsorted:
-                #clock=time.clock()	# Processor time
+                if __debug__: clock=time.clock()	# Processor time
                 placements=self.unsorted.pop(newtile)
                 # Limit progress dialog to 10 updates
                 p=len(placements)/10+1
@@ -1069,7 +1087,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     if not placement.islaidout():
                         placement.layout(newtile, options, self.vertexcache)
                     self.placements[newtile][placement.definition.layer].append(placement)
-                #print "%s CPU time in goto" % (time.clock()-clock)
+                if __debug__: print "%6.3f time in load&layout" % (time.clock()-clock)
             else:
                 for placements in self.placements[newtile]:
                     for placement in placements:
@@ -1090,162 +1108,229 @@ class MyGL(wx.glcanvas.GLCanvas):
                       15: [0.875, 0.875]}	# transparent
             key=(newtile[0],newtile[1],options&Prefs.ELEVATION)
             if key not in self.runways:
-                airports=[]
-                pavements=[]
-                # Find bounding boxes of airport runways in this tile
-                if not newtile in self.airports:
-                    self.airports[newtile]=[]
-                for apt in self.airports[newtile]:
-                    minx=minz=maxint
-                    maxx=maxz=-maxint
+                if __debug__: clock=time.clock()	# Processor time
+                self.runways[key]=[]
+                self.codes[newtile]=[]
+                tvarray=[]
+                ttarray=[]
+                rvarray=[]
+                rtarray=[]
+                area=BBox(newtile[0]-0.05, newtile[0]+1.1,
+                          newtile[1]-0.1, newtile[1]+1.2)
+                tile=BBox(newtile[0], newtile[0]+1,
+                          newtile[1], newtile[1]+1)
+                for code, (name, loc, apt) in self.airports.iteritems():
+                    if not area.inside(*loc):
+                        continue
+                    if tile.inside(*loc):
+                        self.codes[newtile].append((code,loc))
                     runways=[]
-                    for thing in apt:
+                    taxiways=[]
+                    thisarea=BBox()
+                    thisapt=list(apt)
+                    thisapt.reverse()	# draw in reverse order
+                    newthing=None
+                    for thing in thisapt:
                         if isinstance(thing, tuple):
+                            # convert to pavement style
                             if not isinstance(thing[0], tuple):
-                                (lat,lon,h,length,width,stop1,stop2,surf)=thing
+                                # old pre-850 style or 850 style helipad
+                                (lat,lon,h,length,width,stop1,stop2,surf,isrunway)=thing
+                                if isrunway:
+                                    kind=runways
+                                else:
+                                    kind=taxiways
                                 (cx,cz)=self.aptlatlon2m(lat,lon)
                                 length1=length/2+stop1
                                 length2=length/2+stop2
                                 h=radians(h)
                                 coshdg=cos(h)
                                 sinhdg=sin(h)
-                                p1=[cx-length1*sinhdg, 0, cz+length1*coshdg]
-                                p2=[cx+length2*sinhdg, 0, cz-length2*coshdg]
+                                p1=[cx-length1*sinhdg, cz+length1*coshdg]
+                                p2=[cx+length2*sinhdg, cz-length2*coshdg]
+                                # Special handling for helipads and crappy
+                                # taxiways, of which there are loads
+                                if len(thisapt)==1 and length+stop1+stop2<61 and width<61:	# 200ft
+                                    if not tile.inside(lat,lon):
+                                        continue
+                                    #if __debug__: print code, "small"
+                                    if surf in surfaces:
+                                        col=surfaces[surf]
+                                    else:
+                                        col=surfaces[0]
+                                    xinc=width/2*coshdg
+                                    zinc=width/2*sinhdg
+                                    rvarray.extend([[p1[0]+xinc, self.vertexcache.height(newtile,options, p1[0]+xinc, p1[1]+zinc), p1[1]+zinc],
+                                                    [p1[0]-xinc, self.vertexcache.height(newtile,options, p1[0]-xinc, p1[1]-zinc), p1[1]-zinc],
+                                                    [p2[0]-xinc, self.vertexcache.height(newtile,options, p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
+                                                    [p1[0]+xinc, self.vertexcache.height(newtile,options, p1[0]+xinc, p1[1]+zinc), p1[1]+zinc],
+                                                    [p2[0]-xinc, self.vertexcache.height(newtile,options, p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
+                                                    [p2[0]+xinc, self.vertexcache.height(newtile,options, p2[0]+xinc, p2[1]+zinc), p2[1]+zinc]])
+                                    rtarray.extend([col,col,col,col,col,col])
+                                    continue
                             else:
+                                # new 850 style runway
                                 ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surf)=thing
+                                kind=runways
                                 (x1,z1)=self.latlon2m(lat1,lon1)
                                 (x2,z2)=self.latlon2m(lat2,lon2)
-                                h=-atan2(x1-x2,z1-z2) #%twopi
+                                h=-atan2(x1-x2,z1-z2)
                                 coshdg=cos(h)
                                 sinhdg=sin(h)
-                                p1=[x1-stop1*sinhdg, 0, z1+stop1*coshdg]
-                                p2=[x2+stop2*sinhdg, 0, z2-stop2*coshdg]
-                            minx=min(minx, p1[0], p2[0])
-                            maxx=max(maxx, p1[0], p2[0])
-                            minz=min(minz, p1[2], p2[2])
-                            maxz=max(maxz, p1[2], p2[2])
-                            if surf in surfaces:
-                                col=surfaces[surf]
+                                p1=[x1-stop1*sinhdg, z1+stop1*coshdg]
+                                p2=[x2+stop2*sinhdg, z2-stop2*coshdg]
+                            xinc=width/2*coshdg
+                            zinc=width/2*sinhdg
+                            newthing=[surf,
+                                      [[p1[0]+xinc, p1[1]+zinc],
+                                       [p1[0]-xinc, p1[1]-zinc],
+                                       [p2[0]-xinc, p2[1]-zinc],
+                                       [p2[0]+xinc, p2[1]+zinc]]]
+                            for i in range(4):
+                                thisarea.include(*newthing[1][i])
+                            kind.append(newthing)
+                        else:
+                            # new 850 style taxiway
+                            newthing=[thing[0]]
+                            for i in range(1,len(thing)):
+                                winding=[]
+                                for pt in thing[i]:
+                                    (x,z)=self.latlon2m(pt[0],pt[1])
+                                    thisarea.include(x,z)
+                                    if len(pt)<4:
+                                        winding.append([x,z])
+                                    else:
+                                        (xb,zb)=self.latlon2m(pt[2],pt[3])
+                                        thisarea.include(xb,zb)
+                                        winding.append([x,z,xb,zb])
+                                newthing.append(winding)
+                            taxiways.append(newthing)
+
+                    if not runways and not taxiways:
+                        continue	# didn't add anything (except helipads)
+                    
+                    # Find patches under this airport
+                    #if __debug__: print code, len(taxiways), len(runways),
+                    meshtris=[]
+                    for (bbox, tris) in self.vertexcache.getMeshdata(newtile,options):
+                        if thisarea.intersects(bbox):
+                            # tesselator is expensive - minimise mesh triangles
+                            for tri in tris:
+                                (pt, coeffs)=tri
+                                tbox=BBox()
+                                for i in range(3):
+                                    tbox.include(pt[i][0], pt[i][2])
+                                if thisarea.intersects(tbox):
+                                    meshtris.append(tri)
+                    if not meshtris:
+                        #if __debug__: print 0
+                        continue	# airport is wholly outside this tile
+                    #if __debug__: print len(meshtris),
+
+                    for (kind,varray,tarray) in [(taxiways, tvarray, ttarray),
+                                                 (runways,  rvarray, rtarray)]:
+                        lastcol=None
+                        pavements=[]
+                        for pave in kind:
+                            # tessellate similar surfaces together
+                            if pave[0] in surfaces:
+                                col=surfaces[pave[0]]
                             else:
                                 col=surfaces[0]
-                            runways.append((p1,p2, width/2*coshdg,width/2*sinhdg, col, {}))
-                        else:
-                            pavements.append(thing)
-                    airports.append((BBox(minx, maxx, minz, maxz), runways))
-    
-                # Pavements
-                tessObj = gluNewTess()
-                gluTessNormal(tessObj, 0, -1, 0)
-                gluTessCallback(tessObj, GLU_TESS_VERTEX_DATA, self.tessvertex)
-                gluTessCallback(tessObj, GLU_TESS_COMBINE,self.tesscombine)
-                gluTessCallback(tessObj, GLU_TESS_EDGE_FLAG, self.tessedge)	# no strips
+                            if col!=lastcol:# or len(pave)>2:
+                                if lastcol:
+                                    gluTessEndPolygon(tess)
+                                if pavements:
+                                    # tessellate existing against terrain
+                                    gluTessBeginPolygon(csgt, (varray,tarray))
+                                    for i in range(0,len(pavements),3):
+                                        gluTessBeginContour(csgt)
+                                        for j in range(i,i+3):
+                                            gluTessVertex(csgt, [pavements[j][0],0,pavements[j][2]], pavements[j])
+                                        gluTessEndContour(csgt)
+                                    for meshtri in meshtris:
+                                        (meshpt, coeffs)=meshtri
+                                        gluTessBeginContour(csgt)
+                                        for m in range(3):
+                                            x=meshpt[m][0]
+                                            z=meshpt[m][2]
+                                            gluTessVertex(csgt, [x,0,z], (meshpt[m],True, lastcol))
+                                        gluTessEndContour(csgt)
+                                    gluTessEndPolygon(csgt)
+                                lastcol=col
+                                pavements=[]
+                                gluTessBeginPolygon(tess, pavements)
 
-                varray=[]
-                tarray=[]
-                for pave in pavements:
-                    try:
-                        gluTessBeginPolygon(tessObj, (varray,tarray))
-                        if pave[0] in surfaces:
-                            col=surfaces[pave[0]]
-                        else:
-                            col=surfaces[0]
-                        for i in range(1,len(pave)):
-                            gluTessBeginContour(tessObj)
-                            edge=pave[i]
-                            n=len(edge)
-                            last=None
-                            for j in range(n):
-                                if len(edge[j])==len(edge[(j+1)%n])==2:
-                                    points=[edge[j]]
-                                else:
-                                    cpoints=[(edge[j][0],edge[j][1])]
-                                    if len(edge[j])!=2:
-                                        cpoints.append((edge[j][2],edge[j][3]))
-                                    if len(edge[(j+1)%n])!=2:
-                                        cpoints.append((2*edge[(j+1)%n][0]-edge[(j+1)%n][2],2*edge[(j+1)%n][1]-edge[(j+1)%n][3]))
+                            # generate tris in pavements
+                            for i in range(1,len(pave)):
+                                gluTessBeginContour(tess)
+                                edge=pave[i]
+                                n=len(edge)
+                                last=None
+                                for j in range(n):
+                                    if len(edge[j])==len(edge[(j+1)%n])==2:
+                                        points=[edge[j]]
+                                    else:
+                                        cpoints=[(edge[j][0],edge[j][1])]
+                                        if len(edge[j])!=2:
+                                            cpoints.append((edge[j][2],edge[j][3]))
+                                        if len(edge[(j+1)%n])!=2:
+                                            cpoints.append((2*edge[(j+1)%n][0]-edge[(j+1)%n][2],2*edge[(j+1)%n][1]-edge[(j+1)%n][3]))
                                             
-                                    cpoints.append((edge[(j+1)%n][0],edge[(j+1)%n][1]))
-                                    points=[self.bez(cpoints, u/4.0) for u in range(4)]	# X-Plane stops at or before 8
-                                for pt in points:
-                                    if pt==last: continue
-                                    last=pt
-                                    (x,z)=self.latlon2m(*pt)
-                                    y=self.vertexcache.height(newtile,options,x,z)
-                                    pt3=[x,y,z]
-                                    gluTessVertex(tessObj, pt3, (pt3, col))
-                            gluTessEndContour(tessObj)
-                        gluTessEndPolygon(tessObj)
-                    except GLUerror, e:
-                        pass
-                gluDeleteTess(tessObj)
-                pavelen=len(varray)
-                assert(len(varray)==len(tarray))                
+                                        cpoints.append((edge[(j+1)%n][0],edge[(j+1)%n][1]))
+                                        points=[self.bez(cpoints, u/4.0) for u in range(4)]	# X-Plane stops at or before 8
+                                    for pt in points:
+                                        if pt==last: continue
+                                        last=pt
+                                        (x,z)=pt
+                                        y=self.vertexcache.height(newtile,options,x,z,meshtris)
+                                        gluTessVertex(tess, [x,0,z], ([x,y,z], False, col))
+                                gluTessEndContour(tess)
+                            #if len(pave)>2:
+                            #    # polys with holes dealt with separately
+                            #    gluTessEndPolygon(tess)
+                            #    lastcol=None
 
-                # runways
-                for (bbox, tris) in self.vertexcache.getMeshdata(newtile,options):
-                    for (abox, runways) in airports:
-                        if not bbox.intersects(abox): continue
-                        for tri in tris:
-                            for (p1, p2, xinc, zinc, col, cuts) in runways:
-                                (pt, coeffs)=tri
-                                i1=i2=False
-                                for j in range(3):
-                                    #http://astronomy.swin.edu.au/~pbourke/geometry/lineline2d
-                                    p3=pt[j]
-                                    p4=pt[(j+1)%3]
-                                    d=(p4[2]-p3[2])*(p2[0]-p1[0])-(p4[0]-p3[0])*(p2[2]-p1[2])
-                                    if d==0: continue	# parallel
-                                    b=((p2[0]-p1[0])*(p1[2]-p3[2])-(p2[2]-p1[2])*(p1[0]-p3[0]))/d
-                                    if b<=0 or b>=1: continue	# no intersect
-                                    a=((p4[0]-p3[0])*(p1[2]-p3[2])-(p4[2]-p3[2])*(p1[0]-p3[0]))/d
-                                    if a>=0: i1 = not i1
-                                    if a<=1: i2 = not i2
-                                    if a<0 or a>1: continue	# no intersection
-                                    cuts[a]=([p1[0]+a*(p2[0]-p1[0]),
-                                              p3[1]+b*(p4[1]-p3[1]),
-                                              p1[2]+a*(p2[2]-p1[2])])
-                                    
-                                if i1:	# p1 is enclosed by this tri
-                                    p1[1]=self.vertexcache.height(newtile,options,p1[0],p1[2],tri)
-                                if i2:	# p2 is enclosed by this tri
-                                    p2[1]=self.vertexcache.height(newtile,options,p2[0],p2[2],tri)
+                        # tessellate existing against terrain
+                        if lastcol:
+                            gluTessEndPolygon(tess)
+                        if pavements:	# may have no taxiways
+                            gluTessBeginPolygon(csgt, (varray,tarray))
+                            for i in range(0,len(pavements),3):
+                                gluTessBeginContour(csgt)
+                                for j in range(i,i+3):
+                                    gluTessVertex(csgt, [pavements[j][0],0,pavements[j][2]], pavements[j])
+                                gluTessEndContour(csgt)
+                            for meshtri in meshtris:
+                                (meshpt, coeffs)=meshtri
+                                gluTessBeginContour(csgt)
+                                for m in range(3):
+                                    x=meshpt[m][0]
+                                    z=meshpt[m][2]
+                                    gluTessVertex(csgt, [x,0,z], (meshpt[m],True, lastcol))
+                                gluTessEndContour(csgt)
+                            gluTessEndPolygon(csgt)
 
-                # strip out bounding box and add cuts
-                for (abox, runways) in airports:
-                    for (p1, p2, xinc, zinc, col, cuts) in runways:
-                        cols=[col,col,col,col]
-                        a=cuts.keys()
-                        a.sort()
-                        varray.append([p1[0]+xinc, p1[1], p1[2]+zinc])
-                        varray.append([p1[0]-xinc, p1[1], p1[2]-zinc])
-                        if len(a) and a[0]>0.01:
-                            p=cuts[a[0]]
-                            varray.append([p[0]-xinc, p[1], p[2]-zinc])
-                            varray.append([p[0]+xinc, p[1], p[2]+zinc])
-                            varray.append([p[0]+xinc, p[1], p[2]+zinc])
-                            varray.append([p[0]-xinc, p[1], p[2]-zinc])
-                            tarray.extend(cols)
-                        for i in range(1, len(a)):
-                            if a[i]-a[i-1]>0.01:
-                                p=cuts[a[i]]
-                                varray.append([p[0]-xinc, p[1], p[2]-zinc])
-                                varray.append([p[0]+xinc, p[1], p[2]+zinc])
-                                varray.append([p[0]+xinc, p[1], p[2]+zinc])
-                                varray.append([p[0]-xinc, p[1], p[2]-zinc])
-                                tarray.extend(cols)
-                        varray.append([p2[0]-xinc, p2[1], p2[2]-zinc])
-                        varray.append([p2[0]+xinc, p2[1], p2[2]+zinc])
-                        tarray.extend(cols)
-                assert(len(varray)==len(tarray))
-                self.runways[key]=(varray,tarray,pavelen)
+                        assert(len(varray)==len(tarray))
+                    #if __debug__: print ' '
+
+                varray=tvarray+rvarray
+                tarray=ttarray+rtarray
+                taxiwaylen=len(tvarray)
+                self.runways[key]=(varray,tarray,taxiwaylen)
+                if __debug__: print "%6.3f time in runways" % (time.clock()-clock)
             else:
-                (varray,tarray,pavelen)=self.runways[key]
-            if varray:
-                self.runwaydata=(len(self.vertexcache.varray), pavelen, len(varray)-pavelen)
-                self.vertexcache.varray.extend(varray)
-                self.vertexcache.tarray.extend(tarray)
+                (varray,tarray,taxiwaylen)=self.runways[key]
+            if taxiwaylen:
+                self.taxiwaydata=(len(self.vertexcache.varray), taxiwaylen)
             else:
-                self.runwaydata=None
+                self.taxiwaydata=None
+            if len(varray)>taxiwaylen:
+                self.runwaysdata=(len(self.vertexcache.varray)+taxiwaylen, len(varray)-taxiwaylen)
+            else:
+                self.runwaysdata=None
+            self.vertexcache.varray.extend(varray)
+            self.vertexcache.tarray.extend(tarray)
 
             progress.Update(14, 'Navaids')
             objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
@@ -1383,8 +1468,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             glNewList(self.codeslist, GL_COMPILE)
             glColor3f(1.0, 0.25, 0.25)	# Labels are pink
             glBindTexture(GL_TEXTURE_2D, 0)
-            if not newtile in self.codes:
-                self.codes[newtile]=[]
             for (code, (lat,lon)) in self.codes[self.tile]:
                 (x,z)=self.latlon2m(lat,lon)
                 y=self.vertexcache.height(self.tile,self.options,x,z)
@@ -1416,30 +1499,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             myMessageBox(str('\n'.join(errobjs)), "Can't read one or more objects.", wx.ICON_EXCLAMATION|wx.OK, self.frame)
 
         self.Refresh()
-
-    def tessvertex(self, (vertex,colour), (varray,tarray)):
-        varray.append(vertex)
-        tarray.append(colour)
-
-    def tesscombine(self, coords, vertex, weight):
-        # vertex = array of (coords),(colour)
-        if weight[2] or vertex[0][0][0]!=vertex[1][0][0] or vertex[0][0][2]!=vertex[1][0][2]:
-            if __debug__:
-                if debugapt:
-                    lat=self.centre[0]-coords[2]/onedeg
-                    lon=self.centre[1]+coords[0]/(onedeg*cos(radians(lat)))
-                    print "Combine %.6f %.6f" % (lat, lon)
-                    for i in range(len(weight)):
-                        if not weight[i]: break
-                        lat=self.centre[0]-vertex[i][0][2]/onedeg
-                        lon=self.centre[1]+vertex[i][0][0]/(onedeg*cos(radians(lat)))
-                        print "%.6f %.6f %5.3f" % (lat, lon, weight[i])
-            return ((coords[0], coords[1], coords[2]), [0.625,0.625]) # red
-        else:	# Same point
-            return ((coords[0], coords[1], coords[2]), vertex[0][1])
-
-    def tessedge(self, flag):
-        pass	# dummy
 
     def bez(self, p, mu):
         # http://local.wasp.uwa.edu.au/~pbourke/curves/bezier/index.html
@@ -1501,4 +1560,78 @@ class MyGL(wx.glcanvas.GLCanvas):
         #print "%3d %3d %5.3f, %5d %5.1f %5d, %10.6f %11.6f" % (mx,my,mz, x,y,z, lat,lon)
         return (lat,lon)
 
+
+# runway tessellators
+
+def tessvertex(vertex, data):
+    data.append(vertex)
+
+def tesscombine(coords, vertex, weight):
+    # Linearly interp height from vertices (location, ismesh, uv)
+    p1=vertex[0]
+    p2=vertex[1]
+    d=hypot(p2[0][0]-p1[0][0], p2[0][2]-p1[0][2])
+    if not d:
+        return p1	# p1 and p2 are colocated
+    else:
+        ratio=hypot(coords[0]-p1[0][0], coords[2]-p1[0][2])/d
+        y=p1[0][1]+ratio*(p2[0][1]-p1[0][1])
+        return ([coords[0],y,coords[2]], False, p1[2])
+    
+def tessedge(flag):
+    pass	# dummy
+
+tess=gluNewTess()
+gluTessNormal(tess, 0, -1, 0)
+gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
+gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
+gluTessCallback(tess, GLU_TESS_COMBINE, tesscombine)
+gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
+
+
+def csgtvertex((vertex,ismesh,colour), (varray,tarray)):
+    varray.append(vertex)
+    tarray.append(colour)
+
+def csgtcombine(coords, vertex, weight):
+    # vertex = [(location, ismesh, uv)]
+    # check for just two adjacent mesh triangles
+    if vertex[0]==vertex[1]:
+        # common case
+        return vertex[0]
+    elif vertex[0][0][0]==vertex[1][0][0] and vertex[0][0][2]==vertex[1][0][2] and vertex[0][1]:
+        # Height discontinuity in terrain mesh - eg LIEE - wtf!
+        assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
+        return vertex[0]
+
+    # intersection of two lines - use terrain mesh line for height
+    elif vertex[0][1]:
+        #assert weight[0] and weight[1] and weight[2] and weight[3] and vertex[1][1]
+        p1=vertex[0]
+        p2=vertex[1]
+        p3=vertex[2]
+    else:
+        assert weight[0] and weight[1] and weight[2] and weight[3]
+        p1=vertex[2]
+        p2=vertex[3]
+        p3=vertex[0]
+
+    # height
+    d=hypot(p2[0][0]-p1[0][0], p2[0][2]-p1[0][2])
+    if not d:
+        y=p1[0][1]
+    else:
+        ratio=(hypot(coords[0]-p1[0][0], coords[2]-p1[0][2])/d)
+        y=p1[0][1]+ratio*(p2[0][1]-p1[0][1])
+    return ([coords[0],y,coords[2]], True, p3[2])
+
+def csgtedge(flag):
+    pass	# dummy
+
+csgt = gluNewTess()
+gluTessNormal(csgt, 0, -1, 0)
+gluTessProperty(csgt, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
+gluTessCallback(csgt, GLU_TESS_VERTEX_DATA, csgtvertex)
+gluTessCallback(csgt, GLU_TESS_COMBINE, csgtcombine)
+gluTessCallback(csgt, GLU_TESS_EDGE_FLAG, csgtedge)	# no strips
 
