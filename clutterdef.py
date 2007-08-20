@@ -9,15 +9,28 @@ import wx
 
 class BBox:
 
-    def __init__(self, minx, maxx, minz, maxz):
+    def __init__(self, minx=maxint, maxx=-maxint, minz=maxint, maxz=-maxint):
         self.minx=minx
         self.maxx=maxx
         self.minz=minz
         self.maxz=maxz
 
     def intersects(self, other):
-        return ((self.minx < other.maxx) and (self.maxx > other.minx) and
-                (self.minz < other.maxz) and (self.maxz > other.minz))
+        return ((self.minx <= other.maxx) and (self.maxx > other.minx) and
+                (self.minz <= other.maxz) and (self.maxz > other.minz))
+
+    def inside(self, x, z):
+        return ((self.minx <= x < self.maxx) and
+                (self.minz <= z < self.maxz))
+
+    def include(self, x, z):
+        self.maxx=max(self.maxx, x)
+        self.minx=min(self.minx, x)
+        self.maxz=max(self.maxz, z)
+        self.minz=min(self.minz, z)
+
+    def __str__(self):
+        return '<x:%s,%s z:%s,%s>' % (self.minx,self.maxx,self.minz,self.maxz)
 
 
 # Virtual class for ground clutter definitions
@@ -117,10 +130,9 @@ class ObjectDef(ClutterDef):
         tnocull=[]
         tcurrent=tculled
         texture=None
-        minx=minz=maxint
-        maxx=maxz=-maxint
-        maxy=0.5	# musn't be 0
         self.poly=0
+        self.bbox=BBox()
+        self.height=0.5	# musn't be 0
         h=file(self.filename, 'rU')
         if filename[0]=='*': self.filename=None
         if not h.readline().strip()[0] in ['I','A']:
@@ -168,11 +180,8 @@ class ObjectDef(ClutterDef):
                     for i in range(3):
                         c=h.readline().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
-                        maxx=max(maxx, v[i][0])
-                        minx=min(minx, v[i][0])
-                        maxy=max(maxy, v[i][1])
-                        maxz=max(maxz, v[i][2])
-                        minz=min(minz, v[i][2])
+                        self.bbox.include(v[i][0], v[i][2])
+                        self.height=max(self.height, v[i][1])
                     current.append(v[0])
                     tcurrent.append([uv[0],uv[3]])
                     current.append(v[1])
@@ -189,17 +198,11 @@ class ObjectDef(ClutterDef):
                     for i in range(count):
                         c=h.readline().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
-                        maxx=max(maxx, v[-1][0])
-                        minx=min(minx, v[-1][0])
-                        maxy=max(maxy, v[-1][1])
-                        maxz=max(maxz, v[-1][2])
-                        minz=min(minz, v[-1][2])
+                        self.bbox.include(v[-1][0], v[-1][2])
+                        self.height=max(self.height, v[-1][1])
                         v.append([float(c[3]), float(c[4]), float(c[5])])
-                        maxx=max(maxx, v[-1][0])
-                        minx=min(minx, v[-1][0])
-                        maxy=max(maxy, v[-1][1])
-                        maxz=max(maxz, v[-1][2])
-                        minz=min(minz, v[-1][2])
+                        self.bbox.include(v[-1][0], v[-1][2])
+                        self.height=max(self.height, v[-1][1])
                         t.append([float(c[6]), float(c[8])])
                         t.append([float(c[7]), float(c[9])])
                     for i in seq:
@@ -212,11 +215,8 @@ class ObjectDef(ClutterDef):
                     for i in range(4):
                         c=h.readline().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
-                        maxx=max(maxx, v[i][0])
-                        minx=min(minx, v[i][0])
-                        maxy=max(maxy, v[i][1])
-                        maxz=max(maxz, v[i][2])
-                        minz=min(minz, v[i][2])
+                        self.bbox.include(v[i][0], v[i][2])
+                        self.height=max(self.height, v[i][1])
                     current.append(v[0])
                     tcurrent.append([uv[1],uv[3]])
                     current.append(v[1])
@@ -285,19 +285,13 @@ class ObjectDef(ClutterDef):
                     while i<count:
                         c=h.readline().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
-                        maxx=max(maxx, v[i][0])
-                        minx=min(minx, v[i][0])
-                        maxy=max(maxy, v[i][1])
-                        maxz=max(maxz, v[i][2])
-                        minz=min(minz, v[i][2])
+                        self.bbox.include(v[i][0], v[i][2])
+                        self.height=max(self.height, v[i][1])
                         t.append([float(c[3]), float(c[4])])
                         if len(c)>5:	# Two per line
                             v.append([float(c[5]), float(c[6]), float(c[7])])
-                            maxx=max(maxx, v[i+1][0])
-                            minx=min(minx, v[i+1][0])
-                            maxy=max(maxy, v[i+1][1])
-                            maxz=max(maxz, v[i+1][2])
-                            minz=min(minz, v[i+1][2])
+                            self.bbox.include(v[i+1][0], v[i+1][2])
+                            self.height=max(self.height, v[i+1][1])
                             t.append([float(c[8]), float(c[9])])
                             i+=2
                         else:
@@ -322,11 +316,8 @@ class ObjectDef(ClutterDef):
                     x=float(c[1])
                     y=float(c[2])
                     z=float(c[3])
-                    maxx=max(maxx, x)
-                    minx=min(minx, x)
-                    maxy=max(maxy, y)
-                    maxz=max(maxz, z)
-                    minz=min(minz, z)
+                    self.bbox.include(x,z)
+                    self.height=max(self.height, y)
                     vt.append([x,y,z])
                     vtt.append([float(c[7]), float(c[8])])
                 elif c[0]=='IDX':
@@ -380,8 +371,6 @@ class ObjectDef(ClutterDef):
             self.tdata=tculled+tnocull
             self.culled=len(culled)
             self.nocull=len(nocull)
-            self.bbox=BBox(minx, maxx, minz, maxz)
-            self.height=maxy
             self.base=None
             self.texture=vertexcache.texcache.get(texture)
             self.allocate(vertexcache)
@@ -653,13 +642,7 @@ class FacadeDef(PolygonDef):
                                 self.vert.append((float(c[1]),float(c[2])))
                                 if c[0]=='BOTTOM': self.vends[0]+=1
                                 elif c[0]=='TOP': self.vends[1]+=1
-                            elif c[0] in ['HARD_ROOF', 'HARD_WALL']:
-                                pass
-                            else:
-                                raise IOError
                         break # stop after first WALL
-                    else:
-                        raise IOError
                 break	# stop after first LOD
         h.close()
         if not self.horiz or not self.vert:
