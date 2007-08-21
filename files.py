@@ -76,7 +76,7 @@ def readApt(filename):
         elif id==14:	# Prefer tower location
             loc=[float(c[1]),float(c[2])]
         elif id==10:	# Runway / taxiway
-            # (lat,lon,h,length,width,stop1,stop2,surface,isrunway)
+            # (lat,lon,h,length,width,stop1,stop2,surface,shoulder,isrunway)
             lat=float(c[1])
             lon=float(c[2])
             if not loc: loc=[lat,lon]
@@ -86,25 +86,29 @@ def readApt(filename):
                 surface=int(c[9])/1000000	# v6
             else:
                 surface=int(c[10])
+            if len(c)<12:
+                sholder=0
+            else:
+                shoulder=int(c[11])
             if c[3][0]=='H': surface=surface-5
             run.append((lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]),
                         f2m*float(stop[0]), f2m*float(stop[1]),
-                        surface, c[3]!='xxx'))
+                        surface, shoulder, c[3]!='xxx'))
         elif id==102:	# 850 Helipad
-            # (lat,lon,h,length,width,stop1,stop2,surface,isrunway)
+            # (lat,lon,h,length,width,stop1,stop2,surface,shoulder,isrunway)
             lat=float(c[2])
             lon=float(c[3])
             if not loc: loc=[lat,lon]
             run.append((lat, lon, float(c[4]), float(c[5]),float(c[6]),
-                        0,0, int(c[7]), True))
+                        0,0, int(c[7]), int(c[9]), True))
         elif id==100:	# 850 Runway
-            # ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface)
+            # ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface,shoulder)
             if not loc:
                 loc=[(float(c[9])+float(c[18]))/2,
                      (float(c[10])+float(c[19]))/2]
             run.append(((float(c[9]), float(c[10])),
                         (float(c[18]), float(c[19])),
-                        float(c[1]), float(c[12]),float(c[21]), float(c[2])))
+                        float(c[1]), float(c[12]),float(c[21]), int(c[2]), int(c[3])))
         elif id==110:
             pavement=[int(c[1]),[]]	# surface
         elif id==111 and pavement:
@@ -473,7 +477,7 @@ class VertexCache:
 
         # test all patches then
         for (bbox, tris) in self.getMeshdata(tile,options):
-            if x<bbox.minx or x>bbox.maxx or z<bbox.minz or z>bbox.maxz: continue
+            if not bbox.inside(x,z): continue
             h=self.heighttest(tris, x, z)
             if h!=None: return h
         

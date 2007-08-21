@@ -87,7 +87,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.tile=(0,999)	# [lat,lon] of SW
         self.centre=None	# [lat,lon] of centre
         self.airports={}	# [runways] by code
-        self.runways={}		# [runways] by tile
+        self.runways={}		# [shoulder/taxiway/runway data] by tile
+        self.shoulderdata=None	# indices into cache (base, len)
         self.taxiwaydata=None	# indices into cache (base, len)
         self.runwaysdata=None	# indices into cache (base, len)
         self.navaids=[]		# (type, lat, lon, hdg)
@@ -433,38 +434,27 @@ class MyGL(wx.glcanvas.GLCanvas):
                 for placement in placements[layer]:
                     if self.clickmode==ClickModes.DragBox or not placement in self.selected:
                         placement.draw(False, False, self.nopolyosinlist)
-                # taxiways
-                if layer==ClutterDef.TAXIWAYLAYER and self.taxiwaydata:
-                    (base, length)=self.taxiwaydata
-                    glDepthMask(GL_FALSE)
-                    if self.nopolyosinlist:
-                        glDisable(GL_DEPTH_TEST)
-                    else:
-                        glEnable(GL_POLYGON_OFFSET_FILL)
-                        glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
-                    if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
-                    glBindTexture(GL_TEXTURE_2D, self.vertexcache.texcache.get('Resources/surfaces.png'))
-                    glDrawArrays(GL_TRIANGLES, base, length)
-                    glDepthMask(GL_TRUE)
-                    glEnable(GL_DEPTH_TEST)
-                    glDisable(GL_POLYGON_OFFSET_FILL)
-                    if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
-                # runways
-                elif layer==ClutterDef.RUNWAYSLAYER and self.runwaysdata:
-                    (base, length)=self.runwaysdata
-                    glDepthMask(GL_FALSE)
-                    if self.nopolyosinlist:
-                        glDisable(GL_DEPTH_TEST)
-                    else:
-                        glEnable(GL_POLYGON_OFFSET_FILL)
-                        glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
-                    if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
-                    glBindTexture(GL_TEXTURE_2D, self.vertexcache.texcache.get('Resources/surfaces.png'))
-                    glDrawArrays(GL_TRIANGLES, base, length)
-                    glDepthMask(GL_TRUE)
-                    glEnable(GL_DEPTH_TEST)
-                    glDisable(GL_POLYGON_OFFSET_FILL)
-                    if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
+                # pavements
+                if layer in [ClutterDef.SHOULDERLAYER, ClutterDef.TAXIWAYLAYER,
+                             ClutterDef.RUNWAYSLAYER]:
+                    data={ClutterDef.SHOULDERLAYER:self.shoulderdata,
+                          ClutterDef.TAXIWAYLAYER: self.taxiwaydata,
+                          ClutterDef.RUNWAYSLAYER: self.runwaysdata}[layer]
+                    if data:
+                        (base, length)=data
+                        glDepthMask(GL_FALSE)
+                        if self.nopolyosinlist:
+                            glDisable(GL_DEPTH_TEST)
+                        else:
+                            glEnable(GL_POLYGON_OFFSET_FILL)
+                            glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
+                        if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+                        glBindTexture(GL_TEXTURE_2D, self.vertexcache.texcache.get('Resources/surfaces.png'))
+                        glDrawArrays(GL_TRIANGLES, base, length)
+                        glDepthMask(GL_TRUE)
+                        glEnable(GL_DEPTH_TEST)
+                        glDisable(GL_POLYGON_OFFSET_FILL)
+                        if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
             glEndList()
         glCallList(self.clutterlist)
 
@@ -1111,6 +1101,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if __debug__: clock=time.clock()	# Processor time
                 self.runways[key]=[]
                 self.codes[newtile]=[]
+                svarray=[]
+                starray=[]
                 tvarray=[]
                 ttarray=[]
                 rvarray=[]
@@ -1126,6 +1118,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         self.codes[newtile].append((code,loc))
                     runways=[]
                     taxiways=[]
+                    shoulders=[]
                     thisarea=BBox()
                     thisapt=list(apt)
                     thisapt.reverse()	# draw in reverse order
@@ -1135,7 +1128,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                             # convert to pavement style
                             if not isinstance(thing[0], tuple):
                                 # old pre-850 style or 850 style helipad
-                                (lat,lon,h,length,width,stop1,stop2,surf,isrunway)=thing
+                                (lat,lon,h,length,width,stop1,stop2,surface,shoulder,isrunway)=thing
                                 if isrunway:
                                     kind=runways
                                 else:
@@ -1148,14 +1141,14 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 sinhdg=sin(h)
                                 p1=[cx-length1*sinhdg, cz+length1*coshdg]
                                 p2=[cx+length2*sinhdg, cz-length2*coshdg]
-                                # Special handling for helipads and crappy
-                                # taxiways, of which there are loads
+                                # Special handling for helipads, of which
+                                # there are loads
                                 if len(thisapt)==1 and length+stop1+stop2<61 and width<61:	# 200ft
                                     if not tile.inside(lat,lon):
                                         continue
                                     #if __debug__: print code, "small"
-                                    if surf in surfaces:
-                                        col=surfaces[surf]
+                                    if surface in surfaces:
+                                        col=surfaces[surface]
                                     else:
                                         col=surfaces[0]
                                     xinc=width/2*coshdg
@@ -1170,7 +1163,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                     continue
                             else:
                                 # new 850 style runway
-                                ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surf)=thing
+                                ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface,shoulder)=thing
                                 kind=runways
                                 (x1,z1)=self.latlon2m(lat1,lon1)
                                 (x2,z2)=self.latlon2m(lat2,lon2)
@@ -1181,14 +1174,23 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 p2=[x2+stop2*sinhdg, z2-stop2*coshdg]
                             xinc=width/2*coshdg
                             zinc=width/2*sinhdg
-                            newthing=[surf,
+                            newthing=[surface,
                                       [[p1[0]+xinc, p1[1]+zinc],
                                        [p1[0]-xinc, p1[1]-zinc],
                                        [p2[0]-xinc, p2[1]-zinc],
                                        [p2[0]+xinc, p2[1]+zinc]]]
+                            kind.append(newthing)
+                            if shoulder:
+                                xinc=width*0.75*coshdg
+                                zinc=width*0.75*sinhdg
+                                newthing=[shoulder,
+                                          [[p1[0]+xinc, p1[1]+zinc],
+                                           [p1[0]-xinc, p1[1]-zinc],
+                                           [p2[0]-xinc, p2[1]-zinc],
+                                           [p2[0]+xinc, p2[1]+zinc]]]
+                                shoulders.append(newthing)
                             for i in range(4):
                                 thisarea.include(*newthing[1][i])
-                            kind.append(newthing)
                         else:
                             # new 850 style taxiway
                             newthing=[thing[0]]
@@ -1227,7 +1229,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                         continue	# airport is wholly outside this tile
                     #if __debug__: print len(meshtris),
 
-                    for (kind,varray,tarray) in [(taxiways, tvarray, ttarray),
+                    for (kind,varray,tarray) in [(shoulders, svarray, starray),
+                                                 (taxiways, tvarray, ttarray),
                                                  (runways,  rvarray, rtarray)]:
                         lastcol=None
                         pavements=[]
@@ -1314,19 +1317,25 @@ class MyGL(wx.glcanvas.GLCanvas):
                         assert(len(varray)==len(tarray))
                     #if __debug__: print ' '
 
-                varray=tvarray+rvarray
-                tarray=ttarray+rtarray
+                varray=svarray+tvarray+rvarray
+                tarray=starray+ttarray+rtarray
+                shoulderlen=len(svarray)
                 taxiwaylen=len(tvarray)
-                self.runways[key]=(varray,tarray,taxiwaylen)
+                runwaylen=len(rvarray)
+                self.runways[key]=(varray,tarray,shoulderlen,taxiwaylen,runwaylen)
                 if __debug__: print "%6.3f time in runways" % (time.clock()-clock)
             else:
-                (varray,tarray,taxiwaylen)=self.runways[key]
+                (varray,tarray,shoulderlen,taxiwaylen,runwaylen)=self.runways[key]
+            if shoulderlen:
+                self.shoulderdata=(len(self.vertexcache.varray), shoulderlen)
+            else:
+                self.shoulderdata=None
             if taxiwaylen:
-                self.taxiwaydata=(len(self.vertexcache.varray), taxiwaylen)
+                self.taxiwaydata=(len(self.vertexcache.varray)+shoulderlen, taxiwaylen)
             else:
                 self.taxiwaydata=None
-            if len(varray)>taxiwaylen:
-                self.runwaysdata=(len(self.vertexcache.varray)+taxiwaylen, len(varray)-taxiwaylen)
+            if runwaylen:
+                self.runwaysdata=(len(self.vertexcache.varray)+shoulderlen+taxiwaylen, runwaylen)
             else:
                 self.runwaysdata=None
             self.vertexcache.varray.extend(varray)

@@ -69,6 +69,7 @@ class ClutterDef:
     LAYERCOUNT=len(LAYERNAMES)*11
     TERRAINLAYER=LAYERNAMES.index('terrain')*11+5
     BEACHESLAYER=LAYERNAMES.index('beaches')*11+5
+    SHOULDERLAYER=LAYERNAMES.index('shoulders')*11+5
     TAXIWAYLAYER=LAYERNAMES.index('taxiways')*11+5
     RUNWAYSLAYER=LAYERNAMES.index('runways')*11+5
     OUTLINELAYER=LAYERNAMES.index('roads')*11+5	# for draped & exclusions
