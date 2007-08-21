@@ -1,5 +1,5 @@
+palette right click / ctrl-click -> delete, rename
 selectall drag problem
-nextsel
 
 Info popup - name, source .obj file / library, layer, source texture, editable location, info.txt (File -> Show Inspector Cmd-I)
 Use of control or cmd in Finder for selection drag?
