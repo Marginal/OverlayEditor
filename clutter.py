@@ -643,9 +643,15 @@ class Draped(Polygon):
         abox=BBox(minx, maxx, minz, maxz)
 
         for (bbox, meshtris) in vertexcache.getMeshdata(tile,options):
-            if not bbox.intersects(abox): continue
+            if not abox.intersects(bbox): continue
             for meshtri in meshtris:
                 (meshpt, coeffs)=meshtri
+                # tesselator is expensive - minimise mesh triangles
+                tbox=BBox()
+                for m in range(3):
+                    tbox.include(meshpt[m][0], meshpt[m][2])
+                if not abox.intersects(tbox):
+                    continue
                 gluTessBeginContour(csgt)
                 for m in range(3):
                     x=meshpt[m][0]
