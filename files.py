@@ -87,7 +87,7 @@ def readApt(filename):
             else:
                 surface=int(c[10])
             if len(c)<12:
-                sholder=0
+                shoulder=0
             else:
                 shoulder=int(c[11])
             if c[3][0]=='H': surface=surface-5

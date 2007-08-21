@@ -1240,7 +1240,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 col=surfaces[pave[0]]
                             else:
                                 col=surfaces[0]
-                            if col!=lastcol:# or len(pave)>2:
+                            if col!=lastcol:
                                 if lastcol:
                                     gluTessEndPolygon(tess)
                                 if pavements:
@@ -1289,12 +1289,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                                         y=self.vertexcache.height(newtile,options,x,z,meshtris)
                                         gluTessVertex(tess, [x,0,z], ([x,y,z], False, col))
                                 gluTessEndContour(tess)
-                            #if len(pave)>2:
-                            #    # polys with holes dealt with separately
-                            #    gluTessEndPolygon(tess)
-                            #    lastcol=None
 
-                        # tessellate existing against terrain
+                        # tessellate last against terrain
                         if lastcol:
                             gluTessEndPolygon(tess)
                         if pavements:	# may have no taxiways
