@@ -59,7 +59,9 @@ class PaletteListBox(wx.VListBox):
                 imgno=KnownDefs.index(ext)
             else:
                 continue	# wtf?
-            if not self.pkgdir:
+            if name.startswith(PolygonDef.EXCLUDE):
+                pass
+            elif not self.pkgdir:
                 # library object
                 if name.startswith('/'): name=name[1:]
                 if name.startswith('lib/'): name=name[4:]
