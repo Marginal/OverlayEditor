@@ -90,7 +90,7 @@ sed s/appversion/%VERSION%/ <OverlayEditor.app\Contents\MacOS\Info.plist >Overla
 del OverlayEditor.app\Contents\MacOS\Info.plist
 move OverlayEditor.app\Contents\MacOS\OverlayEditor.icns OverlayEditor.app\Contents\Resources\
 move OverlayEditor.app\Contents\MacOS\screenshot.jpg OverlayEditor.app\Contents\Resources\
-move /y OverlayEditor.app\Contents\MacOS\*.icns OverlayEditor.app\Contents\Resources\ |findstr -vc:".png"
+move /y OverlayEditor.app\Contents\MacOS\*.icns OverlayEditor.app\Contents\Resources\ |findstr -vc:".icns"
 move /y OverlayEditor.app\Contents\MacOS\*.png OverlayEditor.app\Contents\Resources\ |findstr -vc:".png"
 zip -r OverlayEditor_%VER%_mac.zip OverlayEditor.app |findstr -vc:"adding:"
 
