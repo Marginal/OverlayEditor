@@ -21,6 +21,57 @@
 	<key>CFBundleShortVersionString</key>
 	<string>appversion</string>
 	<key>CFBundleGetInfoString</key>
-	<string>OverlayEditor appversion, © 2007 Jonathan Harris</string>
+	<string>OverlayEditor appversion, Â© 2007 Jonathan Harris</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>fac</string>
+			</array>
+			<key>CFBundleTypeIconFile</key>
+			<string>fac.icns</string>
+			<key>CFBundleTypeName</key>
+			<string>X-Plane Facade</string>
+			<key>CFBundleTypeRole</key>
+			<string>None</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>for</string>
+			</array>
+			<key>CFBundleTypeIconFile</key>
+			<string>for.icns</string>
+			<key>CFBundleTypeName</key>
+			<string>X-Plane Forest</string>
+			<key>CFBundleTypeRole</key>
+			<string>None</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>obj</string>
+			</array>
+			<key>CFBundleTypeIconFile</key>
+			<string>obj.icns</string>
+			<key>CFBundleTypeName</key>
+			<string>X-Plane Scenery Object</string>
+			<key>CFBundleTypeRole</key>
+			<string>None</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>pol</string>
+			</array>
+			<key>CFBundleTypeIconFile</key>
+			<string>pol.icns</string>
+			<key>CFBundleTypeName</key>
+			<string>X-Plane Draped Polygon</string>
+			<key>CFBundleTypeRole</key>
+			<string>None</string>
+		</dict>
+	</array>
 </dict>
 </plist>
