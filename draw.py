@@ -215,6 +215,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         posx=self.mousenow[0]
         posy=self.mousenow[1]
         keyevent=wx.KeyEvent()
+        keyevent.m_controlDown=wx.GetKeyState(wx.WXK_CONTROL)
         keyevent.m_shiftDown=wx.GetKeyState(wx.WXK_SHIFT)
         if posx<sband:
             keyevent.m_keyCode=wx.WXK_LEFT

@@ -889,7 +889,7 @@ class MainWindow(wx.Frame):
 
         # Hack: Use zero-sized first field to hide toolbar button long help
         self.statusbar=self.CreateStatusBar(3, wx.ST_SIZEGRIP)
-        (x,y)=self.statusbar.GetTextExtent(u'  Lat: 99\u00B099\'99.999"W  Lon: 999\u00B099\'99.999"W  Hdg: 999  Elv: 9999.9  ')
+        (x,y)=self.statusbar.GetTextExtent(u'  Lat: 99\u00B099\'99.999"W  Lon: 999\u00B099\'99.999"W  Hdg: 999.9  Elv: 9999.9  ')
         self.statusbar.SetStatusWidths([0, x+50,-1])
 
         self.splitter=wx.SplitterWindow(self, wx.ID_ANY,
@@ -926,9 +926,9 @@ class MainWindow(wx.Frame):
 
     def ShowLoc(self):
         if prefs.options&Prefs.ELEVATION:
-            self.statusbar.SetStatusText("%s  Hdg: %-3.0f  Elv: %-6.1f" % (latlondisp(prefs.options&Prefs.DMS, self.loc[0], self.loc[1]), self.hdg, self.canvas.getheight()), 1)
+            self.statusbar.SetStatusText("%s  Hdg: %-5.1f  Elv: %-6.1f" % (latlondisp(prefs.options&Prefs.DMS, self.loc[0], self.loc[1]), self.hdg, self.canvas.getheight()), 1)
         else:
-            self.statusbar.SetStatusText("%s  Hdg: %-3.0f" % (latlondisp(prefs.options&Prefs.DMS, self.loc[0], self.loc[1]), self.hdg), 1)
+            self.statusbar.SetStatusText("%s  Hdg: %-5.1f" % (latlondisp(prefs.options&Prefs.DMS, self.loc[0], self.loc[1]), self.hdg), 1)
 
     def ShowSel(self):
         (names,string,lat,lon,hdg)=self.canvas.getsel(prefs.options&Prefs.DMS)
@@ -993,14 +993,18 @@ class MainWindow(wx.Frame):
             if lat==None: return
             self.loc=(round2res(lat),round2res(lon))
             if hdg!=None and event.m_shiftDown:
-                self.hdg=hdg
+                self.hdg=round(hdg,1)
         elif event.m_keyCode in [ord('Q'), wx.WXK_NUMPAD7]:
-            if event.m_shiftDown:
+            if event.m_controlDown:
+                changed=self.canvas.movesel(0, 0, -0.1)
+            elif event.m_shiftDown:
                 changed=self.canvas.movesel(0, 0, -5)
             else:
                 changed=self.canvas.movesel(0, 0, -1)
         elif event.m_keyCode in [ord('E'), wx.WXK_NUMPAD1]:
-            if event.m_shiftDown:
+            if event.m_controlDown:
+                changed=self.canvas.movesel(0, 0, 0.1)
+            elif event.m_shiftDown:
                 changed=self.canvas.movesel(0, 0, 5)
             else:
                 changed=self.canvas.movesel(0, 0, 1)
@@ -1015,12 +1019,16 @@ class MainWindow(wx.Frame):
             else:
                 changed=self.canvas.movesel(0, 0, 0, -1)
         elif event.m_keyCode in [wx.WXK_HOME, wx.WXK_NUMPAD_HOME]:
-            if event.m_shiftDown:
+            if event.m_controlDown:
+                self.hdg=(self.hdg+0.1)%360
+            elif event.m_shiftDown:
                 self.hdg=(self.hdg+5)%360
             else:
                 self.hdg=(self.hdg+1)%360
         elif event.m_keyCode in [wx.WXK_END, wx.WXK_NUMPAD_END]:
-            if event.m_shiftDown:
+            if event.m_controlDown:
+                self.hdg=(self.hdg-0.1)%360
+            elif event.m_shiftDown:
                 self.hdg=(self.hdg-5)%360
             else:
                 self.hdg=(self.hdg-1)%360

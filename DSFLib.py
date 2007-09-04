@@ -8,7 +8,7 @@ import types
 
 import wx
 
-from clutter import PolygonFactory, Object, Polygon, Draped, Exclude, minres
+from clutter import PolygonFactory, Object, Polygon, Draped, Exclude, minres, minhdg
 from version import appname, appversion
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
@@ -205,7 +205,7 @@ def readDSF(path, terrains={}):
             p=pool[curpool][d]
             if not terrains:
                 placements.append(Object(objects[idx],
-                                         p[1], p[0], int(round(p[2],0))))
+                                         p[1], p[0], round(p[2],1)))
                 
         elif c==8:	# Object Range
             (first,last)=unpack('<HH', h.read(4))
@@ -213,7 +213,7 @@ def readDSF(path, terrains={}):
                 for d in range(first, last):
                     p=pool[curpool][d]
                     placements.append(Object(objects[idx],
-                                             p[1], p[0], int(round(p[2],0))))
+                                             p[1], p[0], round(p[2],1)))
                     
         elif c==9:	# Network Chain
             (l,)=unpack('<B', h.read(1))
@@ -506,8 +506,9 @@ def writeDSF(dsfdir, key, placements):
     if polydefs: h.write('\n')
 
     for obj in objects:
-        h.write('OBJECT\t\t%d %12.7f %12.7f %3.0f\n' % (
-            objdefs.index(obj.name), min(west+1, obj.lon+minres/2), min(south+1, obj.lat+minres/2), obj.hdg))
+        # DSFTool rounds down, so round up here first
+        h.write('OBJECT\t\t%d %12.7f %12.7f %5.1f\n' % (
+            objdefs.index(obj.name), min(west+1, obj.lon+minres/2), min(south+1, obj.lat+minres/2), round(obj.hdg,1)+minhdg/2))
     if objects: h.write('\n')
     
     for poly in polygons:

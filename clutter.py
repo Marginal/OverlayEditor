@@ -63,6 +63,7 @@ d2r=pi/180.0
 resolution=8*65535
 minres=1.0/resolution
 maxres=1-minres
+minhdg=360.0/65535
 
 
 def round2res(x):
@@ -150,9 +151,9 @@ class Object(Clutter):
 
     def locationstr(self, dms, node=None):
         if self.y:
-            return '%s  Hdg: %-3.0f  Elv: %-6.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg, self.y)
+            return '%s  Hdg: %-5.1f  Elv: %-6.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg, self.y)
         else:
-            return '%s  Hdg: %-3.0f' % (latlondisp(dms, self.lat, self.lon), self.hdg)
+            return '%s  Hdg: %-5.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg)
 
     def draw(self, selected, picking, nopoly=False):
         obj=self.definition
