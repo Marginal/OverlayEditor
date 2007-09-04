@@ -94,13 +94,6 @@ def readApt(filename):
             run.append((lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]),
                         f2m*float(stop[0]), f2m*float(stop[1]),
                         surface, shoulder, c[3]!='xxx'))
-        elif id==102:	# 850 Helipad
-            # (lat,lon,h,length,width,stop1,stop2,surface,shoulder,isrunway)
-            lat=float(c[2])
-            lon=float(c[3])
-            if not loc: loc=[lat,lon]
-            run.append((lat, lon, float(c[4]), float(c[5]),float(c[6]),
-                        0,0, int(c[7]), int(c[9]), True))
         elif id==100:	# 850 Runway
             # ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface,shoulder)
             if not loc:
@@ -109,6 +102,21 @@ def readApt(filename):
             run.append(((float(c[9]), float(c[10])),
                         (float(c[18]), float(c[19])),
                         float(c[1]), float(c[12]),float(c[21]), int(c[2]), int(c[3])))
+        elif id==101:	# 850 Water runway
+            # ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface,shoulder)
+            if not loc:
+                loc=[(float(c[4])+float(c[7]))/2,
+                     (float(c[5])+float(c[8]))/2]
+            run.append(((float(c[4]), float(c[5])),
+                        (float(c[7]), float(c[8])),
+                        float(c[1]), 0,0, 13, 0))
+        elif id==102:	# 850 Helipad
+            # (lat,lon,h,length,width,stop1,stop2,surface,shoulder,isrunway)
+            lat=float(c[2])
+            lon=float(c[3])
+            if not loc: loc=[lat,lon]
+            run.append((lat, lon, float(c[4]), float(c[5]),float(c[6]),
+                        0,0, int(c[7]), int(c[9]), True))
         elif id==110:
             pavement=[int(c[1]),[]]	# surface
         elif id==111 and pavement:
