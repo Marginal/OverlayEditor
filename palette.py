@@ -319,11 +319,15 @@ class Palette(wx.SplitterWindow):
         dc = wx.PaintDC(self.preview)
         if dc.GetSize().y<16 or not self.lastkey:
             if self.previewkey:
+                self.previewkey=None
                 self.previewbmp=None
                 self.preview.SetBackgroundColour(wx.NullColour)
                 self.preview.ClearBackground()
-            self.previewkey=None
             return
+
+        # ClearBackground causes *immediate* repaint on wxMac 2.8,
+        # so hack to suppress recursion
+        wx.EVT_PAINT(self.preview, None)
 
         if self.previewkey!=self.lastkey:
             # New
@@ -333,6 +337,7 @@ class Palette(wx.SplitterWindow):
             if not self.previewkey or self.previewkey not in self.frame.canvas.lookup:
                 self.preview.SetBackgroundColour(wx.NullColour)
                 self.preview.ClearBackground()
+                wx.EVT_PAINT(self.preview, self.OnPaint)
                 return	# unknown object - can't do anything
             
             # Look for built-in screenshot
@@ -410,7 +415,10 @@ class Palette(wx.SplitterWindow):
                 self.preview.SetBackgroundColour(wx.Colour(self.previewimg.GetRed(0,0), self.previewimg.GetGreen(0,0), self.previewimg.GetBlue(0,0)))
                 self.preview.ClearBackground()
                 if scale:
-                    self.previewbmp=wx.BitmapFromImage(self.previewimg.Scale(newsize[0], newsize[1]))
+                    if 'IMAGE_QUALITY_HIGH' in dir(wx):	# not in 2.6 or earlier
+                        self.previewbmp=wx.BitmapFromImage(self.previewimg.Scale(newsize[0], newsize[1], wx.IMAGE_QUALITY_HIGH))
+                    else:
+                        self.previewbmp=wx.BitmapFromImage(self.previewimg.Scale(newsize[0], newsize[1]))
                 else:
                     self.previewbmp=wx.BitmapFromImage(self.previewimg)
             dc.DrawBitmap(self.previewbmp,
@@ -420,3 +428,4 @@ class Palette(wx.SplitterWindow):
             self.preview.SetBackgroundColour(wx.NullColour)
             self.preview.ClearBackground()
 
+        wx.EVT_PAINT(self.preview, self.OnPaint)
