@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 from glob import glob
-from math import cos, floor, sin, pi
+from math import cos, floor, sin, pi, sqrt
 import os	# for startfile
 from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
@@ -61,7 +61,9 @@ else:
 
 # constants
 d2r=pi/180.0
-maxzoom=50624.0
+zoom=sqrt(2)
+zoom2=2
+maxzoom=32768*zoom
 gresources='[rR][eE][sS][oO][uU][rR][cC][eE][sS]'
 gnavdata='[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]'
 gaptdat=join(gnavdata,'[aA][pP][tT].[dD][aA][tT]')
@@ -673,7 +675,7 @@ class BackgroundDialog(wx.Dialog):
         f=self.image
         if f.startswith(self.prefix): f=curdir+f[len(self.prefix):]
         prefs.packageprops[prefs.package]=(f, self.lat.GetValue(), self.lon.GetValue(), self.hdg.GetValue()%360, self.width.GetValue(), self.length.GetValue(), self.opacity.GetValue())
-        self.parent.canvas.setbackground((self.image, self.lat.GetValue(), self.lon.GetValue(), self.hdg.GetValue()%360, self.width.GetValue(), self.length.GetValue(), self.opacity.GetValue()))
+        self.parent.canvas.setbackground((self.image, self.lat.GetValue(), self.lon.GetValue(), self.hdg.GetValue()%360, self.width.GetValue(), self.length.GetValue(), self.opacity.GetValue()), 0)
 
     def setpath(self):
         if not self.image:
@@ -720,7 +722,7 @@ class MainWindow(wx.Frame):
         self.loc=None	# (lat,lon)
         self.hdg=0
         self.elev=45
-        self.dist=3333.25
+        self.dist=2048*zoom
         self.airports={}	# default apt.dat, by code
         self.nav=[]
         self.goto=None	# goto dialog
@@ -1034,15 +1036,15 @@ class MainWindow(wx.Frame):
                 self.hdg=(self.hdg-1)%360
         elif event.m_keyCode in [ord('+'), ord('='), wx.WXK_ADD, wx.WXK_NUMPAD_ADD]:
             if event.m_shiftDown:
-                self.dist/=2
+                self.dist/=zoom2
             else:
-                self.dist/=1.4142
+                self.dist/=zoom
             if self.dist<1.0: self.dist=1.0
         elif event.m_keyCode in [ord('-'), wx.WXK_NUMPAD_SUBTRACT]:
             if event.m_shiftDown:
-                self.dist*=2
+                self.dist*=zoom2
             else:
-                self.dist*=1.4142
+                self.dist*=zoom
             if self.dist>maxzoom: self.dist=maxzoom
         elif event.m_keyCode in [wx.WXK_PAGEUP, wx.WXK_PRIOR, wx.WXK_NUMPAD_PAGEUP, wx.WXK_NUMPAD_PRIOR]:
             if event.m_shiftDown:
@@ -1101,15 +1103,15 @@ class MainWindow(wx.Frame):
     def OnMouseWheel(self, event):
         if event.m_wheelRotation>0:
             if event.m_shiftDown:
-                self.dist/=2
+                self.dist/=zoom2
             else:
-                self.dist/=1.4142
+                self.dist/=zoom
             if self.dist<1.0: self.dist=1.0
         elif event.m_wheelRotation<0:
             if event.m_shiftDown:
-                self.dist*=2
+                self.dist*=zoom2
             else:
-                self.dist*=1.4142
+                self.dist*=zoom
             if self.dist>maxzoom: self.dist=maxzoom
         else:
             event.Skip(True)
@@ -1151,7 +1153,7 @@ class MainWindow(wx.Frame):
                         self.SetTitle("%s" % prefs.package)
                     else:
                         self.SetTitle("%s - %s" % (prefs.package, appname))
-                    self.OnReload(None)
+                    self.OnReload(False)
                     dlg.Destroy()
                     return
             else:
@@ -1196,7 +1198,7 @@ class MainWindow(wx.Frame):
                 self.SetTitle("%s" % prefs.package)
             else:
                 self.SetTitle("%s - %s" % (prefs.package, appname))
-            self.OnReload(None)
+            self.OnReload(False)
 
     def OnOpened(self, event):
         list1=event.GetEventObject()
@@ -1269,8 +1271,7 @@ class MainWindow(wx.Frame):
         self.canvas.Refresh()
         
     # Load or reload current package
-    def OnReload(self, event):
-        # if event!=None this is a reload
+    def OnReload(self, reload):
         progress=wx.ProgressDialog('Loading', '', 5, self, wx.PD_APP_MODAL)
         self.palette.flush()
         pkgnavdata=None
@@ -1303,7 +1304,7 @@ class MainWindow(wx.Frame):
                 pass
                 
         progress.Update(1, 'Overlay DSFs')
-        if not event:
+        if not reload:
             # Load, not reload
             placements={}
             if pkgnavdata:
@@ -1361,7 +1362,7 @@ class MainWindow(wx.Frame):
         # search order is: custom libraries, default libraries, scenery package
         progress.Update(3, 'Libraries')
         lookupbylib={}	# {name: path} by libname
-        lookup={}		# {name: path}
+        lookup={}	# {name: path}
         terrain={}	# {name: path}
 
         clibs=glob(join(prefs.xplane, gcustom, '*', glibrary))
@@ -1401,8 +1402,8 @@ class MainWindow(wx.Frame):
             background=(image, lat, lon, hdg, width, length, opacity)
         else:
             background=None
-        self.canvas.reload(event!=None, prefs.options,
-                           airports, nav, lookup, placements,
+        self.canvas.reload(prefs.options, airports, nav,
+                           lookup, placements,
                            background, terrain,
                            [join(prefs.xplane, gcustom),
                             join(prefs.xplane, gdefault)])
@@ -1501,9 +1502,10 @@ class MainWindow(wx.Frame):
             dlg.Destroy()
             self.airports={}	# force reload
             prefs.write()
-            self.OnReload(None)
-        else:
-            self.canvas.setopts(prefs.options)
+            self.OnReload(False)
+        self.canvas.goto(self.loc, options=prefs.options)
+        self.ShowLoc()
+        self.ShowSel()
 
     def OnHelp(self, evt):
         filename=abspath(appname+'.html')
