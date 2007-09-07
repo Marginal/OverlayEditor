@@ -710,7 +710,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def setbackground(self, background):
         if background:
-            (image, lat, lon, hdg, width, length, opacity)=background
+            (image, lat, lon, hdg, width, length, opacity, height)=background
             if (int(floor(lat)),int(floor(lon)))==self.tile:
                 (x,z)=self.latlon2m(lat,lon)
                 height=self.vertexcache.height(self.tile,self.options,x,z)
@@ -1473,14 +1473,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEndList()
 
             # Done
-            if self.background:
-                (image, lat, lon, hdg, width, length, opacity, height)=self.background
-                if (int(floor(lat)),int(floor(lon)))==self.tile:
-                    (x,z)=self.latlon2m(lat,lon)
-                    height=self.vertexcache.height(self.tile,options,x,z)
-                else:
-                    height=None
-                self.background=(image, lat, lon, hdg, width, length, opacity, height)
+            self.setbackground(self.background)
             progress.Destroy()
             self.valid=True
 
