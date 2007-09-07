@@ -32,16 +32,6 @@ sband=12	# width of mouse scroll band around edge of window
 
 debugapt=False	# XXX
 
-# Handle int/long change between 2.3 & 2.4
-if version>'2.4':
-    MSKSEL =0x40000000
-    MSKNODE=0x20000000
-    MSKPOLY=0x0fffffff
-else:
-    MSKSEL =0x40000000L
-    MSKNODE=0x20000000L
-    MSKPOLY=0x0fffffffL
-
 
 class UndoEntry:
     ADD=0
@@ -96,7 +86,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.codeslist=0	# airport labels
         self.lookup={}		# virtual name -> filename (may be duplicates)
         self.defs={}		# loaded ClutterDefs by filename
-        self.placements={}	# [[Clutter]] by tile
+        self.placements={}	# [Clutter] by layer and tile
         self.unsorted={}	# [Clutter] by tile
         self.clutterlist=0
         self.background=None
@@ -568,6 +558,7 @@ class MyGL(wx.glcanvas.GLCanvas):
     def prepareselect(self):
         # Pre-prepare selection list - assumes self.picklist==0
         #print "prep"
+        assert not self.picklist
         self.picklist=glGenLists(1)
         glNewList(self.picklist, GL_COMPILE)
         glInitNames()
@@ -957,7 +948,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         # return current height
         return self.y
 
-    def reload(self, reload, options, airports, navaids,
+    def reload(self, options, airports, navaids,
                lookup, placements,
                background, terrain, dsfdirs):
         self.valid=False
@@ -972,7 +963,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.trashlists(True, True)
         self.tile=(0,999)	# force reload on next goto
 
-        if placements:
+        if placements!=None:
             self.placements={}
             self.unsorted=placements
         else:
@@ -1003,15 +994,13 @@ class MyGL(wx.glcanvas.GLCanvas):
             if 'GetChoiceCtrl' in dir(self.frame.palette):
                 print "Choice:\t%s" %self.frame.palette.GetChoiceCtrl().GetId()
 
-    def goto(self, loc=None, hdg=None, elev=None, dist=None, options=None):
+
+    def goto(self, loc, hdg=None, elev=None, dist=None, options=None):
         #print "goto", loc
         errobjs=[]
-        if loc!=None:
-            newtile=(int(floor(loc[0])),int(floor(loc[1])))
-            self.centre=[newtile[0]+0.5, newtile[1]+0.5]
-            (self.x, self.z)=self.latlon2m(loc[0],loc[1])
-        else:
-            newtile=self.tile
+        newtile=(int(floor(loc[0])),int(floor(loc[1])))
+        self.centre=[newtile[0]+0.5, newtile[1]+0.5]
+        (self.x, self.z)=self.latlon2m(loc[0],loc[1])
         if hdg!=None: self.h=hdg
         if elev!=None: self.e=elev
         if dist!=None: self.d=dist
@@ -1537,11 +1526,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.picklist=0
         if self.clutterlist: glDeleteLists(self.clutterlist, 1)
         self.clutterlist=0
-
-    def setopts(self, options):
-        self.goto(options=options)
-        self.frame.ShowLoc()
-        self.frame.ShowSel()
 
     def getworldloc(self, mx, my):
         self.SetCurrent()
