@@ -350,7 +350,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if (lat>self.tile[0] and lat<self.tile[0]+maxres and
                 lon>self.tile[1] and lon<self.tile[1]+maxres):
                 (oldlat,oldlon)=self.getworldloc(*self.mousenow)
-                self.movesel(lat-oldlat, lon-oldlon, 0)
+                self.movesel(lat-oldlat, lon-oldlon)
                 self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
                 self.frame.toolbar.EnableTool(wx.ID_UNDO, True)
                 if self.frame.menubar:
@@ -769,7 +769,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         return True
 
 
-    def movesel(self, dlat, dlon, dhdg=0, dparam=0):
+    def movesel(self, dlat, dlon, dhdg=0, dparam=0, loc=None):
         # returns True if changed something
         if not self.selected: return False
         if self.selectednode:
@@ -785,7 +785,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             for placement in self.selected:
                 layer=placement.definition.layer
                 moved.append((layer, placements[layer].index(placement), placement.clone()))
-                placement.move(dlat, dlon, dhdg, dparam, self.tile, self.options, self.vertexcache)
+                placement.move(dlat, dlon, dhdg, dparam, loc, self.tile, self.options, self.vertexcache)
             newundo=UndoEntry(self.tile, UndoEntry.MOVE, moved)
             if not (self.undostack and self.undostack[-1].equals(newundo)):
                 self.undostack.append(newundo)

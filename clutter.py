@@ -194,10 +194,15 @@ class Object(Clutter):
         (self.x,self.z)=self.position(tile, self.lat, self.lon)
         self.y=vertexcache.height(tile,options,self.x,self.z)
 
-    def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         self.lat=max(tile[0], min(tile[0]+maxres, self.lat+dlat))
         self.lon=max(tile[1], min(tile[1]+maxres, self.lon+dlon))
-        self.hdg=(self.hdg+dhdg)%360
+        if dhdg:
+            h=atan2(self.lon-loc[1], self.lat-loc[0])+radians(dhdg)
+            l=hypot(self.lon-loc[1], self.lat-loc[0])
+            self.lat=max(tile[0], min(tile[0]+maxres, round2res(loc[0]+cos(h)*l)))
+            self.lon=max(tile[1], min(tile[1]+maxres, round2res(loc[1]+sin(h)*l)))
+            self.hdg=(self.hdg+dhdg)%360
         self.layout(tile, options, vertexcache)
         
 
@@ -354,7 +359,7 @@ class Polygon(Clutter):
     def delwinding(self, tile, options, vertexcache, selectednode):
         return False	# most polygon types don't support additional windings
 
-    def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         # do layout if changed
         for i in range(len(self.nodes)):
             for j in range(len(self.nodes[i])):
@@ -362,12 +367,12 @@ class Polygon(Clutter):
         if dhdg:
             for i in range(len(self.nodes)):
                 for j in range(len(self.nodes[i])):
-                    h=atan2(self.nodes[i][j][0]-self.lon,
-                            self.nodes[i][j][1]-self.lat)+radians(dhdg)
-                    l=hypot(self.nodes[i][j][0]-self.lon,
-                            self.nodes[i][j][1]-self.lat)
-                    self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(self.lon+sin(h)*l))),
-                                      max(tile[0], min(tile[0]+1, round2res(self.lat+cos(h)*l))))	# trashes other parameters
+                    h=atan2(self.nodes[i][j][0]-loc[1],
+                            self.nodes[i][j][1]-loc[0])+radians(dhdg)
+                    l=hypot(self.nodes[i][j][0]-loc[1],
+                            self.nodes[i][j][1]-loc[0])
+                    self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
+                                      max(tile[0], min(tile[0]+1, round2res(loc[0]+cos(h)*l))))	# trashes other parameters
         if dparam:
             self.param+=dparam
             if self.param<0: self.param=0
@@ -484,7 +489,7 @@ class Draped(Polygon):
             glDepthMask(GL_TRUE)
             glDisable(GL_POLYGON_OFFSET_FILL)
         
-    def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         if self.param==65535:
             n=len(self.nodes[0])
             if dparam>0:
@@ -524,14 +529,14 @@ class Draped(Polygon):
                         uv=self.nodes[i][j][4:6]
                     else:
                         uv=self.nodes[i][j][2:4]
-                    h=atan2(self.nodes[i][j][0]-self.lon,
-                            self.nodes[i][j][1]-self.lat)+radians(dhdg)
-                    l=hypot(self.nodes[i][j][0]-self.lon,
-                            self.nodes[i][j][1]-self.lat)
-                    self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(self.lon+sin(h)*l))),
-                                      max(tile[0], min(tile[0]+1, round2res(self.lat+cos(h)*l))))+uv
+                    h=atan2(self.nodes[i][j][0]-loc[1],
+                            self.nodes[i][j][1]-loc[0])+radians(dhdg)
+                    l=hypot(self.nodes[i][j][0]-loc[1],
+                            self.nodes[i][j][1]-loc[0])
+                    self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
+                                      max(tile[0], min(tile[0]+1, round2res(loc[0]+cos(h)*l))))+uv
         if dlat or dlon:
-            Polygon.move(self, dlat, dlon, 0, 0, tile, options, vertexcache)
+            Polygon.move(self, dlat,dlon, 0,0, loc, tile, options, vertexcache)
         elif dhdg or dparam:
             self.layout(tile, options, vertexcache)
 
@@ -774,9 +779,9 @@ class Exclude(Polygon):
     def delnode(self, tile, options, vertexcache, selectednode, clockwise):
         return False
 
-    def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         # no rotation
-        Polygon.move(self, dlat, dlon, 0, 0, tile, options, vertexcache)
+        Polygon.move(self, dlat, dlon, 0, 0, loc, tile, options, vertexcache)
 
     def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=False):
         # changes adjacent nodes, so always do full layout immediately
@@ -860,9 +865,9 @@ class Facade(Polygon):
         if not picking and fac.two_sided:
             glEnable(GL_CULL_FACE)
         
-    def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam=max(dparam, 1-self.param)	# can't have height 0
-        Polygon.move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache)
+        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
         
     # Helper for layout
     def subdiv(self, size, scale, divs, ends, isvert):
@@ -956,6 +961,7 @@ class Facade(Polygon):
         for wall in range(n-1+fac.ring):
             size=hypot(points[(wall+1)%n][0]-points[wall][0],
                        points[(wall+1)%n][2]-points[wall][2])
+            if size==0: continue
             h=((points[(wall+1)%n][0]-points[wall][0])/size,
                (points[(wall+1)%n][1]-points[wall][1])/size,
                (points[(wall+1)%n][2]-points[wall][2])/size)
@@ -1100,8 +1106,8 @@ class Forest(Draped):	# inherit from Draped for layout
         glColor3f(1.0, 0.5, 1.0)	# restore
         Polygon.drawnodes(self, selectednode)
 
-    def move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache):
-        Polygon.move(self, dlat, dlon, dhdg, dparam, tile, options, vertexcache)
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
+        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
         if self.param>255: self.param=255
 
 

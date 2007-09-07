@@ -998,18 +998,18 @@ class MainWindow(wx.Frame):
                 self.hdg=round(hdg,1)
         elif event.m_keyCode in [ord('Q'), wx.WXK_NUMPAD7]:
             if event.m_controlDown:
-                changed=self.canvas.movesel(0, 0, -0.1)
+                changed=self.canvas.movesel(0, 0, -0.1, 0, self.loc)
             elif event.m_shiftDown:
-                changed=self.canvas.movesel(0, 0, -5)
+                changed=self.canvas.movesel(0, 0, -5,   0, self.loc)
             else:
-                changed=self.canvas.movesel(0, 0, -1)
+                changed=self.canvas.movesel(0, 0, -1,   0, self.loc)
         elif event.m_keyCode in [ord('E'), wx.WXK_NUMPAD1]:
             if event.m_controlDown:
-                changed=self.canvas.movesel(0, 0, 0.1)
+                changed=self.canvas.movesel(0, 0,  0.1, 0, self.loc)
             elif event.m_shiftDown:
-                changed=self.canvas.movesel(0, 0, 5)
+                changed=self.canvas.movesel(0, 0,  5,   0, self.loc)
             else:
-                changed=self.canvas.movesel(0, 0, 1)
+                changed=self.canvas.movesel(0, 0,  1,   0, self.loc)
         elif event.m_keyCode in [ord('R'), wx.WXK_MULTIPLY, wx.WXK_NUMPAD_MULTIPLY, wx.WXK_NUMPAD9]:
             if event.m_shiftDown:
                 changed=self.canvas.movesel(0, 0, 0, 5)
