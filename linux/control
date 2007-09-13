@@ -4,6 +4,7 @@ Priority: extra
 Architecture: i386
 Installed-Size: 2676
 Depends: bash, python (>=2.4), python-gtk2 (>=2.6), python-imaging (>=1.1.4), python-opengl (>=2.0.1), wine
+Conflicts: python-opengl (>=3)
 Provides: overlayeditor
 Maintainer: Jonathan Harris <x-plane@marginal.org.uk>
 Description: X-Plane DSF overlay editor
