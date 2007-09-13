@@ -27,7 +27,7 @@ from version import appname, appversion
 
 
 # memory leak? causing SegFault on Linux - Ubuntu seems OK for some reason
-cantreleasetexs=(platform.startswith('linux') and 'ubuntu' not in sys.version.lower())
+cantreleasetexs=(platform.startswith('linux'))
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)

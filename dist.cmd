@@ -54,10 +54,10 @@ for %%I in (win32\DSFTool.exe) do (copy %%I "%RPMRT%\usr\local\lib\overlayeditor
 move "%RPM%\RPMS\i386\overlayeditor-%VERSION%-%RELEASE%.cygwin.i386.rpm" overlayeditor-%VERSION%-%RELEASE%.i386.rpm
 REM Debian/Ubuntu
 mkdir "%RPMRT%\DEBIAN"
-mkdir "%RPMRT%\usr\share\applications"
-mkdir "%RPMRT%\usr\share\icons\hicolor\48x48\apps"
-copy linux\overlayeditor.desktop "%RPMRT%\usr\share\applications" |findstr -v "file(s) copied"
-copy Resources\OverlayEditor.png "%RPMRT%\usr\share\icons\hicolor\48x48\apps\overlayeditor.png" |findstr -v "file(s) copied"
+mkdir "%RPMRT%\usr\local\share\applications"
+mkdir "%RPMRT%\usr\local\share\icons\hicolor\48x48\apps"
+copy linux\overlayeditor.desktop "%RPMRT%\usr\local\share\applications" |findstr -v "file(s) copied"
+copy Resources\OverlayEditor.png "%RPMRT%\usr\local\share\icons\hicolor\48x48\apps\overlayeditor.png" |findstr -v "file(s) copied"
 echo Version: %VERSION%-%RELEASE% > "%RPMRT%\DEBIAN\control"
 type linux\control >> "%RPMRT%\DEBIAN\control"
 copy linux\postinst "%RPMRT%\DEBIAN" |findstr -v "file(s) copied"

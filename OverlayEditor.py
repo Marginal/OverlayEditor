@@ -7,31 +7,28 @@ from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 from sys import exit, argv, executable, platform, version
 
-if platform=='win32':
+try:
     import wx
-else:
-    try:
-        import wx
-    except:
-        if platform=='darwin':
-            from EasyDialogs import Message
-            Message("wxPython is not installed. This application\nrequires wxPython2.5.3-py%s or later." % version[:3])
-        else:	# linux
-            import tkMessageBox
-            tkMessageBox._show("Error", "wxPython is not installed. This application\nrequires python wxgtk2.5.3 or later.", icon="error", type="ok")
-        exit(1)
-    try:
-        import OpenGL
-    except:
-        if platform=='darwin':
-            from EasyDialogs import Message
-            Message("PyOpenGL is not installed. This application\nrequires PyOpenGL2 or later.")
-        else:	# linux
-            import tkMessageBox
-            tkMessageBox._show("Error", "PyOpenGL is not installed. This application\nrequires PyOpenGL2 or later.", icon="error", type="ok")
-        exit(1)
+except:
+    if platform=='darwin':
+        from EasyDialogs import Message
+        Message("wxPython is not installed. This application\nrequires wxPython2.5.3-py%s or later." % version[:3])
+    else:	# linux
+        import tkMessageBox
+        tkMessageBox._show("Error", "wxPython is not installed. This application\nrequires python wxgtk2.5.3 or later.", icon="error", type="ok")
+    exit(1)
 from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
-#from OpenGL.GL import *
+
+try:
+    import OpenGL
+except:
+    if platform=='darwin':
+        from EasyDialogs import Message
+        Message("PyOpenGL is not installed. This application\nrequires PyOpenGL2 or later.")
+    else:	# linux
+        import tkMessageBox
+        tkMessageBox._show("Error", "PyOpenGL is not installed. This application\nrequires PyOpenGL2 or later.", icon="error", type="ok")
+    exit(1)
 
 if not 'startfile' in dir(os):
     import types
@@ -48,7 +45,6 @@ from DSFLib import readDSF, writeDSF
 from MessageBox import myMessageBox, AboutBox
 from prefs import Prefs
 from version import appname, appversion
-
 
 # Path validation
 mypath=dirname(abspath(argv[0]))
@@ -126,8 +122,10 @@ class myListBox(wx.VListBox):
         self.actbg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHT)
         self.inafg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
         self.inabg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENU)
-        if platform=='win32':
+        if platform=='win32' or platform.startswith('linux'):
             self.font=wx.SystemSettings_GetFont(wx.SYS_DEFAULT_GUI_FONT)
+        else:
+            self.font=None	# default font is OK on wxMac 2.5
 
         wx.VListBox.__init__(self, parent, id, style=style)
 
@@ -168,7 +166,7 @@ class myListBox(wx.VListBox):
         return self.height
 
     def OnDrawItem(self, dc, rect, n):
-        if platform=='win32': dc.SetFont(self.font)	# wtf?
+        if self.font: dc.SetFont(self.font)	# wtf?
         if self.GetSelection()==n and self.FindFocus()==self:
             dc.SetTextForeground(self.actfg)
         else:
@@ -791,88 +789,79 @@ class MainWindow(wx.Frame):
             self.SetMenuBar(self.menubar)
 
         self.toolbar=self.CreateToolBar(wx.TB_HORIZONTAL|wx.STATIC_BORDER|wx.TB_FLAT|wx.TB_NODIVIDER)
-        # Note colours>~(245,245,245) get replaced by transparent
-        newbitmap=wx.Bitmap("Resources/new.png", wx.BITMAP_TYPE_PNG)
-        self.toolbar.SetToolBitmapSize((newbitmap.GetWidth(),
-                                   newbitmap.GetHeight()))
-        self.toolbar.SetToolSeparation(newbitmap.GetWidth()/4)
+        # Note colours>~(245,245,245) get replaced by transparent on wxMac 2.5
+        # names from v0.4 of http://standards.freedesktop.org/icon-naming-spec/icon-naming-spec-latest.html followed by KDE3 name
+        self.iconsize=wx.DefaultSize
+        newbitmap=self.icon(['folder-new', 'folder_new', 'document-new', 'filenew'], 'new.png')	# folder-new is new in 0.8 spec
+        self.iconsize=(newbitmap.GetWidth(),newbitmap.GetHeight())
+        self.toolbar.SetToolBitmapSize(self.iconsize)
+        #self.toolbar.SetToolSeparation(self.iconsize[0]/4)
         self.toolbar.AddLabelTool(wx.ID_NEW, 'New',
                                   newbitmap,
                                   wx.NullBitmap, 0,
                                   'New scenery package')
         wx.EVT_TOOL(self.toolbar, wx.ID_NEW, self.OnNew)
         self.toolbar.AddLabelTool(wx.ID_OPEN, 'Open',
-                                  wx.Bitmap("Resources/open.png",
-                                            wx.BITMAP_TYPE_PNG),
+                                  self.icon(['document-open', 'fileopen'], 'open.png'),
                                   wx.NullBitmap, 0,
                                   'Open scenery package')
         wx.EVT_TOOL(self.toolbar, wx.ID_OPEN, self.OnOpen)
         self.toolbar.AddLabelTool(wx.ID_SAVE, 'Save',
-                                  wx.Bitmap("Resources/save.png",
-                                            wx.BITMAP_TYPE_PNG),
+                                  self.icon(['document-save', 'filesave'], 'save.png'),
                                   wx.NullBitmap, 0,
                                   'Save scenery package')
         wx.EVT_TOOL(self.toolbar, wx.ID_SAVE, self.OnSave)
         self.toolbar.AddLabelTool(wx.ID_PASTE, 'Import',
-                                  wx.Bitmap("Resources/import.png",
-                                            wx.BITMAP_TYPE_PNG),
+                                  self.icon(['fileimport'], 'import.png'),	# not in spec - KDE3 name
                                   wx.NullBitmap, 0,
                                   'Import objects from another package')
         wx.EVT_TOOL(self.toolbar, wx.ID_PASTE, self.OnImport)
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_ADD, 'Add',
-                                  wx.Bitmap("Resources/add.png",
-                                            wx.BITMAP_TYPE_PNG),
+                                  self.icon(['list-add', 'add'], 'add.png'),
                                   wx.NullBitmap, 0,
                                   'Add new object')
         wx.EVT_TOOL(self.toolbar, wx.ID_ADD, self.OnAdd)
         self.toolbar.AddLabelTool(wx.ID_DELETE, 'Delete',
-                                  wx.Bitmap("Resources/delete.png",
-                                            wx.BITMAP_TYPE_PNG),
+                                  self.icon(['edit-delete', 'delete', 'editdelete'], 'delete.png'),
                                   wx.NullBitmap, 0,
                                   'Delete selected object(s)')
         wx.EVT_TOOL(self.toolbar, wx.ID_DELETE, self.OnDelete)
         self.toolbar.AddLabelTool(wx.ID_UNDO, 'Undo',
-                                  wx.Bitmap("Resources/undo.png",
-                                            wx.BITMAP_TYPE_PNG),
+                                  self.icon(['edit-undo', 'undo'], 'undo.png'),
                                   wx.NullBitmap, 0,
                                   'Undo last edit')
         wx.EVT_TOOL(self.toolbar, wx.ID_UNDO, self.OnUndo)
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_PREVIEW, 'Background',
-                                  wx.Bitmap("Resources/background.png",
-                                            wx.BITMAP_TYPE_PNG),
+                                  self.icon(['frame_image', 'image', 'image-x-generic'], 'background.png'),	# frame_image is KDE3
                                   wx.NullBitmap, 0,
                                   'Adjust background image')
         wx.EVT_TOOL(self.toolbar, wx.ID_PREVIEW, self.OnBackground)
         self.toolbar.AddLabelTool(wx.ID_REFRESH, 'Reload',
-                                  wx.Bitmap("Resources/reload.png",
-                                            wx.BITMAP_TYPE_PNG),
+                                  self.icon(['reload'], 'reload.png'),
                                   wx.NullBitmap, 0,
                                   "Reload package's objects, textures and airports")
         wx.EVT_TOOL(self.toolbar, wx.ID_REFRESH, self.OnReload)
         self.toolbar.AddLabelTool(wx.ID_FORWARD, 'Go To',
-                                  wx.Bitmap("Resources/goto.png",
-                                            wx.BITMAP_TYPE_PNG),
+                                  self.icon(['goto'], 'goto.png'),
                                   wx.NullBitmap, 0,
                                   'Go to airport')
         wx.EVT_TOOL(self.toolbar, wx.ID_FORWARD, self.OnGoto)
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_PREFERENCES, 'Preferences',
-                                  wx.Bitmap("Resources/prefs.png",
-                                            wx.BITMAP_TYPE_PNG),
+                                  self.icon(['preferences-desktop', 'preferences-system', 'package-settings'], 'prefs.png'),
                                   wx.NullBitmap, 0,
                                   'Preferences')
         wx.EVT_TOOL(self.toolbar, wx.ID_PREFERENCES, self.OnPrefs)
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_HELP, 'Help',
-                                  wx.Bitmap("Resources/help.png",
-                                            wx.BITMAP_TYPE_PNG),
+                                  self.icon(['help-browser', 'system-help', 'khelpcenter'], 'help.png'),
                                   wx.NullBitmap, 0,
                                   'Help')
         wx.EVT_TOOL(self.toolbar, wx.ID_HELP, self.OnHelp)
         
-	self.toolbar.Realize()
+        self.toolbar.Realize()
         self.toolbar.EnableTool(wx.ID_SAVE, False)
         self.toolbar.EnableTool(wx.ID_ADD, False)
         self.toolbar.EnableTool(wx.ID_DELETE, False)
@@ -925,6 +914,45 @@ class MainWindow(wx.Frame):
         self.palette.glInit()	# Must be after show
         self.Update()
 
+    def icon(self, stocklist, rsrc):
+        if not platform.startswith('linux'):
+            return wx.Bitmap(join('Resources',rsrc), wx.BITMAP_TYPE_PNG)
+            
+        # requires GTK+ >= 2.4
+        for stock in stocklist:
+            bmp=wx.ArtProvider.GetBitmap(stock, wx.ART_TOOLBAR, self.iconsize)
+            if bmp.Ok(): return bmp
+            
+        if stocklist==['fileimport']:
+            # Hack - manually composite two bitmaps
+            for stock in ['folder-open', 'folder_open', 'document-open', 'fileopen']:
+                bmp=wx.ArtProvider.GetBitmap(stock, wx.ART_TOOLBAR, self.iconsize)
+                if bmp.Ok():
+                    size2=int(self.iconsize[0]*0.7)
+                    for stock in ['go-down', '1downarrow', 'down']:
+                        bm2=wx.ArtProvider.GetBitmap(stock, wx.ART_TOOLBAR, (size2,size2))
+                        if bm2.Ok():
+                            img=bmp.ConvertToImage()
+                            im2=bm2.ConvertToImage()
+                            for x2 in range(size2):
+                                x=x2+(self.iconsize[0]-size2)/2
+                                for y in range(size2):
+                                    alpha=im2.GetAlpha(x2,y)/255.0
+                                    img.SetRGB(x,y,
+                                               img.GetRed  (x,y)*(1-alpha)+im2.GetRed  (x2,y)*alpha,
+                                               img.GetGreen(x,y)*(1-alpha)+im2.GetGreen(x2,y)*alpha,
+                                               img.GetBlue (x,y)*(1-alpha)+im2.GetBlue (x2,y)*alpha)
+                                    img.SetAlpha(x,y, max(img.GetAlpha(x,y), im2.GetAlpha(x2,y)))
+                            return wx.BitmapFromImage(img)
+                    break
+
+        bmp=wx.Bitmap(join('Resources',rsrc), wx.BITMAP_TYPE_PNG)
+        if self.iconsize not in [wx.DefaultSize,
+                                 (bmp.GetWidth(),bmp.GetHeight())]:
+            img=bmp.ConvertToImage()
+            return wx.BitmapFromImage(img.Rescale(*self.iconsize))
+        else:
+            return bmp
 
     def ShowLoc(self):
         if prefs.options&Prefs.ELEVATION:

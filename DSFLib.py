@@ -1,6 +1,6 @@
 from math import cos, floor, pi
 from os import mkdir, popen3, rename, unlink
-from os.path import abspath, curdir, dirname, exists, expanduser, isdir, join, pardir, sep
+from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, pardir, sep
 from struct import unpack
 from sys import platform, maxint
 from tempfile import gettempdir
@@ -16,7 +16,7 @@ d2r=pi/180.0
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
-elif platform.lower().startswith('linux'):
+elif platform.startswith('linux'):
     dsftool=join(curdir,'linux','DSFTool')
 else:	# Mac
     dsftool=join(curdir,'MacOS','DSFTool')
@@ -532,7 +532,7 @@ def writeDSF(dsfdir, key, placements):
     if polydefs: h.write('\n')
     
     h.close()
-    if platform.lower().startswith('linux') and not isdir(join(expanduser('~'), '.wine')):
+    if platform.startswith('linux') and not isdir(join(expanduser('~'), '.wine')):
         # Let Wine initialise font cache etc on first run
         progress=wx.ProgressDialog('Setting up Wine', 'Please wait')
         (i,o,e)=popen3('wine --version')

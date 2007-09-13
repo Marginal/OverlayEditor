@@ -14,8 +14,15 @@ import wx
 import wx.glcanvas
 if platform=='darwin':
     from os import uname	# not defined in win32 builds
+
 if __debug__:
     import time
+    try:
+        # Not defined in PyOpenGL 2.x. Only applies when numpy installed
+        from OpenGL.arrays import numpymodule
+        numpymodule.NumpyHandler.ERROR_ON_COPY = True
+    except:
+        pass
 
 from files import VertexCache, sortfolded
 from fixed8x13 import fixed8x13
@@ -141,7 +148,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Note 10.4 Intel 950 drivers ship with OGL 1.2
         self.nopolyosinlist=(platform=='darwin' and uname()[2]<'8')
 
-        self.vertexcache=VertexCache()	# member so can free resources
+        self.vertexcache=None
 
         wx.EVT_PAINT(self, self.OnPaint)
         wx.EVT_ERASE_BACKGROUND(self, self.OnEraseBackground)
@@ -160,6 +167,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         #print "Canvas Init"
         # Setup state. Under X must be called after window is shown
         self.SetCurrent()
+        self.vertexcache=VertexCache()	# member so can free resources
         #glClearDepth(1.0)
         glEnable(GL_DEPTH_TEST)
         glDepthFunc(GL_LESS)
@@ -175,8 +183,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         glReadBuffer(GL_BACK)	# for unproject
         #glPixelStorei(GL_UNPACK_LSB_FIRST,1)
         glEnable(GL_TEXTURE_2D)
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glEnable(GL_BLEND)
+        glAlphaFunc(GL_GREATER, 1.0/256)	# discard wholly transparent
+        glEnable(GL_ALPHA_TEST)
         glEnableClientState(GL_VERTEX_ARRAY)
         glEnableClientState(GL_TEXTURE_COORD_ARRAY)
 
