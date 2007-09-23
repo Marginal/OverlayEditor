@@ -1,6 +1,9 @@
 from PIL.Image import open, NEAREST, BILINEAR, BICUBIC
 import PIL.BmpImagePlugin, PIL.JpegImagePlugin, PIL.PngImagePlugin	# force for py2exe
 from OpenGL.GL import *
+from OpenGL.GL.ARB.texture_compression import *
+from OpenGL.GL.EXT.texture_compression_s3tc import *
+from OpenGL.GL.EXT.bgra import *
 try:
     from OpenGL.GL.ARB.texture_non_power_of_two import glInitTextureNonPowerOfTwoARB
 except:	# not in 2.0.0.44
@@ -12,7 +15,7 @@ from math import cos, log, pi, radians
 from os import listdir, mkdir
 from os.path import abspath, basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
-import sys	# for version
+from struct import unpack
 from sys import platform, maxint
 import wx
 if __debug__:
@@ -33,6 +36,24 @@ onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 GL_CLAMP_TO_EDGE=0x812F	# Not defined in PyOpenGL 2.x
+
+# DDS surface flags
+DDSD_CAPS	= 0x00000001
+DDSD_HEIGHT	= 0x00000002
+DDSD_WIDTH	= 0x00000004
+DDSD_PITCH	= 0x00000008
+DDSD_PIXELFORMAT= 0x00001000
+DDSD_MIPMAPCOUNT= 0x00020000
+DDSD_LINEARSIZE	= 0x00080000
+DDSD_DEPTH	= 0x00800000
+# DS pixelformat flags
+DDPF_ALPHAPIXELS= 0x00000001
+DDPF_FOURCC	= 0x00000004
+DDPF_RGB	= 0x00000040
+# DDS caps1
+DDSCAPS_COMPLEX	= 0x00000008
+DDSCAPS_TEXTURE	= 0x00001000
+DDSCAPS_MIPMAP	= 0x00400000
 
 # 2.3 version of case-insensitive sort
 # 2.4-only version is faster: sort(cmp=lambda x,y: cmp(x.lower(), y.lower()))
@@ -144,10 +165,7 @@ def readApt(filename):
 
 def readNav(filename):
     nav=[]	# (type,lat,lon,hdg)
-    if platform=='win32':
-        h=file(filename,'rU')
-    else:
-        h=codecs.open(filename, 'rU', 'latin1')
+    h=codecs.open(filename, 'rU', 'latin1')
     if not h.readline().strip() in ['A','I']:
         raise IOError
     if not h.readline().split()[0] in ['740','810']:
@@ -172,8 +190,8 @@ def readLib(filename, objects, terrain):
         builtinhack=True
     else:
         builtinhack=False
-    try:
-        h=file(filename, 'rU')
+    if 1:#XXXtry:
+        h=codecs.open(filename, 'rU', 'latin1')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
         if not h.readline().split()[0]=='800':
@@ -219,7 +237,7 @@ def readLib(filename, objects, terrain):
                     else:
                         objects[lib]={}
                     objects[lib][name]=obj
-    except:
+    else:#except:
         if h: h.close()
             
 
@@ -231,6 +249,9 @@ class TexCache:
         self.terraintexs=[]	# terrain textures will not be reloaded
         # Must be after init
         self.npot=glInitTextureNonPowerOfTwoARB()
+        self.compress=glInitTextureCompressionARB()
+        self.s3tc=self.compress and glInitTextureCompressionS3tcEXT()
+        glInitBgraEXT()
         if glGetString(GL_VERSION) >= '1.2':
             self.clampmode=GL_CLAMP_TO_EDGE
         else:
@@ -250,42 +271,119 @@ class TexCache:
                 glDeleteTextures(a)
 
     def get(self, path, wrap=True, alpha=True, downsample=False, fixsize=False):
-        if not path: return 0
+        if not path: return self.blank
         if path in self.texs:
             return self.texs[path]
-        try:
-            image = open(path)
-            if fixsize and not self.npot:
-                size=[image.size[0],image.size[1]]
-                for i in [0,1]:
-                    l=log(size[i],2)
-                    if l!=int(l): size[i]=2**(1+int(l))
-                    if size[i]>glGetIntegerv(GL_MAX_TEXTURE_SIZE):
-                        size[i]=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
-                if size!=[image.size[0],image.size[1]]:
-                    image=image.resize((size[0], size[1]), BICUBIC)
+        print basename(path), wrap, alpha, downsample, fixsize
+        self.texs[path]=self.blank
 
-            if (downsample or not alpha) and image.mode!='RGB':
-                image=image.convert('RGB')
+        if 1:#XXX try:
+            if path[-4:].lower()=='.dds':	# Do DDS manually
+                h=file(path,'rb')
+                if h.read(4)!='DDS ': raise IOError, 'Not a DDS file'
+                (ssize,sflags,height,width,size,depth,mipmaps)=unpack('<7I', h.read(28))
+                if sflags&(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT)!=(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT): raise IOError, 'Missing mandatory fields'
+                if sflags&DDSD_DEPTH: raise IOError, 'Volume texture not supported'
+                h.seek(0x4c)
+                (psize,pflags,fourcc,bits,red,green,blue,alpha,caps1,caps2)=unpack('<2I4s7I', h.read(40))
+                print ssize,sflags,height,width,size,depth,mipmaps,psize,pflags,fourcc,bits,red,green,blue,alpha,caps1,caps2
+                if not sflags&DDSD_MIPMAPCOUNT or not caps1&DDSCAPS_MIPMAP:
+                    mipmaps=0
+
+                if pflags&DDPF_FOURCC:
+                    if not sflags&DDSD_LINEARSIZE: raise IOError, 'Missing DDSD_LINEARSIZE'
+                    if not self.s3tc: raise IOError, 'Compressed texture not supported'
+                    if fourcc=='DXT1':
+                        iformat=GL_COMPRESSED_RGB_S3TC_DXT1_EXT
+                    elif fourcc=='DXT3':
+                        iformat=GL_COMPRESSED_RGBA_S3TC_DXT3_EXT
+                    elif fourcc=='DXT5':
+                        iformat=GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+                    else:
+                        raise IOError, '"%s" format not supported' % fourcc
+
+                    # XXX alpha==False
+                    if downsample and mipmaps>=2:
+                        h.seek(4+ssize + size*5/4)
+                        data=h.read(size/16)
+                        width/=4
+                        height/=4
+                    else:	# don't bother to downsample if no mipmaps
+                        h.seek(4+ssize)
+                        data=h.read(size)
+                    
+                    id=glGenTextures(1)
+                    glBindTexture(GL_TEXTURE_2D, id)
+                    if wrap:
+                        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT)
+                        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT)
+                    else:
+                        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,self.clampmode)
+                        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,self.clampmode)
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+                    glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, data)
                 
-            if downsample:
-                image=image.resize((image.size[0]/4,image.size[1]/4), NEAREST)
-                data = image.tostring("raw", 'RGB', 0, -1)
-                format=GL_RGB
-            elif image.mode=='RGBA':
-                data = image.tostring("raw", 'RGBA', 0, -1)
-                format=GL_RGBA
-            elif image.mode=='RGB':
-                data = image.tostring("raw", 'RGB', 0, -1)
-                format=GL_RGB
-            elif image.mode=='LA':
-                image=image.convert('RGBA')
-                data = image.tostring("raw", 'RGBA', 0, -1)
-                format=GL_RGBA
-            else:	# dunno - hope it converts
-                image=image.convert('RGB')
-                data = image.tostring("raw", 'RGB', 0, -1)
-                format=GL_RGB
+                    self.texs[path]=id
+                    if downsample:
+                        self.terraintexs.append(id)
+                    return id
+
+                elif pflags&DDPF_RGB:	# uncompressed
+                    #if not sflags&DDSD_PITCH: raise IOError, 'Missing DDSD_PITCH'
+                    if bits==24:
+                        format=GL_BGR_EXT
+                        iformat=GL_RGB
+                    elif bits==32:
+                        format=GL_BGRA_EXT
+                        iformat=GL_RGBA
+                    else:
+                        raise IOError, '%dbpp format not supported' % bits
+                    size=width*height*bits/4	# pitch appears unreliable
+                    if downsample and mipmaps>=2:
+                        h.seek(4+ssize + size*5/4)
+                        data=h.read(size/16)
+                        width/=4
+                        height/=4
+                    else:	# don't bother to downsample if no mipmaps
+                        h.seek(4+ssize)
+                        data=h.read(size)
+                    # fall through
+
+                else:	# wtf?
+                    raise IOError, 'Neither DDPF_FOURCC nor DDPF_RGB set'
+
+            else:	# supported PIL formats
+                image = open(path)
+                if fixsize and not self.npot:
+                    size=[image.size[0],image.size[1]]
+                    for i in [0,1]:
+                        l=log(size[i],2)
+                        if l!=int(l): size[i]=2**(1+int(l))
+                        if size[i]>glGetIntegerv(GL_MAX_TEXTURE_SIZE):
+                            size[i]=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
+                    if size!=[image.size[0],image.size[1]]:
+                        image=image.resize((size[0], size[1]), BICUBIC)
+
+                if downsample:
+                    image=image.resize((max(image.size[0]/4,1),max(image.size[1]/4,1)), NEAREST)
+                width=image.size[0]
+                height=image.size[1]
+
+                if image.mode=='RGBA' or image.mode=='LA':
+                    data = image.tostring("raw", 'RGBA', 0, -1)
+                    format=iformat=GL_RGBA
+                else:	# RGB or dunno - hope it converts
+                    data = image.tostring("raw", 'RGB', 0, -1)
+                    format=iformat=GL_RGB
+
+            # variables used: data, format, iformat, width, height
+            if not alpha: iformat=GL_RGB
+            if self.compress:
+                if iformat==GL_RGB:
+                    iformat=GL_COMPRESSED_RGB_ARB
+                elif iformat==GL_RGBA:
+                    iformat=GL_COMPRESSED_RGBA_ARB                        
 
             id=glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, id)
@@ -297,20 +395,22 @@ class TexCache:
                 glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,self.clampmode)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-            glTexImage2D(GL_TEXTURE_2D, 0, format, image.size[0], image.size[1], 0, format, GL_UNSIGNED_BYTE, data)
+            glTexImage2D(GL_TEXTURE_2D, 0, iformat, width, height, 0, format, GL_UNSIGNED_BYTE, data)
+                
             self.texs[path]=id
             if downsample:
                 self.terraintexs.append(id)
             return id
-        except IOError, e:
-            self.texs[path]=0
+
+        elif 0:#except IOError, e:
             if __debug__:
                 if e.errno==2:
                     print 'Failed to find texture "%s"' % basename(path)
                 else:
                     print 'Failed to load texture "%s" - %s' % (basename(path), e)
-        except:
-            self.texs[path]=0
+        elif 0:#except GLerror, e:
+            if __debug__: print 'Failed to load texture "%s" - %s' % (basename(path), e)
+        else:#except:
             if __debug__: print 'Failed to load texture "%s"' % basename(path)
         return self.blank
 
@@ -572,7 +672,7 @@ def importObj(pkgpath, path):
         badobj=(0, "This is not an X-Plane v6, v7 or v8 object")
     else:
         badobj=(0, "This is not an X-Plane v8 polygon")
-    h=file(path, 'rU')
+    h=codecs.open(path, 'rU', 'latin1')
     # Preserve comments, copyrights etc
     line=h.readline().strip()
     if not line[0] in ['I','A']:
@@ -613,7 +713,7 @@ def importObj(pkgpath, path):
                 tex=tex.replace('/', sep)
                 (tex, ext)=splitext(tex)
                 header+=newtexprefix+basename(tex)+rest
-                for e in [ext, '.png', '.PNG', '.bmp', '.BMP']:
+                for e in [ext, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                     if exists(join(oldtexpath, tex+e)):
                         if not isdir(newtexpath): mkdir(newtexpath)
                         if not exists(join(newtexpath, basename(tex)+e)):
@@ -621,7 +721,7 @@ def importObj(pkgpath, path):
                                      join(newtexpath, basename(tex)+e))
                         break
                 for lit in [tex+'_LIT', tex+'_lit', tex+'LIT', tex+'lit']:
-                    for e in [ext, '.png', '.PNG', '.bmp', '.BMP']:
+                    for e in [ext, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                         if exists(join(oldtexpath, lit+e)):
                             if not isdir(newtexpath): mkdir(newtexpath)
                             if not exists(join(newtexpath, basename(tex)+'_LIT'+e)):
