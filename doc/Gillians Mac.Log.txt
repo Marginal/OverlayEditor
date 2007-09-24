@@ -1,0 +1,286 @@
+log.txt for X-Plane 8.60 X-Plane 86016 compiled on Feb 23 2007 21:09:17
+
+This log file is generated automatically by Laminar Research applications and contains diagnostics about your graphics hardware, installation, and
+any error conditions. If you need to contact tech support or file a bug, please send us this file. NOTE: this file is rewritten every time you
+start ANY of your X-System applications.
+
+Mac OS X 10.4.10
+CPU type: 1765095478 (Pentium) CPU speed (mhz): 2000Bus speed (mhz): 664RAM (MB): 512
+X-System folder=/Users/jonathan/Desktop/X-Plane 8.60/ case sensitive=0
+     '-psn_0_61472769'
+CPU count = 2
+AGL_RGBA         :1
+AGL_DOUBLEBUFFER :1
+AGL_RED_SIZE     :8
+AGL_GREEN_SIZE   :8
+AGL_BLUE_SIZE    :8
+AGL_ALPHA_SIZE   :8
+AGL_DEPTH_SIZE   :24
+Disabling GLSL for GMA 950.
+OpenGL Situation :
+OpenGL Vendor    :Intel Inc.
+OpenGL Render    :Intel GMA 950 OpenGL Engine
+OpenGL Version   :1.2 APPLE-1.4.56
+OpenGL Extensions:GL_ARB_transpose_matrix GL_ARB_vertex_program GL_ARB_vertex_blend GL_ARB_window_pos GL_ARB_shader_objects GL_ARB_vertex_shader GL_EXT_multi_draw_arrays GL_EXT_clip_volume_hint GL_EXT_rescale_normal GL_EXT_draw_range_elements GL_EXT_fog_coord GL_EXT_gpu_program_parameters GL_APPLE_client_storage GL_APPLE_specular_vector GL_APPLE_transform_hint GL_APPLE_packed_pixels GL_APPLE_fence GL_APPLE_vertex_array_object GL_APPLE_vertex_program_evaluators GL_APPLE_element_array GL_APPLE_flush_render GL_NV_texgen_reflection GL_NV_light_max_exponent GL_IBM_rasterpos_clip GL_SGIS_generate_mipmap GL_ARB_shading_language_100 GL_ARB_texture_border_clamp GL_ARB_multitexture GL_ARB_texture_env_add GL_ARB_texture_cube_map GL_ARB_texture_env_dot3 GL_ARB_texture_env_combine GL_ARB_texture_compression GL_ARB_texture_mirrored_repeat GL_ARB_shadow GL_ARB_depth_texture GL_ARB_fragment_program GL_ARB_fragment_shader GL_ARB_point_sprite GL_ARB_texture_non_power_of_two GL_ARB_vertex_buffer_object GL_ARB_pixel_buffer_object GL_EXT_framebuffer_object GL_EXT_texture_rectangle GL_ARB_texture_rectangle GL_EXT_texture_env_add GL_EXT_blend_color GL_EXT_blend_minmax GL_EXT_blend_subtract GL_EXT_texture_lod_bias GL_EXT_abgr GL_EXT_bgra GL_EXT_stencil_wrap GL_EXT_texture_filter_anisotropic GL_EXT_separate_specular_color GL_EXT_secondary_color GL_EXT_blend_func_separate GL_EXT_shadow_funcs GL_EXT_stencil_two_side GL_EXT_texture_compression_s3tc GL_EXT_texture_compression_dxt1 GL_EXT_blend_equation_separate GL_EXT_packed_depth_stencil GL_APPLE_flush_buffer_range GL_APPLE_ycbcr_422 GL_APPLE_texture_range GL_APPLE_pixel_buffer GL_NV_blend_square GL_ATI_texture_env_combine3 GL_SGIS_texture_edge_clamp GL_SGIS_texture_lod 
+tex_clamp_avail=1
+add_env_avail  =1
+combine_avail  =1
+dis_fog_avail  =0
+tex_comp_avail =1
+vbo_avail      =1
+vprog_avail    =0 (0)
+fprog_avail    =1 (96/64/32/4)
+automini_avail =1
+aniso_avail    =1
+fsaa_avail     =0
+sprites_avail  =1
+depth_tex_avail=1
+occlude_avail  =0
+shad_objs_avail=1
+vshader_avail  =1 (16/4096/32/16/0/4096)
+fshader_avail  =1 (4096)
+glsl_avail     =0 (n/a)
+framebuf_avail =1
+max tex units    :8 (16/8)
+max iso filtering:4.000000
+max texture size :2048
+max point size   :64.000000
+lowest free text index=84
+ Unused key: <none> Backspace
+ Unused key: <none> Tab
+ Unused key: SHIFT Backspace
+ Unused key: SHIFT Tab
+ Unused key: SHIFT Return
+ Unused key: CTRL Y
+ Unused key: CTRL Z
+ Unused key: CTRL Backspace
+ Unused key: CTRL Tab
+ Unused key: CTRL Return
+ Unused key: ALT A
+ Unused key: ALT B
+ Unused key: ALT C
+ Unused key: ALT D
+ Unused key: ALT F
+ Unused key: ALT G
+ Unused key: ALT H
+ Unused key: ALT I
+ Unused key: ALT J
+ Unused key: ALT K
+ Unused key: ALT L
+ Unused key: ALT M
+ Unused key: ALT N
+ Unused key: ALT O
+ Unused key: ALT P
+ Unused key: ALT S
+ Unused key: ALT U
+ Unused key: ALT V
+ Unused key: ALT X
+ Unused key: ALT Y
+ Unused key: ALT Z
+ Unused key: ALT 0
+ Unused key: ALT 3
+ Unused key: ALT 4
+ Unused key: ALT 5
+ Unused key: ALT 6
+ Unused key: ALT 7
+ Unused key: ALT 8
+ Unused key: ALT 9
+ Unused key: ALT ,
+ Unused key: ALT -
+ Unused key: ALT Backspace
+ Unused key: ALT Tab
+ Unused key: ALT Return
+ Unused key: ALT Space
+ Unused key: ALT Left
+ Unused key: ALT Up
+ Unused key: ALT Right
+ Unused key: ALT Down
+ Unused key: SHIFT+CTRL 0
+ Unused key: SHIFT+CTRL 6
+ Unused key: SHIFT+CTRL 7
+ Unused key: SHIFT+CTRL 8
+ Unused key: SHIFT+CTRL 9
+ Unused key: SHIFT+CTRL -
+ Unused key: SHIFT+CTRL Backspace
+ Unused key: SHIFT+CTRL Tab
+ Unused key: SHIFT+CTRL Return
+ Unused key: SHIFT+CTRL Space
+ Dangerous key: <none> ; is bound to sim/view/transparent_panel
+ Dangerous key: <none> = is bound to sim/general/zoom_in
+ Dangerous key: <none> . is bound to sim/engines/thrust_reversers_toggle
+ Dangerous key: <none> ] is bound to sim/flight_controls/pitch_trim_up
+ Dangerous key: <none> [ is bound to sim/flight_controls/pitch_trim_down
+ Dangerous key: <none> ' is bound to sim/HUD/brightness_toggle
+ Dangerous key: <none> \ is bound to sim/view/straight_down
+ Dangerous key: <none> / is bound to sim/view/show_physics_model
+ Dangerous key: <none> ` is bound to sim/autopilot/speed_hold
+ Dangerous key: SHIFT ; is bound to sim/radios/adf_tens_up
+ Dangerous key: SHIFT = is bound to sim/view/forward_with_hud
+ Dangerous key: SHIFT . is bound to sim/radios/adf_ones_down
+ Dangerous key: SHIFT ] is bound to sim/weapons/weapon_target_up
+ Dangerous key: SHIFT [ is bound to sim/weapons/weapon_target_down
+ Dangerous key: SHIFT ' is bound to sim/autopilot/wing_leveler
+ Dangerous key: SHIFT \ is bound to sim/view/circle
+ Dangerous key: SHIFT / is bound to sim/radios/adf_ones_up
+ Dangerous key: SHIFT ` is bound to sim/autopilot/heading
+ Dangerous key: CTRL ; is bound to sim/view/free_view_toggle
+ Dangerous key: CTRL = is bound to sim/radios/com2_standy_flip
+ Dangerous key: CTRL . is bound to sim/operation/screenshot
+ Dangerous key: CTRL ] is bound to sim/radios/select_audio_adf2
+ Dangerous key: CTRL [ is bound to sim/radios/select_audio_adf1
+ Dangerous key: CTRL ' is bound to sim/engines/FADEC_toggle
+ Dangerous key: CTRL \ is bound to sim/view/circle_with_panel
+ Dangerous key: CTRL / is bound to sim/operation/cycle_dump
+ Dangerous key: CTRL ` is bound to sim/view/sunglasses
+ Dangerous key: SHIFT+CTRL . is bound to sim/lights/panel_brightness_up
+ Dangerous key: SHIFT+CTRL ] is bound to sim/radios/select_audio_nav2
+ Dangerous key: SHIFT+CTRL [ is bound to sim/radios/select_audio_nav1
+ Dangerous key: SHIFT+CTRL / is bound to sim/lights/landing_lights_toggle
+OpenAL version   : 1.1
+OpenAL hardware  : 
+OpenAL extensions: ALC_EXT_CAPTURE ALC_ENUMERATION_EXT ALC_EXT_MAC_OSX ALC_EXT_ASA
+Trying to find CFM at: Macintosh HD:Users:jonathan:Desktop:X-Plane 8.60:Resources:plugins:XPLM.shlb
+failed CFM - frag load failed.
+Fetching for Macintosh HD:Users:jonathan:Desktop:X-Plane 8.60:Resources:plugins
+Loaded: Macintosh HD:Users:jonathan:Desktop:X-Plane 8.60:Resources:plugins:PluginAdminMac.xpl.
+I found the following scenery packages (prioritized in this order):
+  0 Custom Scenery/EFRO4/
+  1 Custom Scenery/KSBD Demo Area/
+  2 Custom Scenery/Mars Demo Area/
+  3 Custom Scenery/SAEZ/
+  4 Resources/default scenery/700 roads/
+  5 Resources/default scenery/800 objects/
+  6 Resources/default scenery/820 beaches/
+  7 Resources/default scenery/820 roads/
+  8 Resources/default scenery/820 us objects/
+  9 Resources/default scenery/820 us objects placeholder/
+ 10 Resources/default scenery/820 world objects/
+ 11 Resources/default scenery/820 world objects placeholder/
+ 12 Resources/default scenery/820 world terrain/
+ 13 Resources/default scenery/sim objects/
+ 14 Resources/default scenery/x-plane terrain/
+Starting scenery shift at 215
+DSF rotate time: 4405 for 0 DSFs.
+DEF load time: 34552 for water.
+Plane Location:34,-117
+Scenery Base  :33,-119
+Sim period: 0
+I found an area with no scenery installed! You will see nothing but water around the airports since no scenery is installed for this area!
+Buy scenery DVDs at www.X-Plane.com. Email info@X-Plane.com if you need help with installation.
+Turn this warning off in the 'Operations and Warnings' screen in the 'Settings' menu to discontinue this warning.
+The missing file is +30-120/+33-119.dsf.
+(/C++/design++/HLutils/Files/io_scn.cpp line 460)
+DEF load time: 7781 for water.
+DEF load time: 7333 for water.
+DEF load time: 6193 for water.
+DSF load time: 11747202 for file Custom Scenery/KSBD Demo Area/Earth nav data:+30-120/+34-118.dsf
+DEF load time: 8319 for water.
+Preload time: 29820970.
+Preload time: 28117995.
+Plane Location:34,-117
+Scenery Base  :33,-119
+Sim period: 0
+OK quick lesson!
+Hit 'b' to turn off the brakes, F1 and F2 for throttle, or drag them with the mouse.
+Click on the center of the windshield with the mouse to fly with the mouse.
+Have a joystick? OK. Go to the 'Joystick and Equipment' screen in the 'Settings' menu.
+(/C++/design++/X-Plane-f/scn_utils.cpp line 744)
+Plane Location:34,-117
+Scenery Base  :33,-119
+Sim period: 0
+No VERSION-8 DVD found! X-Plane is operating in demo mode. Joystick will be ignored after 6 minutes.
+Get your full copy today from WWW.X-PLANE.COM.
+Or, if you have an X-Plane VERSION-8 DVD, put it in now and let it spin up before you close this alert box and I will check for it again!
+Put your DVD in BEFORE you start X-Plane to avoid this message.
+(/C++/design++/HLutils/OOPS_cpp/demo.cpp line 342)
+ Unused key: <none> Backspace
+ Unused key: <none> Tab
+ Unused key: SHIFT Backspace
+ Unused key: SHIFT Tab
+ Unused key: SHIFT Return
+ Unused key: CTRL Y
+ Unused key: CTRL Z
+ Unused key: CTRL Backspace
+ Unused key: CTRL Tab
+ Unused key: CTRL Return
+ Unused key: ALT A
+ Unused key: ALT B
+ Unused key: ALT C
+ Unused key: ALT D
+ Unused key: ALT F
+ Unused key: ALT G
+ Unused key: ALT H
+ Unused key: ALT I
+ Unused key: ALT J
+ Unused key: ALT K
+ Unused key: ALT L
+ Unused key: ALT M
+ Unused key: ALT N
+ Unused key: ALT O
+ Unused key: ALT P
+ Unused key: ALT S
+ Unused key: ALT U
+ Unused key: ALT V
+ Unused key: ALT X
+ Unused key: ALT Y
+ Unused key: ALT Z
+ Unused key: ALT 0
+ Unused key: ALT 3
+ Unused key: ALT 4
+ Unused key: ALT 5
+ Unused key: ALT 6
+ Unused key: ALT 7
+ Unused key: ALT 8
+ Unused key: ALT 9
+ Unused key: ALT ,
+ Unused key: ALT -
+ Unused key: ALT Backspace
+ Unused key: ALT Tab
+ Unused key: ALT Return
+ Unused key: ALT Space
+ Unused key: ALT Left
+ Unused key: ALT Up
+ Unused key: ALT Right
+ Unused key: ALT Down
+ Unused key: SHIFT+CTRL 0
+ Unused key: SHIFT+CTRL 6
+ Unused key: SHIFT+CTRL 7
+ Unused key: SHIFT+CTRL 8
+ Unused key: SHIFT+CTRL 9
+ Unused key: SHIFT+CTRL -
+ Unused key: SHIFT+CTRL Backspace
+ Unused key: SHIFT+CTRL Tab
+ Unused key: SHIFT+CTRL Return
+ Unused key: SHIFT+CTRL Space
+ Dangerous key: <none> ; is bound to sim/view/transparent_panel
+ Dangerous key: <none> = is bound to sim/general/zoom_in
+ Dangerous key: <none> . is bound to sim/engines/thrust_reversers_toggle
+ Dangerous key: <none> ] is bound to sim/flight_controls/pitch_trim_up
+ Dangerous key: <none> [ is bound to sim/flight_controls/pitch_trim_down
+ Dangerous key: <none> ' is bound to sim/HUD/brightness_toggle
+ Dangerous key: <none> \ is bound to sim/view/straight_down
+ Dangerous key: <none> / is bound to sim/view/show_physics_model
+ Dangerous key: <none> ` is bound to sim/autopilot/speed_hold
+ Dangerous key: SHIFT ; is bound to sim/radios/adf_tens_up
+ Dangerous key: SHIFT = is bound to sim/view/forward_with_hud
+ Dangerous key: SHIFT . is bound to sim/radios/adf_ones_down
+ Dangerous key: SHIFT ] is bound to sim/weapons/weapon_target_up
+ Dangerous key: SHIFT [ is bound to sim/weapons/weapon_target_down
+ Dangerous key: SHIFT ' is bound to sim/autopilot/wing_leveler
+ Dangerous key: SHIFT \ is bound to sim/view/circle
+ Dangerous key: SHIFT / is bound to sim/radios/adf_ones_up
+ Dangerous key: SHIFT ` is bound to sim/autopilot/heading
+ Dangerous key: CTRL ; is bound to sim/view/free_view_toggle
+ Dangerous key: CTRL = is bound to sim/radios/com2_standy_flip
+ Dangerous key: CTRL . is bound to sim/operation/screenshot
+ Dangerous key: CTRL ] is bound to sim/radios/select_audio_adf2
+ Dangerous key: CTRL [ is bound to sim/radios/select_audio_adf1
+ Dangerous key: CTRL ' is bound to sim/engines/FADEC_toggle
+ Dangerous key: CTRL \ is bound to sim/view/circle_with_panel
+ Dangerous key: CTRL / is bound to sim/operation/cycle_dump
+ Dangerous key: CTRL ` is bound to sim/view/sunglasses
+ Dangerous key: SHIFT+CTRL . is bound to sim/lights/panel_brightness_up
+ Dangerous key: SHIFT+CTRL ] is bound to sim/radios/select_audio_nav2
+ Dangerous key: SHIFT+CTRL [ is bound to sim/radios/select_audio_nav1
+ Dangerous key: SHIFT+CTRL / is bound to sim/lights/landing_lights_toggle
+Clean exit from threads.
