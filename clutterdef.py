@@ -1,3 +1,4 @@
+import codecs
 from math import fabs
 from os import listdir
 from os.path import abspath, dirname, exists, join, sep
@@ -134,7 +135,7 @@ class ObjectDef(ClutterDef):
         self.poly=0
         self.bbox=BBox()
         self.height=0.5	# musn't be 0
-        h=file(self.filename, 'rU')
+        h=codecs.open(self.filename, 'rU', 'latin1')
         if filename[0]=='*': self.filename=None
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
@@ -152,7 +153,7 @@ class ObjectDef(ClutterDef):
                     if '//' in tex: tex=tex[:tex.index('//')].strip()
                     tex=abspath(join(self.texpath, tex.replace(':', sep).replace('/', sep)))
                     break
-            for ext in ['', '.png', '.PNG', '.bmp', '.BMP']:
+            for ext in ['', '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                 if exists(tex+ext):
                     texture=tex+ext
                     break
@@ -525,7 +526,7 @@ class DrapedDef(PolygonDef):
         alpha=True
         texture=None
     
-        h=file(filename, 'rU')
+        h=codecs.open(self.filename, 'rU', 'latin1')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
         if not h.readline().split('#')[0].strip() in ['850']:
@@ -589,7 +590,7 @@ class FacadeDef(PolygonDef):
         self.hends=[0,0]
         self.vends=[0,0]
     
-        h=file(self.filename, 'rU')
+        h=codecs.open(self.filename, 'rU', 'latin1')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
         if not h.readline().split('#')[0].strip() in ['800']:
@@ -683,7 +684,7 @@ class ForestDef(PolygonDef):
         scalex=scaley=1
         best=0
         
-        h=file(self.filename, 'rU')
+        h=codecs.open(self.filename, 'rU', 'latin1')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
         if not h.readline().split('#')[0].strip() in ['800']:

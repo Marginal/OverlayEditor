@@ -1,12 +1,9 @@
 import PIL.Image
 import PIL.PngImagePlugin, PIL.BmpImagePlugin, PIL.JpegImagePlugin 	# force for py2exe
 from OpenGL.GL import *
-try:
-    from OpenGL.GL.ARB.texture_compression import *
-except:
-    def glInitTextureCompressionARB(): return False
-#from OpenGL.GL.EXT.texture_compression_s3tc import *
-#from OpenGL.GL.EXT.bgra import *
+from OpenGL.GL.ARB.texture_compression import glInitTextureCompressionARB, glCompressedTexImage2DARB, GL_COMPRESSED_RGB_ARB, GL_COMPRESSED_RGBA_ARB
+from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3tcEXT, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+from OpenGL.GL.EXT.bgra import glInitBgraEXT, GL_BGR_EXT, GL_BGRA_EXT
 try:
     from OpenGL.GL.ARB.texture_non_power_of_two import glInitTextureNonPowerOfTwoARB
 except:	# not in 2.0.0.44
@@ -193,7 +190,7 @@ def readLib(filename, objects, terrain):
         builtinhack=True
     else:
         builtinhack=False
-    if 1:#XXXtry:
+    try:
         h=codecs.open(filename, 'rU', 'latin1')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
@@ -240,7 +237,7 @@ def readLib(filename, objects, terrain):
                     else:
                         objects[lib]={}
                     objects[lib][name]=obj
-    else:#except:
+    except:
         if h: h.close()
             
 
@@ -253,8 +250,8 @@ class TexCache:
         # Must be after init
         self.npot=glInitTextureNonPowerOfTwoARB()
         self.compress=glInitTextureCompressionARB()
-        #self.s3tc=self.compress and glInitTextureCompressionS3tcEXT()
-        #glInitBgraEXT()
+        self.s3tc=self.compress and glInitTextureCompressionS3tcEXT()
+        self.bgra=glInitBgraEXT()
         if glGetString(GL_VERSION) >= '1.2':
             self.clampmode=GL_CLAMP_TO_EDGE
         else:
@@ -280,120 +277,104 @@ class TexCache:
         self.texs[path]=self.blank
 
         if __debug__: clock=time.clock()	# Processor time
-        #downsample=True#XXX
-        #alpha=False#XXX
 
-        if 1:#XXX try:
+        try:
             if path[-4:].lower()=='.dds':
                 # Do DDS manually - files need flipping
                 h=file(path,'rb')
                 if h.read(4)!='DDS ': raise IOError, 'Not a DDS file'
                 (ssize,sflags,height,width,size,depth,mipmaps)=unpack('<7I', h.read(28))
+                #print ssize,sflags,height,width,size,depth,mipmaps
                 if sflags&(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT)!=(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT): raise IOError, 'Missing mandatory fields'
                 if sflags&DDSD_DEPTH: raise IOError, 'Volume texture not supported'
+                if sflags&(DDSD_PITCH|DDSD_LINEARSIZE)==DDSD_PITCH:
+                    size*=height
+                elif sflags&(DDSD_PITCH|DDSD_LINEARSIZE)!=DDSD_LINEARSIZE:
+                    raise IOError, 'Missing DDSD_PITCH or DDSD_LINEARSIZE'
                 h.seek(0x4c)
                 (psize,pflags,fourcc,bits,redmask,greenmask,bluemask,alphamask,caps1,caps2)=unpack('<2I4s7I', h.read(40))
-                #print ssize,sflags,height,width,size,depth,mipmaps,psize,pflags,fourcc,bits,redmask,greenmask,bluemask,alphamask,caps1,caps2
                 if not sflags&DDSD_MIPMAPCOUNT or not caps1&DDSCAPS_MIPMAP:
                     mipmaps=0
 
                 if pflags&DDPF_FOURCC:
                     # http://oss.sgi.com/projects/ogl-sample/registry/EXT/texture_compression_s3tc.txt
-                    if not sflags&DDSD_LINEARSIZE: raise IOError, 'Missing DDSD_LINEARSIZE'
-                    image=None
+                    if not self.s3tc: raise IOError, 'DXT compression not supported'
                     if fourcc=='DXT1':
-                        format=iformat=GL_RGB
-                        blocksize=8
-                        
+                        assert size==width*height/2
+                        iformat=GL_COMPRESSED_RGB_S3TC_DXT1_EXT
                     elif fourcc=='DXT3':
-                        format=iformat=GL_RGBA
-                        data=[[[0,0,0,0] for x in range(width)] for y in range(height)]
-                        blocksize=16
+                        assert size==width*height
+                        iformat=GL_COMPRESSED_RGBA_S3TC_DXT3_EXT
                     elif fourcc=='DXT5':
-                        format=iformat=GL_RGBA
-                        data=[[[0,0,0,0] for x in range(width)] for y in range(height)]
-                        blocksize=16
+                        assert size==width*height
+                        iformat=GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
                     else:
-                        raise IOError, '"%s" format not supported' % fourcc
+                        raise IOError, '%s format not supported' % fourcc
 
-                    if width<16 or height<16:
-                        downsample=False
-                    if downsample and mipmaps>=2:
+                    if downsample and mipmaps>=2 and width>=16 and height>=16:
                         h.seek(4+ssize + (size*5)/4)
+                        size/=16
                         width/=4
                         height/=4
-                        downsample=False
                     else:	# don't downsample
                         h.seek(4+ssize)
+                    if alpha or iformat==GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
+                        data=h.read(size)
+                    else:	# discard alpha
+                        iformat=GL_COMPRESSED_RGB_S3TC_DXT1_EXT
+                        data=''
+                        for i in range(size/16):
+                            data+=h.read(16)[8:]	# skip alpha
+                    h.close()
+                        
+                    id=glGenTextures(1)
+                    glBindTexture(GL_TEXTURE_2D, id)
+                    if wrap:
+                        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT)
+                        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT)
+                    else:
+                        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,self.clampmode)
+                        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,self.clampmode)
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+                    glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, data)
+                    if __debug__: print "%6.3f" % (time.clock()-clock), basename(path), wrap, alpha, downsample, fixsize
 
-                    data=[[[] for x in range(width)] for y in range(height)]
-                    for row in range(height-4,-4,-4):
-                        for col in range(0,width,4):
-                            (color0, color1, bits)=unpack('<HHI', h.read(8))
-                            b0=((color0&0x001f)<<3)|((color0&0x001c)>>2)
-                            g0=((color0&0x07e0)>>3)|((color0&0x0060)>>5)
-                            r0=((color0&0xf800)>>8)|((color0&0xe000)>>13)
-                            b1=((color1&0x001f)<<3)|((color1&0x001c)>>2)
-                            g1=((color1&0x07e0)>>3)|((color1&0x0060)>>5)
-                            r1=((color1&0xf800)>>8)|((color1&0xe000)>>13)
-                            for y in range(4):
-                                for x in range(4):
-                                    code=bits&3
-                                    bits>>=2
-                                    if code==0:
-                                        data[row+3-y][col+x]=[r0,g0,b0]
-                                    elif code==1:
-                                        data[row+3-y][col+x]=[r1,g1,b1]
-                                    elif code==2:
-                                        if color0 > color1:
-                                            data[row+3-y][col+x]=[(r0+r0+r1)/3,(g0+g0+g1)/3,(b0+b0+b1)/3]
-                                        else:
-                                            data[row+3-y][col+x]=[(r0+r1)/2,(g0+g1)/2,(b0+b1)/2]
-                                    else:
-                                        if color0 > color1:
-                                            data[row+3-y][col+x]=[(r0+r1+r1)/3,(g0+g1+g1)/3,(b0+b1+b1)/3]
-                                        else:
-                                            data[row+x][col+y]=[0,0,0]
+                    self.texs[path]=id
+                    if downsample:
+                        self.terraintexs.append(id)
+                    return id
                     
                 elif pflags&DDPF_RGB:	# uncompressed
-                    if sflags&(DDSD_PITCH|DDSD_LINEARSIZE)==DDSD_PITCH:
-                        size*=height
-                    elif sflags&(DDSD_PITCH|DDSD_LINEARSIZE)!=DDSD_LINEARSIZE:
-                        raise IOError, 'Missing DDSD_PITCH or DDSD_LINEARSIZE'
                     assert size==width*height*bits/8	# pitch appears unreliable
                     if bits==24 and redmask==0xff0000 and greenmask==0x00ff00 and bluemask==0x0000ff:
-                        mode='RGB'
-                        rawmode='BGR'
+                        if not self.bgra: raise IOError, 'BGR format not supported'
+                        format=GL_BGR_EXT
+                        iformat=GL_RGB
                     elif bits==24 and redmask==0x0000ff and greenmask==0x00ff00 and bluemask==0xff0000:
-                        mode='RGB'
-                        rawmode='RGB'
-                    elif bits==32 and pflags&DDPF_ALPHAPIXELS and alphamask==0xff000000 and redmask==0x00ff0000 and greenmask==0x0000ff00 and bluemask==0x000000ff:
-                        mode='RGBA'
-                        rawmode='BGRA'
+                        format=GL_RGB
+                        iformat=GL_RGB
+                    elif bits==32 and pflags&DDPF_ALPHAPIXELS and alphamask==0xff000000L and redmask==0x00ff0000 and greenmask==0x0000ff00 and bluemask==0x000000ff:
+                        if not self.bgra: raise IOError, 'BGRA format not supported'
+                        format=GL_BGRA_EXT
+                        iformat=GL_RGBA
                     elif bits==32 and not pflags&DDPF_ALPHAPIXELS and redmask==0x00ff0000 and greenmask==0x0000ff00 and bluemask==0x000000ff:
-                        mode='RGB'
-                        rawmode='BGRX'
-                    elif bits==32 and pflags&DDPF_ALPHAPIXELS and alphamask==0x000000ff and redmask==0x0000ff00 and greenmask==0x00ff0000 and bluemask==0xff000000:
-                        mode='RGBA'
-                        rawmode='ARGB'
-                    elif bits==32 and not pflags&DDPF_ALPHAPIXELS and redmask==0x0000ff00 and greenmask==0x00ff0000 and bluemask==0xff000000:
-                        mode='RGB'
-                        rawmode='XRGB'
+                        if not self.bgra: raise IOError, 'BGRA format not supported'
+                        format_GL_BGRA_EXT
+                        iformat=GL_RGB
                     else:
                         raise IOError, '%dbpp format not supported' % bits
-                    if width<=4 or height<=4:
-                        downsample=False
-                    if downsample and mipmaps>=2:
+
+                    if downsample and mipmaps>=2 and width>4 and height>4:
                         h.seek(4+ssize + (size*5)/4)
-                        rawdata=h.read(size/16)
+                        size/=16
                         width/=4
                         height/=4
-                        downsample=False
-                    else:
+                    else:	# don't downsample
                         h.seek(4+ssize)
-                        rawdata=h.read(size)
-                    image=PIL.Image.new(mode, (width,height), None)
-                    image.fromstring(rawdata, "raw", rawmode)
+                    data=h.read(size)
+                    h.close()
+                    
                     # fall through
 
                 else:	# wtf?
@@ -411,7 +392,6 @@ class TexCache:
                     if size!=[image.size[0],image.size[1]]:
                         image=image.resize((size[0], size[1]), PIL.Image.BICUBIC)
 
-            if image:
                 if downsample and image.size[0]>4 and image.size[1]>4:
                     image=image.resize((image.size[0]/4,image.size[1]/4), PIL.Image.NEAREST)
                 if image.mode in ['RGBA', 'LA']:
@@ -426,7 +406,7 @@ class TexCache:
             # variables used: data, format, iformat, width, height
             if not alpha:
                 iformat=GL_RGB
-            if 0:#XXX self.compress:
+            if self.compress:
                 if iformat==GL_RGB:
                     iformat=GL_COMPRESSED_RGB_ARB
                 elif iformat==GL_RGBA:
@@ -442,10 +422,7 @@ class TexCache:
                 glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,self.clampmode)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-            if image:
-                glTexImage2D(GL_TEXTURE_2D, 0, iformat, width, height, 0, format, GL_UNSIGNED_BYTE, data)
-            else:
-                glTexImage2Dub(GL_TEXTURE_2D, 0, iformat, 0, format, data)
+            glTexImage2D(GL_TEXTURE_2D, 0, iformat, width, height, 0, format, GL_UNSIGNED_BYTE, data)
             if __debug__: print "%6.3f" % (time.clock()-clock), basename(path), wrap, alpha, downsample, fixsize
                 
             self.texs[path]=id
@@ -453,15 +430,15 @@ class TexCache:
                 self.terraintexs.append(id)
             return id
 
-        elif 0:#except IOError, e:
+        except IOError, e:
             if __debug__:
                 if e.errno==2:
                     print 'Failed to find texture "%s"' % basename(path)
                 else:
                     print 'Failed to load texture "%s" - %s' % (basename(path), e)
-        elif 0:#except GLerror, e:
+        except GLerror, e:
             if __debug__: print 'Failed to load texture "%s" - %s' % (basename(path), e)
-        else:#except:
+        except:
             if __debug__: print 'Failed to load texture "%s"' % basename(path)
         return self.blank
 

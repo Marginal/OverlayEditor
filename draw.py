@@ -68,6 +68,7 @@ class ClickModes:
     Drag=3
     DragNode=4
     Scroll=5
+    Move=6
     
 
 # OpenGL Window
@@ -76,7 +77,8 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.parent=parent
         self.frame=frame
-        self.movecursor=wx.StockCursor(wx.CURSOR_HAND)
+        self.movecursor=wx.StockCursor(wx.CURSOR_SIZING)
+        self.scrollcursor=wx.StockCursor(wx.CURSOR_HAND)
         self.dragcursor=wx.StockCursor(wx.CURSOR_CROSS)
 
         self.valid=False	# do we have valid data for a redraw?
@@ -157,6 +159,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         wx.EVT_MOTION(self, self.OnMouseMotion)
         wx.EVT_LEFT_DOWN(self, self.OnLeftDown)
         wx.EVT_LEFT_UP(self, self.OnLeftUp)
+        wx.EVT_MIDDLE_DOWN(self, self.OnMiddleDown)
+        wx.EVT_MIDDLE_UP(self, self.OnMiddleUp)
         wx.EVT_IDLE(self, self.OnIdle)
         #wx.EVT_KILL_FOCUS(self, self.OnKill)	# debug
         
@@ -189,6 +193,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_ALPHA_TEST)
         glEnableClientState(GL_VERTEX_ARRAY)
         glEnableClientState(GL_TEXTURE_COORD_ARRAY)
+        glMatrixMode(GL_TEXTURE)
+        glTranslatef(0, 1, 0)
+        glScalef(1, -1, 1)	# OpenGL textures are backwards
+        glMatrixMode(GL_MODELVIEW)
 
 
     def OnEraseBackground(self, event):
@@ -229,6 +237,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.frame.OnKeyDown(keyevent)
         
     def OnLeftDown(self, event):
+        if self.clickmode==ClickModes.Move: return
         #event.Skip(False)	# don't change focus
         self.mousenow=self.clickpos=[event.m_x,event.m_y]
         if platform=='darwin':
@@ -263,7 +272,20 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.clickmode=None
         self.Refresh()	# get rid of drag box
         event.Skip()
-            
+
+    def OnMiddleDown(self, event):
+        if self.clickmode: return
+        self.clickmode=ClickModes.Move
+        self.mousenow=self.clickpos=[event.m_x,event.m_y]
+        self.CaptureMouse()
+        self.SetCursor(self.movecursor)
+        
+    def OnMiddleUp(self, event):
+        if self.HasCapture(): self.ReleaseMouse()
+        self.SetCursor(wx.NullCursor)
+        self.clickmode=None
+        event.Skip()
+
     def OnIdle(self, event):
         if self.valid:	# can get Idles during reload under X
             if self.clickmode==ClickModes.DragNode:
@@ -276,9 +298,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         event.Skip()
 
     def OnMouseMotion(self, event):
-        if self.clickmode and not event.LeftIsDown():
-            # Capture unreliable on Mac, so may have missed LeftUp event. See
-            # https://sourceforge.net/tracker/?func=detail&atid=109863&aid=1489131&group_id=9863
+        # Capture unreliable on Mac, so may have missed Up events. See
+        # https://sourceforge.net/tracker/?func=detail&atid=109863&aid=1489131&group_id=9863
+        if self.clickmode==ClickModes.Move:
+            if not event.MiddleIsDown():
+                self.OnMiddleUp(event)
+                return
+        elif self.clickmode and not event.LeftIsDown():
             self.OnLeftUp(event)
             return
 
@@ -292,7 +318,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             
             # Change cursor if over a window border
             if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
-                self.SetCursor(self.movecursor)
+                self.SetCursor(self.scrollcursor)
                 return
 
             # Change cursor if over a node
@@ -327,6 +353,16 @@ class MyGL(wx.glcanvas.GLCanvas):
             return
 
         assert (self.clickmode!=ClickModes.Undecided)
+
+        if self.clickmode==ClickModes.Move:
+            if not self.valid: return
+            (oldlat,oldlon)=self.getworldloc(*self.mousenow)
+            self.mousenow=[event.m_x,event.m_y]
+            (lat,lon)=self.getworldloc(*self.mousenow)
+            self.frame.loc=(self.frame.loc[0]-lat+oldlat, self.frame.loc[1]-lon+oldlon)
+            self.goto(self.frame.loc)
+            self.frame.ShowLoc()
+            return
 
         if self.draginert and abs(event.m_x-self.clickpos[0])<self.dragx and abs(event.m_y-self.clickpos[1])<self.dragx:
             return
