@@ -520,7 +520,7 @@ def writeDSF(dsfdir, key, placements):
             for p in w:
                 h.write('POLYGON_POINT\t')
                 for n in range(len(p)):
-                    if isinstance(poly,Draped) and poly.param==65535 and len(p)-n<=2:
+                    if 0<=p[n]<=1:
                         h.write('%12.7f ' % p[n]) # don't adjust UV coords
                     elif n&1:	# lat
                         h.write('%12.7f ' % min(south+1, p[n]+minres/2))
