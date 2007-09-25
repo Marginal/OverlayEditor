@@ -553,8 +553,8 @@ def writeDSF(dsfdir, key, placements):
         cmds='%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename.replace('\\','\\\\').replace('"','\\"').replace("$", "\\$").replace("`", "\\`"))
     (i,o,e)=popen3(cmds)
     i.close()
-    err=o.read().strip().split('\n')
-    e.read()
+    err=o.read()
+    err+=e.read()
     o.close()
     e.close()
     if not __debug__: unlink(tmp)
@@ -564,8 +564,9 @@ def writeDSF(dsfdir, key, placements):
         elif exists(tilename+'.DSF.BAK'):
             rename(tilename+'.DSF.BAK', tilename+'.DSF')
         if __debug__: print err
-        if len(err)>1:
-            err=err[-2].strip()	# error appears on penultimate line
+        err=err.strip().split('\n')
+        if len(err)>1 and err[-1].startswith('('):
+            err=err[-2].strip()	# DSF errors appear on penultimate line
         else:
             err=err[0].strip()
         raise IOError, (0, err)
