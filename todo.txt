@@ -1,13 +1,11 @@
 palette right click / ctrl-click -> delete, rename
 selectall drag problem
 
+lock objects
 Info popup - name, source .obj file / library, layer, source texture, editable location, info.txt (File -> Show Inspector Cmd-I)
 Use of control or cmd in Finder for selection drag?
 Multiple tiles
-Show airports on all tiles that they intersect
-Airport slope at height when overlapping edge of tile - eg KPHX
 Beziers in polygons? - not for .bch, .for, .fac - yes for .lin, .pol, .str
-middle mouse move
 eddn_overlay ?
 Object prioritisation
 boundary (130)

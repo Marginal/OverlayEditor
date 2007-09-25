@@ -1,7 +1,7 @@
 import PIL.Image
 import PIL.PngImagePlugin, PIL.BmpImagePlugin, PIL.JpegImagePlugin 	# force for py2exe
 from OpenGL.GL import *
-from OpenGL.GL.ARB.texture_compression import glInitTextureCompressionARB, glCompressedTexImage2DARB, GL_COMPRESSED_RGB_ARB, GL_COMPRESSED_RGBA_ARB
+from OpenGL.GL.ARB.texture_compression import glInitTextureCompressionARB, glCompressedTexImage2DARB, GL_COMPRESSED_RGB_ARB, GL_COMPRESSED_RGBA_ARB, GL_TEXTURE_COMPRESSION_HINT_ARB
 from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3tcEXT, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
 from OpenGL.GL.EXT.bgra import glInitBgraEXT, GL_BGR_EXT, GL_BGRA_EXT
 try:
@@ -252,6 +252,8 @@ class TexCache:
         self.compress=glInitTextureCompressionARB()
         self.s3tc=self.compress and glInitTextureCompressionS3tcEXT()
         self.bgra=glInitBgraEXT()
+        # Texture compression appears severe on Mac, but this doesn't help
+        #if self.compress: glHint(GL_TEXTURE_COMPRESSION_HINT_ARB, GL_NICEST)
         if glGetString(GL_VERSION) >= '1.2':
             self.clampmode=GL_CLAMP_TO_EDGE
         else:
@@ -276,7 +278,7 @@ class TexCache:
             return self.texs[path]
         self.texs[path]=self.blank
 
-        if __debug__: clock=time.clock()	# Processor time
+        #if __debug__: clock=time.clock()	# Processor time
 
         try:
             if path[-4:].lower()=='.dds':
@@ -338,7 +340,7 @@ class TexCache:
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
                     glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, data)
-                    if __debug__: print "%6.3f" % (time.clock()-clock), basename(path), wrap, alpha, downsample, fixsize
+                    #if __debug__: print "%6.3f" % (time.clock()-clock), basename(path), wrap, alpha, downsample, fixsize
 
                     self.texs[path]=id
                     if downsample:
@@ -423,7 +425,7 @@ class TexCache:
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glTexImage2D(GL_TEXTURE_2D, 0, iformat, width, height, 0, format, GL_UNSIGNED_BYTE, data)
-            if __debug__: print "%6.3f" % (time.clock()-clock), basename(path), wrap, alpha, downsample, fixsize
+            #if __debug__: print "%6.3f" % (time.clock()-clock), basename(path), wrap, alpha, downsample, fixsize
                 
             self.texs[path]=id
             if downsample:
