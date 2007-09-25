@@ -543,23 +543,29 @@ def writeDSF(dsfdir, key, placements):
         e.close()
         progress.Destroy()
     if platform=='win32':
-        quote='"'
+        # Bug - how to suppress environment variable expansion?
+        cmds='%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename) #.replace('%','%%'))
+        if type(cmds)==types.UnicodeType:
+            # commands must be MBCS encoded
+            cmds=cmds.encode("mbcs")
     else:
-        quote="'"
-    cmds='%s -text2dsf %s%s%s %s%s.dsf%s' % (dsftool, quote, tmp, quote, quote, tilename, quote)
-    if platform=='win32' and type(cmds)==types.UnicodeType:
-        # commands must be MBCS encoded
-        cmds=cmds.encode("mbcs")
+        # See "QUOTING" in bash(1)
+        cmds='%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename.replace('\\','\\\\').replace('"','\\"').replace("$", "\\$").replace("`", "\\`"))
     (i,o,e)=popen3(cmds)
     i.close()
-    o.read()
-    err=e.read()
+    err=o.read().strip().split('\n')
+    e.read()
     o.close()
     e.close()
     if not __debug__: unlink(tmp)
-    if err or not exists(tilename+'.dsf'):
+    if not exists(tilename+'.dsf'):
         if exists(tilename+'.dsf.bak'):
             rename(tilename+'.dsf.bak', tilename+'.dsf')
         elif exists(tilename+'.DSF.BAK'):
             rename(tilename+'.DSF.BAK', tilename+'.DSF')
-        raise IOError, (0, err.strip().replace('\n', ', '))
+        if __debug__: print err
+        if len(err)>1:
+            err=err[-2].strip()	# error appears on penultimate line
+        else:
+            err=err[0].strip()
+        raise IOError, (0, err)
