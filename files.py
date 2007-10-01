@@ -257,7 +257,7 @@ class TexCache:
         if glGetString(GL_VERSION) >= '1.2':
             self.clampmode=GL_CLAMP_TO_EDGE
         else:
-            self.clampmode=GL_REPEAT
+            self.clampmode=GL_CLAMP
 
     def flush(self):
         if cantreleasetexs:
