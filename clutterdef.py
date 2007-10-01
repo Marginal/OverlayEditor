@@ -85,7 +85,7 @@ class ClutterDef:
             co=sep+'custom objects'+sep
             if co in self.filename.lower():
                 base=self.filename[:self.filename.lower().index(co)]
-                for f in listdir(self.texpath):
+                for f in listdir(base):
                     if f.lower()=='custom object textures':
                         self.texpath=join(base,f)
                         break
