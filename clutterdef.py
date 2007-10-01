@@ -81,15 +81,14 @@ class ClutterDef:
         if filename:
             if filename[0]=='*':	# this application's resource
                 self.filename=join('Resources', filename[1:])
+            self.texpath=dirname(self.filename)        
             co=sep+'custom objects'+sep
             if co in self.filename.lower():
-                self.texpath=self.filename[:self.filename.lower().index(co)]
+                base=self.filename[:self.filename.lower().index(co)]
                 for f in listdir(self.texpath):
                     if f.lower()=='custom object textures':
-                        self.texpath=join(self.texpath,f)
+                        self.texpath=join(base,f)
                         break
-            else:
-                self.texpath=dirname(self.filename)        
         self.texture=0
         self.layer=ClutterDef.DEFAULTLAYER
         self.canpreview=True
