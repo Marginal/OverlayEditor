@@ -5,6 +5,8 @@ from os.path import dirname, exists, join
 
 from files import sortfolded
 from clutterdef import PolygonDefFactory, ObjectDef, PolygonDef, KnownDefs, UnknownDefs
+from MessageBox import myMessageBox
+
 
 class PaletteListBox(wx.VListBox):
 
@@ -329,6 +331,7 @@ class Palette(wx.SplitterWindow):
         # so hack to suppress recursion
         wx.EVT_PAINT(self.preview, None)
 
+        texerr=None
         if self.previewkey!=self.lastkey:
             # New
             self.previewkey=self.lastkey
@@ -384,6 +387,8 @@ class Palette(wx.SplitterWindow):
                     else:
                         self.frame.canvas.defs[filename]=definition=ObjectDef(filename, self.frame.canvas.vertexcache)
                     self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)
+                    texerr=definition.texerr
+                    definition.texerr=None
                 except:
                     self.cb.markbad()
 
@@ -394,7 +399,9 @@ class Palette(wx.SplitterWindow):
                         definition=self.frame.canvas.defs[filename]
                     else:
                         self.frame.canvas.defs[filename]=definition=PolygonDefFactory(filename, self.frame.canvas.vertexcache)
-                    self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)                
+                    self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)
+                    texerr=definition.texerr
+                    definition.texerr=None
                 except:
                     self.cb.markbad()
 
@@ -428,4 +435,8 @@ class Palette(wx.SplitterWindow):
             self.preview.SetBackgroundColour(wx.NullColour)
             self.preview.ClearBackground()
 
+        if texerr:
+            myMessageBox(texerr.strerror, "Can't read texture %s" % texerr.filename, wx.ICON_INFORMATION|wx.OK, self.frame)
+            
         wx.EVT_PAINT(self.preview, self.OnPaint)
+

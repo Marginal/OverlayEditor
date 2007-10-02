@@ -276,7 +276,7 @@ class TexCache:
         if not path: return self.blank
         if path in self.texs:
             return self.texs[path]
-        self.texs[path]=self.blank
+        #self.texs[path]=self.blank	# don't do this - want error reported for each file that uses this texture
 
         #if __debug__: clock=time.clock()	# Processor time
 
@@ -284,7 +284,7 @@ class TexCache:
             if path[-4:].lower()=='.dds':
                 # Do DDS manually - files need flipping
                 h=file(path,'rb')
-                if h.read(4)!='DDS ': raise IOError, 'Not a DDS file'
+                if h.read(4)!='DDS ': raise IOError, 'This is not a DDS file'
                 (ssize,sflags,height,width,size,depth,mipmaps)=unpack('<7I', h.read(28))
                 #print ssize,sflags,height,width,size,depth,mipmaps
                 if sflags&(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT)!=(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT): raise IOError, 'Missing mandatory fields'
@@ -292,7 +292,7 @@ class TexCache:
                 if sflags&(DDSD_PITCH|DDSD_LINEARSIZE)==DDSD_PITCH:
                     size*=height
                 elif sflags&(DDSD_PITCH|DDSD_LINEARSIZE)!=DDSD_LINEARSIZE:
-                    raise IOError, 'Missing DDSD_PITCH or DDSD_LINEARSIZE'
+                    raise IOError, 'Invalid size'
                 h.seek(0x4c)
                 (psize,pflags,fourcc,bits,redmask,greenmask,bluemask,alphamask,caps1,caps2)=unpack('<2I4s7I', h.read(40))
                 if not sflags&DDSD_MIPMAPCOUNT or not caps1&DDSCAPS_MIPMAP:
@@ -380,7 +380,7 @@ class TexCache:
                     # fall through
 
                 else:	# wtf?
-                    raise IOError, 'Neither DDPF_FOURCC nor DDPF_RGB set'
+                    raise IOError, 'Invalid compression type'
 
             else:	# supported PIL formats
                 image = PIL.Image.open(path)
@@ -432,17 +432,23 @@ class TexCache:
                 self.terraintexs.append(id)
             return id
 
+        # exceptions should just return a string here
         except IOError, e:
-            if __debug__:
-                if e.errno==2:
-                    print 'Failed to find texture "%s"' % basename(path)
-                else:
-                    print 'Failed to load texture "%s" - %s' % (basename(path), e)
+            if e.errno==2:
+                if __debug__: print "%s file not found" % basename(path)
+                raise IOError, "File %s not found" % path
+            elif e.strerror:
+                if __debug__: print "%s %s" % (basename(path), e.strerror)
+                raise IOError, e.strerror
+            else:
+                if __debug__: print "%s %s" % (basename(path), e)
+                raise IOError, str(e)
         except GLerror, e:
-            if __debug__: print 'Failed to load texture "%s" - %s' % (basename(path), e)
+            if __debug__: print "%s %s" % (basename(path), e)
+            raise IOError, str(e)
         except:
-            if __debug__: print 'Failed to load texture "%s"' % basename(path)
-        return self.blank
+            if __debug__: print "%s unknown error" % basename(path)
+            raise IOError, ''
 
 
 class VertexCache:

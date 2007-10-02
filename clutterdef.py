@@ -90,6 +90,7 @@ class ClutterDef:
                         self.texpath=join(base,f)
                         break
         self.texture=0
+        self.texerr=None
         self.layer=ClutterDef.DEFAULTLAYER
         self.canpreview=True
         
@@ -150,14 +151,15 @@ class ObjectDef(ClutterDef):
                 tex=line.strip()
                 if tex:
                     if '//' in tex: tex=tex[:tex.index('//')].strip()
-                    tex=abspath(join(self.texpath, tex.replace(':', sep).replace('/', sep)))
+                    tex=tex.replace(':', sep).replace('/', sep)
                     break
             for ext in ['', '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
-                if exists(tex+ext):
+                if exists(abspath(join(self.texpath, tex+ext))):
                     texture=tex+ext
                     break
             else:
-                texture=tex
+                if tex.lower()!='none':
+                    texture=tex
 
         if version=='2':
             while True:
@@ -312,7 +314,7 @@ class ObjectDef(ClutterDef):
                     if len(c)>1:
                         tex=line[7:].strip()
                         if '//' in tex: tex=tex[:tex.index('//')].strip()
-                        texture=abspath(join(self.texpath, tex.replace(':', sep).replace('/', sep)))
+                        texture=tex.replace(':', sep).replace('/', sep)
                 elif c[0]=='VT':
                     x=float(c[1])
                     y=float(c[2])
@@ -373,7 +375,11 @@ class ObjectDef(ClutterDef):
             self.culled=len(culled)
             self.nocull=len(nocull)
             self.base=None
-            self.texture=vertexcache.texcache.get(texture)
+            if texture:	# can be none
+                try:
+                    self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)))
+                except IOError, e:
+                    self.texerr=IOError(0,str(e),texture)
             self.allocate(vertexcache)
 
     def allocate(self, vertexcache):
@@ -548,7 +554,10 @@ class DrapedDef(PolygonDef):
             elif c[0]=='NO_ALPHA':
                 alpha=False
         h.close()
-        self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)), not self.ortho, alpha)
+        try:
+            self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)), not self.ortho, alpha)
+        except IOError, e:
+            self.texerr=IOError(0,str(e),texture)
 
 
 class DrapedFallback(PolygonDef):
@@ -602,8 +611,11 @@ class FacadeDef(PolygonDef):
             c=line.split('#')[0].split()
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
-                tex=abspath(join(self.texpath, line[7:].strip().replace(':', sep).replace('/', sep)))
-                self.texture=vertexcache.texcache.get(tex)
+                texture=line[7:].strip().replace(':', sep).replace('/', sep)
+                try:
+                    self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)))
+                except IOError, e:
+                    self.texerr=IOError(0,str(e),texture)
             elif c[0]=='RING':
                 self.ring=int(c[1])
             elif c[0]=='TWO_SIDED': self.two_sided=(int(c[1])!=0)
@@ -696,8 +708,11 @@ class ForestDef(PolygonDef):
             c=line.split('#')[0].split()
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
-                tex=abspath(join(self.texpath, line[7:].strip().replace(':', sep).replace('/', sep)))
-                self.texture=vertexcache.texcache.get(tex)
+                texture=line[7:].strip().replace(':', sep).replace('/', sep)
+                try:
+                    self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)))
+                except IOError, e:
+                    self.texerr=IOError(0,str(e),texture)
             elif c[0]=='SCALE_X':
                 scalex=float(c[1])
             elif c[0]=='SCALE_Y':
