@@ -1,5 +1,8 @@
 palette right click / ctrl-click -> delete, rename
 selectall drag problem
+.lin
+taxilines
+drag nodes - undo each changed node
 
 lock objects
 Info popup - name, source .obj file / library, layer, source texture, editable location, info.txt (File -> Show Inspector Cmd-I)
@@ -11,5 +14,4 @@ Object prioritisation
 boundary (130)
 roads / networks
 beaches
-taxilines
 distance measurement

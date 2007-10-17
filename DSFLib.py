@@ -478,7 +478,7 @@ def writeDSF(dsfdir, key, placements):
                         maxlon=max(maxlon,n[0])
                         minlat=min(minlat,n[1])
                         maxlat=max(maxlat,n[1])
-                    h.write('PROPERTY\t%s\t%11.6f/%10.6f/%11.6f/%10.6f\n' % (
+                    h.write('PROPERTY\t%s\t%.6f/%.6f/%.6f/%.6f\n' % (
                         k, minlon, minlat, maxlon, maxlat))
                     break
         else:

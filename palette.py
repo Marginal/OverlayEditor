@@ -36,13 +36,13 @@ class PaletteListBox(wx.VListBox):
             name=realname=names[i]
             ext=name[-4:].lower()
             if name in parent.bad:
-                imgno=7
+                imgno=8
             elif name.startswith(PolygonDef.EXCLUDE):
-                imgno=5
-            elif ext in UnknownDefs:
                 imgno=6
+            elif ext in UnknownDefs:
+                imgno=7
             elif ext==PolygonDef.DRAPED:
-                imgno=3
+                imgno=4
                 if tabno==0 and self.pkgdir:
                     # find orthos - assume library objects aren't
                     try:
@@ -50,7 +50,7 @@ class PaletteListBox(wx.VListBox):
                         for line in h:
                             line=line.strip()
                             if line.startswith('TEXTURE_NOWRAP') or line.startswith('TEXTURE_LIT_NOWRAP'):
-                                imgno=4
+                                imgno=5
                                 break
                             elif line.startswith('TEXTURE'):
                                 break
@@ -118,6 +118,7 @@ class PaletteChoicebook(wx.Choicebook):
         self.imgs.Add(wx.Bitmap("Resources/obj.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/fac.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/for.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/lin.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/pol.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/ortho.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/exc.png", wx.BITMAP_TYPE_PNG))
@@ -331,7 +332,6 @@ class Palette(wx.SplitterWindow):
         # so hack to suppress recursion
         wx.EVT_PAINT(self.preview, None)
 
-        texerr=None
         if self.previewkey!=self.lastkey:
             # New
             self.previewkey=self.lastkey
@@ -387,8 +387,6 @@ class Palette(wx.SplitterWindow):
                     else:
                         self.frame.canvas.defs[filename]=definition=ObjectDef(filename, self.frame.canvas.vertexcache)
                     self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)
-                    texerr=definition.texerr
-                    definition.texerr=None
                 except:
                     self.cb.markbad()
 
@@ -400,8 +398,6 @@ class Palette(wx.SplitterWindow):
                     else:
                         self.frame.canvas.defs[filename]=definition=PolygonDefFactory(filename, self.frame.canvas.vertexcache)
                     self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)
-                    texerr=definition.texerr
-                    definition.texerr=None
                 except:
                     self.cb.markbad()
 
@@ -435,8 +431,5 @@ class Palette(wx.SplitterWindow):
             self.preview.SetBackgroundColour(wx.NullColour)
             self.preview.ClearBackground()
 
-        if texerr:
-            myMessageBox(texerr.strerror, "Can't read texture %s" % texerr.filename, wx.ICON_INFORMATION|wx.OK, self.frame)
-            
         wx.EVT_PAINT(self.preview, self.OnPaint)
 
