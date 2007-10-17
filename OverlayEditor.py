@@ -5,17 +5,24 @@ from math import cos, floor, sin, pi, sqrt
 import os	# for startfile
 from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
+import sys	# for path
 from sys import exit, argv, executable, platform, version
+
+if platform.lower().startswith('linux') and not getenv("DISPLAY"):
+    print "Can't run: DISPLAY is not set"
+    exit(1)
+elif platform=='darwin':
+    sys.path.insert(0, join(sys.path[0], version[:3]))
 
 try:
     import wx
 except:
     if platform=='darwin':
         from EasyDialogs import Message
-        Message("wxPython is not installed. This application\nrequires wxPython2.5.3-py%s or later." % version[:3])
+        Message("wxPython is not installed. This application\nrequires wxPython 2.5.3-py%s or later." % version[:3])
     else:	# linux
         import tkMessageBox
-        tkMessageBox._show("Error", "wxPython is not installed. This application\nrequires python wxgtk2.5.3 or later.", icon="error", type="ok")
+        tkMessageBox._show("Error", "wxPython is not installed. This application\nrequires python wxgtk 2.5.3 or later.", icon="error", type="ok")
     exit(1)
 from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
 
@@ -24,10 +31,10 @@ try:
 except:
     if platform=='darwin':
         from EasyDialogs import Message
-        Message("PyOpenGL is not installed. This application\nrequires PyOpenGL2 or later.")
+        Message("PyOpenGL is not installed. This application\nrequires PyOpenGL 2 or later.")
     else:	# linux
         import tkMessageBox
-        tkMessageBox._show("Error", "PyOpenGL is not installed. This application\nrequires PyOpenGL2 or later.", icon="error", type="ok")
+        tkMessageBox._show("Error", "PyOpenGL is not installed. This application\nrequires PyOpenGL 2 or later.", icon="error", type="ok")
     exit(1)
 
 if not 'startfile' in dir(os):
@@ -335,10 +342,10 @@ class GotoDialog(wx.Dialog):
         self.SetSizerAndFit(grid1)
 
     def OnClose(self, event):
-        # Prevent kill focus event causing refresh on wxMac 2.5
+        # Prevent kill focus event causing refresh & crash on wxMac 2.5
         self.list1.SetSelection(-1)
         self.list2.SetSelection(-1)
-        self.Destroy()
+        if self.IsModal(): self.EndModal(wx.ID_CANCEL)
 
     def OnName(self, event):
         choice=event.GetEventObject().GetStringSelection()
@@ -448,7 +455,10 @@ class BackgroundDialog(wx.Dialog):
         fg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
 
         self.parent=parent
-        self.prefix=glob(join(prefs.xplane,gcustom,prefs.package))[0]
+        if prefs.package:
+            self.prefix=glob(join(prefs.xplane,gcustom,prefs.package))[0]
+        else:
+            self.prefix=glob(join(prefs.xplane,gcustom))[0]
         if prefs.package in prefs.packageprops:
             (self.image, plat, plon, phdg, pwidth, plength, popacity)=prefs.packageprops[prefs.package]
             if self.image[0]==curdir:
@@ -671,7 +681,8 @@ class BackgroundDialog(wx.Dialog):
             self.parent.canvas.setbackground(None)
             return
         f=self.image
-        if f.startswith(self.prefix): f=curdir+f[len(self.prefix):]
+        if prefs.package and f.startswith(self.prefix):
+            f=curdir+f[len(self.prefix):]
         prefs.packageprops[prefs.package]=(f, self.lat.GetValue(), self.lon.GetValue(), self.hdg.GetValue()%360, self.width.GetValue(), self.length.GetValue(), self.opacity.GetValue())
         self.parent.canvas.setbackground((self.image, self.lat.GetValue(), self.lon.GetValue(), self.hdg.GetValue()%360, self.width.GetValue(), self.length.GetValue(), self.opacity.GetValue(), None))
 
@@ -695,7 +706,8 @@ class BackgroundDialog(wx.Dialog):
         self.length.Enable()
         self.opacity.Enable()
         label=self.image
-        if label.startswith(self.prefix): label=label[len(self.prefix)+1:]
+        if prefs.package and label.startswith(self.prefix):
+            label=label[len(self.prefix)+1:]
         (x,y)=self.path.GetClientSize()
         (x1,y1)=self.GetTextExtent(label)
         if x1<x:
@@ -862,21 +874,17 @@ class MainWindow(wx.Frame):
         wx.EVT_TOOL(self.toolbar, wx.ID_HELP, self.OnHelp)
         
         self.toolbar.Realize()
-        self.toolbar.EnableTool(wx.ID_SAVE, False)
-        self.toolbar.EnableTool(wx.ID_ADD, False)
+        self.toolbar.EnableTool(wx.ID_PASTE,  False)
+        self.toolbar.EnableTool(wx.ID_ADD,    False)
         self.toolbar.EnableTool(wx.ID_DELETE, False)
-        self.toolbar.EnableTool(wx.ID_UNDO, False)
-        self.toolbar.EnableTool(wx.ID_PREVIEW, False)
-        self.toolbar.EnableTool(wx.ID_REFRESH, False)
-        self.toolbar.EnableTool(wx.ID_PASTE, False)
+        self.toolbar.EnableTool(wx.ID_UNDO,   False)
+        self.toolbar.EnableTool(wx.ID_REFRESH,False)
         if self.menubar:
-            self.menubar.Enable(wx.ID_SAVE, False)
-            self.menubar.Enable(wx.ID_ADD, False)
+            self.menubar.Enable(wx.ID_PASTE,  False)
+            self.menubar.Enable(wx.ID_ADD,    False)
             self.menubar.Enable(wx.ID_DELETE, False)
-            self.menubar.Enable(wx.ID_UNDO, False)
-            self.menubar.Enable(wx.ID_PREVIEW, False)
-            self.menubar.Enable(wx.ID_REFRESH, False)
-            self.menubar.Enable(wx.ID_PASTE, False)
+            self.menubar.Enable(wx.ID_UNDO,   False)
+            self.menubar.Enable(wx.ID_REFRESH,False)
 
         # Hack: Use zero-sized first field to hide toolbar button long help
         self.statusbar=self.CreateStatusBar(3, wx.ST_SIZEGRIP)
@@ -1088,7 +1096,7 @@ class MainWindow(wx.Frame):
             if self.elev<2: self.elev=2	# not 1 cos clipping
         elif event.m_keyCode in [wx.WXK_INSERT, wx.WXK_RETURN, wx.WXK_NUMPAD_INSERT, wx.WXK_NUMPAD_ENTER]:
             name=self.palette.get()
-            if prefs.package and name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg, self.dist, event.m_controlDown, event.m_shiftDown):
+            if name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg, self.dist, event.m_controlDown, event.m_shiftDown):
                 changed=True
         elif event.m_keyCode in [wx.WXK_DELETE, wx.WXK_BACK, wx.WXK_NUMPAD_DELETE]: # wx.WXK_NUMPAD_DECIMAL]:
             changed=self.canvas.delsel(event.m_controlDown, event.m_shiftDown)
@@ -1152,41 +1160,9 @@ class MainWindow(wx.Frame):
         
     def OnNew(self, event):
         if not self.SaveDialog(): return
-        dlg=wx.TextEntryDialog(self, "Name of new scenery package folder:",
-                               "New scenery package")
-        while True:
-            if dlg.ShowModal()==wx.ID_OK:
-                v=dlg.GetValue().strip()
-                if not v: continue
-                base=glob(join(prefs.xplane,gcustom))[0]
-                for f in glob(join(base,'*')):
-                    if basename(f.lower())==v.lower():
-                        myMessageBox("A package called %s already exists" % v,
-                                     appname , wx.ICON_ERROR|wx.OK, self)
-                        break
-                else:
-                    self.toolbar.EnableTool(wx.ID_SAVE, False)
-                    self.toolbar.EnableTool(wx.ID_ADD,  False)
-                    self.toolbar.EnableTool(wx.ID_UNDO, False)
-                    if self.menubar:
-                        self.menubar.Enable(wx.ID_SAVE, False)
-                        self.menubar.Enable(wx.ID_ADD,  False)
-                        self.menubar.Enable(wx.ID_UNDO, False)
-                    mkdir(join(base,v))
-                    mkdir(join(base,v,'Earth nav data'))
-                    prefs.package=v
-                    #self.loc=None
-                    #self.hdg=0
-                    if platform=='darwin':
-                        self.SetTitle("%s" % prefs.package)
-                    else:
-                        self.SetTitle("%s - %s" % (prefs.package, appname))
-                    self.OnReload(False)
-                    dlg.Destroy()
-                    return
-            else:
-                dlg.Destroy()
-                return
+        package=self.NewDialog(True)
+        if package: self.OnReload(False, package)
+        
 
     def OnOpen(self, event):
         if not self.SaveDialog(): return
@@ -1195,45 +1171,58 @@ class MainWindow(wx.Frame):
         choices=[basename(d) for d in dirs if isdir(d)]
         sortfolded(choices)
         i=0
-        x=150
+        x=200	# arbitrary
         y=12
         list1=wx.ListBox(dlg, wx.ID_ANY, style=wx.LB_SINGLE, choices=choices)
         for d in choices:
             (x1,y)=list1.GetTextExtent(d)
             if x1>x: x=x1
-        list1.SetMinSize((x+8+wx.SystemSettings_GetMetric(wx.SYS_VSCROLL_X),
-                          12*y+2*wx.SystemSettings_GetMetric(wx.SYS_EDGE_X)))
+        list1.SetMinSize((x+16+wx.SystemSettings_GetMetric(wx.SYS_VSCROLL_X),
+                          16*y+2*wx.SystemSettings_GetMetric(wx.SYS_EDGE_X)))
         wx.EVT_LISTBOX(dlg, list1.GetId(), self.OnOpened)
-        box1=myCreateStdDialogButtonSizer(dlg, wx.CANCEL)
+        box1=myCreateStdDialogButtonSizer(dlg, wx.OK|wx.CANCEL)
         box0=wx.BoxSizer(wx.VERTICAL)
-        box0.Add(list1, 1, wx.ALL|wx.EXPAND, 14)
-        box0.Add(box1, 0, wx.ALL|wx.EXPAND, 14)
+        box0.Add(list1, 1, wx.LEFT|wx.RIGHT|wx.TOP|wx.EXPAND, 10)
+        box0.Add(box1, 0, wx.ALL|wx.EXPAND, 10)
         dlg.SetSizerAndFit(box0)
         dlg.CenterOnParent()	# Otherwise is centred on screen
+        dlg.FindWindowById(wx.ID_OK).Disable()
         r=dlg.ShowModal()
-        dlg.Destroy()
         if r==wx.ID_OK:
-            self.toolbar.EnableTool(wx.ID_SAVE, False)
-            self.toolbar.EnableTool(wx.ID_ADD,  False)
-            self.toolbar.EnableTool(wx.ID_UNDO, False)
-            if self.menubar:
-                self.menubar.Enable(wx.ID_SAVE, False)
-                self.menubar.Enable(wx.ID_ADD,  False)
-                self.menubar.Enable(wx.ID_UNDO, False)
-            self.loc=None
-            self.hdg=0
+            package=list1.GetStringSelection()
+            dlg.Destroy()
+            #self.loc=None
+            #self.hdg=0
+            self.OnReload(False, package)
+            if prefs.package:
+                self.toolbar.EnableTool(wx.ID_SAVE, False)
+                self.toolbar.EnableTool(wx.ID_ADD,  False)
+                self.toolbar.EnableTool(wx.ID_UNDO, False)
+                self.toolbar.EnableTool(wx.ID_PASTE,   True)
+                self.toolbar.EnableTool(wx.ID_REFRESH, True)
+                if self.menubar:
+                    self.menubar.Enable(wx.ID_SAVE, False)
+                    self.menubar.Enable(wx.ID_ADD,  False)
+                    self.menubar.Enable(wx.ID_UNDO, False)
+                    self.menubar.Enable(wx.ID_PASTE,   True)
+                    self.menubar.Enable(wx.ID_REFRESH, True)
+        else:
+            dlg.Destroy()
+            
+    def OnOpened(self, event):
+        event.GetEventObject().GetParent().FindWindowById(wx.ID_OK).Enable()
+
+    def OnSave(self, event):
+        if not prefs.package:
+            prefs.package=self.NewDialog(False)
+            if not prefs.package: return False
             if platform=='darwin':
                 self.SetTitle("%s" % prefs.package)
             else:
                 self.SetTitle("%s - %s" % (prefs.package, appname))
-            self.OnReload(False)
+            if None in prefs.packageprops:
+                prefs.packageprops[prefs.package]=prefs.packageprops.pop(None)
 
-    def OnOpened(self, event):
-        list1=event.GetEventObject()
-        prefs.package=list1.GetStringSelection()
-        list1.GetParent().EndModal(wx.ID_OK)
-
-    def OnSave(self, event):
         base=glob(join(prefs.xplane,gcustom))[0]
         if not glob(join(base,prefs.package)):
             mkdir(join(base,prefs.package))
@@ -1252,17 +1241,19 @@ class MainWindow(wx.Frame):
                 myMessageBox(str(e.strerror),
                              "Can't save %+03d%+04d.dsf." % (key[0], key[1]), 
                              wx.ICON_ERROR|wx.OK, None)
-                return
+                return False
             except:
                 myMessageBox('',
                              "Can't save %+03d%+04d.dsf." % (key[0], key[1]),
                              wx.ICON_ERROR|wx.OK, None)
-                return
+                return False
         self.toolbar.EnableTool(wx.ID_SAVE, False)
         if self.menubar: self.menubar.Enable(wx.ID_SAVE, False)
+        return True
         
     def OnAdd(self, event):
         # Assumes that only one object selected
+        # Ctrl doesn't wotk on wxMac, Shift doesn't work on wxMac 2.5
         if self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg, self.dist, wx.GetKeyState(wx.WXK_CONTROL), wx.GetKeyState(wx.WXK_SHIFT)):
             self.toolbar.EnableTool(wx.ID_SAVE, True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
@@ -1299,28 +1290,19 @@ class MainWindow(wx.Frame):
         self.canvas.Refresh()
         
     # Load or reload current package
-    def OnReload(self, reload):
-        progress=wx.ProgressDialog('Loading', '', 5, self, wx.PD_APP_MODAL)
+    def OnReload(self, reload, package=None):
+        progress=wx.ProgressDialog('Loading', '', 4, self, wx.PD_APP_MODAL)
         self.palette.flush()
         pkgnavdata=None
-        if prefs.package:
-            pkgdir=glob(join(prefs.xplane,gcustom,prefs.package))[0]
+        if package:
+            pkgdir=glob(join(prefs.xplane,gcustom,package))[0]
             if glob(join(pkgdir, gnavdata)):
                 pkgnavdata=glob(join(pkgdir, gnavdata))[0]
         else:
             pkgdir=None
-            self.toolbar.EnableTool(wx.ID_PREVIEW, False)
-            self.toolbar.EnableTool(wx.ID_REFRESH, False)
-            self.toolbar.EnableTool(wx.ID_PASTE,   False)
-            if self.menubar:
-                self.menubar.Enable(wx.ID_PREVIEW, False)
-                self.menubar.Enable(wx.ID_REFRESH, False)
-                self.menubar.Enable(wx.ID_PASTE,   False)
-        self.toolbar.EnableTool(wx.ID_UNDO, False)
-        if self.menubar:
-            self.menubar.Enable(wx.ID_UNDO, False)
-        progress.Update(0, 'Global airports')
+
         if not self.airports:	# Default apt.dat
+            progress.Update(0, 'Global airports')
             try:
                 (self.airports,self.nav,foo)=readApt(glob(join(prefs.xplane, gmainaptdat))[0])
             except:
@@ -1331,9 +1313,13 @@ class MainWindow(wx.Frame):
             except:
                 pass
                 
-        progress.Update(1, 'Overlay DSFs')
         if not reload:
             # Load, not reload
+            progress.Update(0, 'Overlay DSFs')
+            self.loc=None
+            self.hdg=0
+            self.elev=45
+            self.dist=2048*zoom
             placements={}
             if pkgnavdata:
                 try:
@@ -1345,21 +1331,28 @@ class MainWindow(wx.Frame):
                         tile=(lat,lon)
                         placements[tile]=p
                 except IOError, e:	# Bad DSF - restore to unloaded state
-                    myMessageBox(e.strerror, "Can't edit this package.",
+                    progress.Destroy()
+                    myMessageBox(e.strerror, "Can't edit this scenery package.",
                                  wx.ICON_ERROR|wx.OK, None)
-                    self.SetTitle(appname)
-                    prefs.package=None
-                    pkgnavdata=None
-                    placements={}
+                    return
                 except:		# Bad DSF - restore to unloaded state
-                    myMessageBox("Failed to read %s." % basename(f), "Can't edit this package.", wx.ICON_ERROR|wx.OK, None)
-                    self.SetTitle(appname)
-                    prefs.package=None
-                    pkgnavdata=None
-                    placements={}
+                    progress.Destroy()
+                    myMessageBox("Failed to read %s." % basename(f), "Can't edit this scenery package.", wx.ICON_ERROR|wx.OK, None)
+                    return
+            if package:
+                prefs.package=package
+            else:
+                package='Untitled'
+            if platform=='darwin':
+                self.SetTitle("%s" % package)
+            else:
+                self.SetTitle("%s - %s" % (package, appname))
         else:
             placements=None	# keep existing
-        progress.Update(2, 'Airports')
+        self.toolbar.EnableTool(wx.ID_UNDO, False)
+        if self.menubar:
+            self.menubar.Enable(wx.ID_UNDO, False)
+        progress.Update(1, 'Airports')
         pkgapts={}
         nav=list(self.nav)
         pkgloc=None
@@ -1388,7 +1381,7 @@ class MainWindow(wx.Frame):
         self.goto=GotoDialog(self, airports)	# build only
         # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
         # search order is: custom libraries, default libraries, scenery package
-        progress.Update(3, 'Libraries')
+        progress.Update(2, 'Libraries')
         lookupbylib={}	# {name: path} by libname
         lookup={}	# {name: path}
         terrain={}	# {name: path}
@@ -1444,21 +1437,13 @@ class MainWindow(wx.Frame):
                     if p:
                         self.loc=p[0].location()
                         break
-                else:	# Fallback
-                    self.loc=(34.096694,-117.248376)	# KSBD
+                else:	# Fallback / Untitled
+                    self.loc=(0.5,0.5)
         self.loc=(round2res(self.loc[0]),round2res(self.loc[1]))
         progress.Destroy()
         
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
         self.ShowLoc()
-        if prefs.package:
-            self.toolbar.EnableTool(wx.ID_PREVIEW, True)
-            self.toolbar.EnableTool(wx.ID_REFRESH, True)
-            self.toolbar.EnableTool(wx.ID_PASTE,   True)
-            if self.menubar:
-                self.menubar.Enable(wx.ID_PREVIEW, True)
-                self.menubar.Enable(wx.ID_REFRESH, True)
-                self.menubar.Enable(wx.ID_PASTE,   True)
 
         # redraw
         self.Refresh()
@@ -1515,22 +1500,26 @@ class MainWindow(wx.Frame):
         if dlg.latlon.GetSelection():
             prefs.options|=Prefs.DMS
         if dlg.path.GetValue()!=prefs.xplane:
+            # Make untitled
             prefs.xplane=dlg.path.GetValue()
             prefs.package=None
-            self.toolbar.EnableTool(wx.ID_SAVE,   False)
+            self.toolbar.EnableTool(wx.ID_SAVE,   True)
+            self.toolbar.EnableTool(wx.ID_PASTE,  False)
             self.toolbar.EnableTool(wx.ID_ADD,    False)
             self.toolbar.EnableTool(wx.ID_DELETE, False)
             self.toolbar.EnableTool(wx.ID_UNDO,   False)
+            self.toolbar.EnableTool(wx.ID_REFRESH,False)
             if self.menubar:
-                self.menubar.Enable(wx.ID_SAVE,   False)
+                self.menubar.Enable(wx.ID_SAVE,   True)
+                self.menubar.Enable(wx.ID_PASTE,  False)
                 self.menubar.Enable(wx.ID_ADD,    False)
                 self.menubar.Enable(wx.ID_DELETE, False)
                 self.menubar.Enable(wx.ID_UNDO,   False)
-            self.SetTitle(appname)
+                self.menubar.Enable(wx.ID_REFRESH,False)
             dlg.Destroy()
             self.airports={}	# force reload
-            prefs.write()
             self.OnReload(False)
+            prefs.write()
         self.canvas.goto(self.loc, options=prefs.options)
         self.ShowLoc()
         self.ShowSel()
@@ -1561,22 +1550,68 @@ class MainWindow(wx.Frame):
         # returns False if wants to cancel
         style=wx.YES_NO
         if cancancel: style|=wx.CANCEL
-        if self.toolbar.GetToolEnabled(wx.ID_SAVE):
+        # Untitled always has ID_SAVE enabled
+        if self.toolbar.GetToolEnabled(wx.ID_SAVE) and (prefs.package or reduce(lambda x,y: x+y, reduce(lambda x,y: x+y, self.canvas.placements.values()))):
+            package=prefs.package or 'Untitled'
             if platform=='darwin':
                 r=myMessageBox("If you don't save, your changes will be lost.",
-                               'Save scenery package "%s"?' % prefs.package,
+                               'Save scenery package "%s"?' % package,
                                wx.ICON_EXCLAMATION|style, self)
             else:
                 r=myMessageBox('Do you want to save the changes?',
-                               '"%s" has been modified.' % prefs.package,
+                               '"%s" has been modified.' % package,
                                wx.ICON_EXCLAMATION|style, self)
             if r==wx.YES:
-                self.OnSave(None)
+                return self.OnSave(None)
             elif r==wx.CANCEL:
                 return False
         return True
         
-    
+    def NewDialog(self, isnew):
+        if isnew:
+            dlg=wx.TextEntryDialog(self, "Name of new scenery package:",
+                                   "New scenery package")
+        else:
+            dlg=wx.TextEntryDialog(self, "Name of scenery package:",
+                                   "Save scenery package")
+        while True:
+            if dlg.ShowModal()==wx.ID_OK:
+                v=dlg.GetValue().strip()
+                if not v: continue
+                ok=True
+                for c in '\\/:*?"<>|':
+                    if c in v: ok=False
+                else:
+                    try:
+                        basename(v).encode('ascii')
+                    except:
+                        ok=False
+                if not ok:
+                    myMessageBox('\\ / : * ? " < > |', "Package names cannot contain accented \ncharacters nor any of the following \ncharacters:",
+                                 wx.ICON_ERROR|wx.OK, self)
+                    continue
+                base=glob(join(prefs.xplane,gcustom))[0]
+                for f in glob(join(base,'*')):
+                    if basename(f.lower())==v.lower():
+                        myMessageBox("A package named %s already exists" % v,
+                                     "Can't create scenery package.",
+                                     wx.ICON_ERROR|wx.OK, self)
+                        break
+                else:
+                    self.toolbar.EnableTool(wx.ID_SAVE, False)
+                    self.toolbar.EnableTool(wx.ID_UNDO, False)
+                    if self.menubar:
+                        self.menubar.Enable(wx.ID_SAVE, False)
+                        self.menubar.Enable(wx.ID_UNDO, False)
+                    mkdir(join(base,v))
+                    mkdir(join(base,v,'Earth nav data'))
+                    dlg.Destroy()
+                    return v
+            else:
+                dlg.Destroy()
+                return None
+            
+        
 # main
 app=wx.PySimpleApp()
 if platform=='win32':
@@ -1617,11 +1652,6 @@ if prefs.package and not glob(join(prefs.xplane, gcustom, prefs.package)):
 # Load data files
 frame.Update()		# Let window draw first
 frame.OnReload(False)
-if prefs.package:
-    if platform=='darwin':
-        frame.SetTitle("%s" % prefs.package)
-    else:
-        frame.SetTitle("%s - %s" % (prefs.package, appname))
 app.MainLoop()
 
 # Save prefs

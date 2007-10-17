@@ -45,8 +45,8 @@ class Prefs:
         try:
             handle=codecs.open(self.filename, 'rU', 'utf-8')
             self.xplane=handle.readline().strip()
-            self.package=handle.readline().strip()
-            if self.package=='None': self.package=None
+            handle.readline().strip()	# skip package
+            #if self.package=='None': self.package=None
             for line in handle:
                 if '=' in line:
                     pkg=line[:line.index('=')]
@@ -67,6 +67,7 @@ class Prefs:
             handle.write('%s\n%s\n*options=%d\n' % (
                 self.xplane, self.package, self.options))
             for pkg, (f,lat,lon,hdg,w,h,o) in self.packageprops.iteritems():
+                if not pkg: continue	# unsaved Untitled
                 handle.write('%s="%s" %10.6f %11.6f %3d %8.2f %8.2f %2d\n' % (
                     pkg, f,lat,lon,hdg,w,h,o))
             handle.close()
