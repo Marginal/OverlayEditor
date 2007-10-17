@@ -113,6 +113,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.draginert=True
         self.dragx=wx.SystemSettings_GetMetric(wx.SYS_DRAG_X)
         self.dragy=wx.SystemSettings_GetMetric(wx.SYS_DRAG_Y)
+        if self.dragx<=1 or self.dragx>8 or self.dragy<=1 or self.dragy>8:
+            self.dragx=self.dragy=5	# Finder on Mac appears to use 5
 
         self.undostack=[]
 
@@ -253,7 +255,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             self.clickmode=ClickModes.Undecided
             self.select()
-            self.draginert=(self.clickmode!=ClickModes.DragNode)
+            self.draginert=True # was (self.clickmode!=ClickModes.DragNode)
 
     def OnLeftUp(self, event):
         #print "up", ClickModes.DragNode
@@ -769,6 +771,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
 
     def add(self, name, lat, lon, hdg, size, ctrl, shift):
+        texerr=None
         if self.selectednode or (shift and len(self.selected)==1 and isinstance(self.selected[0], Polygon)):
             # Add new node/winding
             placement=self.selected[0]
@@ -796,6 +799,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 myMessageBox("Can't read %s." %name, 'Cannot add this object.',
                              wx.ICON_ERROR|wx.OK, self.frame)
                 return False
+            texerr=placement.definition.texerr
+            placement.definition.texerr=None	# Don't report again
 
             if isinstance(placement, Draped) and placement.definition.ortho:
                 placement.param=65535
@@ -812,6 +817,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.trashlists(True)	# selection changes
         self.Refresh()
         self.frame.ShowSel()
+
+        if texerr:
+            myMessageBox(texerr.strerror, "Can't read texture %s" % texerr.filename, wx.ICON_INFORMATION|wx.OK, self.frame)
+
         return True
 
 
@@ -1044,6 +1053,7 @@ class MyGL(wx.glcanvas.GLCanvas):
     def goto(self, loc, hdg=None, elev=None, dist=None, options=None):
         #print "goto", loc
         errobjs=[]
+        errtexs=[]
         newtile=(int(floor(loc[0])),int(floor(loc[1])))
         self.centre=[newtile[0]+0.5, newtile[1]+0.5]
         (self.x, self.z)=self.latlon2m(loc[0],loc[1])
@@ -1065,7 +1075,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.selections=[]
             self.trashlists(True, True)
 
-            progress=wx.ProgressDialog('Loading', 'Terrain', 16, self, wx.PD_APP_MODAL)
+            progress=wx.ProgressDialog('Loading', 'Terrain', 17, self.frame, wx.PD_APP_MODAL)
             self.vertexcache.loadMesh(newtile, options)
 
             progress.Update(1, 'Terrain textures')
@@ -1109,6 +1119,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                     if not placement.load(self.lookup, self.defs, self.vertexcache, True) and placement.name not in errobjs:
                         errobjs.append(placement.name)
                         self.frame.palette.add(placement.name, True)
+
+                    if placement.definition.texerr:
+                        s="%s: %s" % (placement.definition.texerr.filename, placement.definition.texerr.strerror)
+                        if not s in errtexs: errtexs.append(s)
                         
                     if not placement.islaidout():
                         placement.layout(newtile, options, self.vertexcache)
@@ -1531,6 +1545,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         if errobjs:
             sortfolded(errobjs)
             myMessageBox(str('\n'.join(errobjs)), "Can't read one or more objects.", wx.ICON_EXCLAMATION|wx.OK, self.frame)
+
+        if errtexs:
+            sortfolded(errtexs)
+            myMessageBox(str('\n'.join(errtexs)), "Can't read one or more textures.", wx.ICON_INFORMATION|wx.OK, self.frame)
 
         self.Refresh()
 
