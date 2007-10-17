@@ -57,6 +57,8 @@ def PolygonDefFactory(filename, vertexcache):
         return FacadeDef(filename, vertexcache)
     elif ext==PolygonDef.FOREST:
         return ForestDef(filename, vertexcache)
+    #elif ext==PolygonDef.LINE:
+    #    return LineDef(filename, vertexcache)
     elif ext==ObjectDef.OBJECT:
         raise IOError		# not a polygon
     elif ext in SkipDefs:
@@ -73,6 +75,7 @@ class ClutterDef:
     SHOULDERLAYER=LAYERNAMES.index('shoulders')*11+5
     TAXIWAYLAYER=LAYERNAMES.index('taxiways')*11+5
     RUNWAYSLAYER=LAYERNAMES.index('runways')*11+5
+    MARKINGLAYER=LAYERNAMES.index('markings')*11+5
     OUTLINELAYER=LAYERNAMES.index('roads')*11+5	# for draped & exclusions
     DEFAULTLAYER=LAYERNAMES.index('objects')*11+5
 
@@ -456,6 +459,7 @@ class ObjectFallback(ObjectDef):
         ClutterDef.__init__(self, filename, vertexcache)
         self.filename=filename
         self.texture=0
+        self.texerr=None
         self.layer=ClutterDef.DEFAULTLAYER
         self.canpreview=False
         self.vdata=[[-0.5, 1.0, 0.5], [-0.5, 1.0, -0.5], [0.5, 1.0, -0.5], [-0.5, 1.0, 0.5], [0.5, 1.0, -0.5], [0.5, 1.0, 0.5], [-0.5, 0.0, 0.5], [-0.5, 1.0, 0.5], [0.5, 1.0, 0.5], [-0.5, 0.0, 0.5], [0.5, 1.0, 0.5], [0.5, 0.0, 0.5], [-0.5, 0.0, -0.5], [-0.5, 1.0, -0.5], [-0.5, 1.0, 0.5], [-0.5, 0.0, -0.5], [-0.5, 1.0, 0.5], [-0.5, 0.0,0.5], [0.5, 0.0, -0.5], [0.5, 1.0, -0.5], [-0.5, 1.0, -0.5], [0.5, 0.0, -0.5], [-0.5, 1.0, -0.5], [-0.5, 0.0, -0.5], [0.5, 1.0, -0.5], [0.5, 0.0, -0.5], [0.5, 0.0, 0.5], [0.5, 1.0, -0.5], [0.5, 0.0, 0.5], [0.5, 1.0, 0.5]]
@@ -474,13 +478,14 @@ class PolygonDef(ClutterDef):
     EXCLUDE='Exclude:'
     FACADE='.fac'
     FOREST='.for'
+    LINE='.lin'
     DRAPED='.pol'
     BEACH='.bch'
 
     def __init__(self, filename, texcache):
         ClutterDef.__init__(self, filename, texcache)
 
-    def preview(self, canvas, vertexcache, l=0, b=0, r=1, t=1):
+    def preview(self, canvas, vertexcache, l=0, b=0, r=1, t=1, hscale=1):
         if not self.texture or not self.canpreview: return None
         canvas.SetCurrent()
         glViewport(0, 0, 300, 300)
@@ -496,13 +501,13 @@ class PolygonDef(ClutterDef):
         glBindTexture(GL_TEXTURE_2D, self.texture)
         glBegin(GL_QUADS)
         glTexCoord2f(l,b)
-        glVertex3f(-1,  1, 0)
+        glVertex3f(-hscale,  1, 0)
         glTexCoord2f(r,b)
-        glVertex3f( 1,  1, 0)
+        glVertex3f( hscale,  1, 0)
         glTexCoord2f(r,t)
-        glVertex3f( 1, -1, 0)
+        glVertex3f( hscale, -1, 0)
         glTexCoord2f(l,t)
-        glVertex3f(-1, -1, 0)
+        glVertex3f(-hscale, -1, 0)
         glEnd()
         data=glReadPixels(0,0, 300,300, GL_RGB, GL_UNSIGNED_BYTE)
         img=wx.EmptyImage(300, 300, False)
@@ -564,6 +569,7 @@ class DrapedFallback(PolygonDef):
     def __init__(self, filename, vertexcache):
         self.filename=filename
         self.texture=0
+        self.texerr=None
         self.layer=ClutterDef.DEFAULTLAYER
         self.canpreview=False
         self.ortho=False
@@ -577,6 +583,7 @@ class ExcludeDef(PolygonDef):
         # PolygonDef.__init__(self, filename, vertexcache) - don't fanny about with tex paths
         self.filename=filename
         self.texture=0
+        self.texerr=None
         self.layer=ClutterDef.OUTLINELAYER
         self.canpreview=False
 
@@ -671,6 +678,7 @@ class FacadeFallback(PolygonDef):
     def __init__(self, filename, vertexcache):
         self.filename=filename
         self.texture=0
+        self.texerr=None
         self.layer=ClutterDef.DEFAULTLAYER
         self.canpreview=False
         self.ring=1
@@ -736,9 +744,64 @@ class ForestFallback(PolygonDef):
     def __init__(self, filename, vertexcache):
         self.filename=filename
         self.texture=0
+        self.texerr=None
         self.layer=ClutterDef.OUTLINELAYER
+        self.ortho=False	# cos Forest derives from Draped
         self.canpreview=False
 
-UnknownDefs=['.lin', '.str']	# Known unknowns
+
+class LineDef(PolygonDef):
+
+    def __init__(self, filename, vertexcache):
+        PolygonDef.__init__(self, filename, vertexcache)
+        self.layer=ClutterDef.MARKINGLAYER
+        self.offsets=[]
+        self.hscale=self.vscale=1
+        width=1
+        
+        h=codecs.open(self.filename, 'rU', 'latin1')
+        if not h.readline().strip()[0] in ['I','A']:
+            raise IOError
+        if not h.readline().split('#')[0].strip() in ['850']:
+            raise IOError
+        if not h.readline().strip() in ['LINE_PAINT']:
+            raise IOError
+        while True:
+            line=h.readline()
+            if not line: break
+            c=line.split('#')[0].split()
+            if not c: continue
+            if c[0]=='TEXTURE' and len(c)>1:
+                texture=line[7:].strip().replace(':', sep).replace('/', sep)
+                try:
+                    self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)), 'vertically')
+                except IOError, e:
+                    self.texerr=IOError(0,str(e),texture)
+            elif c[0]=='SCALE':
+                self.hscale=float(c[1])
+                self.vscale=float(c[2])
+            elif c[0]=='TEX_WIDTH':
+                width=float(c[1])
+            elif c[0]=='S_OFFSET':
+                offsets=[float(c[2]), float(c[3]), float(c[4])]
+        h.close()
+        self.offsets=[offsets[0]/width, offsets[1]/width, offsets[2]/width]
+                
+    def preview(self, canvas, vertexcache):
+        return PolygonDef.preview(self, canvas, vertexcache,
+                                  self.offsets[0], 0, self.offsets[2], 1,
+                                  self.vscale/self.hscale)
+        
+
+class LineFallback(PolygonDef):
+    def __init__(self, filename, vertexcache):
+        self.filename=filename
+        self.texture=0
+        self.texerr=None
+        self.layer=ClutterDef.MARKINGLAYER
+        self.canpreview=False
+
+
+UnknownDefs=['.lin','.str']	# Known unknowns
 SkipDefs=['.bch', '.net']	# Ignore in library
-KnownDefs=[ObjectDef.OBJECT, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.DRAPED]+UnknownDefs
+KnownDefs=[ObjectDef.OBJECT, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.LINE, PolygonDef.DRAPED]+UnknownDefs

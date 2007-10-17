@@ -55,11 +55,10 @@ except NameError:
     from OpenGL import GLU
     gluTessVertex = GLU._gluTessVertex
 
-from clutterdef import ObjectDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, SkipDefs, BBox
+from clutterdef import ObjectDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox
 from prefs import Prefs
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
-d2r=pi/180.0
 resolution=8*65535
 minres=1.0/resolution
 maxres=1-minres
@@ -104,7 +103,7 @@ class Clutter:
     def position(self, tile, lat, lon):
         # returns (x,z) position relative to centre of enclosing tile
         # z is positive south
-        return ((lon-tile[1]-0.5)*onedeg*cos(d2r*lat),
+        return ((lon-tile[1]-0.5)*onedeg*cos(radians(lat)),
                 (0.5-(lat-tile[0]))*onedeg)
 
 
@@ -845,17 +844,18 @@ class Facade(Polygon):
 
     def draw(self, selected, picking, nopoly=False):
         fac=self.definition
-        if picking or not self.quads:
+        if picking or (not self.quads and not self.roof):
             Polygon.draw(self, selected, picking, nopoly, (1.0,0.25,0.25))
         if not picking:
             glBindTexture(GL_TEXTURE_2D, fac.texture)
             if fac.two_sided:
                 glDisable(GL_CULL_FACE)
-        glBegin(GL_QUADS)
-        for p in self.quads:
-            glTexCoord2f(p[3],p[4])
-            glVertex3f(p[0],p[1],p[2])
-        glEnd()
+        if self.quads:
+            glBegin(GL_QUADS)
+            for p in self.quads:
+                glTexCoord2f(p[3],p[4])
+                glVertex3f(p[0],p[1],p[2])
+            glEnd()
         if self.roof:
             glBegin(GL_TRIANGLE_FAN)	# Better for concave
             for p in self.roof+[self.roof[1]]:
@@ -869,9 +869,22 @@ class Facade(Polygon):
         dparam=max(dparam, 1-self.param)	# can't have height 0
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
         
+    def layout(self, tile, options, vertexcache, selectednode=None):
+        selectednode=Polygon.layout(self, tile, options, vertexcache, selectednode)
+        self.quads=[]
+        self.roof=[]
+        try:
+            self.layoutquads(tile, options, vertexcache)
+        except:
+            # layout error
+            self.quads=[]
+            self.roof=[]
+        return selectednode
+        
     # Helper for layout
     def subdiv(self, size, scale, divs, ends, isvert):
         trgsize=size/scale
+        #print size, scale, divs, ends, isvert, trgsize
         cumsize=0
         if ends[0]+ends[1]>=len(divs):
             points=range(len(divs))
@@ -911,12 +924,8 @@ class Facade(Polygon):
             return (points,size/cumsize)
 
 
-    def layout(self, tile, options, vertexcache, selectednode=None):
-        selectednode=Polygon.layout(self, tile, options, vertexcache, selectednode)
-
-        self.quads=[]
-        self.roof=[]
-
+    # Helper for layout
+    def layoutquads(self, tile, options, vertexcache):
         fac=self.definition
         points=self.points[0]
         n=len(points)
@@ -929,7 +938,7 @@ class Facade(Polygon):
         
         if fac.roof_slope:
             roofpts=[]
-            dist=sin(d2r*fac.roof_slope)*fac.vscale*(fac.vert[vert[-1]][1]-fac.vert[vert[-1]][0])
+            dist=sin(radians(fac.roof_slope))*fac.vscale*(fac.vert[vert[-1]][1]-fac.vert[vert[-1]][0])
             for i in range(n):
                 if i==n-1 and not fac.ring:
                     tonext=(points[i][0]-points[i-1][0],
@@ -1025,7 +1034,7 @@ class Facade(Polygon):
                 cumwidth+=widthinc
 
         # roof
-        if n<=2 or not fac.ring or not fac.roof: return selectednode
+        if n<=2 or not fac.ring or not fac.roof: return
         minx=minz=maxint
         maxx=maxz=-maxint
         for i in roofpts:
@@ -1049,7 +1058,7 @@ class Facade(Polygon):
             self.roof.append((roofpts[i][0], roofpts[i][1], roofpts[i][2],
                               fac.roof[0][0] + (roofpts[i][0]-minx)*xscale,
                               fac.roof[0][1] + (roofpts[i][2]-minz)*zscale))
-        return selectednode
+        return
 
 
 class Forest(Draped):	# inherit from Draped for layout
@@ -1109,6 +1118,155 @@ class Forest(Draped):	# inherit from Draped for layout
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
         if self.param>255: self.param=255
+
+
+class Line(Polygon):
+
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
+        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
+        self.lines=[]	# tesellated lines
+        self.nonsimple=False
+
+    def clone(self):
+        return Line(self.name, self.param, [list(w) for w in self.nodes])
+
+    def load(self, lookup, defs, vertexcache, usefallback=False):
+        try:
+            filename=lookup[self.name]
+            if filename in defs:
+                self.definition=defs[filename]
+            else:
+                defs[filename]=self.definition=LineDef(filename, vertexcache)
+            return True
+        except:
+            if usefallback:
+                if self.name in lookup:
+                    filename=lookup[self.name]
+                else:
+                    filename=lookup[self.name]=self.name
+                if filename in defs:
+                    self.definition=defs[filename]
+                else:
+                    defs[filename]=self.definition=LineFallback(filename, vertexcache)
+            return False
+
+    def locationstr(self, dms, node=None):
+        if node:
+            return Polygon.locationstr(self, dms, node)
+        else:
+            if self.param:
+                oc='Closed'
+            else:
+                oc='Open'
+            return '%s  %s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
+
+    def draw(self, selected, picking, nopoly=False):
+        drp=self.definition
+        if self.nonsimple:
+            Polygon.draw(self, selected, picking, nopoly, (1.0,0.25,0.25))
+            return
+        elif picking:
+            Polygon.draw(self, selected, picking, nopoly)	# for outline
+        else:
+            glBindTexture(GL_TEXTURE_2D, drp.texture)
+        if not (selected or picking or nopoly):
+            glDepthMask(GL_FALSE)	# offset mustn't update depth
+            glEnable(GL_POLYGON_OFFSET_FILL)
+            glPolygonOffset(-1, -1)
+        glBegin(GL_TRIANGLES)
+        if picking:
+            for t in self.tris:
+                glVertex3f(*t[0])
+        else:
+            for t in self.tris:
+                glTexCoord2f(*t[2])
+                glVertex3f(*t[0])
+        glEnd()
+        if not (selected or picking or nopoly):
+            glDepthMask(GL_TRUE)
+            glDisable(GL_POLYGON_OFFSET_FILL)
+        
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
+        dparam=min(dparam, 1-self.param)	# max 1
+        if dhdg:
+            self.nodes[0].reverse()		# flip direction XXX ccw?
+        if dlat or dlon or dparam:
+            Polygon.move(self, dlat, dlon, 0, dparam, loc, tile, options, vertexcache)
+        elif dhdg:
+            self.layout(tile, options, vertexcache)
+
+    def layout(self, tile, options, vertexcache, selectednode=None):
+        global csgl
+        selectednode=Polygon.layout(self, tile, options, vertexcache, selectednode)
+
+        # tessellate in CSG mode against terrain
+        minx=minz=maxint
+        maxx=maxz=-maxint
+        self.lines=[]
+        gluTessBeginPolygon(csgl, self.lines)
+        for i in range(len(self.nodes)):
+            n=len(self.nodes[i])
+            gluTessBeginContour(csgl)
+            for j in range(n-1,-1,-1): # why not n?
+                if not i:
+                    minx=min(minx, self.points[i][j][0])
+                    maxx=max(maxx, self.points[i][j][0])
+                    minz=min(minz, self.points[i][j][2])
+                    maxz=max(maxz, self.points[i][j][2])
+                gluTessVertex(csgl, [self.points[i][j][0], 0, self.points[i][j][2]], (self.points[i][j], False, i))
+            gluTessEndContour(csgl)
+        abox=BBox(minx, maxx, minz, maxz)
+
+        for (bbox, meshtris) in vertexcache.getMeshdata(tile,options):
+            if not abox.intersects(bbox): continue
+            for meshtri in meshtris:
+                (meshpt, coeffs)=meshtri
+                # tesselator is expensive - minimise mesh triangles
+                tbox=BBox()
+                for m in range(3):
+                    tbox.include(meshpt[m][0], meshpt[m][2])
+                if not abox.intersects(tbox):
+                    continue
+                gluTessBeginContour(csgl)
+                for m in range(3):
+                    x=meshpt[m][0]
+                    z=meshpt[m][2]
+                    if isforest:
+                        gluTessVertex(csgl, [x,0,z], (meshpt[m],True, None))
+                        continue
+                    # check if mesh point is inside a polygon triangle
+                    # http://astronomy.swin.edu.au/~pbourke/geometry/insidepoly
+                    for t in range(0,len(tris),3):
+                        c=False
+                        ptj=tris[t+2][0]
+                        for i in range(t,t+3):
+                            pti=tris[i][0]
+                            if ((((pti[2] <= z) and (z < ptj[2])) or
+                                 ((ptj[2] <= z) and (z < pti[2]))) and
+                                (x < (ptj[0]-pti[0]) * (z - pti[2]) / (ptj[2] - pti[2]) + pti[0])):
+                                c = not c
+                            ptj=pti
+                        if c:	# point is inside polygon triange tris[t:t+3]
+                            x0=tris[t][0][0]
+                            z0=tris[t][0][2]
+                            x1=tris[t+1][0][0]-x0
+                            z1=tris[t+1][0][2]-z0
+                            x2=tris[t+2][0][0]-x0
+                            z2=tris[t+2][0][2]-z0
+                            xp=x-x0
+                            zp=z-z0
+                            a=(xp*z2-x2*zp)/(x1*z2-x2*z1)
+                            b=(xp*z1-x1*zp)/(x2*z1-x1*z2)
+                            uv=(tris[t][2][0]+a*(tris[t+1][2][0]-tris[t][2][0])+b*(tris[t+2][2][0]-tris[t][2][0]),
+                                tris[t][2][1]+a*(tris[t+1][2][1]-tris[t][2][1])+b*(tris[t+2][2][1]-tris[t][2][1]))
+                            break
+                    else:
+                        uv=None
+                    gluTessVertex(csgl, [x,0,z], (meshpt[m],True, uv))
+                gluTessEndContour(csgl)
+
+        gluTessEndPolygon(csgl)
+        return selectednode
 
 
 def latlondisp(dms, lat, lon):
@@ -1225,4 +1383,64 @@ gluTessProperty(csgt, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
 gluTessCallback(csgt, GLU_TESS_VERTEX_DATA,  csgtvertex)
 gluTessCallback(csgt, GLU_TESS_COMBINE,      csgtcombine)
 gluTessCallback(csgt, GLU_TESS_EDGE_FLAG,    csgtedge)	# no strips
+
+
+def csglvertex(vertex, data):
+    data.append(vertex)
+
+def csglcombine(coords, vertex, weight):
+    # interp height & UV at coords from vertices (location, ismesh, uv)
+    
+    # check for just two adjacent mesh triangles
+    if vertex[0]==vertex[1]:
+        # common case, or non-simple
+        #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
+        return vertex[0]
+    elif vertex[0][0][0]==vertex[1][0][0] and vertex[0][0][2]==vertex[1][0][2] and vertex[0][1]:
+        # Height discontinuity in terrain mesh - eg LIEE - wtf!
+        assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
+        return vertex[0]
+
+    # intersection of two lines - use terrain mesh line for height
+    elif vertex[0][1]:
+        #assert weight[0] and weight[1] and weight[2] and weight[3] and vertex[1][1]
+        p1=vertex[0]
+        p2=vertex[1]
+        p3=vertex[2]
+        p4=vertex[3]
+    else:
+        assert weight[0] and weight[1] and weight[2] and weight[3]
+        p1=vertex[2]
+        p2=vertex[3]
+        p3=vertex[0]
+        p4=vertex[1]
+
+    # height
+    d=hypot(p2[0][0]-p1[0][0], p2[0][2]-p1[0][2])
+    if not d:
+        y=p1[0][1]
+    else:
+        ratio=(hypot(coords[0]-p1[0][0], coords[2]-p1[0][2])/d)
+        y=p1[0][1]+ratio*(p2[0][1]-p1[0][1])
+
+    # UV
+    if not p3[2]:
+        uv=None
+    else:
+        d=hypot(p4[0][0]-p3[0][0], p4[0][2]-p3[0][2])
+        if not d:
+            uv=p3[2]
+        else:
+            ratio=(hypot(coords[0]-p3[0][0], coords[2]-p3[0][2])/d)
+            uv=(p3[2][0]+ratio*(p4[2][0]-p3[2][0]),
+                p3[2][1]+ratio*(p4[2][1]-p3[2][1]))
+    
+    return ([coords[0],y,coords[2]], True, uv)
+
+csgl=gluNewTess()
+gluTessNormal(csgl, 0, -1, 0)
+gluTessProperty(csgl, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
+gluTessProperty(csgl, GLU_TESS_BOUNDARY_ONLY,GL_TRUE)
+gluTessCallback(csgl, GLU_TESS_VERTEX_DATA,  csglvertex)
+gluTessCallback(csgl, GLU_TESS_COMBINE,      csglcombine)
 
