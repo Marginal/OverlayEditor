@@ -396,10 +396,18 @@ class TexCache:
 
                 if downsample and image.size[0]>4 and image.size[1]>4:
                     image=image.resize((image.size[0]/4,image.size[1]/4), PIL.Image.NEAREST)
-                if image.mode in ['RGBA', 'LA']:
+                if image.mode=='RGBA':
                     data = image.tostring("raw", 'RGBA')
                     format=iformat=GL_RGBA
-                else:	# RGB or dunno - hope it converts
+                elif image.mode=='RGB':
+                    data = image.tostring("raw", 'RGB')
+                    format=iformat=GL_RGB
+                elif image.mode=='LA' or 'transparency' in image.info:
+                    image=image.convert('RGBA')
+                    data = image.tostring("raw", 'RGBA')
+                    format=iformat=GL_RGBA                    
+                else:
+                    image=image.convert('RGB')
                     data = image.tostring("raw", 'RGB')
                     format=iformat=GL_RGB
                 width=image.size[0]
@@ -436,7 +444,7 @@ class TexCache:
         except IOError, e:
             if e.errno==2:
                 if __debug__: print "%s file not found" % basename(path)
-                raise IOError, "File %s not found" % path
+                raise IOError, "%s not found" % path
             elif e.strerror:
                 if __debug__: print "%s %s" % (basename(path), e.strerror)
                 raise IOError, e.strerror
