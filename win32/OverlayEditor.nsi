@@ -31,6 +31,7 @@ UninstallIcon "win32\installer.ico"
 Section "Install"
   SetOutPath "$INSTDIR"
   File /r dist\*
+  Delete "$INSTDIR\OverlayEditor.exe.log"
   CreateShortCut "$SMPROGRAMS\OverlayEditor.lnk" "$INSTDIR\OverlayEditor.exe"
 
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OverlayEditor" "DisplayIcon" "$INSTDIR\OverlayEditor.exe,0"
@@ -44,7 +45,7 @@ Section "Install"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OverlayEditor" "URLInfoAbout" "mailto:Jonathan Harris <x-plane@marginal.org.uk>?subject=OverlayEditor $%VERSION%"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OverlayEditor" "URLUpdateInfo" "http://marginal.org.uk/x-planescenery"
 
-WriteUninstaller "$INSTDIR\uninstall.exe"
+  WriteUninstaller "$INSTDIR\uninstall.exe"
 SectionEnd
 
 
@@ -52,6 +53,7 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\OverlayEditor.lnk"
   Delete "$INSTDIR\MSVCR71.dll"
   Delete "$INSTDIR\OverlayEditor.exe"
+  Delete "$INSTDIR\OverlayEditor.exe.log"
   Delete "$INSTDIR\OverlayEditor.html"
   Delete "$INSTDIR\uninstall.exe"
   RMDir /r "$INSTDIR\Resources"
