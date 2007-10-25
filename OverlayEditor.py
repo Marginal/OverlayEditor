@@ -1293,6 +1293,8 @@ class MainWindow(wx.Frame):
     def OnReload(self, reload, package=None):
         progress=wx.ProgressDialog('Loading', '', 4, self, wx.PD_APP_MODAL)
         self.palette.flush()
+        if reload:
+            package=prefs.package
         pkgnavdata=None
         if package:
             pkgdir=glob(join(prefs.xplane,gcustom,package))[0]
@@ -1537,9 +1539,10 @@ class MainWindow(wx.Frame):
         AboutBox(self)
 
     def OnClose(self, event):
-        cancancel=isinstance(event, wx.CloseEvent) and event.CanVeto()
+        # On Mac Cmd-Q and LogOut are CommandEvents, not CloseEvents
+        cancancel=not isinstance(event, wx.CloseEvent) or event.CanVeto()
         if not self.SaveDialog(cancancel):
-            event.Veto()
+            if isinstance(event, wx.CloseEvent): event.Veto()
             return False
         prefs.write()
         if self.goto: self.goto.Close()
@@ -1648,10 +1651,21 @@ if not prefs.xplane or not glob(join(prefs.xplane,gcustom)):
     dlg.Destroy()
 if prefs.package and not glob(join(prefs.xplane, gcustom, prefs.package)):
     prefs.package=None
+if __debug__:
+    if len(argv)>1:	# allow package name on command line
+        prefs.package=basename(argv[1])
+        frame.toolbar.EnableTool(wx.ID_SAVE,  False)
+        frame.toolbar.EnableTool(wx.ID_PASTE,  True)
+        frame.toolbar.EnableTool(wx.ID_REFRESH,True)
+        if frame.menubar:
+            frame.menubar.Enable(wx.ID_SAVE,  False)
+            frame.menubar.Enable(wx.ID_PASTE,  True)
+            frame.menubar.Enable(wx.ID_REFRESH,True)
+
 
 # Load data files
 frame.Update()		# Let window draw first
-frame.OnReload(False)
+frame.OnReload(False, prefs.package)
 app.MainLoop()
 
 # Save prefs
