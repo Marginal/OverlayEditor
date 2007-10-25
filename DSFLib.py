@@ -1,6 +1,6 @@
 from math import cos, floor, pi
 from os import mkdir, popen3, rename, unlink
-from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, pardir, sep
+from os.path import basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 from struct import unpack
 from sys import platform, maxint
 from tempfile import gettempdir
@@ -387,7 +387,7 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
             if ter in terrains:	# Library terrain
                 phys=terrains[ter]
             else:		# Package-specific terrain
-                phys=abspath(join(dirname(path), pardir, pardir, ter))
+                phys=normpath(join(dirname(path), pardir, pardir, ter))
             h=file(phys, 'rU')
             if not (h.readline().strip() in ['I','A'] and
                     h.readline().strip()=='800' and
@@ -401,7 +401,7 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
                     texture=line[len(c[0]):].strip()
                     texture=texture.replace(':', sep)
                     texture=texture.replace('/', sep)
-                    texture=abspath(join(dirname(phys), texture))
+                    texture=normpath(join(dirname(phys), texture))
                 elif c[0]=='PROJECTED':
                     xscale=1/float(c[1])
                     zscale=1/float(c[2])

@@ -13,7 +13,7 @@ import codecs
 from glob import glob
 from math import cos, log, pi, radians
 from os import listdir, mkdir
-from os.path import abspath, basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep, splitext
+from os.path import basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
 from struct import unpack
 from sys import platform, maxint

@@ -1,7 +1,7 @@
 import codecs
 from math import fabs
 from os import listdir
-from os.path import abspath, dirname, exists, join, sep
+from os.path import dirname, exists, join, normpath, sep
 from sys import maxint
 
 from OpenGL.GL import *
@@ -157,7 +157,7 @@ class ObjectDef(ClutterDef):
                     tex=tex.replace(':', sep).replace('/', sep)
                     break
             for ext in ['', '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
-                if exists(abspath(join(self.texpath, tex+ext))):
+                if exists(normpath(join(self.texpath, tex+ext))):
                     texture=tex+ext
                     break
             else:
@@ -380,7 +380,7 @@ class ObjectDef(ClutterDef):
             self.base=None
             if texture:	# can be none
                 try:
-                    self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)))
+                    self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
                 except IOError, e:
                     self.texerr=IOError(0,str(e),texture)
             self.allocate(vertexcache)
@@ -560,7 +560,7 @@ class DrapedDef(PolygonDef):
                 alpha=False
         h.close()
         try:
-            self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)), not self.ortho, alpha)
+            self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)), not self.ortho, alpha)
         except IOError, e:
             self.texerr=IOError(0,str(e),texture)
 
@@ -620,7 +620,7 @@ class FacadeDef(PolygonDef):
             if c[0]=='TEXTURE' and len(c)>1:
                 texture=line[7:].strip().replace(':', sep).replace('/', sep)
                 try:
-                    self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)))
+                    self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
                 except IOError, e:
                     self.texerr=IOError(0,str(e),texture)
             elif c[0]=='RING':
@@ -718,7 +718,7 @@ class ForestDef(PolygonDef):
             if c[0]=='TEXTURE' and len(c)>1:
                 texture=line[7:].strip().replace(':', sep).replace('/', sep)
                 try:
-                    self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)))
+                    self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
                 except IOError, e:
                     self.texerr=IOError(0,str(e),texture)
             elif c[0]=='SCALE_X':
@@ -774,7 +774,7 @@ class LineDef(PolygonDef):
             if c[0]=='TEXTURE' and len(c)>1:
                 texture=line[7:].strip().replace(':', sep).replace('/', sep)
                 try:
-                    self.texture=vertexcache.texcache.get(abspath(join(self.texpath, texture)), 'vertically')
+                    self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)), 'vertically')
                 except IOError, e:
                     self.texerr=IOError(0,str(e),texture)
             elif c[0]=='SCALE':
