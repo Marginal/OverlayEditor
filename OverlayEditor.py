@@ -59,6 +59,7 @@ if not isdir(mypath):
     exit('"%s" is not a folder' % mypath)
 if basename(mypath)=='MacOS':
     chdir(normpath(join(mypath,pardir)))	# Starts in MacOS folder
+    argv[0]=basename(argv[0])	# wx doesn't like non-ascii chars in argv[0]
 else:
     chdir(mypath)
 
@@ -766,7 +767,7 @@ class MainWindow(wx.Frame):
             wx.EVT_MENU(self, wx.ID_PASTE, self.OnImport)
             # ID_EXIT moved to application menu
             filemenu.Append(wx.ID_EXIT, u'Quit %s\tCtrl-Q' % appname)
-            wx.EVT_MENU(self, wx.ID_EXIT, self.OnClose)	# generates commnd evt
+            #wx.EVT_MENU(self, wx.ID_EXIT, self.OnClose)	# don't do this -> generates CommandEvent not CloseEvent
             self.menubar.Append(filemenu, 'File')
 
             editmenu = wx.Menu()
@@ -1539,10 +1540,9 @@ class MainWindow(wx.Frame):
         AboutBox(self)
 
     def OnClose(self, event):
-        # On Mac Cmd-Q and LogOut are CommandEvents, not CloseEvents
-        cancancel=not isinstance(event, wx.CloseEvent) or event.CanVeto()
-        if not self.SaveDialog(cancancel):
-            if isinstance(event, wx.CloseEvent): event.Veto()
+        # On wxMac Cmd-Q, LogOut & ShutDown are indistinguishable
+        if not self.SaveDialog((platform=='darwin') or event.CanVeto()):
+            if event.CanVeto(): event.Veto()
             return False
         prefs.write()
         if self.goto: self.goto.Close()

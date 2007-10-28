@@ -6,6 +6,7 @@
 !define MUI_ABORTWARNING
 
 SetCompressor /SOLID lzma
+RequestExecutionLevel admin
 
 Name "OverlayEditor $%VERSION%"
 Caption "OverlayEditor $%VERSION% Installer"
@@ -31,9 +32,14 @@ UninstallIcon "win32\installer.ico"
 Section "Install"
   SetOutPath "$INSTDIR"
   File /r dist\*
+
   Delete "$INSTDIR\OverlayEditor.exe.log"
+  SetShellVarContext current
+  Delete "$SMPROGRAMS\OverlayEditor.lnk"; old versions used current user
+  SetShellVarContext all
   CreateShortCut "$SMPROGRAMS\OverlayEditor.lnk" "$INSTDIR\OverlayEditor.exe"
 
+  ; uninstall info
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OverlayEditor" "DisplayIcon" "$INSTDIR\OverlayEditor.exe,0"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OverlayEditor" "DisplayName" "OverlayEditor"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OverlayEditor" "DisplayVersion" "$%VERSION%"
@@ -50,6 +56,9 @@ SectionEnd
 
 
 Section "Uninstall"
+  SetShellVarContext current
+  Delete "$SMPROGRAMS\OverlayEditor.lnk"; old versions used current user
+  SetShellVarContext all
   Delete "$SMPROGRAMS\OverlayEditor.lnk"
   Delete "$INSTDIR\MSVCR71.dll"
   Delete "$INSTDIR\OverlayEditor.exe"
