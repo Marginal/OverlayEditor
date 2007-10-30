@@ -1,3 +1,4 @@
+import problems?
 pyopengl 3 on Unix
 
 palette right click / ctrl-click -> delete, rename

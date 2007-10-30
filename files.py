@@ -440,23 +440,23 @@ class TexCache:
                 self.terraintexs.append(id)
             return id
 
-        # exceptions should just return a string here
+        # Callers expect an IOError
         except IOError, e:
             if e.errno==2:
                 if __debug__: print "%s file not found" % basename(path)
-                raise IOError, "%s not found" % path
+                raise IOError, (2, "%s not found" % path)
             elif e.strerror:
                 if __debug__: print "%s %s" % (basename(path), e.strerror)
-                raise IOError, e.strerror
-            else:
+                raise IOError, (e.errno, e.strerror)
+            else:	# PIL "cannot read interlaced PNG files"
                 if __debug__: print "%s %s" % (basename(path), e)
-                raise IOError, str(e)
+                raise IOError, (0, str(e))
         except GLerror, e:
             if __debug__: print "%s %s" % (basename(path), e)
-            raise IOError, str(e)
+            raise IOError, (0, str(e))
         except:
             if __debug__: print "%s unknown error" % basename(path)
-            raise IOError, ''
+            raise IOError, (0, 'unknown error')
 
 
 class VertexCache:

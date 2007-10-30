@@ -506,34 +506,37 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.background:
             (image, lat, lon, hdg, width, length, opacity, height)=self.background
             if (int(floor(lat)),int(floor(lon)))==self.tile:
-                texno=self.vertexcache.texcache.get(image, False, True, False, True)
-                (x,z)=self.latlon2m(lat, lon)
-                glPushMatrix()
-                glTranslatef(x, height, z)
-                glRotatef(-hdg, 0.0,1.0,0.0)
-                glColor4f(1.0, 1.0, 1.0, opacity/100.0)
-                glBindTexture(GL_TEXTURE_2D, texno)
-                glBegin(GL_QUADS)
-                glTexCoord2f(0,0)
-                glVertex3f(-width/2, 0, length/2)
-                glTexCoord2f(0,1)
-                glVertex3f(-width/2, 0,-length/2)
-                glTexCoord2f(1,1)
-                glVertex3f( width/2, 0,-length/2)
-                glTexCoord2f(1,0)
-                glVertex3f( width/2, 0, length/2)
-                glEnd()
-                if self.frame.bkgd:
-                    # Setting background image
-                    glColor3f(1.0, 0.5, 1.0)
-                    glBindTexture(GL_TEXTURE_2D, 0)
-                    glBegin(GL_LINE_LOOP)
+                try:
+                    texno=self.vertexcache.texcache.get(image, False, True, False, True)
+                    (x,z)=self.latlon2m(lat, lon)
+                    glPushMatrix()
+                    glTranslatef(x, height, z)
+                    glRotatef(-hdg, 0.0,1.0,0.0)
+                    glColor4f(1.0, 1.0, 1.0, opacity/100.0)
+                    glBindTexture(GL_TEXTURE_2D, texno)
+                    glBegin(GL_QUADS)
+                    glTexCoord2f(0,0)
                     glVertex3f(-width/2, 0, length/2)
+                    glTexCoord2f(0,1)
                     glVertex3f(-width/2, 0,-length/2)
+                    glTexCoord2f(1,1)
                     glVertex3f( width/2, 0,-length/2)
+                    glTexCoord2f(1,0)
                     glVertex3f( width/2, 0, length/2)
                     glEnd()
-                glPopMatrix()
+                    if self.frame.bkgd:
+                        # Setting background image
+                        glColor3f(1.0, 0.5, 1.0)
+                        glBindTexture(GL_TEXTURE_2D, 0)
+                        glBegin(GL_LINE_LOOP)
+                        glVertex3f(-width/2, 0, length/2)
+                        glVertex3f(-width/2, 0,-length/2)
+                        glVertex3f( width/2, 0,-length/2)
+                        glVertex3f( width/2, 0, length/2)
+                        glEnd()
+                    glPopMatrix()
+                except:
+                    self.setbackground(None)
 
         # labels
         if self.d>2000:	# arbitrary
@@ -796,7 +799,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 placement=PolygonFactory(name, None, lat, lon, size, hdg)
             
             if not placement.load(self.lookup, self.defs, self.vertexcache):
-                myMessageBox("Can't read %s." %name, 'Cannot add this object.',
+                myMessageBox("Can't read %s" %name, 'Cannot add this object.',
                              wx.ICON_ERROR|wx.OK, self.frame)
                 return False
             texerr=placement.definition.texerr

@@ -82,7 +82,7 @@ class PaletteListBox(wx.VListBox):
         self.choices.sort(lambda x,y: cmp(x[1].lower(), y[1].lower()))
         for i in range(len(self.choices)):
             (imgno, name, realname)=self.choices[i]
-            if realname not in parent.lookup:
+            if tabno==0 or realname not in parent.lookup:
                 # per-package objects take precedence
                 parent.lookup[realname]=(tabno,i)
 
@@ -231,7 +231,7 @@ class PaletteChoicebook(wx.Choicebook):
                 if realname in self.bad:
                     return	# already bad
                 self.bad[realname]=True
-                l.choices[i]=(7, name, realname)
+                l.choices[i]=(8, name, realname)
                 self.Refresh()
                 break
         else:

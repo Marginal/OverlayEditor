@@ -1475,7 +1475,7 @@ class MainWindow(wx.Frame):
                 self.canvas.lookup[name]=newpath
                 self.palette.add(name)
                 continue
-            myMessageBox(msg, "Can't import %s." % path,
+            myMessageBox(msg, "Can't import %s" % path,
                          wx.ICON_ERROR|wx.OK, self)
 
     def OnGoto(self, event):

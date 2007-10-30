@@ -382,7 +382,7 @@ class ObjectDef(ClutterDef):
                 try:
                     self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
                 except IOError, e:
-                    self.texerr=IOError(0,str(e),texture)
+                    self.texerr=IOError(0,e.strerror,texture)
             self.allocate(vertexcache)
 
     def allocate(self, vertexcache):
@@ -562,7 +562,7 @@ class DrapedDef(PolygonDef):
         try:
             self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)), not self.ortho, alpha)
         except IOError, e:
-            self.texerr=IOError(0,str(e),texture)
+            self.texerr=IOError(0,e.strerror,texture)
 
 
 class DrapedFallback(PolygonDef):
@@ -622,7 +622,7 @@ class FacadeDef(PolygonDef):
                 try:
                     self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
                 except IOError, e:
-                    self.texerr=IOError(0,str(e),texture)
+                    self.texerr=IOError(0,e.strerror,texture)
             elif c[0]=='RING':
                 self.ring=int(c[1])
             elif c[0]=='TWO_SIDED': self.two_sided=(int(c[1])!=0)
@@ -720,7 +720,7 @@ class ForestDef(PolygonDef):
                 try:
                     self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
                 except IOError, e:
-                    self.texerr=IOError(0,str(e),texture)
+                    self.texerr=IOError(0,e.strerror,texture)
             elif c[0]=='SCALE_X':
                 scalex=float(c[1])
             elif c[0]=='SCALE_Y':
@@ -776,7 +776,7 @@ class LineDef(PolygonDef):
                 try:
                     self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)), 'vertically')
                 except IOError, e:
-                    self.texerr=IOError(0,str(e),texture)
+                    self.texerr=IOError(0,e.strerror,texture)
             elif c[0]=='SCALE':
                 self.hscale=float(c[1])
                 self.vscale=float(c[2])
