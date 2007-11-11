@@ -4,8 +4,8 @@
 # Force default Python so picks up system wxPython
 exec /bin/bash -s<<EOF
 if [[ `sw_vers -productVersion` < 10.5 ]]; then
-    /usr/bin/pythonw2.3 -OO "$0.py";
+    exec /usr/bin/pythonw2.3 -OO "$0.py";
 else
-    /usr/bin/pythonw2.5 -OO "$0.py";
+    exec /usr/bin/pythonw2.5 -OO "$0.py";
 fi
 EOF

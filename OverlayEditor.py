@@ -19,7 +19,7 @@ try:
 except:
     if platform=='darwin':
         from EasyDialogs import Message
-        Message("wxPython is not installed. This application\nrequires wxPython 2.5.3-py%s or later." % version[:3])
+        Message("wxPython is not installed. This application requires\nwxPython 2.5.3 or later, built for Python %s." % version[:3])
     else:	# linux
         import tkMessageBox
         tkMessageBox._show("Error", "wxPython is not installed. This application\nrequires python wxgtk 2.5.3 or later.", icon="error", type="ok")
@@ -1304,7 +1304,7 @@ class MainWindow(wx.Frame):
         else:
             pkgdir=None
 
-        if not self.airports:	# Default apt.dat
+        if not self.airports and not __debug__:	# Default apt.dat
             progress.Update(0, 'Global airports')
             try:
                 (self.airports,self.nav,foo)=readApt(glob(join(prefs.xplane, gmainaptdat))[0])
