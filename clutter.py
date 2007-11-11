@@ -48,6 +48,7 @@ from math import atan2, cos, floor, hypot, pi, radians, sin
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from sys import maxint
+from traceback import print_exc
 try:
     # apparently older PyOpenGL version didn't define gluTessVertex
     gluTessVertex
@@ -615,6 +616,9 @@ class Draped(Polygon):
                 return selectednode
         except:
             # Combine required -> not simple
+            if __debug__:
+                print "Draped layout failed:"
+                print_exc()
             self.tris=[]
             self.nonsimple=True
             return selectednode
@@ -665,18 +669,22 @@ class Draped(Polygon):
                         gluTessVertex(csgt, [x,0,z], (meshpt[m],True, None))
                         continue
                     # check if mesh point is inside a polygon triangle
+                    # in which case calculate a uv position
                     # http://astronomy.swin.edu.au/~pbourke/geometry/insidepoly
                     for t in range(0,len(tris),3):
-                        c=False
+                        inside=False
                         ptj=tris[t+2][0]
                         for i in range(t,t+3):
                             pti=tris[i][0]
-                            if ((((pti[2] <= z) and (z < ptj[2])) or
-                                 ((ptj[2] <= z) and (z < pti[2]))) and
-                                (x < (ptj[0]-pti[0]) * (z - pti[2]) / (ptj[2] - pti[2]) + pti[0])):
-                                c = not c
+                            if z==pti[2]==ptj[2] and x <= max(pti[0],ptj[0]) and x >= min(pti[0],ptj[0]):
+                                inside = True	# on the line
+                                break
+                            elif (((pti[2] <= z and z < ptj[2]) or
+                                   (ptj[2] <= z and z < pti[2])) and
+                                  (x < (ptj[0]-pti[0]) * (z - pti[2]) / (ptj[2] - pti[2]) + pti[0])):
+                                inside = not inside
                             ptj=pti
-                        if c:	# point is inside polygon triange tris[t:t+3]
+                        if inside:	# inside polygon triange tris[t:t+3]
                             x0=tris[t][0][0]
                             z0=tris[t][0][2]
                             x1=tris[t+1][0][0]-x0
@@ -877,6 +885,9 @@ class Facade(Polygon):
             self.layoutquads(tile, options, vertexcache)
         except:
             # layout error
+            if __debug__:
+                print "Facade layout failed:"
+                print_exc()
             self.quads=[]
             self.roof=[]
         return selectednode
@@ -1323,19 +1334,27 @@ gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
 
 
 def csgtvertex(vertex, data):
+    assert(vertex[2])
     data.append(vertex)
 
 def csgtcombine(coords, vertex, weight):
     # interp height & UV at coords from vertices (location, ismesh, uv)
-    
+
+    #print vertex[0], weight[0]
+    #print vertex[1], weight[1]
+    #print vertex[2], weight[2]
+    #print vertex[3], weight[3]
+
     # check for just two adjacent mesh triangles
     if vertex[0]==vertex[1]:
         # common case, or non-simple
         #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
+        #print vertex[0], " ->"
         return vertex[0]
     elif vertex[0][0][0]==vertex[1][0][0] and vertex[0][0][2]==vertex[1][0][2] and vertex[0][1]:
         # Height discontinuity in terrain mesh - eg LIEE - wtf!
         assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
+        #print vertex[0], " ->"
         return vertex[0]
 
     # intersection of two lines - use terrain mesh line for height
@@ -1371,7 +1390,9 @@ def csgtcombine(coords, vertex, weight):
             ratio=(hypot(coords[0]-p3[0][0], coords[2]-p3[0][2])/d)
             uv=(p3[2][0]+ratio*(p4[2][0]-p3[2][0]),
                 p3[2][1]+ratio*(p4[2][1]-p3[2][1]))
-    
+
+    #print ([coords[0],y,coords[2]], True, uv), " ->"
+    #assert(uv)	# only if draped
     return ([coords[0],y,coords[2]], True, uv)
 
 def csgtedge(flag):
