@@ -26,7 +26,7 @@ if __debug__:
 
 from files import VertexCache, sortfolded
 from fixed8x13 import fixed8x13
-from clutter import PolygonFactory, Draped, Facade, Object, Polygon, Exclude, resolution, maxres, round2res, latlondisp
+from clutter import PolygonFactory, Draped, Facade, Object, Polygon, Exclude, resolution, round2res, latlondisp
 from clutterdef import BBox, ClutterDef, ObjectDef
 from MessageBox import myMessageBox
 from prefs import Prefs
@@ -376,8 +376,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.SetCursor(self.dragcursor)
             poly=self.selected[0]
             (lat,lon)=self.getworldloc(event.m_x, event.m_y)
-            lat=max(self.tile[0], min(self.tile[0]+maxres, lat))
-            lon=max(self.tile[1], min(self.tile[1]+maxres, lon))
+            lat=max(self.tile[0], min(self.tile[0]+1, lat))
+            lon=max(self.tile[1], min(self.tile[1]+1, lon))
             layer=poly.definition.layer
             newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(layer, self.placements[self.tile][layer].index(poly), poly.clone())])
             if not (self.undostack and self.undostack[-1].equals(newundo)):
@@ -395,8 +395,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         elif self.clickmode==ClickModes.Drag:
             # Continue move drag
             (lat,lon)=self.getworldloc(event.m_x, event.m_y)
-            if (lat>self.tile[0] and lat<self.tile[0]+maxres and
-                lon>self.tile[1] and lon<self.tile[1]+maxres):
+            if (lat>self.tile[0] and lat<self.tile[0]+1 and
+                lon>self.tile[1] and lon<self.tile[1]+1):
                 (oldlat,oldlon)=self.getworldloc(*self.mousenow)
                 self.movesel(lat-oldlat, lon-oldlon)
                 self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
