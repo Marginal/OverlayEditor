@@ -87,8 +87,8 @@ def readApt(filename):
     run=[]
     pavement=[]
     for line in h:
-        c=line.split()
-        if not c or c[0][0]=='#': continue
+        c=line.split('#')[0].split()
+        if not c: continue
         id=int(c[0])
         if pavement and id not in range(111,120):
             run.append(pavement[:-1])
@@ -100,6 +100,7 @@ def readApt(filename):
             run=[]
         if id in [1,16,17]:		# Airport/Seaport/Heliport
             code=c[4]
+            if len(code)>4: raise IOError	# X-Plane doesn't like
             if not firstcode: firstcode=code
             name=' '.join(c[5:])
         elif id==14:	# Prefer tower location
