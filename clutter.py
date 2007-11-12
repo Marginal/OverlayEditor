@@ -760,8 +760,8 @@ class Exclude(Polygon):
                               (self.lon+size,self.lat-size),
                               (self.lon+size,self.lat+size),
                               (self.lon-size,self.lat+size)]:
-                self.nodes[0].append((max(floor(self.lon), min(floor(self.lon)+maxres, round2res(lon))),
-                                      (max(floor(self.lat), min(floor(self.lat)+maxres, round2res(lat))))))
+                self.nodes[0].append((max(floor(self.lon), min(floor(self.lon)+1, round2res(lon))),
+                                      (max(floor(self.lat), min(floor(self.lat)+1, round2res(lat))))))
         self.param=param
         self.points=[]		# list of windings in world space (x,y,z)
 
@@ -793,8 +793,8 @@ class Exclude(Polygon):
     def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=False):
         # changes adjacent nodes, so always do full layout immediately
         (i,j)=node
-        lon=max(tile[1], min(tile[1]+maxres, self.nodes[i][j][0]+dlon))
-        lat=max(tile[0], min(tile[0]+maxres, self.nodes[i][j][1]+dlat))
+        lon=max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon))
+        lat=max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat))
         return self.updatenode(node, lat, lon, tile, options, vertexcache)
 
     def updatenode(self, node, lat, lon, tile, options, vertexcache):
