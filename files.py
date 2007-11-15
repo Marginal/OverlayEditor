@@ -810,7 +810,7 @@ def importObj(pkgpath, path):
 
     # Write new OBJ
     newfile=join(newpath,basename(path)[:-4]+path[-4:].lower())
-    w=file(newfile, 'wU')
+    w=file(newfile, 'wt')
     w.write(header)
     for line in h:
         w.write(line.rstrip()+'\n')
