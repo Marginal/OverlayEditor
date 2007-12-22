@@ -56,7 +56,7 @@ except NameError:
     from OpenGL import GLU
     gluTessVertex = GLU._gluTessVertex
 
-from clutterdef import ObjectDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox
+from clutterdef import ObjectDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox
 from prefs import Prefs
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
@@ -128,7 +128,7 @@ class Object(Clutter):
             filename=lookup[self.name]
             if filename in defs:
                 self.definition=defs[filename]
-                self.definition.allocate(vertexcache)	# ensure allocated
+                self.definition.allocate(vertexcache, defs)	# ensure allocated
             else:
                 defs[filename]=self.definition=ObjectDef(filename, vertexcache)
             return True
@@ -141,7 +141,7 @@ class Object(Clutter):
                     filename=lookup[self.name]=self.name
                 if filename in defs:
                     self.definition=defs[filename]
-                    self.definition.allocate(vertexcache)	# ensure allocated
+                    self.definition.allocate(vertexcache, defs)	# ensure allocated
                 else:
                     defs[filename]=self.definition=ObjectFallback(filename, vertexcache)
             return False
@@ -277,7 +277,7 @@ class Polygon(Clutter):
             glColor3f(0.8, 0.8, 0.8)	# restore
 
     def drawnodes(self, selectednode):
-        Polygon.draw(self, True, False)
+        Polygon.draw(self, True, False)	# draw lines
         glBindTexture(GL_TEXTURE_2D, 0)
         glDisable(GL_DEPTH_TEST)
         glBegin(GL_POINTS)
@@ -744,7 +744,7 @@ class Exclude(Polygon):
            'sim/exclude_fac': 'Exclude: Facades',
            'sim/exclude_for': 'Exclude: Forests',
            'sim/exclude_obj': 'Exclude: Objects',
-           'sim/exclude_net': 'Exclude: Networks (Powerlines, Railways & Roads)',
+           'sim/exclude_net': 'Exclude: '+NetworkDef.TABNAME,
            'sim/exclude_str': 'Exclude: Strings'}
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
@@ -1200,83 +1200,149 @@ class Line(Polygon):
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam=min(dparam, 1-self.param)	# max 1
         if dhdg:
-            self.nodes[0].reverse()		# flip direction XXX ccw?
+            self.nodes[0].reverse()		# flip direction ccw?
         if dlat or dlon or dparam:
             Polygon.move(self, dlat, dlon, 0, dparam, loc, tile, options, vertexcache)
         elif dhdg:
             self.layout(tile, options, vertexcache)
 
+
+class Network(Polygon):
+
+    def __init__(self, name, index, nodes, lon=None, size=None, hdg=None):
+        self.index=index
+        if lon==None:
+            Clutter.__init__(self, name)
+            self.nodes=nodes	# [[(lon,lat,elv,iscontrolnode)]] - this is what gets saved to file
+            self.points=[]	# in x,y,z space at ground level. Difference between y and elv is the height AGL
+        else:
+            lat=nodes
+            Clutter.__init__(self, name, lat, lon)
+            h=radians(hdg)
+            self.nodes=[[]]
+            size=0.000007071*size
+            for i in [h+5*pi/4, h+3*pi/4, h+pi/4, h+7*pi/4]:
+                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
+                                      (max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size))))))
+        self.laidoutwithelevation=False
+            
+    def __str__(self):
+        return '<"%s" %d %s>' % (self.name,self.index,self.nodes)
+
+    def clone(self):
+        return Network(self.name, self.index, [list(w) for w in self.nodes])
+
+    def load(self, lookup, defs, vertexcache, usefallback=False):
+        # XXX disable networks
+        self.definition=NetworkFallback(None, None, self.index)
+        return True
+
+    	print "load", self.definition.name, len(self.nodes[0])
+        try:
+            if not self.name: raise IOError	# not in roads.net
+            self.definition=defs[self.name]
+            self.definition.allocate(vertexcache, defs)	# ensure allocated
+            notfallback=True
+        except:
+            if usefallback:
+                self.definition=NetworkFallback(None, None, self.index)
+                self.definition.allocate(vertexcache, defs)	# ensure allocated
+            notfallback=False
+
+        if self.definition.height==None:
+            # remove intermediate nodes
+            self.nodes[0][0]=self.nodes[0][0][:3]+[True]
+            self.nodes[0][-1]=self.nodes[0][-1][:3]+[True]
+            i=1
+            while i<len(self.nodes[0])-1:
+                if self.definition.height==None and abs(atan2(self.nodes[0][i-1][0]-self.nodes[0][i][0], self.nodes[0][i-1][1]-self.nodes[0][i][1]) - atan2(self.nodes[0][i][0]-self.nodes[0][i+1][0], self.nodes[0][i][1]-self.nodes[0][i+1][1])) < (pi/180):	# arbitrary - 1 degree
+                    self.nodes[0].pop(i)
+                else:
+                    self.nodes[0][i]=self.nodes[0][i][:3]+[True]
+                    print abs(atan2(self.nodes[0][i-1][0]-self.nodes[0][i][0], self.nodes[0][i-1][1]-self.nodes[0][i][1]) - atan2(self.nodes[0][i][0]-self.nodes[0][i+1][0], self.nodes[0][i][1]-self.nodes[0][i+1][1])) * 180/pi, min(hypot(self.nodes[0][i-1][0]-self.nodes[0][i][0], self.nodes[0][i-1][1]-self.nodes[0][i][1]), hypot(self.nodes[0][i][0]-self.nodes[0][i+1][0], self.nodes[0][i][1]-self.nodes[0][i+1][1]))
+                    i+=1
+        else:
+            # all nodes are control nodes
+            self.nodes[0]=[i[:3]+[True] for i in self.nodes[0]]
+        return notfallback
+
+    def locationstr(self, dms, node=None):
+        if node:
+            (i,j)=node
+            if self.definition.height!=None:
+                return '%s  Elv: %-6.1f  Height: %-6.1f  Node %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), self.points[i][j][1], self.nodes[i][j][2]-self.points[i][j][1], j)
+            else:
+                return '%s  Elv: %-6.1f  Node %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), self.points[i][j][1], j)                
+        else:
+            return '%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes))
+
+    def draw(self, selected, picking, nopoly=False):
+        return	# XXX disable networks
+        # just draw outline
+        if picking:
+            # Can't pick if no elevation
+            if not self.laidoutwithelevation: return
+        else:
+            glBindTexture(GL_TEXTURE_2D, 0)
+            if not selected: glColor3f(*self.definition.color)
+        glDisable(GL_DEPTH_TEST)
+        glBegin(GL_LINE_STRIP)
+        for p in self.points[0]:
+            glVertex3f(p[0],p[1],p[2])
+        glEnd()
+        glEnable(GL_DEPTH_TEST)
+        if not selected and not picking:
+            glColor3f(0.8, 0.8, 0.8)	# restore
+
+    def drawnodes(self, selectednode):
+        glBindTexture(GL_TEXTURE_2D, 0)
+        glDisable(GL_DEPTH_TEST)
+        glBegin(GL_POINTS)
+        for j in range(len(self.points[0])):
+            if self.nodes[0][j][3]:	# iscontrolnode
+                if selectednode==(0,j):
+                    glColor3f(1.0, 1.0, 1.0)
+                else:
+                    glColor3f(1.0, 0.5, 1.0)
+                glVertex3f(*self.points[0][j])
+        glEnd()
+        glEnable(GL_DEPTH_TEST)        
+
+    def clearlayout(self):
+        self.laidoutwithelevation=False
+        self.points=[]
+
+    def islaidout(self):
+        return self.points and True
+
     def layout(self, tile, options, vertexcache, selectednode=None):
-        global csgl
-        selectednode=Polygon.layout(self, tile, options, vertexcache, selectednode)
 
-        # tessellate in CSG mode against terrain
-        minx=minz=maxint
-        maxx=maxz=-maxint
-        self.lines=[]
-        gluTessBeginPolygon(csgl, self.lines)
-        for i in range(len(self.nodes)):
-            n=len(self.nodes[i])
-            gluTessBeginContour(csgl)
-            for j in range(n-1,-1,-1): # why not n?
-                if not i:
-                    minx=min(minx, self.points[i][j][0])
-                    maxx=max(maxx, self.points[i][j][0])
-                    minz=min(minz, self.points[i][j][2])
-                    maxz=max(maxz, self.points[i][j][2])
-                gluTessVertex(csgl, [self.points[i][j][0], 0, self.points[i][j][2]], (self.points[i][j], False, i))
-            gluTessEndContour(csgl)
-        abox=BBox(minx, maxx, minz, maxz)
+        return selectednode	# XXX disable networks
 
-        for (bbox, meshtris) in vertexcache.getMeshdata(tile,options):
-            if not abox.intersects(bbox): continue
-            for meshtri in meshtris:
-                (meshpt, coeffs)=meshtri
-                # tesselator is expensive - minimise mesh triangles
-                tbox=BBox()
-                for m in range(3):
-                    tbox.include(meshpt[m][0], meshpt[m][2])
-                if not abox.intersects(tbox):
-                    continue
-                gluTessBeginContour(csgl)
-                for m in range(3):
-                    x=meshpt[m][0]
-                    z=meshpt[m][2]
-                    if isforest:
-                        gluTessVertex(csgl, [x,0,z], (meshpt[m],True, None))
-                        continue
-                    # check if mesh point is inside a polygon triangle
-                    # http://astronomy.swin.edu.au/~pbourke/geometry/insidepoly
-                    for t in range(0,len(tris),3):
-                        c=False
-                        ptj=tris[t+2][0]
-                        for i in range(t,t+3):
-                            pti=tris[i][0]
-                            if ((((pti[2] <= z) and (z < ptj[2])) or
-                                 ((ptj[2] <= z) and (z < pti[2]))) and
-                                (x < (ptj[0]-pti[0]) * (z - pti[2]) / (ptj[2] - pti[2]) + pti[0])):
-                                c = not c
-                            ptj=pti
-                        if c:	# point is inside polygon triange tris[t:t+3]
-                            x0=tris[t][0][0]
-                            z0=tris[t][0][2]
-                            x1=tris[t+1][0][0]-x0
-                            z1=tris[t+1][0][2]-z0
-                            x2=tris[t+2][0][0]-x0
-                            z2=tris[t+2][0][2]-z0
-                            xp=x-x0
-                            zp=z-z0
-                            a=(xp*z2-x2*zp)/(x1*z2-x2*z1)
-                            b=(xp*z1-x1*zp)/(x2*z1-x1*z2)
-                            uv=(tris[t][2][0]+a*(tris[t+1][2][0]-tris[t][2][0])+b*(tris[t+2][2][0]-tris[t][2][0]),
-                                tris[t][2][1]+a*(tris[t+1][2][1]-tris[t][2][1])+b*(tris[t+2][2][1]-tris[t][2][1]))
-                            break
-                    else:
-                        uv=None
-                    gluTessVertex(csgl, [x,0,z], (meshpt[m],True, uv))
-                gluTessEndContour(csgl)
+        self.laidoutwithelevation=options&Prefs.ELEVATION
+        controlnodes=[i for i in self.nodes[0] if i[3]]
 
-        gluTessEndPolygon(csgl)
+        self.lat=self.lon=0
+        self.nodes=[[]]
+        self.points=[[]]
+
+        n=len(controlnodes)
+        for j in range(n):
+            self.lon+=controlnodes[j][0]
+            self.lat+=controlnodes[j][1]
+            (xj,zj)=self.position(tile, controlnodes[j][1], controlnodes[j][0])
+            yj=vertexcache.height(tile,options,xj,zj)
+            if j and self.definition.height==None:
+                # XXX insert intermediate nodes
+                pass
+            x=xj
+            y=yj
+            z=zj
+            self.nodes[0].append(controlnodes[j])
+            self.points[0].append((x,y,z))
+
+        self.lat=self.lat/n
+        self.lon=self.lon/n
         return selectednode
 
 
@@ -1334,7 +1400,7 @@ gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
 
 
 def csgtvertex(vertex, data):
-    assert(vertex[2])
+    #assert(vertex[2])
     data.append(vertex)
 
 def csgtcombine(coords, vertex, weight):
@@ -1353,7 +1419,7 @@ def csgtcombine(coords, vertex, weight):
         return vertex[0]
     elif vertex[0][0][0]==vertex[1][0][0] and vertex[0][0][2]==vertex[1][0][2] and vertex[0][1]:
         # Height discontinuity in terrain mesh - eg LIEE - wtf!
-        assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
+        #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
         #print vertex[0], " ->"
         return vertex[0]
 
@@ -1365,7 +1431,7 @@ def csgtcombine(coords, vertex, weight):
         p3=vertex[2]
         p4=vertex[3]
     else:
-        assert weight[0] and weight[1] and weight[2] and weight[3]
+        #assert weight[0] and weight[1] and weight[2] and weight[3]
         p1=vertex[2]
         p2=vertex[3]
         p3=vertex[0]

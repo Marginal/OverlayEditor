@@ -1,12 +1,14 @@
 #!/usr/bin/python
 
 from glob import glob
-from math import cos, floor, sin, pi, sqrt
+from math import cos, floor, sin, pi, radians, sqrt
 import os	# for startfile
 from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 import sys	# for path
 from sys import exit, argv, executable, platform, version
+if __debug__:
+    import time
 
 if platform.lower().startswith('linux') and not getenv("DISPLAY"):
     print "Can't run: DISPLAY is not set"
@@ -44,9 +46,9 @@ if not 'startfile' in dir(os):
     import webbrowser
 
 from clutter import round2res, minres, latlondisp, Exclude	# for loading exclusions into palette
-from clutterdef import KnownDefs
+from clutterdef import KnownDefs, ExcludeDef, NetworkDef
 from draw import MyGL
-from files import importObj, readApt, readNav,readLib, sortfolded
+from files import importObj, scanApt, readApt, readNav, readLib, readNet, sortfolded
 from palette import Palette
 from DSFLib import readDSF, writeDSF
 from MessageBox import myMessageBox, AboutBox
@@ -64,17 +66,18 @@ else:
     chdir(mypath)
 
 # constants
-d2r=pi/180.0
 zoom=sqrt(2)
 zoom2=2
 maxzoom=32768*zoom
 gresources='[rR][eE][sS][oO][uU][rR][cC][eE][sS]'
 gnavdata='[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]'
 gaptdat=join(gnavdata,'[aA][pP][tT].[dD][aA][tT]')
-gmainaptdat=join(gresources,gaptdat)
-gmainnavdat=join(gresources,gnavdata,'[nN][aA][vV].[dD][aA][tT]')
 gdefault=join(gresources,'[dD][eE][fF][aA][uU][lL][tT] [sS][cC][eE][nN][eE][rR][yY]')
 gcustom='[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]'
+gmain8aptdat=join(gresources,gaptdat)
+gmain8navdat=join(gresources,gnavdata,'[nN][aA][vV].[dD][aA][tT]')
+gmain9aptdat=join(gdefault,'[dD][eE][fF][aA][uU][lL][tT] [aA][pP][tT] [dD][aA][tT]',gaptdat)
+gmain9navdat=join(gresources,'[dD][eE][fF][aA][uU][lL][tT] [d][aA][tT][aA]','[eE][aA][rR][tT][hH]_[nN][aA][vV].[dD][aA][tT]')
 glibrary='[lL][iI][bB][rR][aA][rR][yY].[tT][xX][tT]'
 
 
@@ -397,12 +400,13 @@ class PreferencesDialog(wx.Dialog):
         panel1.SetSizer(box1)
 
         self.display = wx.RadioBox(panel2, -1, "Terrain", style=wx.VERTICAL,
-                                   choices=["No terrain", "Show terrain", "Show terrain and elevation"])
-        if prefs.options&Prefs.TERRAIN:
-            if prefs.options&Prefs.ELEVATION:
-                self.display.SetSelection(2)
-            else:
-                self.display.SetSelection(1)
+                                   choices=["No terrain", "Show terrain", "Show terrain and elevation", "Show terrain, elevation, powerlines, railways, roads"])
+        if prefs.options&Prefs.NETWORK:
+            self.display.SetSelection(3)
+        elif prefs.options&Prefs.ELEVATION:
+            self.display.SetSelection(2)
+        elif prefs.options&Prefs.TERRAIN:
+            self.display.SetSelection(1)
         box2 = wx.BoxSizer()
         box2.Add(self.display, 1)
         panel2.SetSizer(box2)
@@ -439,7 +443,7 @@ class PreferencesDialog(wx.Dialog):
                     return wx.ID_CANCEL
                 path=dlg.GetPath()
                 dlg.Destroy()
-            if glob(join(path, gcustom)) and glob(join(path, gmainaptdat)):
+            if glob(join(path, gcustom)) and (glob(join(path, gmain8aptdat)) or glob(join(path, gmain9aptdat))):
                 self.path.SetValue(path.strip())
                 self.FindWindowById(wx.ID_OK).Enable()
                 return wx.ID_OK
@@ -613,8 +617,8 @@ class BackgroundDialog(wx.Dialog):
                 zinc=self.parent.dist/10000000
                 if zinc<0.00001: zinc=0.00001
                 if event.m_shiftDown: zinc*=10
-                xinc=zinc/cos(d2r*self.lat.GetValue())
-            hr=d2r*((self.parent.hdg + [0,90,180,270][cursors.index(event.m_keyCode)])%360)
+                xinc=zinc/cos(radians(self.lat.GetValue()))
+            hr=radians((self.parent.hdg + [0,90,180,270][cursors.index(event.m_keyCode)])%360)
             try:
                 self.lat.SetValue(self.lat.GetValue()+zinc*cos(hr))
             except:
@@ -736,6 +740,7 @@ class MainWindow(wx.Frame):
         self.dist=2048*zoom
         self.airports={}	# default apt.dat, by code
         self.nav=[]
+        self.defnetdefs=[]
         self.goto=None	# goto dialog
         self.bkgd=None	# background bitmap dialog
 
@@ -1019,8 +1024,8 @@ class MainWindow(wx.Frame):
                 zinc=self.dist/10000000
                 if zinc<minres: zinc=minres
                 if event.m_shiftDown: zinc*=10
-                xinc=zinc/cos(d2r*self.loc[0])
-            hr=d2r*((self.hdg + [0,90,180,270][cursors.index(event.m_keyCode)%4])%360)
+                xinc=zinc/cos(radians(self.loc[0]))
+            hr=radians((self.hdg + [0,90,180,270][cursors.index(event.m_keyCode)%4])%360)
             if cursors.index(event.m_keyCode)<8:
                 self.loc=(round2res(self.loc[0]+zinc*cos(hr)),
                           round2res(self.loc[1]+xinc*sin(hr)))
@@ -1237,7 +1242,7 @@ class MainWindow(wx.Frame):
             stuff[key]=reduce(lambda x,y: x+y, placements)
         for key in stuff.keys():
             try:
-                writeDSF(dsfdir, key, stuff[key])
+                writeDSF(dsfdir, key, stuff[key], self.canvas.netfile)
             except IOError, e:
                 myMessageBox(str(e.strerror),
                              "Can't save %+03d%+04d.dsf." % (key[0], key[1]), 
@@ -1304,15 +1309,27 @@ class MainWindow(wx.Frame):
         else:
             pkgdir=None
 
-        if not self.airports and not __debug__:	# Default apt.dat
+        if glob(join(prefs.xplane, gmain9aptdat)):
+            xpver=9
+            mainaptdat=glob(join(prefs.xplane, gmain9aptdat))[0]
+        else:
+            xpver=8
+            mainaptdat=glob(join(prefs.xplane, gmain8aptdat))[0]
+
+        if not self.airports:	# Default apt.dat
             progress.Update(0, 'Global airports')
             try:
-                (self.airports,self.nav,foo)=readApt(glob(join(prefs.xplane, gmainaptdat))[0])
+                if __debug__: clock=time.clock()	# Processor time
+                (self.airports,self.nav)=scanApt(mainaptdat)
+                if __debug__: print "%6.3f time in global apt" % (time.clock()-clock)
             except:
                 self.nav=[]
                 myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
             try:
-                self.nav.extend(readNav(glob(join(prefs.xplane,gmainnavdat))[0]))
+                if xpver==9:
+                    self.nav.extend(readNav(glob(join(prefs.xplane,gmain9navdat))[0]))
+                else:
+                    self.nav.extend(readNav(glob(join(prefs.xplane,gmain8navdat))[0]))
             except:
                 pass
                 
@@ -1324,15 +1341,17 @@ class MainWindow(wx.Frame):
             self.elev=45
             self.dist=2048*zoom
             placements={}
+            networks={}
             if pkgnavdata:
                 try:
                     dsfs=glob(join(pkgnavdata, '[+-][0-9]0[+-][01][0-9]0', '[+-][0-9][0-9][+-][01][0-9][0-9].[dD][sS][fF]'))
                     if not dsfs:
                         if glob(join(pkgnavdata, '[+-][0-9]0[+-][01][0-9]0', '[+-][0-9][0-9][+-][01][0-9][0-9].[eE][nN][vV]')): raise IOError, (0, 'This package uses v7 "ENV" files')
                     for f in dsfs:
-                        (lat, lon, p, foo)=readDSF(f)	#join(pkgnavdata,f)
+                        (lat, lon, p, nets, foo)=readDSF(f, True, True)
                         tile=(lat,lon)
                         placements[tile]=p
+                        networks[tile]=nets
                 except IOError, e:	# Bad DSF - restore to unloaded state
                     progress.Destroy()
                     myMessageBox(e.strerror, "Can't edit this scenery package.",
@@ -1351,7 +1370,7 @@ class MainWindow(wx.Frame):
             else:
                 self.SetTitle("%s - %s" % (package, appname))
         else:
-            placements=None	# keep existing
+            placements=networks=None	# keep existing
         self.toolbar.EnableTool(wx.ID_UNDO, False)
         if self.menubar:
             self.menubar.Enable(wx.ID_UNDO, False)
@@ -1400,6 +1419,7 @@ class MainWindow(wx.Frame):
         for lib in libs: lookup.update(lookupbylib[lib])
 
         objects={}
+        roadfile=None
         if prefs.package:
             for path, dirs, files in walk(pkgdir):
                 for f in files:
@@ -1409,12 +1429,38 @@ class MainWindow(wx.Frame):
                             name=name[15:]
                         #if not name in lookup:	# library takes precedence
                         objects[name]=join(path,f)
+                    elif f[-4:].lower()=='.net':
+                        roadfile=join(path,f)
         self.palette.load('Objects', objects, pkgdir)
         lookup.update(objects)
 
+        defroadfile=lookupbylib['g8'].pop(NetworkDef.DEFAULTFILE,None)
         for lib in libs: self.palette.load(lib, lookupbylib[lib], None)
 
-        self.palette.load('Exclusions', dict([(Exclude.NAMES[x], x) for x in Exclude.NAMES.keys()]), None)
+        if not self.defnetdefs:
+            try:
+                self.defnetdefs=readNet(defroadfile)
+            except:
+                pass
+        netdefs=self.defnetdefs
+        if xpver>=9:
+            if roadfile:	# custom .net file
+                try:
+                    netdefs=readNet(roadfile)
+                    if not netdefs: raise IOError	# empty
+                    roadfile=roadfile[len(pkgdir)+1:].replace('\\','/')
+                except:
+                    myMessageBox("The %s file in this package is invalid." % roadfile[len(pkgdir)+1:], "Can't load network data.", wx.ICON_INFORMATION|wx.OK, self)
+                    roadfile=NetworkDef.DEFAULTFILE
+            else:
+                roadfile=NetworkDef.DEFAULTFILE
+            if False: # XXX disable networks
+                names={}
+                for x in netdefs:                
+                    if x and x.name: names[x.name]=lookup[x.name]=x.name
+                self.palette.load(NetworkDef.TABNAME, names, None)
+            
+        self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], x) for x in Exclude.NAMES.keys()]), None)
 
         if prefs.package and prefs.package in prefs.packageprops:
             (image, lat, lon, hdg, width, length, opacity)=prefs.packageprops[prefs.package]
@@ -1426,8 +1472,9 @@ class MainWindow(wx.Frame):
             background=(image, lat, lon, hdg, width, length, opacity)
         else:
             background=None
-        self.canvas.reload(prefs.options, airports, nav,
-                           lookup, placements,
+        self.canvas.reload(prefs.options, airports, nav, mainaptdat,
+                           self.defnetdefs, netdefs, roadfile,
+                           lookup, placements, networks,
                            background, terrain,
                            [join(prefs.xplane, gcustom),
                             join(prefs.xplane, gdefault)])
@@ -1494,10 +1541,12 @@ class MainWindow(wx.Frame):
         if x!=wx.ID_OK:            
             if x: dlg.Destroy()
             return
-        if dlg.display.GetSelection()==1:
-            prefs.options=Prefs.TERRAIN
+        if dlg.display.GetSelection()==3:
+            prefs.options=Prefs.TERRAIN|Prefs.ELEVATION|Prefs.NETWORK
         elif dlg.display.GetSelection()==2:
             prefs.options=Prefs.TERRAIN|Prefs.ELEVATION
+        elif dlg.display.GetSelection()==1:
+            prefs.options=Prefs.TERRAIN
         else:
             prefs.options=0
         if dlg.latlon.GetSelection():
@@ -1521,6 +1570,7 @@ class MainWindow(wx.Frame):
                 self.menubar.Enable(wx.ID_REFRESH,False)
             dlg.Destroy()
             self.airports={}	# force reload
+            self.defnetdefs=[]	# force reload
             self.OnReload(False)
             prefs.write()
         self.canvas.goto(self.loc, options=prefs.options)
@@ -1631,7 +1681,7 @@ prefs=Prefs()
 if not prefs.xplane or not glob(join(prefs.xplane,gcustom)):
     if platform.startswith('linux'):	# prompt is not displayed on Linux
         myMessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder", wx.ICON_INFORMATION|wx.OK, frame)
-    if platform=='win32' and glob(join('C:\\X-Plane', gcustom)) and glob(join('C:\\X-Plane', gmainaptdat)):
+    if platform=='win32' and glob(join('C:\\X-Plane', gcustom)) and (glob(join('C:\\X-Plane', gmain8aptdat)) or glob(join('C:\\X-Plane', gmain9aptdat))):
         prefs.xplane='C:\\X-Plane'
     elif platform=='win32':
         prefs.xplane='C:\\'

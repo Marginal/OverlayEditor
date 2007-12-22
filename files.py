@@ -31,7 +31,7 @@ if __debug__:
 
 #from Numeric import array
 
-from clutterdef import BBox, KnownDefs, SkipDefs
+from clutterdef import BBox, KnownDefs, SkipDefs, NetworkDef
 from DSFLib import readDSF
 from prefs import Prefs
 from version import appname, appversion
@@ -69,11 +69,10 @@ def sortfolded(seq):
     seq.sort(lambda x,y: cmp(x.lower(), y.lower()))
 
 
-def readApt(filename):
-    airports={}	# (name, [lat,lon], [(lat,lon,hdg,length,width,stop,stop)]) by code
+def scanApt(filename):
+    airports={}	# (name, [lat,lon], fileoffset) by code
     nav=[]	# (type,lat,lon,hdg)
-    firstcode=None
-    h=codecs.open(filename, 'rU', 'latin1')
+    h=file(filename, 'rU')	# assumes ascii
     if not h.readline().strip() in ['A','I']:
         raise IOError
     while True:	# NYEXPRO has a blank line here
@@ -84,21 +83,89 @@ def readApt(filename):
         raise IOError
     ver=int(ver)
     code=name=loc=None
+    offset=0
+    # mixing read and tell - http://www.thescripts.com/forum/post83277-3.html
+    while True:
+        line=h.readline()
+        if not line: break
+        c=line.split()
+        if not c: continue
+        id=int(c[0])
+        if id in [1,16,17]:		# Airport/Seaport/Heliport
+            if loc:
+                airports[code]=(name,loc,offset)
+                code=name=loc=None
+            offset=h.tell()
+            code=c[4]
+            if len(code)>4: raise IOError	# X-Plane doesn't like
+            name=(' '.join(c[5:])).decode('latin1')
+        elif id==14:	# Prefer tower location
+            loc=[float(c[1]),float(c[2])]
+        elif id==18 and int(c[3]):	# Beacon - goes in nav
+            nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), 0))
+        elif id==19:	# Windsock - goes in nav
+            nav.append((id, float(c[1]),float(c[2]), 0))
+        elif id==21:	# VASI/PAPI - goes in nav
+            nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
+        elif id==99:
+            airports[code]=(name,loc,offset)
+            code=name=loc=None
+            break
+        elif loc:
+            pass
+        elif id==10:	# Runway / taxiway
+            loc=[float(c[1]),float(c[2])]
+        elif id==100:	# 850 Runway
+            loc=[(float(c[9])+float(c[18]))/2,(float(c[10])+float(c[19]))/2]
+        elif id==101:	# 850 Water runway
+            loc=[(float(c[4])+float(c[7]))/2, (float(c[5])+float(c[8]))/2]
+        elif id==102:	# 850 Helipad
+            loc=[float(c[2]),float(c[3])]
+    if loc:	# No terminating 99
+        airports[code]=(name,loc,offset)
+    h.close()
+    return (airports, nav)
+
+# two modes of operation:
+# - without offset, return all airports and navs
+# - with offset, just return airport at offset
+def readApt(filename, offset=None):
+    airports={}	# (name, [lat,lon], [(lat,lon,hdg,length,width,stop,stop)]) by code
+    nav=[]	# (type,lat,lon,hdg)
+    firstcode=None
+    h=codecs.open(filename, 'rU', 'latin1')
+    if offset:
+        h.seek(offset)
+    else:
+        if not h.readline().strip() in ['A','I']:
+            raise IOError
+        while True:	# NYEXPRO has a blank line here
+            c=h.readline().split()
+            if c: break
+        ver=c[0]
+        if not ver in ['600','703','715','810','850']:
+            raise IOError
+        ver=int(ver)
+
+    code=name=loc=None
     run=[]
     pavement=[]
     for line in h:
-        c=line.split('#')[0].split()
+        c=line.split()
         if not c: continue
         id=int(c[0])
         if pavement and id not in range(111,120):
             run.append(pavement[:-1])
             pavement=[]
-        if loc and id in [1,16,17,99]:
-            if not run: raise IOError
-            airports[code]=(name,loc,run)
-            code=name=loc=None
-            run=[]
         if id in [1,16,17]:		# Airport/Seaport/Heliport
+            if offset:	# reached next airport
+                h.close()
+                return run
+            if loc:
+                if not run: raise IOError
+                airports[code]=(name,loc,run)
+                code=name=loc=None
+                run=[]
             code=c[4]
             if len(code)>4: raise IOError	# X-Plane doesn't like
             if not firstcode: firstcode=code
@@ -165,7 +232,20 @@ def readApt(filename):
             nav.append((id, float(c[1]),float(c[2]), 0))
         elif id==21:	# VASI/PAPI - goes in nav
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
-    if loc:	# No terminating 99
+        elif id==99:
+            if offset:	# reached next airport
+                h.close()
+                return run
+            if not loc or not run: raise IOError
+            airports[code]=(name,loc,run)
+            code=name=loc=None
+            run=[]
+            break
+    # No terminating 99
+    if offset:
+        h.close()
+        return run
+    if loc:
         if not run: raise IOError
         airports[code]=(name,loc,run)
     h.close()
@@ -210,14 +290,12 @@ def readLib(filename, objects, terrain):
         for line in h:
             c=line.split()
             if not c: continue
-            if c[0] in ['EXPORT', 'EXPORT_RATIO', 'EXPORT_EXTEND']:
+            id=c[0]
+            if id in ['EXPORT', 'EXPORT_RATIO', 'EXPORT_EXTEND']:
                 # ignore EXPORT_BACKUP
-                if c[0]=='EXPORT_RATIO': c.pop(1)
-                if len(c)<3 or c[1][-4:].lower() in SkipDefs: continue
-                c.pop(0)
-                name=c[0]
-                name=name.replace(':','/')
-                name=name.replace('\\','/')
+                if id=='EXPORT_RATIO': c.pop(1)
+                if len(c)<3 or (c[1][-4:].lower() in SkipDefs and c[1]!=NetworkDef.DEFAULTFILE): continue
+                name=c[1].replace(':','/').replace('\\','/')
                 if builtinhack:
                     lib='misc v800'
                 else:
@@ -228,10 +306,8 @@ def readLib(filename, objects, terrain):
                         lib="uncategorised"
                     else:
                         lib=lib[:lib.index('/')]
-                c.pop(0)
-                obj=' '.join(c)	# allow single spaces
-                obj=obj.replace(':','/')
-                obj=obj.replace('\\','/')
+                # allow single spaces
+                obj=' '.join(c[2:]).replace(':','/').replace('\\','/')
                 if obj=='blank.obj':
                     continue	# no point adding placeholders
                 obj=join(path, normpath(obj))
@@ -249,6 +325,69 @@ def readLib(filename, objects, terrain):
     except:
         if h: h.close()
             
+
+def readNet(filename):
+    objs={#'highway_pylon.obj':		(0,20),
+          'highway_susp_twr.obj':	(41,41),	# fixed height
+          #'local_pylon.obj':		(0,15.8),
+          #'powerline_tower.obj':	(0,0),		# on ground          
+          #'railroad_pylon.obj':		(0,15.1),
+          #'ramp_pylon.obj':		(0,20.5),
+          #'secondary_oldpylon.obj':	(0,23.4),
+          #'secondary_pylon.obj':	(0,23),
+          }
+    path=dirname(filename)
+    currentdef=None
+    defs=[]
+    texs=[]
+    h=codecs.open(filename, 'rU', 'latin1')
+    if not h.readline().strip()[0] in ['I','A']:
+        raise IOError
+    if not h.readline().split()[0]=='800':
+        raise IOError
+    if not h.readline().split()[0]=='ROADS':
+        raise IOError
+    comment=None
+    scale=1
+    for line in h:
+        c=line.split()
+        if not c:
+            pass
+        elif c[0]=='#' and len(c)==2:
+            comment=c[1]
+            if comment.startswith('net_'): comment=comment[4:]
+            continue
+        elif c[0] in ['TEXTURE', 'TEXTURE_BRIDGE']:
+            texs.append((join(path,c[2]), int(float(c[1]))))
+        elif c[0]=='SCALE':
+            scale=int(c[1])
+        elif c[0]=='ROAD_TYPE':
+            n=int(c[1])
+            if comment:
+                name=comment
+                # detect duplicate names
+                for x in defs:
+                    if x and x.name==name:
+                        name="%03d" % n
+                        break
+            else:
+                name="%03d" % n
+            if n>=len(defs): defs.extend([None for i in range(n+1-len(defs))])
+            currentdef=defs[n]=NetworkDef(filename, name, n, float(c[2]), float(c[3]), texs[int(c[4])][0], texs[int(c[4])][1], (float(c[5]), float(c[6]), float(c[7])))
+        elif c[0]=='REQUIRE_EVEN':
+            currentdef.even=True
+        elif c[0] in ['SEGMENT', 'SEGMENT_HARD']:
+            if not float(c[1]):	# 0 LOD
+                currentdef.segments.append(((float(c[3])-0.5)*currentdef.width, float(c[4]), float(c[5])/scale, (float(c[6])-0.5)*currentdef.width, float(c[7]), float(c[8])/scale))
+        elif c[0]=='OBJECT':
+            if c[1] in objs: currentdef.height=objs[c[1]]
+            assert not float(c[3])	# don't handle rotation
+            currentdef.objs.append((join(path,c[1]), (float(c[2])-0.5)*currentdef.width, int(c[4]), float(c[5]), float(c[6])))
+        comment=None
+
+    h.close()
+    return defs
+
 
 class TexCache:
     
@@ -268,7 +407,7 @@ class TexCache:
         else:
             self.clampmode=GL_CLAMP
 
-    def flush(self):
+    def reset(self):
         if cantreleasetexs:
             # Hack round suspected memory leak causing SegFault on SUSE
             pass
@@ -473,7 +612,8 @@ class VertexCache:
     def __init__(self):
         self.ter={}		# name -> physical ter
         self.mesh={}		# tile -> [patches] where patch=(texture,f,v,t)
-        self.meshdata={}	# tile->[(bbox, [(points, plane coeffs)])]
+        self.meshdata={}	# tile -> [(bbox, [(points, plane coeffs)])]
+        self.nets={}		# tile -> [(type, [points])]
         self.currenttile=None
         self.meshcache=[]	# [indices] of current tile
         self.lasttri=None	# take advantage of locality of reference
@@ -489,7 +629,7 @@ class VertexCache:
         self.ter=terrain
         self.dsfdirs=dsfdirs
         self.flush()
-        self.texcache.flush()
+        self.texcache.reset()
     
     def flush(self):
         # invalidate array indices
@@ -521,7 +661,10 @@ class VertexCache:
 
     def loadMesh(self, tile, options):
         key=(tile[0],tile[1],options&Prefs.TERRAIN)
-        if key in self.mesh: return	# don't reload
+        netkey=(tile[0],tile[1],options&Prefs.NETWORK)
+        if key in self.mesh and netkey in self.nets:
+            return	# don't reload
+        self.nets[(tile[0],tile[1],0)]=[] # prevents reload on stepping down
         dsfs=[]
         if options&Prefs.TERRAIN:
             for path in self.dsfdirs:
@@ -532,9 +675,19 @@ class VertexCache:
         if __debug__: clock=time.clock()	# Processor time
         for dsf in dsfs:
             try:
-                (properties, placements, polygons, mesh)=readDSF(dsf, self.ter)
+                (lat, lon, placements, nets, mesh)=readDSF(dsf, False, options&Prefs.NETWORK, self.ter)
                 if mesh:
                     self.mesh[key]=mesh
+                    # post-process networks
+                    centrelat=lat+0.5
+                    centrelon=lon+0.5
+                    newnets=[]
+                    for (road, points) in nets:
+                        newpoints=[[(p[0]-centrelon)*onedeg*cos(radians(p[1])),
+                                    p[2],
+                                    (centrelat-p[1])*onedeg] for p in points]
+                        newnets.append((road, newpoints))
+                    self.nets[netkey]=newnets
                     break
             except:
                 pass
@@ -554,6 +707,7 @@ class VertexCache:
                               [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],
                              [[0, 0], [100, 100], [0, 100],
                               [0, 0], [100, 0], [100, 100]])]
+            self.nets[netkey]=[]
 
     # return mesh data sorted by tex for drawing
     def getMesh(self, tile, options):
@@ -562,10 +716,6 @@ class VertexCache:
         # merge patches that use same texture
         bytex={}
         for texture, flags, v, t in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
-            #if options&Prefs.ELEVATION:
-            #    # Transfrom from lat,lon,e to curved surface in cartesian space
-            #    (x,y,z)=v
-            
             if (texture,flags) in bytex:
                 (v2,t2)=bytex[(texture,flags)]
                 v2.extend(v)
@@ -584,6 +734,11 @@ class VertexCache:
         self.valid=False	# new geometry -> need to update OpenGL
         self.currenttile=tile
         return self.meshcache
+
+
+    # return net data
+    def getNets(self, tile, options):
+        return self.nets[(tile[0],tile[1],options&Prefs.NETWORK)]
 
 
     # create sets of bounding boxes for height testing

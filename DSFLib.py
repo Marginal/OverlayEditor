@@ -1,18 +1,19 @@
-from math import cos, floor, pi
+from math import cos, floor, pi, radians
 from os import mkdir, popen3, rename, unlink
 from os.path import basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 from struct import unpack
 from sys import platform, maxint
 from tempfile import gettempdir
 import types
+if __debug__:
+    import time
 
 import wx
 
-from clutter import PolygonFactory, Object, Polygon, Draped, Exclude, minres, minhdg
+from clutter import PolygonFactory, Object, Polygon, Draped, Exclude, Network, minres, minhdg
 from version import appname, appversion
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
-d2r=pi/180.0
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
@@ -23,8 +24,9 @@ else:	# Mac
 
 
 # Takes a DSF path name.
-# Returns (lat, lon, placements, mesh), where:
+# Returns (lat, lon, placements, roads, mesh), where:
 #   placements = [Clutter]
+#   roads= [(type, [lon, lat, elv, ...])]
 #   mesh = [(texture name, flags, [point], [st])], where
 #     flags=patch flags: 1=hard, 2=overlay
 #     point = [x, y, z]
@@ -32,13 +34,14 @@ else:	# Mac
 # Exceptions:
 #   IOError, IndexError
 #
-# Any vector data in the DSF file is ignored.
 # If terrains is defined,  assume loading terrain and discard non-mesh data
 # If terrains not defined, assume looking for an overlay DSF
 #
-def readDSF(path, terrains={}):
+def readDSF(path, wantoverlay, wantnetwork, terrains={}):
+    assert wantoverlay or terrains
     baddsf=(0, "Invalid DSF file", path)
 
+    #print path
     h=file(path, 'rb')
     if h.read(8)!='XPLNEDSF' or unpack('<I',h.read(4))!=(1,) or h.read(4)!='DAEH':
         raise IOError, baddsf
@@ -48,6 +51,8 @@ def readDSF(path, terrains={}):
         raise IOError, baddsf
     (l,)=unpack('<I', h.read(4))
     placements=[]
+    nets=[]
+    mesh=[]
     c=h.read(l-9).split('\0')
     h.read(1)
     overlay=0
@@ -65,10 +70,14 @@ def readDSF(path, terrains={}):
                                         (v[2],v[3]),(v[0],v[3])]]))
     centrelat=lat+0.5
     centrelon=lon+0.5
-    if not overlay and not terrains:
+    if wantoverlay and not overlay:
         # Not an Overlay DSF - bail early
         h.close()
         raise IOError (0, "%s is not an overlay." % basename(path))
+    if not wantoverlay and overlay:
+        # only interested in mesh data - bail early
+        return (lat, lon, placements, nets, mesh)
+        
     h.seek(headend)
 
     # Definitions Atom
@@ -98,85 +107,112 @@ def readDSF(path, terrains={}):
             h.seek(l-8, 1)
 
     # Geodata Atom
+    if __debug__: clock=time.clock()	# Processor time
     if h.read(4)!='DOEG':
         raise IOError, baddsf
     (l,)=unpack('<I', h.read(4))
     geodend=h.tell()+l-8
     pool=[]
     scal=[]
+    po32=[]
+    sc32=[]
     while h.tell()<geodend:
         c=h.read(4)
         (l,)=unpack('<I', h.read(4))
-        if c=='LOOP':
+        if not wantnetwork and c in ['23OP','23CS']:
+            h.seek(l-8, 1)	# Skip network data
+        elif c in ['LOOP','23OP']:
+            if c=='LOOP':
+                poolkind=pool
+                fmt='<H'
+                fmtd='<%dH'
+                size=2
+                mask=0xffff
+            else:
+                poolkind=po32
+                fmt='<I'
+                fmtd='<%dI'
+                size=4
+                mask=0xffffffffL
             thispool=[]
             (n,)=unpack('<I', h.read(4))
             (p,)=unpack('<B', h.read(1))
             for i in range(p):
                 thisplane=[]
                 (e,)=unpack('<B', h.read(1))
-                if e==0 or e==1:
-                    last=0
-                    for j in range(n):
-                        (d,)=unpack('<H', h.read(2))
-                        if e==1: d=(last+d)&65535
-                        thisplane.append(d)
-                        last=d
-                elif e==2 or e==3:
+                if e==3:	# RLE differenced, default terrain uses this
                     last=0
                     while(len(thisplane))<n:
                         (r,)=unpack('<B', h.read(1))
-                        if (r&128):
-                            (d,)=unpack('<H', h.read(2))
+                        if (r&128):	# repeat
+                            (d,)=unpack(fmt, h.read(size))
                             for j in range(r&127):
-                                if e==3:
-                                    thisplane.append((last+d)&65535)
-                                    last=(last+d)&65535
-                                else:
-                                    thisplane.append(d)
+                                last=(last+d)&mask
+                                thisplane.append(last)
                         else:
-                            for j in range(r):
-                                (d,)=unpack('<H', h.read(2))
-                                if e==3: d=(last+d)&65535
-                                thisplane.append(d)
-                                last=d
+                            for d in unpack(fmtd % r, h.read(size*r)):
+                                last=(last+d)&mask
+                                thisplane.append(last)
+                elif e==2:	# RLE
+                    while(len(thisplane))<n:
+                        (r,)=unpack('<B', h.read(1))
+                        if (r&128):	# repeat
+                            (d,)=unpack(fmt, h.read(size))
+                            thisplane.extend([d for j in range(r&127)])
+                        else:
+                            thisplane.extend(unpack(fmtd % r, h.read(size*r)))
+                elif e==1:	# differenced
+                    last=0
+                    for d in unpack(fmtd % n, h.read(size*n)):
+                        last=(last+d)&mask
+                        thisplane.append(last)
+                elif e==0:	# raw
+                    thisplane=unpack(fmtd % n, h.read(size*n))
                 else:
                     raise IOError, baddsf
                 thispool.append(thisplane)  
-            pool.append(thispool)
+            poolkind.append(thispool)
         elif c=='LACS':
-            thisscal=[]
-            for i in range(0, l-8, 8):
-                d=unpack('<2f', h.read(8))
-                thisscal.append(d)
-            scal.append(thisscal)
+            scal.append([unpack('<2f', h.read(8)) for i in range(0, l-8, 8)])
+        elif c=='23CS':
+            sc32.append([unpack('<2f', h.read(8)) for i in range(0, l-8, 8)])
         else:
             h.seek(l-8, 1)
+    if __debug__: print "%6.3f time in GEOD atom" % (time.clock()-clock)
     
     # Rescale pool and transform to one list per entry
-    if len(scal)!=len(pool): raise(IOError)
-    newpool=[]
-    for i in range(len(pool)):
-        curpool=pool[i]
-        n=len(curpool[0])
-        newpool=[[] for j in range(n)]
-        for plane in range(len(curpool)):
-            (scale,offset)=scal[i][plane]
-            scale=scale/65535
-            for j in range(n):
-                newpool[j].append(curpool[plane][j]*scale+offset)
-        pool[i]=newpool
+    if __debug__: clock=time.clock()	# Processor time
+    for (poolkind,scalkind,mask) in [(pool,scal,0xffff), (po32,sc32,0xffffffffL)]:
+        assert len(poolkind)==len(scalkind)
+        for i in range(len(poolkind)):	# number of pools
+            curpool=poolkind[i]
+            n=len(curpool[0])		# number of entries in this pool
+            newpool=[[] for j in range(n)]
+            for plane in range(len(curpool)):	# number of planes in this pool
+                (scale,offset)=scalkind[i][plane]
+                if scale:
+                    scale=scale/mask
+                    for j in range(n):
+                        newpool[j].append(curpool[plane][j]*scale+offset)
+                else:	# network junction IDs are unscaled
+                    for j in range(n):
+                        newpool[j].append(curpool[plane][j]+offset)
+            poolkind[i]=newpool
+    if __debug__: print "%6.3f time in rescale" % (time.clock()-clock)
 
     # Commands Atom
+    if __debug__: clock=time.clock()	# Processor time
     if h.read(4)!='SDMC':
         raise IOError, baddsf
     (l,)=unpack('<I', h.read(4))
     cmdsend=h.tell()+l-8
     curpool=0
+    netbase=0
     idx=0
     near=0
     far=-1
     flags=0	# 1=physical, 2=overlay
-    mesh=[]
+    roadtype=0
     curter='terrain_Water'
     curpatch=[]
     tercache={'terrain_Water':(join('Resources','Sea01.png'), 0, 0.001,0.001)}
@@ -186,7 +222,8 @@ def readDSF(path, terrains={}):
             (curpool,)=unpack('<H', h.read(2))
             
         elif c==2:	# Junction Offset Select
-            h.read(4)	# not implemented
+            (netbase,)=unpack('<I', h.read(4))
+            #print "\nJunction Offset %d" % netbase
             
         elif c==3:	# Set Definition
             (idx,)=unpack('<B', h.read(1))
@@ -198,18 +235,19 @@ def readDSF(path, terrains={}):
             (idx,)=unpack('<I', h.read(4))
             
         elif c==6:	# Set Road Subtype
-            h.read(1)	# not implemented
+            (roadtype,)=unpack('<B', h.read(1))
+            #print "\nRoad type %d" % roadtype
             
         elif c==7:	# Object
             (d,)=unpack('<H', h.read(2))
             p=pool[curpool][d]
-            if not terrains:
+            if wantoverlay:
                 placements.append(Object(objects[idx],
                                          p[1], p[0], round(p[2],1)))
                 
         elif c==8:	# Object Range
             (first,last)=unpack('<HH', h.read(4))
-            if not terrains:
+            if wantoverlay:
                 for d in range(first, last):
                     p=pool[curpool][d]
                     placements.append(Object(objects[idx],
@@ -217,18 +255,51 @@ def readDSF(path, terrains={}):
                     
         elif c==9:	# Network Chain
             (l,)=unpack('<B', h.read(1))
-            h.read(l*2)	# not implemented
+            if not wantnetwork:
+                h.read(l*2)
+                continue
+            #print "\nChain %d" % l
+            (d,)=unpack('<H', h.read(2))
+            thisnet=[po32[curpool][d+netbase]]
+            for i in range(l-1):
+                (d,)=unpack('<H', h.read(2))
+                p=po32[curpool][d+netbase]
+                thisnet.append(p)
+                if p[3]:	# this is a junction
+                    nets.append((roadtype, thisnet))
+                    thisnet=[p]
             
         elif c==10:	# Network Chain Range
-            h.read(4)	# not implemented
+            (first,last)=unpack('<HH', h.read(4))
+            if not wantnetwork or last-first<2: continue
+            #print "\nChain Range %d %d" % (first,last)
+            thisnet=[po32[curpool][first+netbase]]
+            for d in range(first+netbase+1, last+netbase):
+                p=po32[curpool][d]
+                thisnet.append(p)
+                if p[3]:	# this is a junction
+                    nets.append((roadtype, thisnet))
+                    thisnet=[p]
             
-        elif c==11:	# Network Chain
+        elif c==11:	# Network Chain 32
             (l,)=unpack('<B', h.read(1))
-            h.read(l*4)	# not implemented
+            if not wantnetwork:
+                h.read(l*4)
+                continue
+            #print "\nChain32 %d" % l
+            (d,)=unpack('<I', h.read(4))
+            thisnet=[po32[curpool][d]]
+            for i in range(l-1):
+                (d,)=unpack('<I', h.read(4))
+                p=po32[curpool][d]
+                thisnet.append(p)
+                if p[3]:	# this is a junction
+                    nets.append((roadtype, thisnet))
+                    thisnet=[p]
             
         elif c==12:	# Polygon
             (param,l)=unpack('<HB', h.read(3))
-            if terrains or l<2:
+            if not wantoverlay or l<2:
                 h.read(l*2)
                 continue
             winding=[]
@@ -240,7 +311,7 @@ def readDSF(path, terrains={}):
             
         elif c==13:	# Polygon Range (DSF2Text uses this one)
             (param,first,last)=unpack('<HHH', h.read(6))
-            if terrains or last-first<2: continue
+            if not wantoverlay or last-first<2: continue
             winding=[]
             for d in range(first, last):
                 p=pool[curpool][d]
@@ -258,7 +329,7 @@ def readDSF(path, terrains={}):
                     p=pool[curpool][d]
                     winding.append(tuple(p))
                 windings.append(winding)
-            if not terrains and n>0 and len(windings[0])>=2:
+            if wantoverlay and n>0 and len(windings[0])>=2:
                 placements.append(PolygonFactory(polygons[idx], param, windings))
                 
         elif c==15:	# Nested Polygon Range (DSF2Text uses this one too)
@@ -267,7 +338,7 @@ def readDSF(path, terrains={}):
             for j in range(n+1):
                 (l,)=unpack('<H', h.read(2))
                 i.append(l)
-            if terrains: continue
+            if not wantoverlay: continue
             windings=[]
             for j in range(n):
                 winding=[]
@@ -363,9 +434,11 @@ def readDSF(path, terrains={}):
     if curpatch:
         newmesh=makemesh(flags,path,curter,curpatch,centrelat,centrelon,terrains,tercache)
         if newmesh: mesh.append(newmesh)
+    if __debug__: print "%6.3f time in CMDS atom" % (time.clock()-clock)
     
     h.close()
-    return (lat, lon, placements, mesh)
+    #print nets
+    return (lat, lon, placements, nets, mesh)
 
 def meshfan(points):
     tris=[]
@@ -419,20 +492,22 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
     t=[]
     if flags&1 and (len(patch[0])<7 or xscale):	# hard and no st coords
         for p in patch:
-            x=(p[0]-centrelon)*onedeg*cos(d2r*p[1])
+            x=(p[0]-centrelon)*onedeg*cos(radians(p[1]))
             z=(centrelat-p[1])*onedeg
             v.append([x, p[2], z])
-            if angle==90:
+            if not angle:
+                t.append([x*xscale, -z*zscale])
+            elif angle==90:
                 t.append([z*zscale, x*xscale])
             elif angle==180:
                 t.append([-x*xscale, z*zscale])
             elif angle==270:
                 t.append([-z*zscale, -x*xscale])
-            else: # angle==0 or not square
+            else: # not square - ignore rotation
                 t.append([x*xscale, -z*zscale])
     elif not (len(patch[0])<7 or xscale):	# st coords but not projected
         for p in patch:
-            v.append([(p[0]-centrelon)*onedeg*cos(d2r*p[1]),
+            v.append([(p[0]-centrelon)*onedeg*cos(radians(p[1])),
                       p[2], (centrelat-p[1])*onedeg])
             t.append([p[5],p[6]])
     else:
@@ -441,7 +516,7 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
     return (texture,flags,v,t)
 
 
-def writeDSF(dsfdir, key, placements):
+def writeDSF(dsfdir, key, placements, netfile):
     (south,west)=key
     tiledir=join(dsfdir, "%+02d0%+03d0" % (int(south/10), int(west/10)))
     if not isdir(tiledir): mkdir(tiledir)
@@ -500,19 +575,32 @@ def writeDSF(dsfdir, key, placements):
 
     polydefs=[]
     for poly in polygons:
+        if isinstance(poly, Network): continue
         if not poly.name in polydefs:
             polydefs.append(poly.name)
             h.write('POLYGON_DEF\t%s\n' % poly.name)
     if polydefs: h.write('\n')
 
+    junctions={}
+    for poly in polygons:
+        if not isinstance(poly, Network): continue
+        if not junctions: h.write('NETWORK_DEF\t%s\n\n' % netfile)
+        for node in [poly.nodes[0][0], poly.nodes[0][-1]]:
+            junctions[(node[0], node[1], node[2])]=True
+    jnum=1
+    for j in junctions.keys():
+        junctions[j]=jnum
+        jnum+=1
+
     for obj in objects:
         # DSFTool rounds down, so round up here first
-        h.write('OBJECT\t\t%d %12.7f %12.7f %5.1f\n' % (
+        h.write('OBJECT\t\t%d\t%12.7f %12.7f %5.1f\n' % (
             objdefs.index(obj.name), min(west+1, obj.lon+minres/2), min(south+1, obj.lat+minres/2), round(obj.hdg,1)+minhdg/2))
     if objects: h.write('\n')
     
     for poly in polygons:
-        h.write('BEGIN_POLYGON\t%d %d %d\n' % (
+        if isinstance(poly, Network): continue
+        h.write('BEGIN_POLYGON\t%d\t%d %d\n' % (
             polydefs.index(poly.name), poly.param, len(poly.nodes[0][0])))
             #polydefs.index(poly.name), poly.param, 2))
         for w in poly.nodes:
@@ -530,6 +618,21 @@ def writeDSF(dsfdir, key, placements):
             h.write('END_WINDING\n')
         h.write('END_POLYGON\n')
     if polydefs: h.write('\n')
+
+    for poly in polygons:
+        if not isinstance(poly, Network): continue
+        p=poly.nodes[0][0]
+        h.write('BEGIN_SEGMENT\t%d %d\t%d\t%13.8f %13.8f %11.6f\n' % (
+            0, poly.index, junctions[(p[0], p[1], p[2])],
+            p[0], p[1], p[2]))
+        for p in poly.nodes[0][1:-1]:
+            h.write('SHAPE_POINT\t\t\t%13.8f %13.8f %11.6f\n' % (
+                p[0], p[1], p[2]))
+        p=poly.nodes[0][-1]
+        h.write('END_SEGMENT\t\t%d\t%13.8f %13.8f %11.6f\n' % (
+            junctions[(p[0], p[1], p[2])],
+            p[0], p[1], p[2]))
+    if junctions: h.write('\n')
     
     h.close()
     if platform.startswith('linux') and not isdir(join(expanduser('~'), '.wine')):

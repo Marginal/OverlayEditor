@@ -4,7 +4,7 @@ import wx
 from os.path import dirname, exists, join
 
 from files import sortfolded
-from clutterdef import PolygonDefFactory, ObjectDef, PolygonDef, KnownDefs, UnknownDefs
+from clutterdef import ClutterDefFactory, PolygonDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
 from MessageBox import myMessageBox
 
 
@@ -35,14 +35,16 @@ class PaletteListBox(wx.VListBox):
         for i in range(len(names)):
             name=realname=names[i]
             ext=name[-4:].lower()
-            if name in parent.bad:
-                imgno=8
-            elif name.startswith(PolygonDef.EXCLUDE):
+            if tabname==NetworkDef.TABNAME:
+                imgno=5
+            elif tabname==ExcludeDef.TABNAME:
                 imgno=6
             elif ext in UnknownDefs:
                 imgno=7
+            elif name in parent.bad:
+                imgno=8
             elif ext==PolygonDef.DRAPED:
-                imgno=4
+                imgno=3
                 if tabno==0 and self.pkgdir:
                     # find orthos - assume library objects aren't
                     try:
@@ -50,7 +52,7 @@ class PaletteListBox(wx.VListBox):
                         for line in h:
                             line=line.strip()
                             if line.startswith('TEXTURE_NOWRAP') or line.startswith('TEXTURE_LIT_NOWRAP'):
-                                imgno=5
+                                imgno=4
                                 break
                             elif line.startswith('TEXTURE'):
                                 break
@@ -61,7 +63,7 @@ class PaletteListBox(wx.VListBox):
                 imgno=KnownDefs.index(ext)
             else:
                 continue	# wtf?
-            if name.startswith(PolygonDef.EXCLUDE):
+            if tabname in [NetworkDef.TABNAME, ExcludeDef.TABNAME]:
                 pass
             elif not self.pkgdir:
                 # library object
@@ -118,12 +120,12 @@ class PaletteChoicebook(wx.Choicebook):
         self.imgs.Add(wx.Bitmap("Resources/obj.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/fac.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/for.png", wx.BITMAP_TYPE_PNG))
-        self.imgs.Add(wx.Bitmap("Resources/lin.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/pol.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/ortho.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/net.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/exc.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/unknown.png", wx.BITMAP_TYPE_PNG))
-        self.imgs.Add(wx.Bitmap("Resources/bad.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/bad.png", wx.BITMAP_TYPE_PNG))	# bad assumed below to be last
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)	# appears to do nowt on Windows
         wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
         if 'GetChoiceCtrl' in dir(self):	# not available on wxMac 2.5
@@ -353,15 +355,25 @@ class Palette(wx.SplitterWindow):
             except:
                 pass
 
+            # Look for library screenshot - <object>.jpg, picture.png or screenshot.jpg
             if not self.previewimg:
-                # Look for library screenshot - object.jpg or screenshot.jpg
                 newfile=self.frame.canvas.lookup[self.previewkey][:-3]+'jpg'
                 try:
                     if exists(newfile):
                         self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
                 except:
                     pass
-            
+
+            # X-Plane v9 static aircraft
+            if not self.previewimg:
+                newfile=join(dirname(newfile), 'picture.png')
+                try:
+                    if exists(newfile):
+                        self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_PNG)
+                except:
+                    pass
+
+            # OpenSceneryX
             if not self.previewimg:
                 newfile=join(dirname(newfile), 'screenshot.jpg')
                 try:
@@ -370,33 +382,18 @@ class Palette(wx.SplitterWindow):
                 except:
                     pass
 
-            # loading clutter can be slow so clear while loading
             if not self.previewimg:
+                # loading clutter can be slow so clear while loading
                 self.preview.SetBackgroundColour(wx.NullColour)
                 self.preview.ClearBackground()
 
-            if self.previewimg:
-                pass
-
-            elif self.previewkey.endswith('.obj'):
                 # Display object data
                 filename=self.frame.canvas.lookup[self.previewkey]
                 try:
                     if filename in self.frame.canvas.defs:
                         definition=self.frame.canvas.defs[filename]
                     else:
-                        self.frame.canvas.defs[filename]=definition=ObjectDef(filename, self.frame.canvas.vertexcache)
-                    self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)
-                except:
-                    self.cb.markbad()
-
-            else:
-                filename=self.frame.canvas.lookup[self.previewkey]
-                try:
-                    if filename in self.frame.canvas.defs:
-                        definition=self.frame.canvas.defs[filename]
-                    else:
-                        self.frame.canvas.defs[filename]=definition=PolygonDefFactory(filename, self.frame.canvas.vertexcache)
+                        self.frame.canvas.defs[filename]=definition=ClutterDefFactory(filename, self.frame.canvas.vertexcache)
                     self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)
                 except:
                     self.cb.markbad()

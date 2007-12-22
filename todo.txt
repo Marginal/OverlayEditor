@@ -1,4 +1,5 @@
-import problems?
+two-pass scan of global apt.dat
+networks
 pyopengl 3 on Unix
 
 palette right click / ctrl-click -> delete, rename
@@ -15,6 +16,5 @@ Beziers in polygons? - not for .bch, .for, .fac - yes for .lin, .pol, .str
 eddn_overlay ?
 Object prioritisation
 boundary (130)
-roads / networks
 beaches
 distance measurement

@@ -24,9 +24,9 @@ if __debug__:
     except:
         pass
 
-from files import VertexCache, sortfolded
+from files import VertexCache, sortfolded, readApt
 from fixed8x13 import fixed8x13
-from clutter import PolygonFactory, Draped, Facade, Object, Polygon, Exclude, resolution, round2res, latlondisp
+from clutter import PolygonFactory, Draped, Facade, Object, Polygon, Network, Exclude, resolution, round2res, latlondisp
 from clutterdef import BBox, ClutterDef, ObjectDef
 from MessageBox import myMessageBox
 from prefs import Prefs
@@ -148,9 +148,13 @@ class MyGL(wx.glcanvas.GLCanvas):
                          wx.ICON_ERROR|wx.OK, self)
             exit(1)
 
-        # Can't use polygon offset in display list on OSX 10.3
+        # Can't use polygon offset in display list on OSX 10.3 or early
+        # versions of 10.4. 10.4.8 (Darwin 8.8.1) onwards is OK?
         # Note 10.4 Intel 950 drivers ship with OGL 1.2
-        self.nopolyosinlist=(platform=='darwin' and uname()[2]<'8')
+        self.nopolyosinlist=False
+        if platform=='darwin':
+            ver=uname()[2].split('.')
+            self.nopolyosinlist=(int(ver[0])<8 or (int(ver[0])==8 and int(ver[1])<8))
 
         self.vertexcache=None
 
@@ -453,7 +457,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.vertexcache.realize(self)
 
-        # Static stuff: mesh, runways, navaids
+        # Static stuff: mesh, networks, navaids
         glCallList(self.meshlist)
 
         # Objects and Polygons
@@ -1006,17 +1010,22 @@ class MyGL(wx.glcanvas.GLCanvas):
         # return current height
         return self.y
 
-    def reload(self, options, airports, navaids,
-               lookup, placements,
+    def reload(self, options, airports, navaids, aptdatfile,
+               defnetdefs, netdefs, netfile,
+               lookup, placements, networks,
                background, terrain, dsfdirs):
         self.valid=False
         self.options=options
         self.airports=airports	# [runways] by code
         self.runways={}		# need to re-layout airports
         self.navaids=navaids
+        self.aptdatfile=aptdatfile
+        self.defnetdefs=netdefs	# for colouring networks in default scenery
+        self.netdefs=netdefs
+        self.netfile=netfile	# logical name of .net file used
         self.codes={}		# need to re-layout airports
         self.lookup=lookup
-        self.defs={}
+        self.defs=dict([(x.name, x) for x in netdefs[1:]])
         self.vertexcache.reset(terrain, dsfdirs)
         self.trashlists(True, True)
         self.tile=(0,999)	# force reload on next goto
@@ -1024,6 +1033,14 @@ class MyGL(wx.glcanvas.GLCanvas):
         if placements!=None:
             self.placements={}
             self.unsorted=placements
+            # turn networks into placements
+            for key in networks.keys():
+                for (road, points) in networks[key]:
+                    if road and road<len(netdefs):
+                        name=netdefs[road].name
+                    else:
+                        name=None	# fallback
+                    self.unsorted[key].append(Network(name, road, [points]))
         else:
             # clear layers
             for key in self.placements.keys():
@@ -1065,7 +1082,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if dist!=None: self.d=dist
         if options==None: options=self.options
 
-        if newtile!=self.tile or options&Prefs.DRAW!=self.options&Prefs.DRAW:
+        if newtile!=self.tile or options&Prefs.REDRAW!=self.options&Prefs.REDRAW:
             if newtile!=self.tile:
                 self.selected=[]
                 self.selectednode=None
@@ -1087,7 +1104,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             progress.Update(2, 'Mesh')
             self.vertexcache.getMeshdata(newtile, options)
 
-            if options&Prefs.DRAW!=self.options&Prefs.DRAW:
+            if options&Prefs.ELEVATION!=self.options&Prefs.ELEVATION:
                 # clear layers
                 for key in self.placements.keys():
                     placements=reduce(lambda x,y:x+y, self.placements.pop(key))
@@ -1134,7 +1151,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 for placements in self.placements[newtile]:
                     for placement in placements:
-                        placement.definition.allocate(self.vertexcache)
+                        placement.definition.allocate(self.vertexcache, self.defs)
             self.options=options
 
             # Lay out runways
@@ -1173,7 +1190,14 @@ class MyGL(wx.glcanvas.GLCanvas):
                     taxiways=[]
                     shoulders=[]
                     thisarea=BBox()
-                    thisapt=list(apt)
+                    if isinstance(apt, long):
+                        try:
+                            thisapt=readApt(self.aptdatfile, apt)
+                            self.airports[code]=(name, loc, thisapt)
+                        except:
+                            thisapt=[]
+                    else:
+                        thisapt=list(apt)
                     thisapt.reverse()	# draw in reverse order
                     newthing=None
                     for thing in thisapt:
@@ -1419,14 +1443,14 @@ class MyGL(wx.glcanvas.GLCanvas):
                     else:
                         filename=self.lookup[name]
                     if filename in self.defs:
-                        self.defs[filename].allocate(self.vertexcache)
+                        self.defs[filename].allocate(self.vertexcache, self.defs)
                     else:
                         self.defs[filename]=ObjectDef(filename, self.vertexcache)
                 except:
                     # Older versions of X-Plane don't have eg beacon_seaport
                     pass
                 
-            # Prepare static stuff: mesh, navaids
+            # Prepare static stuff: mesh, networks, navaids
             progress.Update(15, 'Done')
             self.vertexcache.realize(self)
             self.meshlist=glGenLists(1)
@@ -1466,7 +1490,21 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glPopMatrix()
             if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
 
+            # networks
+            glDisable(GL_TEXTURE_2D)
+            for (roadtype, points) in self.vertexcache.getNets(newtile,options):
+                if roadtype<=len(self.defnetdefs) and self.defnetdefs[roadtype].color:
+                    glColor3f(*self.defnetdefs[roadtype].color)
+                else:
+                    glColor3f(0.5,0.5,0.5)
+                glBegin(GL_LINE_STRIP)
+                for (x,y,z) in points:
+                    glVertex3f(x,y,z)
+                glEnd()
+
             # navaids
+            glColor3f(0.8, 0.8, 0.8)	# Unpainted
+            glEnable(GL_TEXTURE_2D)
             glEnable(GL_DEPTH_TEST)
             glDepthMask(GL_TRUE)
             #glEnable(GL_CULL_FACE)	# already enabled
@@ -1547,11 +1585,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Redraw can happen under MessageBox, so do this last
         if errobjs:
             sortfolded(errobjs)
-            myMessageBox(str('\n'.join(errobjs)), "Can't read one or more objects.", wx.ICON_EXCLAMATION|wx.OK, self.frame)
+            if len(errobjs)>11: errobjs=errobjs[:10]+['and %d more objects' % (len(errobjs)-10)]
+            myMessageBox('\n'.join(errobjs), "Can't read one or more objects.", wx.ICON_EXCLAMATION|wx.OK, self.frame)
 
         if errtexs:
             sortfolded(errtexs)
-            myMessageBox(str('\n'.join(errtexs)), "Can't read one or more textures.", wx.ICON_INFORMATION|wx.OK, self.frame)
+            if len(errtexs)>11: errtexs=errtexs[:10]+['and %d more textures' % (len(errtexs)-10)]
+            myMessageBox('\n'.join(errtexs), "Can't read one or more textures.", wx.ICON_INFORMATION|wx.OK, self.frame)
 
         self.Refresh()
 

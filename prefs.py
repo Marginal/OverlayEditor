@@ -9,8 +9,9 @@ from version import appname, appversion
 class Prefs:
     TERRAIN=1
     ELEVATION=2
-    DRAW=TERRAIN|ELEVATION
     DMS=4
+    NETWORK=8
+    REDRAW=TERRAIN|ELEVATION|NETWORK	# options that cause meshlist to be recalculated
     
     def __init__(self):
         self.filename=None

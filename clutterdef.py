@@ -1,7 +1,7 @@
 import codecs
 from math import fabs
 from os import listdir
-from os.path import dirname, exists, join, normpath, sep
+from os.path import dirname, exists, join, normpath, sep, splitext
 from sys import maxint
 
 from OpenGL.GL import *
@@ -45,13 +45,15 @@ class BBox:
 # flush -> discard vertexcache
 #
 
-def PolygonDefFactory(filename, vertexcache):
+def ClutterDefFactory(filename, vertexcache):
     "creates and initialises appropriate PolgonDef subclass based on file extension"
     # would like to have made this a 'static' method of PolygonDef
     if filename.startswith(PolygonDef.EXCLUDE):
         return ExcludeDef(filename, vertexcache)        
     ext=filename.lower()[-4:]
-    if ext==PolygonDef.DRAPED:
+    if ext==ObjectDef.OBJECT:
+        return ObjectDef(filename, vertexcache)
+    elif ext==PolygonDef.DRAPED:
         return DrapedDef(filename, vertexcache)
     elif ext==PolygonDef.FACADE:
         return FacadeDef(filename, vertexcache)
@@ -59,8 +61,6 @@ def PolygonDefFactory(filename, vertexcache):
         return ForestDef(filename, vertexcache)
     #elif ext==PolygonDef.LINE:
     #    return LineDef(filename, vertexcache)
-    elif ext==ObjectDef.OBJECT:
-        raise IOError		# not a polygon
     elif ext in SkipDefs:
         raise IOError		# what's this doing here?
     else:	# unknown polygon type
@@ -76,6 +76,7 @@ class ClutterDef:
     TAXIWAYLAYER=LAYERNAMES.index('taxiways')*11+5
     RUNWAYSLAYER=LAYERNAMES.index('runways')*11+5
     MARKINGLAYER=LAYERNAMES.index('markings')*11+5
+    NETWORKLAYER=LAYERNAMES.index('roads')*11+5	# for draped & exclusions
     OUTLINELAYER=LAYERNAMES.index('roads')*11+5	# for draped & exclusions
     DEFAULTLAYER=LAYERNAMES.index('objects')*11+5
 
@@ -113,7 +114,7 @@ class ClutterDef:
         return "%s %+d" % (ClutterDef.LAYERNAMES[self.layer/11],
                            (self.layer%11)-5)
 
-    def allocate(self, vertexcache):
+    def allocate(self, vertexcache, defs=None):
         pass
 
     def flush(self):
@@ -153,10 +154,9 @@ class ObjectDef(ClutterDef):
                 if not line: raise IOError
                 tex=line.strip()
                 if tex:
-                    if '//' in tex: tex=tex[:tex.index('//')].strip()
-                    tex=tex.replace(':', sep).replace('/', sep)
+                    (tex,e)=splitext(tex.split('//')[0].strip().replace(':', sep).replace('/', sep))
                     break
-            for ext in ['', '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+            for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                 if exists(normpath(join(self.texpath, tex+ext))):
                     texture=tex+ext
                     break
@@ -165,26 +165,25 @@ class ObjectDef(ClutterDef):
                     texture=tex
 
         if version=='2':
-            while True:
-                line=h.readline()
-                if not line: break
-                c=line.split('//')[0].split()
+            for line in h:
+                c=line.split()
                 if not c: continue
-                if c[0]=='99':
+                id=c[0]
+                if id=='99':
                     break
-                if c[0]=='1':
-                    h.readline()
-                elif c[0]=='2':
-                    h.readline()
-                    h.readline()
-                elif c[0] in ['6','7']:	# smoke
-                    for i in range(4): h.readline()
-                elif c[0]=='3':
+                elif id=='1':
+                    h.next()
+                elif id=='2':
+                    h.next()
+                    h.next()
+                elif id in ['6','7']:	# smoke
+                    for i in range(4): h.next()
+                elif id=='3':
                     # sst, clockwise, start with left top?
                     uv=[float(c[1]), float(c[2]), float(c[3]), float(c[4])]
                     v=[]
                     for i in range(3):
-                        c=h.readline().split()
+                        c=h.next().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
                         self.bbox.include(v[i][0], v[i][2])
                         self.height=max(self.height, v[i][1])
@@ -194,15 +193,15 @@ class ObjectDef(ClutterDef):
                     tcurrent.append([uv[1],uv[2]])
                     current.append(v[2])
                     tcurrent.append([uv[1],uv[3]])
-                elif int(c[0]) < 0:	# strip
-                    count=-int(c[0])
+                elif int(id) < 0:	# strip
+                    count=-int(id)
                     seq=[]
                     for i in range(0,count*2-2,2):
                         seq.extend([i,i+1,i+2,i+3,i+2,i+1])
                     v=[]
                     t=[]
                     for i in range(count):
-                        c=h.readline().split()
+                        c=h.next().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
                         self.bbox.include(v[-1][0], v[-1][2])
                         self.height=max(self.height, v[-1][1])
@@ -219,7 +218,7 @@ class ObjectDef(ClutterDef):
                     uv=[float(c[1]), float(c[2]), float(c[3]), float(c[4])]
                     v=[]
                     for i in range(4):
-                        c=h.readline().split()
+                        c=h.next().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
                         self.bbox.include(v[i][0], v[i][2])
                         self.height=max(self.height, v[i][1])
@@ -235,50 +234,36 @@ class ObjectDef(ClutterDef):
                     tcurrent.append([uv[0],uv[2]])
                     current.append(v[3])
                     tcurrent.append([uv[0],uv[3]])
+
         elif version=='700':
-            while True:
-                line=h.readline()
-                if not line: break
-                c=line.split('//')[0].split()
+            for line in h:
+                c=line.split()
                 if not c: continue
-                if c[0]=='end':
-                    break
-                elif c[0]=='ATTR_LOD':
-                    if float(c[1])!=0: break
-                elif c[0]=='ATTR_poly_os':
-                    self.poly=max(self.poly,int(float(c[1])))
-                elif c[0]=='ATTR_cull':
-                    current=culled
-                    tcurrent=tculled
-                elif c[0]=='ATTR_no_cull':
-                    current=nocull
-                    tcurrent=tnocull
-                elif c[0]=='ATTR_layer_group':
-                    self.setlayer(c[1], int(c[2]))
-                elif c[0] in ['tri', 'quad', 'quad_hard', 'polygon', 
-                              'quad_strip', 'tri_strip', 'tri_fan',
-                              'quad_movie']:
+                id=c[0]
+                if id in ['tri', 'quad', 'quad_hard', 'polygon', 
+                          'quad_strip', 'tri_strip', 'tri_fan',
+                          'quad_movie']:
                     count=0
                     seq=[]
-                    if c[0]=='tri':
+                    if id=='tri':
                         count=3
                         seq=[0,1,2]
-                    elif c[0]=='polygon':
+                    elif id=='polygon':
                         count=int(c[1])
                         for i in range(1,count-1):
                             seq.extend([0,i,i+1])
-                    elif c[0]=='quad_strip':
+                    elif id=='quad_strip':
                         count=int(c[1])
                         for i in range(0,count-2,2):
                             seq.extend([i,i+1,i+2,i+3,i+2,i+1])
-                    elif c[0]=='tri_strip':
+                    elif id=='tri_strip':
                         count=int(c[1])
                         for i in range(0,count-2):
                             if i&1:
                                 seq.extend([i+2,i+1,i])
                             else:
                                 seq.extend([i,i+1,i+2])
-                    elif c[0]=='tri_fan':
+                    elif id=='tri_fan':
                         count=int(c[1])
                         for i in range(1,count-1):
                             seq.extend([0,i,i+1])
@@ -289,7 +274,7 @@ class ObjectDef(ClutterDef):
                     t=[]
                     i=0
                     while i<count:
-                        c=h.readline().split()
+                        c=h.next().split()
                         v.append([float(c[0]), float(c[1]), float(c[2])])
                         self.bbox.include(v[i][0], v[i][2])
                         self.height=max(self.height, v[i][1])
@@ -305,53 +290,75 @@ class ObjectDef(ClutterDef):
                     for i in seq:
                         current.append(v[i])
                         tcurrent.append(t[i])
+                elif id=='ATTR_LOD':
+                    if float(c[1])!=0: break
+                elif id=='ATTR_poly_os':
+                    self.poly=max(self.poly,int(float(c[1])))
+                elif id=='ATTR_cull':
+                    current=culled
+                    tcurrent=tculled
+                elif id=='ATTR_no_cull':
+                    current=nocull
+                    tcurrent=tnocull
+                elif id=='ATTR_layer_group':
+                    self.setlayer(c[1], int(c[2]))
+                elif id=='end':
+                    break
+
         elif version=='800':
             vt=[]
             vtt=[]
             idx=[]
             anim=[]
             for line in h:
-                c=line.split('#')[0].split('//')[0].split()
+                c=line.split()
                 if not c: continue
-                if c[0]=='TEXTURE':
-                    if len(c)>1:
-                        tex=line[7:].strip()
-                        if '//' in tex: tex=tex[:tex.index('//')].strip()
-                        texture=tex.replace(':', sep).replace('/', sep)
-                elif c[0]=='VT':
+                id=c[0]
+                if id=='VT':
                     x=float(c[1])
                     y=float(c[2])
                     z=float(c[3])
-                    self.bbox.include(x,z)
+                    self.bbox.include(x,z)	# ~10% of load time
                     self.height=max(self.height, y)
                     vt.append([x,y,z])
                     vtt.append([float(c[7]), float(c[8])])
-                elif c[0]=='IDX':
+                elif id=='IDX10':
+                    #idx.extend([int(c[i]) for i in range(1,11)])
+                    idx.extend(map(int,c[1:11])) # slightly faster under 2.3
+                elif id=='IDX':
                     idx.append(int(c[1]))
-                elif c[0]=='IDX10':
-                    idx.extend([int(c[i]) for i in range(1,11)])
-                elif c[0]=='ATTR_LOD':
+                elif id=='TEXTURE':
+                    if len(c)>1:
+                        (tex,e)=splitext(line[7:].split('#')[0].split('//')[0].strip().replace(':', sep).replace('/', sep))
+                        for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                            if exists(normpath(join(self.texpath, tex+ext))):
+                                texture=tex+ext
+                                break
+                        else:
+                            if tex.lower()!='none':
+                                texture=tex
+                elif id=='ATTR_LOD':
                     if float(c[1])!=0: break
-                elif c[0]=='ATTR_poly_os':
+                elif id=='ATTR_poly_os':
                     self.poly=max(self.poly,int(float(c[1])))
-                elif c[0]=='ATTR_cull':
+                elif id=='ATTR_cull':
                     current=culled
                     tcurrent=tculled
-                elif c[0]=='ATTR_no_cull':
+                elif id=='ATTR_no_cull':
                     current=nocull
                     tcurrent=tnocull
-                elif c[0]=='ATTR_layer_group':
+                elif id=='ATTR_layer_group':
                     self.setlayer(c[1], int(c[2]))
-                elif c[0]=='ANIM_begin':
+                elif id=='ANIM_begin':
                     if anim:
                         anim.append(list(anim[-1]))
                     else:
                         anim=[[0,0,0]]
-                elif c[0]=='ANIM_end':
+                elif id=='ANIM_end':
                     anim.pop()
-                elif c[0]=='ANIM_trans':
+                elif id=='ANIM_trans':
                     anim[-1]=[anim[-1][i]+float(c[i+1]) for i in range(3)]
-                elif c[0]=='TRIS':
+                elif id=='TRIS':
                     start=int(c[1])
                     new=int(c[2])
                     if anim:
@@ -385,7 +392,7 @@ class ObjectDef(ClutterDef):
                     self.texerr=IOError(0,e.strerror,texture)
             self.allocate(vertexcache)
 
-    def allocate(self, vertexcache):
+    def allocate(self, vertexcache, defs=None):
         if self.base==None:
             self.base=vertexcache.allocate(self.vdata, self.tdata)
 
@@ -394,7 +401,7 @@ class ObjectDef(ClutterDef):
 
     def preview(self, canvas, vertexcache):
         if not self.canpreview: return None
-        self.allocate(vertexcache)
+        self.allocate(vertexcache, canvas.defs)
         vertexcache.realize(canvas)
         canvas.SetCurrent()
         glViewport(0, 0, 300, 300)
@@ -550,7 +557,13 @@ class DrapedDef(PolygonDef):
             if not c: continue
             if c[0] in ['TEXTURE', 'TEXTURE_NOWRAP']:
                 if c[0]=='TEXTURE_NOWRAP': self.ortho=True
-                texture=line[len(c[0]):].strip().replace(':', sep).replace('/', sep)
+                (tex,e)=splitext(line[len(c[0]):].strip().replace(':', sep).replace('/', sep))
+                for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                    if exists(normpath(join(self.texpath, tex+ext))):
+                        texture=tex+ext
+                        break
+                    else:
+                        texture=tex
             elif c[0]=='SCALE':
                 self.hscale=float(c[1]) or 1
                 self.vscale=float(c[2]) or 1
@@ -578,6 +591,7 @@ class DrapedFallback(PolygonDef):
     
 
 class ExcludeDef(PolygonDef):
+    TABNAME='Exclusions'
 
     def __init__(self, filename, vertexcache):
         # PolygonDef.__init__(self, filename, vertexcache) - don't fanny about with tex paths
@@ -618,7 +632,13 @@ class FacadeDef(PolygonDef):
             c=line.split('#')[0].split()
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
-                texture=line[7:].strip().replace(':', sep).replace('/', sep)
+                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep))
+                for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                    if exists(normpath(join(self.texpath, tex+ext))):
+                        texture=tex+ext
+                        break
+                    else:
+                        texture=tex
                 try:
                     self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
                 except IOError, e:
@@ -716,7 +736,13 @@ class ForestDef(PolygonDef):
             c=line.split('#')[0].split()
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
-                texture=line[7:].strip().replace(':', sep).replace('/', sep)
+                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep))
+                for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                    if exists(normpath(join(self.texpath, tex+ext))):
+                        texture=tex+ext
+                        break
+                    else:
+                        texture=tex
                 try:
                     self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
                 except IOError, e:
@@ -772,7 +798,13 @@ class LineDef(PolygonDef):
             c=line.split('#')[0].split()
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
-                texture=line[7:].strip().replace(':', sep).replace('/', sep)
+                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep))
+                for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                    if exists(normpath(join(self.texpath, tex+ext))):
+                        texture=tex+ext
+                        break
+                    else:
+                        texture=tex
                 try:
                     self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)), 'vertically')
                 except IOError, e:
@@ -802,6 +834,162 @@ class LineFallback(PolygonDef):
         self.canpreview=False
 
 
+class NetworkDef(PolygonDef):
+    TABNAME='Roads, Railways & Powerlines'
+    DEFAULTFILE='lib/g8/roads.net'
+
+    def __init__(self, filename, name, index, width, length, texture, poly, color):
+        PolygonDef.__init__(self, filename, None)
+        self.layer=ClutterDef.NETWORKLAYER
+        self.name=name
+        self.index=index
+        self.width=width
+        self.length=length
+        self.height=None
+        self.texname=texture
+        self.poly=poly
+        self.color=color
+        self.even=False
+        self.objs=[]		# (filename, lateral, onground, freq, offset)
+        self.objdefs=[]
+        self.segments=[]	# (lateral, vertical, s, lateral, vertical, s)
+        
+    def allocate(self, vertexcache, defs):
+        # load texture and objects
+        if not self.texture:
+            self.texture=vertexcache.texcache.get(normpath(join(self.texpath, self.texname)))
+        if self.objdefs:
+            for o in self.objdefs:
+                o.allocate(vertexcache, defs)
+        else:
+            height=0
+            for i in range(len(self.objs)):
+                (filename, lateral, onground, freq, offset)=self.objs[i]
+                if filename in defs:
+                    defn=defs[filename]
+                    defn.allocate(vertexcache, defs)
+                else:
+                    defs[filename]=defn=ObjectDef(filename, vertexcache)
+                self.objdefs.append(defn)
+                # Calculate height from objects
+                if self.height:
+                    pass
+                elif onground:
+                    for (x,y,z) in defn.vdata:
+                        height=max(height,y)
+                else:
+                    for (x,y,z) in defn.vdata:
+                        height=min(height,y)
+            if height:
+                if onground:
+                    self.height=(0,round(height,1))
+                else:
+                    self.height=(0,round(-height,1))
+                print "New height", self.height[1]
+
+        # Calculate height from segments eg LocalRoadBridge
+        if not self.objs:
+            height=0
+            for (lat1, vert1, s1, lat2, vert2, s2) in self.segments:
+                height=min(height,vert1,vert2)
+            if height<-2:	# arbitrary - allow for foundations
+                self.height=(0,round(-height,1))
+                print "New height", self.height[1]
+            
+    def flush(self):
+        for o in self.objdefs:
+            o.flush()
+        
+    def preview(self, canvas, vertexcache):
+        print "Preview", self.name, self.width, self.length, self.height
+        self.allocate(vertexcache, canvas.defs)
+        vertexcache.realize(canvas)
+        canvas.SetCurrent()
+        glViewport(0, 0, 300, 300)
+        glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        if self.height:
+            height=self.height[1]
+        else:
+            height=0
+        maxsize=self.length*2+self.width/4	# eg PrimaryDividedWithSidewalksBridge
+        glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+        glRotatef( 60, 1,0,0)
+        glRotatef(-60, 0,1,0)
+        glTranslatef(0, height+self.width, -self.length*2)
+        glColor3f(0.8, 0.8, 0.8)	# Unpainted
+        glBindTexture(GL_TEXTURE_2D, self.texture)
+        glDisable(GL_CULL_FACE)
+        glBegin(GL_QUADS)
+        for (lat1, vert1, s1, lat2, vert2, s2) in self.segments:
+            print lat1, vert1, s1, lat2, vert2, s2
+            # repeat 4 times to get pylons
+            length=0
+            for l in range(4):
+                glTexCoord2f(s1, 0)
+                glVertex3f(lat1, vert1, length)
+                glTexCoord2f(s2, 0)
+                glVertex3f(lat2, vert2, length)
+                length+=self.length
+                glTexCoord2f(s2, 1)
+                glVertex3f(lat2, vert2, length)
+                glTexCoord2f(s1, 1)
+                glVertex3f(lat1, vert1, length)
+        glEnd()
+        
+        glEnable(GL_CULL_FACE)
+        for i in range(len(self.objs)):
+            (filename, lateral, onground, freq, offset)=self.objs[i]
+            print lateral, freq, offset, filename
+            obj=self.objdefs[i]
+            if not freq: freq=self.length*4
+            glPushMatrix()
+            glTranslatef(lateral, -height*onground, offset)
+            dist=offset
+            while dist<=self.length*4:
+                glBindTexture(GL_TEXTURE_2D, obj.texture)
+                if obj.culled:
+                    glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
+                glTranslatef(0, 0, freq)
+                dist+=freq
+            glPopMatrix()
+        glEnable(GL_CULL_FACE)
+                
+
+        #glFinish()	# redundant
+        data=glReadPixels(0,0, 300,300, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(300, 300, False)
+        img.SetData(data)
+        
+        # Restore state for unproject & selection
+        glPopMatrix()
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()	
+        glMatrixMode(GL_MODELVIEW)
+
+        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        canvas.Refresh()	# Mac draws from the back buffer w/out paint event
+        return img.Mirror(False)        
+
+
+class NetworkFallback(PolygonDef):
+    def __init__(self, filename, name, index):
+        self.filename=filename
+        self.name=name
+        self.index=index
+        self.texture=0
+        self.texerr=None
+        self.layer=ClutterDef.NETWORKLAYER
+        self.canpreview=False
+
+
 UnknownDefs=['.lin','.str']	# Known unknowns
-SkipDefs=['.bch', '.net']	# Ignore in library
-KnownDefs=[ObjectDef.OBJECT, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.LINE, PolygonDef.DRAPED]+UnknownDefs
+SkipDefs=['.bch','.net']	# Ignore in library
+KnownDefs=[ObjectDef.OBJECT, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.DRAPED]+UnknownDefs

@@ -190,21 +190,22 @@ To select objects:</p>
 </table>
 <p>You can't select or otherwise manipulate runways, taxiways or navaids
 (ILS, VOR, DME etc).</p>
-<p>If you select a single polygon (facade, forest, draped or exclusion region)
+<p>If you select a single polygon <small>(facade, forest, draped or exclusion region)</small>
+or network segment <small>(road, railway or powerline)</small>
 you can click on an individual node (<i>ie</i> corner) to select it.
 The selected node is highlighted in white.</p>
-<p>These keys affect the selected objects or the selected polygon node.
+<p>These keys affect the selected objects or the selected node.
 Hold down <samp>Shift</samp> for bigger steps or <samp>Ctrl</samp>
 for tiny steps:</p>
 <table style="margin-left: 40px;" border="0">
   <tbody>
     <tr>
       <td style="width: 33%;">Mouse click and drag</td>
-      <td>Move object or polygon node</td>
+      <td>Move object or polygon/network node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
-      <td>Move selected objects or polygon node</td>
+      <td>Move selected objects or polygon/network node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Q</samp>, <samp>E</samp></td>
@@ -212,11 +213,11 @@ for tiny steps:</p>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>R</samp>, <samp>F</samp></td>
-      <td>Increase/decrease facade height or forest density, or rotate a draped polygon's texture.</td>
+      <td>Increase/decrease facade height, network node height or forest density, or rotate a draped polygon's texture.</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>C</samp></td>
-      <td>Centre on selected objects or polygon node</td>
+      <td>Centre on selected objects or polygon/network node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>N</samp></td>
@@ -228,11 +229,11 @@ for tiny steps:</p>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Insert</samp>/<samp>Enter</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
-      <td>Add new object or polygon node</td>
+      <td>Add new object or polygon/network node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Ctrl Insert</samp>/<samp>Enter</samp></td>
-      <td>Add new polygon node, going clockwise</td>
+      <td>Add new polygon node (going clockwise) or new network node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Shift Insert</samp>/<samp>Enter</samp></td>
@@ -240,7 +241,7 @@ for tiny steps:</p>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
-      <td>Delete selected objects or polygon node</td>
+      <td>Delete selected objects or polygon/network node</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Shift Delete</samp></td>
@@ -266,8 +267,9 @@ The type of object is indicated by a symbol:</p>
   <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="pol" src="Resources/pol.png"></a> - Draped polygon (<code>.pol</code>) with a <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later)</dd>
   <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="ortho" src="Resources/ortho.png"></a> - Draped polygon (<code>.pol</code>) for use as an <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later)</dd>
   <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="unknown" src="Resources/unknown.png"></a> - Other polygon</dd>
-  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="bad" src="Resources/bad.png"></a> - Missing or unreadable object or polygon</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="net" src="Resources/net.png"></a> - Road, Railway or Powerline network (requires X-Plane 9.00 or later)</dd>
   <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="exc" src="Resources/exc.png"></a> - Exclusion region</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="bad" src="Resources/bad.png"></a> - Missing or unreadable object or polygon</dd>
 </dl>
 <p>Objects that have been made available by scenery libraries, including
 X-Plane's built-in libraries, are listed under further headings in the
@@ -276,9 +278,9 @@ libraries than earlier versions, so you you should always design using the
 earliest version of X-Plane that you want your scenery package to work
 with.
 (See <a target="_blank" href="http://marginal.org.uk/x-planescenery/library_tutorial/index.html">this tutorial</a> if you're interested in making your own scenery libraries).</p>
-<p>You can only add objects to your scenery that appear in these lists
-(think of this as your
-"<a href="http://en.wikipedia.org/wiki/Palette">palette</a>"):</p>
+<p>You can only add objects to your scenery that appear in these lists -
+think of these lists as an artist's
+<a href="http://en.wikipedia.org/wiki/Palette">palette</a>:</p>
 <ul>
   <li>Use <a href="#import"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Import" src="Resources/import.png"></a> to copy objects from another scenery <u>package</u>. (Don't use this to copy objects from a scenery
 <u>library</u>; just select the object from the appropriate list).</li>
@@ -302,14 +304,59 @@ windows to make the preview picture smaller.</p>
 selected an object or polygon node, the object or node's location, heading and
 elevation (or average location if you have selected more than one object).</p>
 
+<!--
+<h3>Road, Railway &amp; Powerline Networks</h3>
+<p>X-Plane handles roads, railways and powerlines (collectively "networks")
+a little differently from other objects;
+all of the types of network are defined in a single <code>.net</code> file.
+By default, OverlayEditor reads the network types from the X-Plane library file <code>lib/g8/roads.net</code>.
+You can create your own network types by creating a
+<a target="_blank" href="http://scenery.x-plane.com/library.php?doc=netspec.php"><code>.net</code></a>
+file inside of your scenery package
+<small>(it doesn't matter what you name it, but you can have only one <code>.net</code> file)</small>.</p>
+<ul>
+  <li>You can only edit network segments if you are developing against X-Plane
+v9 <small>(DSF overlay files that contain network segments can cause X-Plane v8 to crash)</small>,
+and if the OverlayEditor preferences are set to display terrain and elevation.</li>
+  <li>When you create a new network segment in OverlayEditor it has two nodes.
+You can extend the segment by selecting an end node and pressing <samp>Insert</samp>/<samp>Enter</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>.</li>
+  <li>You can add additional intermediate nodes by selecting a node and pressing <samp>Ctrl Insert</samp>/<samp>Enter</samp>.</li>
+  <li>You can join the node at each end of a segment to another segment of the
+same or of a different type -
+drag the node so that it snaps to the end of the other segment.
+X-Plane will try to draw a reasonable junction between the two segments.</li>
+  <li>X-Plane will not join network segments in your scenery package to
+segments in the default scenery.
+You can use an Exclusion region to remove network segments in the default scenery.</li>
+</ul>	
+<dl>
+  <dt>Ground-level network types - <i>eg</i> Roads & Railways</dt>
+  <dd>OverlayEditor always places road and railway segments at ground level - they follow the terrain mesh.<br>
+You can add additional nodes to a road or railway segment to change the direction.</dd>
+  <dt>Bridge network types - <i>eg</i> Road & Railway bridges</dd>
+  <dd>Bridge nodes can be placed at varying heights -
+from ground-level up to the maximum height of their supporting columns.
+OverlayEditor does not make bridge segments automatically follow the terrain mesh.<br>
+You can use the <samp>R</samp> and <samp>F</samp> keys to adjust the height
+of a bridge node - the height is shown in the status bar.<br>
+You can add additional nodes to a bridge segment to change the direction and
+to have more control over the height of the bridge.<br>
+Depending on how the bridge is defined, X-Plane may draw the supporting columns at a repeating interval, or just once at each node
+<small>(the suspension bridges defined in <code>lib/g8/roads.net</code>
+are of this latter type)</small>.
+  </dd>
+</dl>
+-->
+
 <h3>Differences between this application and X-Plane</h3>
 <p>This application displays terrain and objects in orthogonal projection
 (no perspective) and in a simplified form. <i>ie</i>:</p>
 <ul>
   <li>No lights, lines, materials, shading or animation. 
-Objects that only contain lights or lines are displayed as small
+3D objects that only contain lights or lines are displayed as small
 "placeholder" cubes so that they can be edited.</li>
-  <li>This application can only display objects, facades and draped polygons.
+  <li>This application can only display 3D objects, facades and draped
+polygons.
 Other types of polygon (beaches, forests, lines, strings <i>etc</i>) are
 displayed as an outline. Beach polygons cannot be edited.</li>
   <li>When you add a new draped polygon this application behaves differently
@@ -374,17 +421,17 @@ This is particularly noticable when editing polygons because OverlayEditor
 has to fit the polygons to the terrain mesh. OverlayEditor runs much
 faster if you tell it not to display elevation; press
 <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
-and select "No terrain" or "Show terrain".</p>
+and select "No terrain" or "Show terrain".
+But note that you need to display elevation in order to edit network segments.</p>
 
 <h4>OverlayEditor complains that it "Can't read one or more objects"</h4>
-<p>Your scenery package uses objects or polygons that are either missing or
-unreadable.
-Missing or unreadable objects are displayed as small grey "placeholder" cubes.
+<p>Your scenery package uses objects that are either missing or unreadable.
+Missing or unreadable 3D objects are displayed as small grey "placeholder" cubes.
 Missing or unreadable polygons are displayed as grey "placeholder" shapes.</p>
 <dl>
-  <dt>To delete all uses of the missing or unreadable object or polygon in the current 1&deg;&times;1&deg; region:</dt>
-  <dd>Select the object or polygon in the <a href="#objectlist">list of objects</a>.</dd>
-  <dd>Repeatedly press <samp>Ctrl N</samp> until all the placeholder objects or polygons are highlighted.</dd>
+  <dt>To delete all uses of the missing or unreadable 3D object or polygon in the current 1&deg;&times;1&deg; region:</dt>
+  <dd>Select the 3D object or polygon in the <a href="#objectlist">list of objects</a>.</dd>
+  <dd>Repeatedly press <samp>Ctrl N</samp> until all the placeholder cubes or polygons are highlighted.</dd>
   <dd>Press <samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png">.</dd>
 </dl>
 <p>Note that neither X-Plane nor OverlayEditor can read objects designed for
@@ -407,8 +454,8 @@ Then press <a href="#reload"><img style="border: 0px solid ; width: 16px; height
 Note that OverlayEditor only reports problems with textures when you load or
 reload a scenery package, and when you first add an object to the scenery.</p>
 
-<h4>My scenery object just appears as a small grey blob in OverlayEditor</h4>
-<p>OverlayEditor doesn't draw lights or lines - objects that only contain
+<h4>My 3D object just appears as a small grey blob in OverlayEditor</h4>
+<p>OverlayEditor doesn't draw lights or lines - 3D objects that only contain
 lights or lines are displayed as small "placeholder" cubes.
 This is a limitation of the application.</p>
     
@@ -418,12 +465,12 @@ This is a limitation of the application.</p>
 X-Plane won't display non-simple polygons.
 OverlayEditor displays non-simple polygons as a bright red outline.</p>
     
-<h4>I want to remove some "autogen" scenery objects from the default scenery</h4>
+<h4>I want to remove some scenery objects from the default scenery</h4>
 <dl>
   <dt>You can use an exclusion region:</dt>
   <dd>Navigate to the area from which you want to remove the scenery objects.</dd>
   <dd>Select "Exclusions" from the drop-down <a href="#objectlist">Objects</a> menu.</dd>
-  <dd>Choose "Exclude: Objects" from the list.</dd>
+  <dd>Choose the type of object that you want to exclude.</dd>
   <dd>Press <samp>Enter</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png">.</dd>
   <dd>Drag the corners of the new region as desired.</dd>
 </dl>
@@ -436,8 +483,9 @@ So you may need to rename one of the two packages to change their relative
 priority.</p>
 
 <h4>I want to change the elevation of a scenery object</h4>
-<p>OverlayEditor just places scenery objects on top of the terrain mesh.
-To change the apparent elevation of an object you need to edit the object
+<p>OverlayEditor just places scenery objects (other than network segments)
+directly on top of the terrain mesh.
+To change the apparent elevation of a 3D object you need to edit the object
 using a 3D modelling application.</p>
 
 <h4>X-Plane does not display any of my scenery objects</h4>
@@ -477,8 +525,9 @@ Rename one or both of the packages to change their relative priority.</dd>
 
 <h3>Limitations</h3>
 <ul>
+  <li>Does not display roads, railway or powerline networks.</li>
   <li>Does not display autogen scenery.</li>
-  <li>Does not display lights or lines in objects.</li>
+  <li>Does not display lights or lines in 3D objects.</li>
   <li>Does not convert or edit <code>.env</code> files.</li>
   <li>Displays but does not edit runways, taxiways, navaids etc.</li>
   <li>There is a limit to the number of objects that you can select at once. The number depends on your graphics hardware.</li>
@@ -499,7 +548,7 @@ that you make using these tools, but you are under no obligation.</p>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 1.83 &copy; 2007 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 2.00 &copy; 2007 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/3.0/">
 <img alt="Creative Commons License" style="border: 0px solid ; width: 88px; height: 31px; vertical-align: text-bottom;" src="http://creativecommons.org/images/public/somerights20.png"></a></td>
     </tr>
