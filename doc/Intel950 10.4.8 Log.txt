@@ -1,0 +1,73 @@
+log.txt for X-Plane 8.60 Beta-8 Installer 86008 compiled on Jan  5 2007 23:49:18
+
+This log file is generated automatically by Laminar Research applications and contains diagnostics about your graphics hardware, installation, and
+any error conditions. If you need to contact tech support or file a bug, please send us this file. NOTE: this file is rewritten every time you
+start ANY of your X-System applications.
+
+Mac OS X 10.4.8
+CPU type: 1765095478 (Pentium) CPU speed (mhz): 2000Bus speed (mhz): 664RAM (MB): 512
+X-System folder= case sensitive=1
+     '-psn_0_3014657'
+CPU count = 2
+AGL_RGBA         :1
+AGL_DOUBLEBUFFER :1
+AGL_RED_SIZE     :8
+AGL_GREEN_SIZE   :8
+AGL_BLUE_SIZE    :8
+AGL_ALPHA_SIZE   :8
+AGL_DEPTH_SIZE   :24
+OpenGL Situation :
+OpenGL Vendor    :Intel Inc.
+OpenGL Render    :Intel GMA 950 OpenGL Engine
+OpenGL Version   :1.2 APPLE-1.4.40
+OpenGL Extensions:GL_ARB_transpose_matrix GL_ARB_vertex_program GL_ARB_vertex_blend GL_ARB_window_pos GL_ARB_shader_objects GL_ARB_vertex_shader GL_EXT_multi_draw_arrays GL_EXT_clip_volume_hint GL_EXT_rescale_normal GL_EXT_draw_range_elements GL_EXT_fog_coord GL_APPLE_client_storage GL_APPLE_specular_vector GL_APPLE_transform_hint GL_APPLE_packed_pixels GL_APPLE_fence GL_APPLE_vertex_array_object GL_APPLE_vertex_program_evaluators GL_APPLE_element_array GL_APPLE_flush_render GL_NV_texgen_reflection GL_NV_light_max_exponent GL_IBM_rasterpos_clip GL_SGIS_generate_mipmap GL_ARB_shading_language_100 GL_ARB_texture_border_clamp GL_ARB_multitexture GL_ARB_texture_env_add GL_ARB_texture_cube_map GL_ARB_texture_env_dot3 GL_ARB_texture_env_combine GL_ARB_texture_compression GL_ARB_texture_mirrored_repeat GL_ARB_shadow GL_ARB_depth_texture GL_ARB_fragment_program GL_ARB_fragment_shader GL_ARB_point_sprite GL_ARB_texture_non_power_of_two GL_ARB_vertex_buffer_object GL_ARB_pixel_buffer_object GL_EXT_framebuffer_object GL_EXT_texture_rectangle GL_ARB_texture_rectangle GL_EXT_texture_env_add GL_EXT_blend_color GL_EXT_blend_minmax GL_EXT_blend_subtract GL_EXT_texture_lod_bias GL_EXT_abgr GL_EXT_bgra GL_EXT_stencil_wrap GL_EXT_texture_filter_anisotropic GL_EXT_separate_specular_color GL_EXT_secondary_color GL_EXT_blend_func_separate GL_EXT_shadow_funcs GL_EXT_stencil_two_side GL_EXT_texture_compression_s3tc GL_EXT_texture_compression_dxt1 GL_EXT_blend_equation_separate GL_EXT_gpu_program_parameters GL_APPLE_flush_buffer_range GL_APPLE_ycbcr_422 GL_APPLE_texture_range GL_APPLE_pixel_buffer GL_NV_blend_square GL_ATI_texture_env_combine3 GL_SGIS_texture_edge_clamp GL_SGIS_texture_lod 
+tex_clamp_avail=1
+add_env_avail  =1
+combine_avail  =1
+dis_fog_avail  =0
+tex_comp_avail =1
+vbo_avail      =1
+vprog_avail    =0 (0)
+fprog_avail    =1 (96/64/32/4)
+automini_avail =1
+aniso_avail    =1
+fsaa_avail     =0
+sprites_avail  =1
+depth_tex_avail=1
+occlude_avail  =0
+shad_objs_avail=1
+vshader_avail  =1 (16/4096/32/16/0/4096)
+fshader_avail  =1 (4096)
+glsl_avail     =1 (1.10)
+framebuf_avail =1
+max tex units    :8 (16/8)
+max iso filtering:4.000000
+max texture size :2048
+max point size   :64.000000
+os_dir_apps:/Applications/
+os_dir_temp:/private/var/tmp/folders.501/TemporaryItems/
+Mem file error.  Err=22, file=/Applications/X-System 800/Resources/plugins/XPLM.framework/Resources
+Mem file error.  Err=22, file=/Applications/X-System 800/Resources/plugins/XPLM.framework/Versions/Current
+Mem file error.  Err=22, file=/Applications/X-System 800/Resources/plugins/XPWidgets.framework/Resources
+Mem file error.  Err=22, file=/Applications/X-System 800/Resources/plugins/XPWidgets.framework/Versions/Current
+HTTP Error for /private/var/tmp/folders.501/TemporaryItems/2.zip
+   server     =64.182.252.236
+   file       =/X-Plane 8.50/All/Resources/bitmaps/earth_clouds1.png.zip
+   IsDone     =1
+   IsComplete =0
+   IsErr      =0
+   GetStat    =3
+   GetOSErr   =0
+   response   =OK (#200)
+
+HTTP Error for /private/var/tmp/folders.501/TemporaryItems/3.zip
+   server     =x-plane.alionis.net
+   file       =/X-Plane 8.50/All/Resources/bitmaps/intro.bmp.zip
+   IsDone     =1
+   IsComplete =0
+   IsErr      =0
+   GetStat    =3
+   GetOSErr   =0
+   response   =OK (#200)
+
+Clean exit from threads.
