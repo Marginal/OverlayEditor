@@ -1,7 +1,7 @@
 Package: overlayeditor
 Section: graphics
 Priority: extra
-Architecture: i386
+Architecture: all
 Installed-Size: 2676
 Depends: bash, python (>=2.4), python-gtk2 (>=2.6), python-imaging (>=1.1.4), python-opengl (>=2.0.1), python-opengl (<<3), wine
 Provides: overlayeditor

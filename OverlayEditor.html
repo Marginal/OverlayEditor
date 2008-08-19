@@ -183,7 +183,7 @@ To select objects:</p>
       <td>Select all objects in the main window <small>(even if they're too small to see)</small>.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Ctrl Space</samp></td>
+      <td style="width: 33%;"><samp>Ctrl-Space</samp></td>
       <td>Toggle selection of all objects in the main window</td>
     </tr>
   </tbody>
@@ -224,19 +224,23 @@ for tiny steps:</p>
       <td>Select the next use of this object in the current 1&deg;&times;1&deg; region.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Ctrl N</samp></td>
+      <td style="width: 33%;"><samp>Ctrl-N</samp></td>
       <td>Add the next use of this object to the selection.</td>
+    </tr>
+    <tr>
+      <td style="width: 33%;"><samp>Ctrl-Shift-N</samp></td>
+      <td>Select all uses of this object in the current 1&deg;&times;1&deg; region.</td>
     </tr>
     <tr>
       <td style="width: 33%;"><samp>Insert</samp>/<samp>Enter</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
       <td>Add new object or polygon/network node</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Ctrl Insert</samp>/<samp>Enter</samp></td>
+      <td style="width: 33%;"><samp>Ctrl-Insert</samp>/<samp>Enter</samp></td>
       <td>Add new polygon node (going clockwise) or new network node</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Shift Insert</samp>/<samp>Enter</samp></td>
+      <td style="width: 33%;"><samp>Shift-Insert</samp>/<samp>Enter</samp></td>
       <td>Add a hole in a forest or draped polygon</td>
     </tr>
     <tr>
@@ -244,11 +248,11 @@ for tiny steps:</p>
       <td>Delete selected objects or polygon/network node</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Shift Delete</samp></td>
+      <td style="width: 33%;"><samp>Shift-Delete</samp></td>
       <td>Delete selected hole in a polygon</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Ctrl</samp>/<samp>Cmd Z</samp>, or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
+      <td style="width: 33%;"><samp>Ctrl</samp>/<samp>Cmd-Z</samp>, or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
       <td>Undo the last edit.</td>
     </tr>
   </tbody>
@@ -422,7 +426,7 @@ has to fit the polygons to the terrain mesh. OverlayEditor runs much
 faster if you tell it not to display elevation; press
 <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
 and select "No terrain" or "Show terrain".
-But note that you need to display elevation in order to edit network segments.</p>
+<!-- But note that you need to display elevation in order to edit network segments. --></p>
 
 <h4>OverlayEditor complains that it "Can't read one or more objects"</h4>
 <p>Your scenery package uses objects that are either missing or unreadable.
@@ -430,9 +434,9 @@ Missing or unreadable 3D objects are displayed as small grey "placeholder" cubes
 Missing or unreadable polygons are displayed as grey "placeholder" shapes.</p>
 <dl>
   <dt>To delete all uses of the missing or unreadable 3D object or polygon in the current 1&deg;&times;1&deg; region:</dt>
-  <dd>Select the 3D object or polygon in the <a href="#objectlist">list of objects</a>.</dd>
-  <dd>Repeatedly press <samp>Ctrl N</samp> until all the placeholder cubes or polygons are highlighted.</dd>
-  <dd>Press <samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png">.</dd>
+  <dd>Select the 3D object or polygon in the <a href="#objectlist">list of objects</a></dd>
+  <dd>Press <samp>Ctrl-Shift-N</samp></dd>
+  <dd>Press <samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></dd>
 </dl>
 <p>Note that neither X-Plane nor OverlayEditor can read objects designed for
 X-Plane v5. You can identify objects by looking at them in a text editor;
@@ -548,7 +552,7 @@ that you make using these tools, but you are under no obligation.</p>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 2.00 &copy; 2007 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 2.01 &copy; 2007,2008 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/3.0/">
 <img alt="Creative Commons License" style="border: 0px solid ; width: 88px; height: 31px; vertical-align: text-bottom;" src="http://creativecommons.org/images/public/somerights20.png"></a></td>
     </tr>

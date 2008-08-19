@@ -1,12 +1,18 @@
-two-pass scan of global apt.dat
-networks
-pyopengl 3 on Unix
+gettext
+don't change position on undo?
+display ramp starting points
+cut / copy / paste
+property dialog, allowing replacement of object or polygon. Lock items?
+select multiple in object list - add adds all
+import whole package
 
 palette right click / ctrl-click -> delete, rename
 selectall drag problem
 .lin
 taxilines
 drag nodes - undo each changed node
+
+pyopengl 3 on Unix
 
 lock objects
 Info popup - name, source .obj file / library, layer, source texture, editable location, info.txt (File -> Show Inspector Cmd-I)
