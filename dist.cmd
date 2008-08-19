@@ -6,8 +6,8 @@ set RELEASE=1
 set RPM=%TMP%\overlayeditor
 
 @if exist OverlayEditor_%VER%_src.zip del OverlayEditor_%VER%_src.zip
-@if exist overlayeditor-%VERSION%-%RELEASE%.i386.rpm del overlayeditor-%VERSION%-%RELEASE%.i386.rpm
-@if exist overlayeditor_%VERSION%-%RELEASE%_i386.deb del overlayeditor_%VERSION%-%RELEASE%_i386.deb
+@if exist overlayeditor-%VERSION%-%RELEASE%.noarch.rpm del overlayeditor-%VERSION%-%RELEASE%.noarch.rpm
+@if exist overlayeditor_%VERSION%-%RELEASE%_all.deb del overlayeditor_%VERSION%-%RELEASE%_all.deb
 @if exist OverlayEditor_%VER%_mac.zip del OverlayEditor_%VER%_mac.zip
 @if exist OverlayEditor_%VER%_win32.exe del OverlayEditor_%VER%_win32.exe
 
@@ -31,7 +31,7 @@ REM tar -zcf OverlayEditor_%VER%_linux.tar.gz %PY% %DATA% %RSRC% linux win32/DSF
 set RPMRT=%TMP%\overlayeditor\root
 mkdir "%RPM%\BUILD"
 mkdir "%RPM%\SOURCES"
-mkdir "%RPM%\RPMS\i386"
+mkdir "%RPM%\RPMS\noarch"
 mkdir "%RPMRT%\usr\local\bin"
 mkdir "%RPMRT%\usr\local\lib\overlayeditor\Resources"
 mkdir "%RPMRT%\usr\local\lib\overlayeditor\Resources\previews"
@@ -50,8 +50,8 @@ for %%I in (%RSRC%) do (copy Resources\%%~nxI "%RPMRT%\usr\local\lib\overlayedit
 for %%I in (%PREV%\*.jpg) do (copy Resources\previews\%%~nxI "%RPMRT%\usr\local\lib\overlayeditor\Resources\previews\" |findstr -v "file(s) copied")
 for %%I in (linux\DSFTool) do (copy %%I "%RPMRT%\usr\local\lib\overlayeditor\linux" |findstr -v "file(s) copied")
 for %%I in (win32\DSFTool.exe) do (copy %%I "%RPMRT%\usr\local\lib\overlayeditor\win32" |findstr -v "file(s) copied")
-"C:\Program Files\cygwin\lib\rpm\rpmb.exe" --quiet -bb --target i386-pc-linux --define '_topdir /tmp/overlayeditor' /tmp/overlayeditor/overlayeditor.spec
-move "%RPM%\RPMS\i386\overlayeditor-%VERSION%-%RELEASE%.cygwin.i386.rpm" overlayeditor-%VERSION%-%RELEASE%.i386.rpm
+"C:\Program Files\cygwin\lib\rpm\rpmb.exe" --quiet -bb --target noarch-pc-linux --define '_topdir /tmp/overlayeditor' /tmp/overlayeditor/overlayeditor.spec
+move "%RPM%\RPMS\noarch\overlayeditor-%VERSION%-%RELEASE%.cygwin.noarch.rpm" overlayeditor-%VERSION%-%RELEASE%.noarch.rpm
 REM Debian/Ubuntu
 mkdir "%RPMRT%\DEBIAN"
 mkdir "%RPMRT%\usr\local\share\applications"
