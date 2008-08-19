@@ -803,7 +803,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 placement=PolygonFactory(name, None, lat, lon, size, hdg)
             
             if not placement.load(self.lookup, self.defs, self.vertexcache):
-                myMessageBox("Can't read %s" %name, 'Cannot add this object.',
+                myMessageBox("Can't read " + name, 'Cannot add this object.',
                              wx.ICON_ERROR|wx.OK, self.frame)
                 return False
             texerr=placement.definition.texerr
@@ -826,7 +826,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.frame.ShowSel()
 
         if texerr:
-            myMessageBox(texerr.strerror, "Can't read texture %s" % texerr.filename, wx.ICON_INFORMATION|wx.OK, self.frame)
+            myMessageBox(texerr.strerror, "Can't read texture " + texerr.filename, wx.ICON_INFORMATION|wx.OK, self.frame)
 
         return True
 
@@ -950,14 +950,21 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.clickpos=None
         self.trashlists()	# selection changed
 
-    def nextsel(self, name, withctrl):
+    def nextsel(self, name, withctrl, withshift):
         # returns new location or None
         # we have 0 or more items of the same type selected
         if not self.lookup[name] in self.defs:
             return None	# can't exist in this tile if not loaded
         definition=self.defs[self.lookup[name]]
         placements=self.placements[self.tile][definition.layer]
-        if withctrl:
+        if withctrl and withshift:
+            self.selected=[]
+            for placement in placements:
+                if placement.definition==definition:
+                    self.selected.append(placement)
+            if not self.selected: return None
+            placement=self.selected[0]	# for position
+        elif withctrl:
             for placement in placements:
                 if placement.definition==definition and placement not in self.selected:
                     self.selected.append(placement)
@@ -1141,7 +1148,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         self.frame.palette.add(placement.name, True)
 
                     if placement.definition.texerr:
-                        s="%s: %s" % (placement.definition.texerr.filename, placement.definition.texerr.strerror)
+                        s=u"%s: %s" % (placement.definition.texerr.filename, placement.definition.texerr.strerror)
                         if not s in errtexs: errtexs.append(s)
                         
                     if not placement.islaidout():
