@@ -46,7 +46,7 @@ if not 'startfile' in dir(os):
     import webbrowser
 
 from clutter import round2res, minres, latlondisp, Exclude	# for loading exclusions into palette
-from clutterdef import KnownDefs, ExcludeDef, NetworkDef
+from clutterdef import KnownDefs, ExcludeDef, NetworkDef, previewsize
 from draw import MyGL
 from files import importObj, scanApt, readApt, readNav, readLib, readNet, sortfolded
 from palette import Palette
@@ -73,6 +73,7 @@ gresources='[rR][eE][sS][oO][uU][rR][cC][eE][sS]'
 gnavdata='[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]'
 gaptdat=join(gnavdata,'[aA][pP][tT].[dD][aA][tT]')
 gdefault=join(gresources,'[dD][eE][fF][aA][uU][lL][tT] [sS][cC][eE][nN][eE][rR][yY]')
+gglobal='[gG][lL][oO][bB][aA][lL] [sS][cC][eE][nN][eE][rR][yY]'
 gcustom='[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]'
 gmain8aptdat=join(gresources,gaptdat)
 gmain8navdat=join(gresources,gnavdata,'[nN][aA][vV].[dD][aA][tT]')
@@ -257,8 +258,6 @@ class GotoDialog(wx.Dialog):
 
     def __init__(self, parent, airports):
 
-        self.choice=None
-
         self.aptcode={}
         self.aptname={}
         for code, stuff in airports.iteritems():
@@ -354,29 +353,30 @@ class GotoDialog(wx.Dialog):
     def OnName(self, event):
         choice=event.GetEventObject().GetStringSelection()
         if choice:
-            self.choice=self.aptname[choice]
+            loc=self.aptname[choice]
+            self.lat.SetValue(loc[0])
+            self.lon.SetValue(loc[1])
             self.ok.Enable()
         event.Skip()
 
     def OnCode(self, event):
         choice=event.GetEventObject().GetStringSelection()
         if choice:
-            self.choice=self.aptcode[choice]
+            loc=self.aptcode[choice]
+            self.lat.SetValue(loc[0])
+            self.lon.SetValue(loc[1])
             self.ok.Enable()
         event.Skip()
 
     def OnLoc(self, event):
-        self.choice=(self.lat.GetValue(), self.lon.GetValue())
         self.ok.Enable()
 
     def show(self, loc):
         self.lat.SetValue(loc[0])
         self.lon.SetValue(loc[1])
         self.ok.Disable()
-        self.choice=None
         if self.ShowModal()!=wx.ID_OK: return None
-        return self.choice
-
+        return (self.lat.GetValue(), self.lon.GetValue())
 
 class PreferencesDialog(wx.Dialog):
 
@@ -908,8 +908,8 @@ class MainWindow(wx.Frame):
         box0.Add(self.splitter, 1, wx.EXPAND)
         self.SetSizerAndFit(box0)
         self.SetAutoLayout(True)
-        self.SetSize((800,600))
-        self.SetMinSize((600,400))
+        self.SetSize((1024,768))
+        self.SetMinSize((800,600))
         self.lastwidth=self.GetSize().x
         wx.EVT_SIZE(self, self.OnSize)
         wx.EVT_SPLITTER_SASH_POS_CHANGING(self.splitter, self.splitter.GetId(), self.OnSashPositionChanging)
@@ -996,16 +996,16 @@ class MainWindow(wx.Frame):
         delta=event.GetSize().x-self.lastwidth
         #print "size", delta
         pos=self.splitter.GetSashPosition()+delta
-        if pos<300: pos=300	# required for preview
+        if pos<previewsize: pos=previewsize	# required for preview
         self.splitter.SetSashPosition(pos, False)
         self.lastwidth=event.GetSize().x
         event.Skip()
 
     def OnSashPositionChanging(self, event):
         #print "sash", event.GetSashPosition()
-        if event.GetSashPosition()<300:
+        if event.GetSashPosition()<previewsize:
             # One-way minimum pane size
-            event.SetSashPosition(300)
+            event.SetSashPosition(previewsize)
 
     def OnKeyDown(self, event):
         changed=False
@@ -1113,7 +1113,7 @@ class MainWindow(wx.Frame):
             name=self.palette.get()
             if name:
                 # not Cmd because Cmd-N = new
-                loc=self.canvas.nextsel(name, event.m_controlDown)
+                loc=self.canvas.nextsel(name, event.m_controlDown, event.m_shiftDown)
                 if loc:
                     self.loc=loc
                     self.ShowSel()
@@ -1174,7 +1174,7 @@ class MainWindow(wx.Frame):
         if not self.SaveDialog(): return
         dlg=wx.Dialog(self, wx.ID_ANY, "Open scenery package")
         dirs=glob(join(prefs.xplane,gcustom,'*'))
-        choices=[basename(d) for d in dirs if isdir(d)]
+        choices=[basename(d) for d in dirs if isdir(d) and not basename(d).lower().startswith('-global ')]
         sortfolded(choices)
         i=0
         x=200	# arbitrary
@@ -1309,29 +1309,34 @@ class MainWindow(wx.Frame):
         else:
             pkgdir=None
 
-        if glob(join(prefs.xplane, gmain9aptdat)):
-            xpver=9
-            mainaptdat=glob(join(prefs.xplane, gmain9aptdat))[0]
-        else:
+        progress.Update(0, 'Global airports')
+        if not glob(join(prefs.xplane, gmain9aptdat)) and not glob(join(prefs.xplane, gmain8aptdat)):
+            self.nav=[]
+            myMessageBox("Can't find the X-Plane global apt.dat file.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
+            mainaptdat=None
             xpver=8
-            mainaptdat=glob(join(prefs.xplane, gmain8aptdat))[0]
-
-        if not self.airports:	# Default apt.dat
-            progress.Update(0, 'Global airports')
-            try:
-                if __debug__: clock=time.clock()	# Processor time
-                (self.airports,self.nav)=scanApt(mainaptdat)
-                if __debug__: print "%6.3f time in global apt" % (time.clock()-clock)
-            except:
-                self.nav=[]
-                myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
-            try:
-                if xpver==9:
-                    self.nav.extend(readNav(glob(join(prefs.xplane,gmain9navdat))[0]))
-                else:
-                    self.nav.extend(readNav(glob(join(prefs.xplane,gmain8navdat))[0]))
-            except:
-                pass
+        else:
+            if glob(join(prefs.xplane, gmain9aptdat)):
+                xpver=9
+                mainaptdat=glob(join(prefs.xplane, gmain9aptdat))[0]
+            else:
+                xpver=8
+                mainaptdat=glob(join(prefs.xplane, gmain8aptdat))[0]
+            if not self.airports:	# Default apt.dat
+                try:
+                    if __debug__: clock=time.clock()	# Processor time
+                    (self.airports,self.nav)=scanApt(mainaptdat)
+                    if __debug__: print "%6.3f time in global apt" % (time.clock()-clock)
+                except:
+                    self.nav=[]
+                    myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
+                try:
+                    if xpver==9:
+                        self.nav.extend(readNav(glob(join(prefs.xplane,gmain9navdat))[0]))
+                    else:
+                        self.nav.extend(readNav(glob(join(prefs.xplane,gmain8navdat))[0]))
+                except:
+                    pass
                 
         if not reload:
             # Load, not reload
@@ -1410,9 +1415,11 @@ class MainWindow(wx.Frame):
 
         clibs=glob(join(prefs.xplane, gcustom, '*', glibrary))
         clibs.sort()	# asciibetical
-        glibs=glob(join(prefs.xplane, gdefault, '*', glibrary))
+        glibs=glob(join(prefs.xplane, gglobal, '*', glibrary))
         glibs.sort()	# asciibetical
-        libpaths=clibs+glibs
+        dlibs=glob(join(prefs.xplane, gdefault, '*', glibrary))
+        dlibs.sort()	# asciibetical
+        libpaths=clibs+glibs+dlibs
         for lib in libpaths: readLib(lib, lookupbylib, terrain)
         libs=lookupbylib.keys()
         sortfolded(libs)	# dislay order in palette
@@ -1472,12 +1479,17 @@ class MainWindow(wx.Frame):
             background=(image, lat, lon, hdg, width, length, opacity)
         else:
             background=None
+        if xpver>=9:
+            dsfdirs=[join(prefs.xplane, gcustom),
+                     join(prefs.xplane, gglobal),
+                     join(prefs.xplane, gdefault)]
+        else:
+            dsfdirs=[join(prefs.xplane, gcustom),
+                     join(prefs.xplane, gdefault)]
         self.canvas.reload(prefs.options, airports, nav, mainaptdat,
                            self.defnetdefs, netdefs, roadfile,
                            lookup, placements, networks,
-                           background, terrain,
-                           [join(prefs.xplane, gcustom),
-                            join(prefs.xplane, gdefault)])
+                           background, terrain, dsfdirs)
         if not self.loc:
             # Load, not reload
             if pkgloc:	# go to first airport by name
@@ -1678,7 +1690,7 @@ app.SetTopWindow(frame)
 
 # user prefs
 prefs=Prefs()
-if not prefs.xplane or not glob(join(prefs.xplane,gcustom)):
+if not prefs.xplane or not (glob(join(prefs.xplane, gcustom)) and (glob(join(prefs.xplane, gmain8aptdat)) or glob(join(prefs.xplane, gmain9aptdat)))):
     if platform.startswith('linux'):	# prompt is not displayed on Linux
         myMessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder", wx.ICON_INFORMATION|wx.OK, frame)
     if platform=='win32' and glob(join('C:\\X-Plane', gcustom)) and (glob(join('C:\\X-Plane', gmain8aptdat)) or glob(join('C:\\X-Plane', gmain9aptdat))):
