@@ -1,11 +1,16 @@
 import codecs
 from math import fabs
 from os import listdir
-from os.path import dirname, exists, join, normpath, sep, splitext
+from os.path import basename, dirname, exists, join, normpath, sep, splitext
 from sys import maxint
 
 from OpenGL.GL import *
 import wx
+if __debug__:
+    import time
+
+
+previewsize=400	# sie of image in preview window
 
 
 class BBox:
@@ -136,10 +141,11 @@ class ObjectDef(ClutterDef):
         tnocull=[]
         tcurrent=tculled
         texture=None
+        if __debug__: clock=time.clock()	# Processor time
         self.poly=0
         self.bbox=BBox()
         self.height=0.5	# musn't be 0
-        h=codecs.open(self.filename, 'rU', 'latin1')
+        h=open(self.filename, 'rU')
         if filename[0]=='*': self.filename=None
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
@@ -154,7 +160,7 @@ class ObjectDef(ClutterDef):
                 if not line: raise IOError
                 tex=line.strip()
                 if tex:
-                    (tex,e)=splitext(tex.split('//')[0].strip().replace(':', sep).replace('/', sep))
+                    (tex,e)=splitext(tex.split('//')[0].strip().replace(':', sep).replace('/', sep).decode('latin1'))
                     break
             for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                 if exists(normpath(join(self.texpath, tex+ext))):
@@ -329,7 +335,7 @@ class ObjectDef(ClutterDef):
                     idx.append(int(c[1]))
                 elif id=='TEXTURE':
                     if len(c)>1:
-                        (tex,e)=splitext(line[7:].split('#')[0].split('//')[0].strip().replace(':', sep).replace('/', sep))
+                        (tex,e)=splitext(line[7:].split('#')[0].split('//')[0].strip().replace(':', sep).replace('/', sep).decode('latin1'))
                         for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                             if exists(normpath(join(self.texpath, tex+ext))):
                                 texture=tex+ext
@@ -367,6 +373,8 @@ class ObjectDef(ClutterDef):
                         current.extend([vt[idx[i]] for i in range(start, start+new)])
                     tcurrent.extend([vtt[idx[i]] for i in range(start, start+new)])
         h.close()
+        if __debug__:
+            if self.filename: print "%6.3f" % (time.clock()-clock), basename(self.filename)
 
         if self.layer==None:
             if self.poly:
@@ -404,7 +412,8 @@ class ObjectDef(ClutterDef):
         self.allocate(vertexcache, canvas.defs)
         vertexcache.realize(canvas)
         canvas.SetCurrent()
-        glViewport(0, 0, 300, 300)
+        xoff=canvas.GetClientSize()[0]-previewsize
+        glViewport(xoff, 0, previewsize, previewsize)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         glMatrixMode(GL_PROJECTION)
@@ -413,14 +422,14 @@ class ObjectDef(ClutterDef):
         sizex=(self.bbox.maxx-self.bbox.minx)*0.5
         sizez=(self.bbox.maxz-self.bbox.minz)*0.5
         maxsize=max(self.height*0.7,		# height
-                    sizex*0.9 + sizez*0.52,	# width at 30degrees
-                    sizex*0.26  + sizez*0.45)	# depth at 30degrees / 2
+                    sizez*0.88  + sizex*0.51,	# width at 30degrees
+                    sizez*0.255 + sizex*0.44)	# depth at 30degrees / 2
         glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
         glMatrixMode(GL_MODELVIEW)
         glPushMatrix()
         glLoadIdentity()
         glRotatef( 30, 1,0,0)
-        glRotatef(-30, 0,1,0)
+        glRotatef(120, 0,1,0)
         glTranslatef(sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz)
         if __debug__:
             glColor3f(0.8, 0.8, 0.8)	# Unpainted
@@ -445,8 +454,8 @@ class ObjectDef(ClutterDef):
             glDrawArrays(GL_TRIANGLES, self.base+self.culled, self.nocull)
             glEnable(GL_CULL_FACE)
         #glFinish()	# redundant
-        data=glReadPixels(0,0, 300,300, GL_RGB, GL_UNSIGNED_BYTE)
-        img=wx.EmptyImage(300, 300, False)
+        data=glReadPixels(xoff,0, previewsize,previewsize, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(previewsize, previewsize, False)
         img.SetData(data)
         
         # Restore state for unproject & selection
@@ -495,7 +504,7 @@ class PolygonDef(ClutterDef):
     def preview(self, canvas, vertexcache, l=0, b=0, r=1, t=1, hscale=1):
         if not self.texture or not self.canpreview: return None
         canvas.SetCurrent()
-        glViewport(0, 0, 300, 300)
+        glViewport(0, 0, previewsize, previewsize)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         glMatrixMode(GL_PROJECTION)
@@ -516,8 +525,8 @@ class PolygonDef(ClutterDef):
         glTexCoord2f(l,t)
         glVertex3f(-hscale, -1, 0)
         glEnd()
-        data=glReadPixels(0,0, 300,300, GL_RGB, GL_UNSIGNED_BYTE)
-        img=wx.EmptyImage(300, 300, False)
+        data=glReadPixels(0,0, previewsize,previewsize, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(previewsize, previewsize, False)
         img.SetData(data)
         
         # Restore state for unproject & selection
@@ -543,7 +552,7 @@ class DrapedDef(PolygonDef):
         alpha=True
         texture=None
     
-        h=codecs.open(self.filename, 'rU', 'latin1')
+        h=open(self.filename, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
         if not h.readline().split('#')[0].strip() in ['850']:
@@ -557,7 +566,7 @@ class DrapedDef(PolygonDef):
             if not c: continue
             if c[0] in ['TEXTURE', 'TEXTURE_NOWRAP']:
                 if c[0]=='TEXTURE_NOWRAP': self.ortho=True
-                (tex,e)=splitext(line[len(c[0]):].strip().replace(':', sep).replace('/', sep))
+                (tex,e)=splitext(line[len(c[0]):].strip().replace(':', sep).replace('/', sep).decode('latin1'))
                 for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                     if exists(normpath(join(self.texpath, tex+ext))):
                         texture=tex+ext
@@ -619,7 +628,7 @@ class FacadeDef(PolygonDef):
         self.hends=[0,0]
         self.vends=[0,0]
     
-        h=codecs.open(self.filename, 'rU', 'latin1')
+        h=open(self.filename, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
         if not h.readline().split('#')[0].strip() in ['800']:
@@ -632,7 +641,7 @@ class FacadeDef(PolygonDef):
             c=line.split('#')[0].split()
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
-                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep))
+                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep).decode('latin1'))
                 for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                     if exists(normpath(join(self.texpath, tex+ext))):
                         texture=tex+ext
@@ -723,7 +732,7 @@ class ForestDef(PolygonDef):
         scalex=scaley=1
         best=0
         
-        h=codecs.open(self.filename, 'rU', 'latin1')
+        h=open(self.filename, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
         if not h.readline().split('#')[0].strip() in ['800']:
@@ -736,7 +745,7 @@ class ForestDef(PolygonDef):
             c=line.split('#')[0].split()
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
-                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep))
+                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep).decode('latin1'))
                 for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                     if exists(normpath(join(self.texpath, tex+ext))):
                         texture=tex+ext
@@ -785,7 +794,7 @@ class LineDef(PolygonDef):
         self.hscale=self.vscale=1
         width=1
         
-        h=codecs.open(self.filename, 'rU', 'latin1')
+        h=open(self.filename, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
         if not h.readline().split('#')[0].strip() in ['850']:
@@ -798,7 +807,7 @@ class LineDef(PolygonDef):
             c=line.split('#')[0].split()
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
-                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep))
+                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep).decode('latin1'))
                 for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                     if exists(normpath(join(self.texpath, tex+ext))):
                         texture=tex+ext
@@ -905,7 +914,7 @@ class NetworkDef(PolygonDef):
         self.allocate(vertexcache, canvas.defs)
         vertexcache.realize(canvas)
         canvas.SetCurrent()
-        glViewport(0, 0, 300, 300)
+        glViewport(0, 0, previewsize, previewsize)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         glMatrixMode(GL_PROJECTION)
@@ -963,8 +972,8 @@ class NetworkDef(PolygonDef):
                 
 
         #glFinish()	# redundant
-        data=glReadPixels(0,0, 300,300, GL_RGB, GL_UNSIGNED_BYTE)
-        img=wx.EmptyImage(300, 300, False)
+        data=glReadPixels(0,0, previewsize,previewsize, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(previewsize, previewsize, False)
         img.SetData(data)
         
         # Restore state for unproject & selection
