@@ -44,7 +44,7 @@
 #
 
 
-from math import atan2, cos, floor, hypot, pi, radians, sin
+from math import atan2, ceil, cos, floor, hypot, pi, radians, sin
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from sys import maxint
@@ -224,6 +224,7 @@ class Polygon(Clutter):
                                       (max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size))))))
         self.param=param
         self.points=[]		# list of windings in world space (x,y,z)
+        self.nonsimple=False
 
     def __str__(self):
         return '<"%s" %d %s>' % (self.name,self.param,self.points)
@@ -263,6 +264,8 @@ class Polygon(Clutter):
 
     def draw(self, selected, picking, nopoly=False, col=(0.25, 0.25, 0.25)):
         # just draw outline
+        if self.nonsimple:
+            col=(1.0,0.25,0.25)	# override colour if nonsimple
         if not picking:
             glBindTexture(GL_TEXTURE_2D, 0)
         glDisable(GL_DEPTH_TEST)
@@ -298,9 +301,10 @@ class Polygon(Clutter):
         return self.points and True
 
     def layout(self, tile, options, vertexcache, selectednode=None):
-
+        global tess
         self.lat=self.lon=0
         self.points=[]
+        self.nonsimple=False
 
         for i in range(len(self.nodes)):
             nodes=self.nodes[i]
@@ -324,6 +328,24 @@ class Polygon(Clutter):
 
         self.lat=self.lat/len(self.nodes[0])
         self.lon=self.lon/len(self.nodes[0])
+
+        if isinstance(self, Draped):
+            return selectednode	# Draped does its own tesselation
+
+        # tessellate. This is just to check polygon is simple
+        try:
+            tris=[]
+            gluTessBeginPolygon(tess, tris)
+            for i in range(len(self.nodes)):
+                gluTessBeginContour(tess)
+                for j in range(len(self.nodes[i])):
+                    gluTessVertex(tess, [self.points[i][j][0], 0, self.points[i][j][2]], (self.points[i][j], False, None))
+                gluTessEndContour(tess)
+            gluTessEndPolygon(tess)
+        except:
+            # Combine required -> not simple
+            self.nonsimple=True
+        
         return selectednode
 
     def addnode(self, tile, options, vertexcache, selectednode, clockwise):
@@ -430,7 +452,6 @@ class Draped(Polygon):
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
         self.tris=[]	# tesellated tris
-        self.nonsimple=False
 
     def clone(self):
         return Draped(self.name, self.param, [list(w) for w in self.nodes])
@@ -466,7 +487,7 @@ class Draped(Polygon):
     def draw(self, selected, picking, nopoly=False):
         drp=self.definition
         if self.nonsimple:
-            Polygon.draw(self, selected, picking, nopoly, (1.0,0.25,0.25))
+            Polygon.draw(self, selected, picking, nopoly)
             return
         elif picking:
             Polygon.draw(self, selected, picking, nopoly)	# for outline
@@ -582,24 +603,17 @@ class Draped(Polygon):
         self.nonsimple=False
         selectednode=Polygon.layout(self, tile, options, vertexcache, selectednode)
         # tessellate. This is just to get UV data and check polygon is simple
-        isforest=isinstance(self, Forest)
-        if isforest:
-            uv=None
-        else:
+        if self.param!=65535:
             drp=self.definition
-            if self.param!=65535:
-                ch=cos(radians(self.param))
-                sh=sin(radians(self.param))
+            ch=cos(radians(self.param))
+            sh=sin(radians(self.param))
         try:
             tris=[]
             gluTessBeginPolygon(tess, tris)
             for i in range(len(self.nodes)):
-                n=len(self.nodes[i])
                 gluTessBeginContour(tess)
-                for j in range(n):
-                    if isforest:
-                        pass
-                    elif self.param==65535:
+                for j in range(len(self.nodes[i])):
+                    if self.param==65535:
                         if len(self.nodes[i][j])>=6:
                             uv=self.nodes[i][j][4:6]
                         else:
@@ -637,9 +651,7 @@ class Draped(Polygon):
                     maxx=max(maxx, self.points[i][j][0])
                     minz=min(minz, self.points[i][j][2])
                     maxz=max(maxz, self.points[i][j][2])
-                if isforest:
-                    pass
-                elif self.param==65535:
+                if self.param==65535:
                     if len(self.nodes[i][j])>=6:
                         uv=self.nodes[i][j][4:6]
                     else:
@@ -665,9 +677,6 @@ class Draped(Polygon):
                 for m in range(3):
                     x=meshpt[m][0]
                     z=meshpt[m][2]
-                    if isforest:
-                        gluTessVertex(csgt, [x,0,z], (meshpt[m],True, None))
-                        continue
                     # check if mesh point is inside a polygon triangle
                     # in which case calculate a uv position
                     # http://astronomy.swin.edu.au/~pbourke/geometry/insidepoly
@@ -816,7 +825,6 @@ class Exclude(Polygon):
 class Facade(Polygon):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
-        if not param: param=1
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
         self.quads=[]		# list of points (x,y,z,s,t)
         self.roof=[]		# list of points (x,y,z,s,t)
@@ -831,8 +839,15 @@ class Facade(Polygon):
                 self.definition=defs[filename]
             else:
                 defs[filename]=self.definition=FacadeDef(filename, vertexcache)
+            if not self.param:
+                self.param=maxint
+                for (a,b) in self.definition.horiz:
+                    self.param=min(self.param, int(ceil(self.definition.hscale * (b-a))))
+                self.param=max(self.param,1)
             return True
         except:
+            if not self.param:
+                self.param=1
             if usefallback:
                 if self.name in lookup:
                     filename=lookup[self.name]
@@ -852,9 +867,12 @@ class Facade(Polygon):
 
     def draw(self, selected, picking, nopoly=False):
         fac=self.definition
-        if picking or (not self.quads and not self.roof):
-            Polygon.draw(self, selected, picking, nopoly, (1.0,0.25,0.25))
-        if not picking:
+        if self.nonsimple or (not self.quads and not self.roof):
+            Polygon.draw(self, selected, picking, nopoly)
+            return
+        elif picking:
+            Polygon.draw(self, selected, picking, nopoly)
+        else:
             glBindTexture(GL_TEXTURE_2D, fac.texture)
             if fac.two_sided:
                 glDisable(GL_CULL_FACE)
@@ -1072,7 +1090,7 @@ class Facade(Polygon):
         return
 
 
-class Forest(Draped):	# inherit from Draped for layout
+class Forest(Polygon):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if param==None: param=127
@@ -1108,23 +1126,7 @@ class Forest(Draped):	# inherit from Draped for layout
             return '%s  Density: %-4.1f%%  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
 
     def draw(self, selected, picking, nopoly=False):
-        if self.nonsimple:
-            Polygon.draw(self, selected, picking, nopoly, (1.0,0.25,0.25))
-        elif picking:
-            Draped.draw(self, selected, picking, nopoly)
-        else:
-            Polygon.draw(self, selected, picking, nopoly, (0.25,0.75,0.25))
-
-    def drawnodes(self, selectednode):
-        glBindTexture(GL_TEXTURE_2D, 0)
-        alpha=.25+self.param/768.0
-        glBegin(GL_TRIANGLES)
-        for t in self.tris:
-            glColor4f(1.0, 0.5, 1.0, alpha)
-            glVertex3f(*t[0])
-        glEnd()
-        glColor3f(1.0, 0.5, 1.0)	# restore
-        Polygon.drawnodes(self, selectednode)
+        Polygon.draw(self, selected, picking, nopoly, (0.25,0.75,0.25))
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
@@ -1136,7 +1138,6 @@ class Line(Polygon):
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
         self.lines=[]	# tesellated lines
-        self.nonsimple=False
 
     def clone(self):
         return Line(self.name, self.param, [list(w) for w in self.nodes])
@@ -1174,7 +1175,7 @@ class Line(Polygon):
     def draw(self, selected, picking, nopoly=False):
         drp=self.definition
         if self.nonsimple:
-            Polygon.draw(self, selected, picking, nopoly, (1.0,0.25,0.25))
+            Polygon.draw(self, selected, picking, nopoly)
             return
         elif picking:
             Polygon.draw(self, selected, picking, nopoly)	# for outline
