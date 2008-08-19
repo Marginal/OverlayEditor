@@ -95,7 +95,7 @@ def myMessageBox(message, caption, style=wx.OK, parent=None):
     panel0.SetSizerAndFit(grid)
 
     dlg.SetClientSize(panel0.GetMinSize())
-    dlg.CenterOnParent()
+    #dlg.CenterOnParent()	# crashes on wxMac 2.8.6 when display asleep
     wx.EVT_BUTTON(dlg, wx.ID_OK, OnButton)
     wx.EVT_BUTTON(dlg, wx.ID_SAVE, OnButton)    
     wx.EVT_BUTTON(dlg, wx.ID_NO, OnButton)
