@@ -4,10 +4,10 @@ from OpenGL.GL import *
 from OpenGL.GL.EXT.bgra import glInitBgraEXT, GL_BGR_EXT, GL_BGRA_EXT
 from OpenGL.GL.ARB.texture_compression import glInitTextureCompressionARB, glCompressedTexImage2DARB, GL_COMPRESSED_RGB_ARB, GL_COMPRESSED_RGBA_ARB, GL_TEXTURE_COMPRESSION_HINT_ARB
 try:
-    from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3tcEXT, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+    from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3tcEXT, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
 except:
     try:	# Full SWIG rebuild, eg Fedora
-        from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3TcEXT, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+        from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3TcEXT, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
         glInitTextureCompressionS3tcEXT=glInitTextureCompressionS3TcEXT
     except:
         def glInitTextureCompressionS3tcEXT(): return False
@@ -25,6 +25,7 @@ from os.path import basename, curdir, dirname, exists, isdir, join, normpath, pa
 from shutil import copyfile
 from struct import unpack
 from sys import platform, maxint
+from traceback import print_exc, print_last
 import wx
 if __debug__:
     import time
@@ -69,6 +70,7 @@ def sortfolded(seq):
     seq.sort(lambda x,y: cmp(x.lower(), y.lower()))
 
 
+# Scan global airport list - assumes code is ASCII for speed
 def scanApt(filename):
     airports={}	# (name, [lat,lon], fileoffset) by code
     nav=[]	# (type,lat,lon,hdg)
@@ -95,8 +97,8 @@ def scanApt(filename):
             if loc:
                 airports[code]=(name,loc,offset)
                 code=name=loc=None
-            offset=h.tell()
-            code=c[4]
+            offset=long(h.tell())	# cast to long for 64bit Linux
+            code=c[4]#.decode('latin1')
             if len(code)>4: raise IOError	# X-Plane doesn't like
             name=(' '.join(c[5:])).decode('latin1')
         elif id==14:	# Prefer tower location
@@ -133,7 +135,7 @@ def readApt(filename, offset=None):
     airports={}	# (name, [lat,lon], [(lat,lon,hdg,length,width,stop,stop)]) by code
     nav=[]	# (type,lat,lon,hdg)
     firstcode=None
-    h=codecs.open(filename, 'rU', 'latin1')
+    h=open(filename, 'rU')
     if offset:
         h.seek(offset)
     else:
@@ -166,10 +168,10 @@ def readApt(filename, offset=None):
                 airports[code]=(name,loc,run)
                 code=name=loc=None
                 run=[]
-            code=c[4]
+            code=c[4].decode('latin1')
             if len(code)>4: raise IOError	# X-Plane doesn't like
             if not firstcode: firstcode=code
-            name=' '.join(c[5:])
+            name=(' '.join(c[5:])).decode('latin1')
         elif id==14:	# Prefer tower location
             loc=[float(c[1]),float(c[2])]
         elif id==10:	# Runway / taxiway
@@ -254,7 +256,7 @@ def readApt(filename, offset=None):
 
 def readNav(filename):
     nav=[]	# (type,lat,lon,hdg)
-    h=codecs.open(filename, 'rU', 'latin1')
+    h=open(filename, 'rU')
     if not h.readline().strip() in ['A','I']:
         raise IOError
     if not h.readline().split()[0] in ['740','810']:
@@ -437,10 +439,14 @@ class TexCache:
                 #print ssize,sflags,height,width,size,depth,mipmaps
                 if sflags&(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT)!=(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT): raise IOError, 'Missing mandatory fields'
                 if sflags&DDSD_DEPTH: raise IOError, 'Volume texture not supported'
+                for dim in [width,height]:
+                    l=log(dim,2)
+                    if l!=int(l):
+                        raise IOError, "Width and/or height is not a power of two"
                 if sflags&(DDSD_PITCH|DDSD_LINEARSIZE)==DDSD_PITCH:
                     size*=height
-                elif sflags&(DDSD_PITCH|DDSD_LINEARSIZE)!=DDSD_LINEARSIZE:
-                    raise IOError, 'Invalid size'
+                #elif sflags&(DDSD_PITCH|DDSD_LINEARSIZE)!=DDSD_LINEARSIZE:
+                #    raise IOError, 'Invalid size'
                 h.seek(0x4c)
                 (psize,pflags,fourcc,bits,redmask,greenmask,bluemask,alphamask,caps1,caps2)=unpack('<2I4s7I', h.read(40))
                 if not sflags&DDSD_MIPMAPCOUNT or not caps1&DDSCAPS_MIPMAP:
@@ -450,13 +456,22 @@ class TexCache:
                     # http://oss.sgi.com/projects/ogl-sample/registry/EXT/texture_compression_s3tc.txt
                     if not self.s3tc: raise IOError, 'DXT compression not supported'
                     if fourcc=='DXT1':
-                        assert size==width*height/2
-                        iformat=GL_COMPRESSED_RGB_S3TC_DXT1_EXT
+                        if not (sflags&(DDSD_PITCH|DDSD_LINEARSIZE)):
+                            size=width*height/2
+                        else:
+                            assert size==width*height/2
+                        iformat=GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
                     elif fourcc=='DXT3':
-                        assert size==width*height
+                        if not (sflags&(DDSD_PITCH|DDSD_LINEARSIZE)):
+                            size=width*height
+                        else:
+                            assert size==width*height
                         iformat=GL_COMPRESSED_RGBA_S3TC_DXT3_EXT
                     elif fourcc=='DXT5':
-                        assert size==width*height
+                        if not (sflags&(DDSD_PITCH|DDSD_LINEARSIZE)):
+                            size=width*height
+                        else:
+                            assert size==width*height
                         iformat=GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
                     else:
                         raise IOError, '%s format not supported' % fourcc
@@ -468,13 +483,16 @@ class TexCache:
                         height/=4
                     else:	# don't downsample
                         h.seek(4+ssize)
-                    if alpha or iformat==GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
-                        data=h.read(size)
-                    else:	# discard alpha
+                    if not alpha:	# discard alpha
+                        if iformat==GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
+                            data=h.read(size)
+                        else:
+                            data=''
+                            for i in range(size/16):
+                                data+=h.read(16)[8:]	# skip alpha
                         iformat=GL_COMPRESSED_RGB_S3TC_DXT1_EXT
-                        data=''
-                        for i in range(size/16):
-                            data+=h.read(16)[8:]	# skip alpha
+                    else:
+                        data=h.read(size)
                     h.close()
                         
                     id=glGenTextures(1)
@@ -532,15 +550,17 @@ class TexCache:
 
             else:	# supported PIL formats
                 image = PIL.Image.open(path)
-                if fixsize and not self.npot:
-                    size=[image.size[0],image.size[1]]
-                    for i in [0,1]:
-                        l=log(size[i],2)
-                        if l!=int(l): size[i]=2**(1+int(l))
-                        if size[i]>glGetIntegerv(GL_MAX_TEXTURE_SIZE):
-                            size[i]=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
+                size=[image.size[0],image.size[1]]
+                for i in [0,1]:
+                    l=log(size[i],2)
+                    if l!=int(l): size[i]=2**(1+int(l))
+                    if size[i]>glGetIntegerv(GL_MAX_TEXTURE_SIZE):
+                        size[i]=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
                     if size!=[image.size[0],image.size[1]]:
-                        image=image.resize((size[0], size[1]), PIL.Image.BICUBIC)
+                        if not fixsize:
+                            raise IOError, "Width and/or height is not a power of two"
+                        elif not self.npot:
+                            image=image.resize((size[0], size[1]), PIL.Image.BICUBIC)
 
                 if downsample and image.size[0]>4 and image.size[1]>4:
                     image=image.resize((image.size[0]/4,image.size[1]/4), PIL.Image.NEAREST)
@@ -603,7 +623,9 @@ class TexCache:
             if __debug__: print "%s %s" % (basename(path), e)
             raise IOError, (0, str(e))
         except:
-            if __debug__: print "%s unknown error" % basename(path)
+            if __debug__:
+                print "%s unknown error" % basename(path)
+                print_exc()
             raise IOError, (0, 'unknown error')
 
 
@@ -622,7 +644,7 @@ class VertexCache:
         self.varray=[]
         self.tarray=[]
         self.valid=False
-        self.dsfdirs=None	# [custom, default]
+        self.dsfdirs=None	# [custom, global, default]
 
     def reset(self, terrain, dsfdirs):
         # invalidate geometry and textures
@@ -664,14 +686,19 @@ class VertexCache:
         netkey=(tile[0],tile[1],options&Prefs.NETWORK)
         if key in self.mesh and netkey in self.nets:
             return	# don't reload
-        self.nets[(tile[0],tile[1],0)]=[] # prevents reload on stepping down
         dsfs=[]
         if options&Prefs.TERRAIN:
             for path in self.dsfdirs:
-                dsfs+=glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1])))
-            #print join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))
-            #print dsfs
-            dsfs.sort()	# asciibetical, custom first
+                if not glob(path): continue
+                pathlen=len(glob(path)[0])+1
+                thisdsfs=glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1])))
+                # asciibetical, except global is last
+                thisdsfs.sort(lambda x,y: ((x[pathlen:].lower().startswith('-global ') and 1) or
+                                           (y[pathlen:].lower().startswith('-global ') and -1) or
+                                           cmp(x,y)))
+                dsfs+=thisdsfs
+                #print join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))
+            if __debug__: print dsfs
         if __debug__: clock=time.clock()	# Processor time
         for dsf in dsfs:
             try:
@@ -687,15 +714,18 @@ class VertexCache:
                                     p[2],
                                     (centrelat-p[1])*onedeg] for p in points]
                         newnets.append((road, newpoints))
+                    self.nets[(tile[0],tile[1],0)]=[] # prevents reload on stepping down
                     self.nets[netkey]=newnets
                     break
             except:
                 pass
         if __debug__: print "%6.3f time in loadMesh" % (time.clock()-clock)
         if not key in self.mesh:
-            if glob(join(self.dsfdirs[1], '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))) + glob(join(self.dsfdirs[1], pardir, '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[eE][nN][vV]" % (tile[0], tile[1]))):
-                # DSF or ENV exists but can't read it
-                tex=join('Resources','airport0_000.png')
+            for path in self.dsfdirs[1:]:
+                if glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))) or glob(join(path, pardir, '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[eE][nN][vV]" % (tile[0], tile[1]))):
+                    # DSF or ENV exists but can't read it
+                    tex=join('Resources','airport0_000.png')
+                    break
             else:
                 tex=join('Resources','Sea01.png')
             self.mesh[key]=[(tex, 1,
@@ -707,7 +737,8 @@ class VertexCache:
                               [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],
                              [[0, 0], [100, 100], [0, 100],
                               [0, 0], [100, 0], [100, 100]])]
-            self.nets[netkey]=[]
+            self.nets[(tile[0],tile[1],0)]=[] # prevents reload on stepping down
+            self.nets[(tile[0],tile[1],Prefs.NETWORK)]=[]
 
     # return mesh data sorted by tex for drawing
     def getMesh(self, tile, options):
