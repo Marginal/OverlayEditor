@@ -155,8 +155,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         if platform=='darwin':
             ver=uname()[2].split('.')
             self.nopolyosinlist=(int(ver[0])<8 or (int(ver[0])==8 and int(ver[1])<8))
-
         self.vertexcache=None
+        self.selectdepth=64*4
 
         wx.EVT_PAINT(self, self.OnPaint)
         wx.EVT_ERASE_BACKGROUND(self, self.OnEraseBackground)
@@ -178,6 +178,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Setup state. Under X must be called after window is shown
         self.SetCurrent()
         self.vertexcache=VertexCache()	# member so can free resources
+        self.selectdepth=glGetIntegerv(GL_MAX_NAME_STACK_DEPTH)*4
         #glClearDepth(1.0)
         glEnable(GL_DEPTH_TEST)
         glDepthFunc(GL_LESS)
@@ -341,7 +342,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         -self.d*size.y/size.x, self.d*size.y/size.x,
                         -self.d*self.cliprat, self.d*self.cliprat)
                 glMatrixMode(GL_MODELVIEW)
-                glSelectBuffer(65536)	# = 16384 selections?
+                glSelectBuffer(self.selectdepth)
                 glRenderMode(GL_SELECT)
                 glInitNames()
                 glPushName(0)
@@ -661,7 +662,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         placements=self.placements[self.tile]
         if not self.picklist: self.prepareselect()
-        glSelectBuffer(65536)	# = 16384 selections?
+        glSelectBuffer(self.selectdepth)
         glRenderMode(GL_SELECT)
         glCallList(self.picklist)
         selections=[]
@@ -683,7 +684,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if trysel:
                 #print "selnodes",
                 # First look for nodes in same polygon
-                glSelectBuffer(65536)	# = 16384 selections?
+                glSelectBuffer(self.selectdepth)
                 glRenderMode(GL_SELECT)
                 glInitNames()
                 glPushName(0)
@@ -826,7 +827,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.frame.ShowSel()
 
         if texerr:
-            myMessageBox(texerr.strerror, "Can't read texture " + texerr.filename, wx.ICON_INFORMATION|wx.OK, self.frame)
+            myMessageBox(texerr.strerror.decode('utf-8'), "Can't read texture " + texerr.filename, wx.ICON_INFORMATION|wx.OK, self.frame)
 
         return True
 
@@ -1148,7 +1149,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         self.frame.palette.add(placement.name, True)
 
                     if placement.definition.texerr:
-                        s=u"%s: %s" % (placement.definition.texerr.filename, placement.definition.texerr.strerror)
+                        s=u"%s: %s" % (placement.definition.texerr.filename, placement.definition.texerr.strerror.decode('utf-8'))
                         if not s in errtexs: errtexs.append(s)
                         
                     if not placement.islaidout():
