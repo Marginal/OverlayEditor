@@ -3,7 +3,7 @@
 from glob import glob
 from math import cos, floor, sin, pi, radians, sqrt
 import os	# for startfile
-from os import chdir, getenv, listdir, mkdir, walk
+from os import chdir, getenv, listdir, mkdir, unlink, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 import sys	# for path
 from sys import exit, argv, executable, platform, version
@@ -1690,6 +1690,7 @@ app.SetTopWindow(frame)
 
 # user prefs
 prefs=Prefs()
+prefs.read()
 if not prefs.xplane or not (glob(join(prefs.xplane, gcustom)) and (glob(join(prefs.xplane, gmain8aptdat)) or glob(join(prefs.xplane, gmain9aptdat)))):
     if platform.startswith('linux'):	# prompt is not displayed on Linux
         myMessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder", wx.ICON_INFORMATION|wx.OK, frame)
@@ -1710,11 +1711,12 @@ if not prefs.xplane or not (glob(join(prefs.xplane, gcustom)) and (glob(join(pre
     dlg=PreferencesDialog(frame, wx.ID_ANY, '')
     if dlg.OnBrowse(None)!=wx.ID_OK: exit(1)	# User cancelled
     prefs.xplane=dlg.path.GetValue()
+    prefs.write()
     dlg.Destroy()
-if prefs.package and not glob(join(prefs.xplane, gcustom, prefs.package)):
-    prefs.package=None
+
 if __debug__:
-    if len(argv)>1:	# allow package name on command line
+    # allow package name on command line
+    if len(argv)>1 and glob(join(prefs.xplane, gcustom, basename(argv[1]))):
         prefs.package=basename(argv[1])
         frame.toolbar.EnableTool(wx.ID_SAVE,  False)
         frame.toolbar.EnableTool(wx.ID_PASTE,  True)
@@ -1724,11 +1726,31 @@ if __debug__:
             frame.menubar.Enable(wx.ID_PASTE,  True)
             frame.menubar.Enable(wx.ID_REFRESH,True)
 
-
-# Load data files
-frame.Update()		# Let window draw first
-frame.OnReload(False, prefs.package)
-app.MainLoop()
+if False:	# XXX trace
+    from trace import Trace
+    from _winreg import OpenKey, QueryValueEx, HKEY_CURRENT_USER, REG_SZ, REG_EXPAND_SZ
+    handle=OpenKey(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders\\')
+    (v,t)=QueryValueEx(handle, 'Desktop')
+    handle.Close()
+    if t==REG_EXPAND_SZ:
+        dirs=v.split('\\')
+        for i in range(len(dirs)):
+            if dirs[i][0]==dirs[i][-1]=='%':
+                dirs[i]=getenv(dirs[i][1:-1],dirs[i])
+        v='\\'.join(dirs)
+    outfile=join(v, appname+'.log')
+    if exists(outfile): unlink(outfile)
+    frame.Update()		# Let window draw first
+    frame.OnReload(False, prefs.package)
+    sys.stdout=open(outfile, 'wt', 0)	# unbuffered
+    Trace(count=0, trace=1,
+          ignoremods=['DSFLib','files', 'codecs','fnmatch','glob','ntpath']
+          ).runfunc(app.MainLoop)
+else:
+    # Load data files
+    frame.Update()		# Let window draw first
+    frame.OnReload(False, prefs.package)
+    app.MainLoop()
 
 # Save prefs
 prefs.write()
