@@ -1,3 +1,6 @@
+insert node - average two _editable_ nodes
+
+fix nopoly - use drawmultielements (1.4)
 gettext
 don't change position on undo?
 display ramp starting points

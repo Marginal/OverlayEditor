@@ -159,7 +159,7 @@ class Object(Clutter):
         obj=self.definition
         glPushMatrix()
         glTranslatef(self.x, self.y, self.z)
-        glRotatef(-self.hdg, 0.0,1.0,0.0)
+        if self.hdg: glRotatef(-self.hdg, 0.0,1.0,0.0)
         if picking:
             # cull face disabled
             glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
@@ -168,7 +168,6 @@ class Object(Clutter):
             if obj.poly and not (selected or picking or nopoly):
                 #glDepthMask(GL_FALSE) - doesn't work with inwards facing faces
                 glEnable(GL_POLYGON_OFFSET_FILL)
-                glPolygonOffset(-1, -1)
             if obj.culled:
                 glEnable(GL_CULL_FACE)
                 glDrawArrays(GL_TRIANGLES, obj.base, obj.culled)
@@ -176,7 +175,7 @@ class Object(Clutter):
                 glDisable(GL_CULL_FACE)
                 glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
                 glEnable(GL_CULL_FACE)
-            if obj.poly and not (selected or picking or nopoly):
+            if obj.poly and not (selected or nopoly):
                 #glDepthMask(GL_TRUE)
                 glDisable(GL_POLYGON_OFFSET_FILL)
         glPopMatrix()
@@ -212,7 +211,11 @@ class Polygon(Clutter):
         if param==None: param=0
         if lon==None:
             Clutter.__init__(self, name)
-            self.nodes=nodes		# [[(lon,lat,...)]]
+            self.nodes=nodes		# [[(editable, lon,lat,...)]]
+            if __debug__:
+                for w in nodes:
+                    for n in w:
+                        if len(n)<3: print nodes
         else:
             lat=nodes
             Clutter.__init__(self, name, lat, lon)
@@ -220,8 +223,9 @@ class Polygon(Clutter):
             self.nodes=[[]]
             size=0.000007071*size
             for i in [h+5*pi/4, h+3*pi/4, h+pi/4, h+7*pi/4]:
-                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
-                                      (max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size))))))
+                self.nodes[0].append((True,
+                                      max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
+                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size)))))
         self.param=param
         self.points=[]		# list of windings in world space (x,y,z)
         self.nonsimple=False
@@ -245,8 +249,8 @@ class Polygon(Clutter):
             self.lat=self.lon=0
             n=len(self.nodes[0])
             for i in range(n):
-                self.lon+=self.nodes[0][i][0]
-                self.lat+=self.nodes[0][i][1]
+                self.lon+=self.nodes[0][i][1]
+                self.lat+=self.nodes[0][i][2]
             self.lat=self.lat/n
             self.lon=self.lon/n
         return [self.lat, self.lon]
@@ -256,17 +260,17 @@ class Polygon(Clutter):
             (i,j)=node
             hole=['', 'Hole '][i and 1]
             if self.points[i][j][1]:
-                return '%s  Elv: %-6.1f  %sNode %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), self.points[i][j][1], hole, j)
+                return '%s  Elv: %-6.1f  %sNode %d' % (latlondisp(dms, self.nodes[i][j][2], self.nodes[i][j][1]), self.points[i][j][1], hole, j)
             else:
-                return '%s  %sNode %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), hole, j)
+                return '%s  %sNode %d' % (latlondisp(dms, self.nodes[i][j][2], self.nodes[i][j][1]), hole, j)
         else:
             return '%s  Param: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
     def draw(self, selected, picking, nopoly=False, col=(0.25, 0.25, 0.25)):
         # just draw outline
-        if self.nonsimple:
-            col=(1.0,0.25,0.25)	# override colour if nonsimple
         if not picking:
+            if self.nonsimple:
+                col=(1.0,0.25,0.25)	# override colour if nonsimple
             glBindTexture(GL_TEXTURE_2D, 0)
         glDisable(GL_DEPTH_TEST)
         for winding in self.points:
@@ -312,14 +316,14 @@ class Polygon(Clutter):
             n=len(nodes)
             a=0
             for j in range(n):
-                (x,z)=self.position(tile, nodes[j][1], nodes[j][0])
+                (x,z)=self.position(tile, nodes[j][2], nodes[j][1])
                 y=vertexcache.height(tile,options,x,z)
                 points.append((x,y,z))
-                if not i:
-                    self.lon+=nodes[j][0]
-                    self.lat+=nodes[j][1]
-                a+=nodes[j][0]*nodes[(j+1)%n][1]-nodes[(j+1)%n][0]*nodes[j][1]
-            if (not i and a<0) or (i and a>0):
+                if i==0:
+                    self.lon+=nodes[j][1]
+                    self.lat+=nodes[j][2]
+                a+=nodes[j][1]*nodes[(j+1)%n][2]-nodes[(j+1)%n][1]*nodes[j][2]
+            if (i==0 and a<0) or (i and a>0):
                 # Outer should be CCW, inner CW
                 nodes.reverse()
                 points.reverse()
@@ -329,7 +333,7 @@ class Polygon(Clutter):
         self.lat=self.lat/len(self.nodes[0])
         self.lon=self.lon/len(self.nodes[0])
 
-        if isinstance(self, Draped):
+        if isinstance(self, Draped) or isinstance(self, Network):
             return selectednode	# Draped does its own tesselation
 
         # tessellate. This is just to check polygon is simple
@@ -358,8 +362,9 @@ class Polygon(Clutter):
             nextnode=(j-1)%n
         selectednode=(i,newnode)
         self.nodes[i].insert(newnode,
-                             (round2res((self.nodes[i][j][0]+self.nodes[i][nextnode][0])/2),
-                              round2res((self.nodes[i][j][1]+self.nodes[i][nextnode][1])/2)))
+                             (True,
+                              round2res((self.nodes[i][j][1]+self.nodes[i][nextnode][2])/2),
+                              round2res((self.nodes[i][j][2]+self.nodes[i][nextnode][2])/2)))
         self.layout(tile, options, vertexcache, selectednode)
         return selectednode
 
@@ -389,11 +394,12 @@ class Polygon(Clutter):
         if dhdg:
             for i in range(len(self.nodes)):
                 for j in range(len(self.nodes[i])):
-                    h=atan2(self.nodes[i][j][0]-loc[1],
-                            self.nodes[i][j][1]-loc[0])+radians(dhdg)
-                    l=hypot(self.nodes[i][j][0]-loc[1],
-                            self.nodes[i][j][1]-loc[0])
-                    self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
+                    h=atan2(self.nodes[i][j][1]-loc[1],
+                            self.nodes[i][j][2]-loc[0])+radians(dhdg)
+                    l=hypot(self.nodes[i][j][1]-loc[1],
+                            self.nodes[i][j][2]-loc[0])
+                    self.nodes[i][j]=(True,
+                                      max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
                                       max(tile[0], min(tile[0]+1, round2res(loc[0]+cos(h)*l))))	# trashes other parameters
         if dparam:
             self.param+=dparam
@@ -406,8 +412,9 @@ class Polygon(Clutter):
         # defer layout
         (i,j)=node
         # points can be on upper boundary of tile
-        self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
-                          max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))	# trashes other parameters
+        self.nodes[i][j]=(True,
+                          max(tile[1], min(tile[1]+1, self.nodes[i][j][1]+dlon)),
+                          max(tile[0], min(tile[0]+1, self.nodes[i][j][2]+dlat)))	# trashes other parameters
         if defer:
             return node
         else:
@@ -416,7 +423,7 @@ class Polygon(Clutter):
     def updatenode(self, node, lat, lon, tile, options, vertexcache):
         # update node height but defer full layout. Assumes lat,lon is valid
         (i,j)=node
-        self.nodes[i][j]=(lon,lat)	# trashes other parameters
+        self.nodes[i][j]=(True,lon,lat)	# trashes other parameters
         (x,z)=self.position(tile, lat, lon)
         y=vertexcache.height(tile,options,x,z)
         self.points[i][j]=(x,y,z)
@@ -425,10 +432,11 @@ class Polygon(Clutter):
     def picknodes(self):
         for i in range(len(self.points)):
             for j in range(len(self.points[i])):
-                glLoadName((i<<24)+j)
-                glBegin(GL_POINTS)
-                glVertex3f(*self.points[i][j])
-                glEnd()
+                if self.nodes[i][j][0]:	# editable
+                    glLoadName((i<<24)+j)
+                    glBegin(GL_POINTS)
+                    glVertex3f(*self.points[i][j])
+                    glEnd()
 
 
 class Beach(Polygon):
@@ -515,29 +523,29 @@ class Draped(Polygon):
             n=len(self.nodes[0])
             if dparam>0:
                 # rotate texture co-ords.
-                if len(self.nodes[0][0])>=6:
-                    uv0=self.nodes[0][0][4:6]
+                if len(self.nodes[0][0])>=7:
+                    uv0=self.nodes[0][0][5:7]
                 else:
-                    uv0=self.nodes[0][0][2:4]
+                    uv0=self.nodes[0][0][3:5]
                 for j in range(n-1):
-                    if len(self.nodes[0][j+1])>=6:
-                        uv=self.nodes[0][j+1][4:6]
+                    if len(self.nodes[0][j+1])>=7:
+                        uv=self.nodes[0][j+1][5:7]
                     else:
-                        uv=self.nodes[0][j+1][2:4]
-                    self.nodes[0][j]=self.nodes[0][j][:2]+uv
-                self.nodes[0][n-1]=self.nodes[0][n-1][:2]+uv0
+                        uv=self.nodes[0][j+1][3:5]
+                    self.nodes[0][j]=self.nodes[0][j][:3]+uv
+                self.nodes[0][n-1]=self.nodes[0][n-1][:3]+uv0
             elif dparam<0:
-                if len(self.nodes[0][n-1])>=6:
-                    uv0=self.nodes[0][n-1][4:6]
+                if len(self.nodes[0][n-1])>=7:
+                    uv0=self.nodes[0][n-1][5:7]
                 else:
-                    uv0=self.nodes[0][n-1][2:4]
+                    uv0=self.nodes[0][n-1][3:5]
                 for j in range(n-1,0,-1):
-                    if len(self.nodes[0][j-1])>=6:
-                        uv=self.nodes[0][j-1][4:6]
+                    if len(self.nodes[0][j-1])>=7:
+                        uv=self.nodes[0][j-1][5:7]
                     else:
-                        uv=self.nodes[0][j-1][2:4]
-                    self.nodes[0][j]=self.nodes[0][j][:2]+uv
-                self.nodes[0][0]=self.nodes[0][0][:2]+uv0
+                        uv=self.nodes[0][j-1][3:5]
+                    self.nodes[0][j]=self.nodes[0][j][:3]+uv
+                self.nodes[0][0]=self.nodes[0][0][:3]+uv0
         else:
             # rotate texture
             self.param=(self.param+dparam+dhdg)%360
@@ -545,16 +553,17 @@ class Draped(Polygon):
             # preserve textures
             for i in range(len(self.nodes)):
                 for j in range(len(self.nodes[i])):
-                    if len(self.nodes[i][j])>=6:
+                    if len(self.nodes[i][j])>=7:
                         # Ben says: a bezier polygon has 8 coords (lon lat of point, lon lat of control, ST of point, ST of control)
-                        uv=self.nodes[i][j][4:6]
+                        uv=self.nodes[i][j][5:7]
                     else:
-                        uv=self.nodes[i][j][2:4]
-                    h=atan2(self.nodes[i][j][0]-loc[1],
-                            self.nodes[i][j][1]-loc[0])+radians(dhdg)
-                    l=hypot(self.nodes[i][j][0]-loc[1],
-                            self.nodes[i][j][1]-loc[0])
-                    self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
+                        uv=self.nodes[i][j][3:5]
+                    h=atan2(self.nodes[i][j][1]-loc[1],
+                            self.nodes[i][j][2]-loc[0])+radians(dhdg)
+                    l=hypot(self.nodes[i][j][1]-loc[1],
+                            self.nodes[i][j][2]-loc[0])
+                    self.nodes[i][j]=(True,
+                                      max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
                                       max(tile[0], min(tile[0]+1, round2res(loc[0]+cos(h)*l))))+uv
         if dlat or dlon:
             Polygon.move(self, dlat,dlon, 0,0, loc, tile, options, vertexcache)
@@ -566,12 +575,13 @@ class Draped(Polygon):
         if self.param==65535:
             # Preserve node texture co-ords
             (i,j)=node
-            if len(self.nodes[i][j])>=6:
+            if len(self.nodes[i][j])>=7:
                 # Ben says: a bezier polygon has 8 coords (lon lat of point, lon lat of control, ST of point, ST of control)
-                uv=self.nodes[i][j][4:6]
+                uv=self.nodes[i][j][5:7]
             else:
-                uv=self.nodes[i][j][2:4]
-            self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
+                uv=self.nodes[i][j][3:5]
+            self.nodes[i][j]=(True,
+                              max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
                               max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))+uv
             if defer:
                 return node
@@ -585,12 +595,12 @@ class Draped(Polygon):
         if self.param==65535:
             # Preserve node texture co-ords
             (i,j)=node
-            if len(self.nodes[i][j])>=6:
+            if len(self.nodes[i][j])>=7:
                 # Ben says: a bezier polygon has 8 coords (lon lat of point, lon lat of control, ST of point, ST of control)
-                uv=self.nodes[i][j][4:6]
+                uv=self.nodes[i][j][5:7]
             else:
-                uv=self.nodes[i][j][2:4]
-            self.nodes[i][j]=(lon,lat)+uv
+                uv=self.nodes[i][j][3:5]
+            self.nodes[i][j]=(True,lon,lat)+uv
             (x,z)=self.position(tile, lat, lon)
             y=vertexcache.height(tile,options,x,z)
             self.points[i][j]=(x,y,z)
@@ -614,10 +624,10 @@ class Draped(Polygon):
                 gluTessBeginContour(tess)
                 for j in range(len(self.nodes[i])):
                     if self.param==65535:
-                        if len(self.nodes[i][j])>=6:
-                            uv=self.nodes[i][j][4:6]
+                        if len(self.nodes[i][j])>=7:
+                            uv=self.nodes[i][j][5:7]
                         else:
-                            uv=self.nodes[i][j][2:4]
+                            uv=self.nodes[i][j][3:5]
                     else:
                         uv=((self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale,
                             (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale)
@@ -652,10 +662,10 @@ class Draped(Polygon):
                     minz=min(minz, self.points[i][j][2])
                     maxz=max(maxz, self.points[i][j][2])
                 if self.param==65535:
-                    if len(self.nodes[i][j])>=6:
-                        uv=self.nodes[i][j][4:6]
+                    if len(self.nodes[i][j])>=7:
+                        uv=self.nodes[i][j][5:7]
                     else:
-                        uv=self.nodes[i][j][2:4]
+                        uv=self.nodes[i][j][3:5]
                 else:
                     uv=((self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale,
                         (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale)
@@ -730,12 +740,13 @@ class Draped(Polygon):
             return False	# we don't support holes in orthos
         minrad=0.000007071*size
         for j in self.nodes[0]:
-            minrad=min(minrad, abs(self.lon-j[0]), abs(self.lat-j[1]))
+            minrad=min(minrad, abs(self.lon-j[1]), abs(self.lat-j[2]))
         i=len(self.nodes)
         h=radians(hdg)
         self.nodes.append([])
         for j in [h+5*pi/4, h+7*pi/4, h+pi/4, h+3*pi/4]:
-            self.nodes[i].append((round2res(self.lon+sin(j)*minrad),
+            self.nodes[i].append((True,
+                                  round2res(self.lon+sin(j)*minrad),
                                   round2res(self.lat+cos(j)*minrad)))
         return self.layout(tile, options, vertexcache, (i,0))
 
@@ -769,8 +780,9 @@ class Exclude(Polygon):
                               (self.lon+size,self.lat-size),
                               (self.lon+size,self.lat+size),
                               (self.lon-size,self.lat+size)]:
-                self.nodes[0].append((max(floor(self.lon), min(floor(self.lon)+1, round2res(lon))),
-                                      (max(floor(self.lat), min(floor(self.lat)+1, round2res(lat))))))
+                self.nodes[0].append((True,
+                                      max(floor(self.lon), min(floor(self.lon)+1, round2res(lon))),
+                                      max(floor(self.lat), min(floor(self.lat)+1, round2res(lat)))))
         self.param=param
         self.points=[]		# list of windings in world space (x,y,z)
 
@@ -785,7 +797,7 @@ class Exclude(Polygon):
         # no elevation
         if node:
             (i,j)=node
-            return '%s  Node %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), j)
+            return '%s  Node %d' % (latlondisp(dms, self.nodes[i][j][2], self.nodes[i][j][1]), j)
         else:
             return '%s' % (latlondisp(dms, self.lat, self.lon))
 
@@ -802,19 +814,19 @@ class Exclude(Polygon):
     def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=False):
         # changes adjacent nodes, so always do full layout immediately
         (i,j)=node
-        lon=max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon))
-        lat=max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat))
+        lon=max(tile[1], min(tile[1]+1, self.nodes[i][j][1]+dlon))
+        lat=max(tile[0], min(tile[0]+1, self.nodes[i][j][2]+dlat))
         return self.updatenode(node, lat, lon, tile, options, vertexcache)
 
     def updatenode(self, node, lat, lon, tile, options, vertexcache):
         (i,j)=node
-        self.nodes[i][j]=(lon,lat)
+        self.nodes[i][j]=(True,lon,lat)
         if j&1:
-            self.nodes[i][(j-1)%4]=(self.nodes[i][(j-1)%4][0], lat)
-            self.nodes[i][(j+1)%4]=(lon, self.nodes[i][(j+1)%4][1])
+            self.nodes[i][(j-1)%4]=(True, self.nodes[i][(j-1)%4][1], lat)
+            self.nodes[i][(j+1)%4]=(True, lon, self.nodes[i][(j+1)%4][2])
         else:
-            self.nodes[i][(j+1)%4]=(self.nodes[i][(j+1)%4][0], lat)
-            self.nodes[i][(j-1)%4]=(lon, self.nodes[i][(j-1)%4][1])
+            self.nodes[i][(j+1)%4]=(True, self.nodes[i][(j+1)%4][1], lat)
+            self.nodes[i][(j-1)%4]=(True, lon, self.nodes[i][(j-1)%4][2])
         # changed adjacent nodes, so do full layout immediately
         return self.layout(tile, options, vertexcache, node)
 
@@ -822,10 +834,36 @@ class Exclude(Polygon):
         Polygon.draw(self, selected, picking, nopoly, (0.75, 0.25, 0.25))
 
 
-class Facade(Polygon):
+class Fitted(Polygon):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
+
+    def layout(self, tile, options, vertexcache, selectednode=None):
+        # strip out intermediate nodes
+        oldsel=selectednode
+        controlnodes=[]
+        for i in range(len(self.nodes)):
+            nodes=[]
+            for j in range(len(self.nodes[i])):
+                if self.nodes[i][j][0]:	# editable
+                    if (i,j)==oldsel: selectednode=(i,len(nodes))
+                    nodes.append(self.nodes[i][j])
+            controlnodes.append(nodes)
+        self.nodes=controlnodes
+
+        # insert intermediate nodes
+        if self.definition.fittomesh:
+            assert(len(self.nodes)==1)
+            pass            #XXX
+
+        return Polygon.layout(self, tile, options, vertexcache, selectednode)
+
+
+class Facade(Fitted):
+
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
+        Fitted.__init__(self, name, param, nodes, lon, size, hdg)
         self.quads=[]		# list of points (x,y,z,s,t)
         self.roof=[]		# list of points (x,y,z,s,t)
 
@@ -890,13 +928,14 @@ class Facade(Polygon):
             glEnd()
         if not picking and fac.two_sided:
             glEnable(GL_CULL_FACE)
-        
+
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam=max(dparam, 1-self.param)	# can't have height 0
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
         
     def layout(self, tile, options, vertexcache, selectednode=None):
-        selectednode=Polygon.layout(self, tile, options, vertexcache, selectednode)
+        selectednode=Fitted.layout(self, tile, options, vertexcache, selectednode)
+        print self.points
         self.quads=[]
         self.roof=[]
         try:
@@ -1208,24 +1247,21 @@ class Line(Polygon):
             self.layout(tile, options, vertexcache)
 
 
-class Network(Polygon):
+class Network(Fitted):
 
-    def __init__(self, name, index, nodes, lon=None, size=None, hdg=None):
-        self.index=index
-        if lon==None:
-            Clutter.__init__(self, name)
-            self.nodes=nodes	# [[(lon,lat,elv,iscontrolnode)]] - this is what gets saved to file
-            self.points=[]	# in x,y,z space at ground level. Difference between y and elv is the height AGL
-        else:
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
+        self.index=param
+        Fitted.__init__(self, name, param, nodes, lon, size, hdg)
+        if lon!=None:
+            # override default new nodes
             lat=nodes
-            Clutter.__init__(self, name, lat, lon)
             h=radians(hdg)
             self.nodes=[[]]
             size=0.000007071*size
-            for i in [h+5*pi/4, h+3*pi/4, h+pi/4, h+7*pi/4]:
-                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
-                                      (max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size))))))
-        self.laidoutwithelevation=False
+            for i in [h, h+pi]:
+                self.nodes[0].append((True,
+                                      max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
+                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size)))))	# note no elevation - filled in later
             
     def __str__(self):
         return '<"%s" %d %s>' % (self.name,self.index,self.nodes)
@@ -1234,23 +1270,20 @@ class Network(Polygon):
         return Network(self.name, self.index, [list(w) for w in self.nodes])
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
-        # XXX disable networks
-        self.definition=NetworkFallback(None, None, self.index)
-        return True
-
-    	print "load", self.definition.name, len(self.nodes[0])
         try:
             if not self.name: raise IOError	# not in roads.net
             self.definition=defs[self.name]
             self.definition.allocate(vertexcache, defs)	# ensure allocated
             notfallback=True
         except:
+            if __debug__:
+                print_exc()
             if usefallback:
-                self.definition=NetworkFallback(None, None, self.index)
+                self.definition=NetworkFallback('None', None, self.index)
                 self.definition.allocate(vertexcache, defs)	# ensure allocated
             notfallback=False
 
-        if self.definition.height==None:
+        if False:#XXXself.definition.height==None:
             # remove intermediate nodes
             self.nodes[0][0]=self.nodes[0][0][:3]+[True]
             self.nodes[0][-1]=self.nodes[0][-1][:3]+[True]
@@ -1262,23 +1295,22 @@ class Network(Polygon):
                     self.nodes[0][i]=self.nodes[0][i][:3]+[True]
                     print abs(atan2(self.nodes[0][i-1][0]-self.nodes[0][i][0], self.nodes[0][i-1][1]-self.nodes[0][i][1]) - atan2(self.nodes[0][i][0]-self.nodes[0][i+1][0], self.nodes[0][i][1]-self.nodes[0][i+1][1])) * 180/pi, min(hypot(self.nodes[0][i-1][0]-self.nodes[0][i][0], self.nodes[0][i-1][1]-self.nodes[0][i][1]), hypot(self.nodes[0][i][0]-self.nodes[0][i+1][0], self.nodes[0][i][1]-self.nodes[0][i+1][1]))
                     i+=1
-        else:
-            # all nodes are control nodes
-            self.nodes[0]=[i[:3]+[True] for i in self.nodes[0]]
+        #else:
+        #    # all nodes are control nodes
+        #    self.nodes[0]=[i[:3]+[True] for i in self.nodes[0]]
         return notfallback
 
     def locationstr(self, dms, node=None):
         if node:
             (i,j)=node
             if self.definition.height!=None:
-                return '%s  Elv: %-6.1f  Height: %-6.1f  Node %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), self.points[i][j][1], self.nodes[i][j][2]-self.points[i][j][1], j)
+                return '%s  Elv: %-6.1f  Height: %-6.1f  Node %d' % (latlondisp(dms, self.nodes[i][j][2], self.nodes[i][j][1]), self.points[i][j][1], self.nodes[i][j][3]-self.points[i][j][1], j)
             else:
-                return '%s  Elv: %-6.1f  Node %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), self.points[i][j][1], j)                
+                return '%s  Elv: %-6.1f  Node %d' % (latlondisp(dms, self.nodes[i][j][2], self.nodes[i][j][1]), self.points[i][j][1], j)                
         else:
             return '%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes))
 
     def draw(self, selected, picking, nopoly=False):
-        return	# XXX disable networks
         # just draw outline
         if picking:
             # Can't pick if no elevation
@@ -1300,7 +1332,7 @@ class Network(Polygon):
         glDisable(GL_DEPTH_TEST)
         glBegin(GL_POINTS)
         for j in range(len(self.points[0])):
-            if self.nodes[0][j][3]:	# iscontrolnode
+            if self.nodes[0][j][0]:	# editable
                 if selectednode==(0,j):
                     glColor3f(1.0, 1.0, 1.0)
                 else:
@@ -1317,11 +1349,9 @@ class Network(Polygon):
         return self.points and True
 
     def layout(self, tile, options, vertexcache, selectednode=None):
-
-        return selectednode	# XXX disable networks
-
+        # XXX handle new
         self.laidoutwithelevation=options&Prefs.ELEVATION
-        controlnodes=[i for i in self.nodes[0] if i[3]]
+        controlnodes=[i for i in self.nodes[0] if i[0]]
 
         self.lat=self.lon=0
         self.nodes=[[]]
@@ -1331,7 +1361,7 @@ class Network(Polygon):
         for j in range(n):
             self.lon+=controlnodes[j][0]
             self.lat+=controlnodes[j][1]
-            (xj,zj)=self.position(tile, controlnodes[j][1], controlnodes[j][0])
+            (xj,zj)=self.position(tile, controlnodes[j][2], controlnodes[j][1])
             yj=vertexcache.height(tile,options,xj,zj)
             if j and self.definition.height==None:
                 # XXX insert intermediate nodes
@@ -1407,21 +1437,22 @@ def csgtvertex(vertex, data):
 def csgtcombine(coords, vertex, weight):
     # interp height & UV at coords from vertices (location, ismesh, uv)
 
-    #print vertex[0], weight[0]
-    #print vertex[1], weight[1]
-    #print vertex[2], weight[2]
-    #print vertex[3], weight[3]
+    print
+    print vertex[0], weight[0]
+    print vertex[1], weight[1]
+    print vertex[2], weight[2]
+    print vertex[3], weight[3]
 
     # check for just two adjacent mesh triangles
     if vertex[0]==vertex[1]:
         # common case, or non-simple
         #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
-        #print vertex[0], " ->"
+        print vertex[0], " ->"
         return vertex[0]
     elif vertex[0][0][0]==vertex[1][0][0] and vertex[0][0][2]==vertex[1][0][2] and vertex[0][1]:
         # Height discontinuity in terrain mesh - eg LIEE - wtf!
         #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
-        #print vertex[0], " ->"
+        print vertex[0], " ->"
         return vertex[0]
 
     # intersection of two lines - use terrain mesh line for height
@@ -1447,7 +1478,7 @@ def csgtcombine(coords, vertex, weight):
         y=p1[0][1]+ratio*(p2[0][1]-p1[0][1])
 
     # UV
-    if not p3[2]:
+    if not (p3 and p3[2] and p4 and p4[2]):
         uv=None
     else:
         d=hypot(p4[0][0]-p3[0][0], p4[0][2]-p3[0][2])
@@ -1458,7 +1489,7 @@ def csgtcombine(coords, vertex, weight):
             uv=(p3[2][0]+ratio*(p4[2][0]-p3[2][0]),
                 p3[2][1]+ratio*(p4[2][1]-p3[2][1]))
 
-    #print ([coords[0],y,coords[2]], True, uv), " ->"
+    print ([coords[0],y,coords[2]], True, uv), " ->"
     #assert(uv)	# only if draped
     return ([coords[0],y,coords[2]], True, uv)
 

@@ -178,7 +178,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Setup state. Under X must be called after window is shown
         self.SetCurrent()
         self.vertexcache=VertexCache()	# member so can free resources
-        self.selectdepth=glGetIntegerv(GL_MAX_NAME_STACK_DEPTH)*4
+        self.selectdepth=glGetIntegerv(GL_MAX_NAME_STACK_DEPTH)*4	# XXX
         #glClearDepth(1.0)
         glEnable(GL_DEPTH_TEST)
         glDepthFunc(GL_LESS)
@@ -464,11 +464,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Objects and Polygons
         placements=self.placements[self.tile]
         if not self.clutterlist:
-            #print "list"
+            if __debug__: clock=time.clock()	# Processor time
             self.clutterlist=glGenLists(1)
             glNewList(self.clutterlist, GL_COMPILE)
             glEnable(GL_CULL_FACE)
-            glPolygonOffset(-2, -2)
+            glPolygonOffset(-1, -1)
             glDisable(GL_POLYGON_OFFSET_FILL)
 
             glColor3f(0.8, 0.8, 0.8)	# Unpainted
@@ -498,8 +498,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                         glDepthMask(GL_TRUE)
                         glEnable(GL_DEPTH_TEST)
                         glDisable(GL_POLYGON_OFFSET_FILL)
+                        glPolygonOffset(-1, -1)
                         if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
             glEndList()
+            if __debug__:
+                print "%6.3f time to build clutterlist" % (time.clock()-clock)
         glCallList(self.clutterlist)
 
         # Overlays
@@ -613,7 +616,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def prepareselect(self):
         # Pre-prepare selection list - assumes self.picklist==0
-        #print "prep"
+        if __debug__: clock=time.clock()	# Processor time
         assert not self.picklist
         self.picklist=glGenLists(1)
         glNewList(self.picklist, GL_COMPILE)
@@ -626,16 +629,16 @@ class MyGL(wx.glcanvas.GLCanvas):
         for i in range(len(placements)-1,-1,-1):	# favour higher layers
             for j in range(len(placements[i])):
                 glLoadName((i<<24)+j)
-                placements[i][j].draw(False, True)
+                placements[i][j].draw(False, True, None)
         glEnable(GL_DEPTH_TEST)
         glEndList()
-
+        if __debug__: print "%6.3f time in prepareselect" %(time.clock()-clock)
+        
             
     def select(self):
         #print "sel", 
         #if not self.currentobjects():
         #    self.selections=[]	# Can't remember
-
         size = self.GetClientSize()
         glViewport(0, 0, *size)
         glMatrixMode(GL_PROJECTION)
@@ -995,7 +998,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.selectednode:
             placement=self.selected[0]
             (i,j)=self.selectednode
-            return ([placement.name], placement.locationstr(dms, self.selectednode), placement.nodes[i][j][1], placement.nodes[i][j][0], None)
+            return ([placement.name], placement.locationstr(dms, self.selectednode), placement.nodes[i][j][2], placement.nodes[i][j][1], None)
         elif len(self.selected)==1:
             placement=self.selected[0]
             if isinstance(placement, Polygon):
@@ -1019,8 +1022,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         return self.y
 
     def reload(self, options, airports, navaids, aptdatfile,
-               defnetdefs, netdefs, netfile,
-               lookup, placements, networks,
+               netdefs, lookup, placements, networks,
                background, terrain, dsfdirs):
         self.valid=False
         self.options=options
@@ -1028,12 +1030,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.runways={}		# need to re-layout airports
         self.navaids=navaids
         self.aptdatfile=aptdatfile
-        self.defnetdefs=netdefs	# for colouring networks in default scenery
         self.netdefs=netdefs
-        self.netfile=netfile	# logical name of .net file used
         self.codes={}		# need to re-layout airports
         self.lookup=lookup
-        self.defs=dict([(x.name, x) for x in netdefs[1:]])
+        self.defs=dict([(x.name, x) for x in netdefs[1:] if x])
         self.vertexcache.reset(terrain, dsfdirs)
         self.trashlists(True, True)
         self.tile=(0,999)	# force reload on next goto
@@ -1044,10 +1044,10 @@ class MyGL(wx.glcanvas.GLCanvas):
             # turn networks into placements
             for key in networks.keys():
                 for (road, points) in networks[key]:
-                    if road and road<len(netdefs):
+                    if road and road<len(netdefs) and netdefs[road]:
                         name=netdefs[road].name
                     else:
-                        name=None	# fallback
+                        name='Network #%03d    ' % road	# fallback
                     self.unsorted[key].append(Network(name, road, [points]))
         else:
             # clear layers
@@ -1057,6 +1057,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                 # invalidate all heights
                 for placement in placements:
                     placement.clearlayout()
+                    if isinstance(placement, Network):
+                        if placement.index and placement.index<len(netdefs) and netdefs[placement.index]:
+                            placement.name=netdefs[placement.index].name
+                        else:
+                            placement.name='Network #%03d    ' % placement.index	# fallback
 
         if background:
             (image, lat, lon, hdg, width, length, opacity)=background
@@ -1497,18 +1502,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             if not self.options&Prefs.ELEVATION:
                 glPopMatrix()
             if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
-
-            # networks
-            glDisable(GL_TEXTURE_2D)
-            for (roadtype, points) in self.vertexcache.getNets(newtile,options):
-                if roadtype<=len(self.defnetdefs) and self.defnetdefs[roadtype].color:
-                    glColor3f(*self.defnetdefs[roadtype].color)
-                else:
-                    glColor3f(0.5,0.5,0.5)
-                glBegin(GL_LINE_STRIP)
-                for (x,y,z) in points:
-                    glVertex3f(x,y,z)
-                glEnd()
 
             # navaids
             glColor3f(0.8, 0.8, 0.8)	# Unpainted

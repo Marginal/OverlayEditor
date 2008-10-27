@@ -40,7 +40,6 @@ class Prefs:
                 pass
         if not self.filename:
             self.filename=join(expanduser('~'), '.%s' % appname.lower())
-        self.read()
 
     def read(self):
         try:

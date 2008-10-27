@@ -500,6 +500,7 @@ class PolygonDef(ClutterDef):
 
     def __init__(self, filename, texcache):
         ClutterDef.__init__(self, filename, texcache)
+        self.fittomesh=False	# automatically insert intermediate nodes
 
     def preview(self, canvas, vertexcache, l=0, b=0, r=1, t=1, hscale=1):
         if not self.texture or not self.canpreview: return None
@@ -609,6 +610,7 @@ class ExcludeDef(PolygonDef):
         self.texerr=None
         self.layer=ClutterDef.OUTLINELAYER
         self.canpreview=False
+        self.fittomesh=False
 
 
 class FacadeDef(PolygonDef):
@@ -664,14 +666,9 @@ class FacadeDef(PolygonDef):
                     c=line.split('#')[0].split()
                     if not c: continue
                     if c[0]=='LOD': break	# stop after first LOD
-                    elif c[0]=='ROOF':
+                    elif c[0] in ['ROOF','HARD_ROOF']:
                         roof.append((float(c[1]), float(c[2])))
-                    elif c[0]=='WALL':
-                        # WALL
-                        if len(roof) in [0,4]:
-                            self.roof=roof
-                        else:
-                            self.roof=[roof[0], roof[0], roof[0], roof[0]]
+                    elif c[0] in ['WALL','HARD_WALL']:
                         while True:
                             line=h.readline()
                             if not line: break
@@ -692,6 +689,11 @@ class FacadeDef(PolygonDef):
                                 if c[0]=='BOTTOM': self.vends[0]+=1
                                 elif c[0]=='TOP': self.vends[1]+=1
                         break # stop after first WALL
+                if len(roof) in [0,4]:
+                    self.roof=roof
+                else:
+                    self.roof=[roof[0], roof[0], roof[0], roof[0]]
+                self.fittomesh=(not roof)
                 break	# stop after first LOD
         h.close()
         if not self.horiz or not self.vert:
@@ -854,7 +856,7 @@ class NetworkDef(PolygonDef):
         self.index=index
         self.width=width
         self.length=length
-        self.height=None
+        self.height=None	# (min,max) height
         self.texname=texture
         self.poly=poly
         self.color=color
@@ -866,7 +868,10 @@ class NetworkDef(PolygonDef):
     def allocate(self, vertexcache, defs):
         # load texture and objects
         if not self.texture:
-            self.texture=vertexcache.texcache.get(normpath(join(self.texpath, self.texname)))
+            try:
+                self.texture=vertexcache.texcache.get(normpath(join(self.texpath, self.texname)))
+            except IOError, e:
+                self.texerr=IOError(0,e.strerror,basename(self.texname))
         if self.objdefs:
             for o in self.objdefs:
                 o.allocate(vertexcache, defs)
@@ -904,6 +909,8 @@ class NetworkDef(PolygonDef):
             if height<-2:	# arbitrary - allow for foundations
                 self.height=(0,round(-height,1))
                 print "New height", self.height[1]
+
+        self.fittomesh=(self.height!=None)
             
     def flush(self):
         for o in self.objdefs:
@@ -924,14 +931,15 @@ class NetworkDef(PolygonDef):
             height=self.height[1]
         else:
             height=0
-        maxsize=self.length*2+self.width/4	# eg PrimaryDividedWithSidewalksBridge
+        maxsize=max(height*0.7,
+                    self.length*2+self.width/4)	# eg PrimaryDividedWithSidewalksBridge
         glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
         glMatrixMode(GL_MODELVIEW)
         glPushMatrix()
         glLoadIdentity()
-        glRotatef( 60, 1,0,0)
-        glRotatef(-60, 0,1,0)
-        glTranslatef(0, height+self.width, -self.length*2)
+        glRotatef( 30, 1,0,0)
+        glRotatef(120, 0,1,0)
+        glTranslatef(0, height, -self.length*2)
         glColor3f(0.8, 0.8, 0.8)	# Unpainted
         glBindTexture(GL_TEXTURE_2D, self.texture)
         glDisable(GL_CULL_FACE)
@@ -993,11 +1001,15 @@ class NetworkFallback(PolygonDef):
         self.filename=filename
         self.name=name
         self.index=index
+        self.width=1
+        self.length=1
+        self.height=None	# (min,max) height
         self.texture=0
         self.texerr=None
+        self.color=(1.0,0.0,0.0)
+        self.even=False
         self.layer=ClutterDef.NETWORKLAYER
         self.canpreview=False
-
 
 UnknownDefs=['.lin','.str']	# Known unknowns
 SkipDefs=['.bch','.net']	# Ignore in library

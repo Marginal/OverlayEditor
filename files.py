@@ -17,6 +17,11 @@ try:
 except:	# not in 2.0.0.44
     def glInitTextureNonPowerOfTwoARB(): return False
 
+try:
+    from OpenGL.GL.ARB.vertex_buffer_object import glInitVertexBufferObjectARB, glGenBuffersARB, glBindBufferARB, glBufferDataARB, GL_ARRAY_BUFFER_ARB, GL_STATIC_DRAW_ARB
+except:
+    def glInitVertexBufferObjectARB(): return False
+
 import codecs
 from glob import glob
 from math import cos, log, pi, radians
@@ -25,7 +30,7 @@ from os.path import basename, curdir, dirname, exists, isdir, join, normpath, pa
 from shutil import copyfile
 from struct import unpack
 from sys import platform, maxint
-from traceback import print_exc, print_last
+from traceback import print_exc
 import wx
 if __debug__:
     import time
@@ -326,6 +331,9 @@ def readLib(filename, objects, terrain):
                     objects[lib][name]=obj
     except:
         if h: h.close()
+        if __debug__:
+            print filename
+            print_exc()
             
 
 def readNet(filename):
@@ -398,18 +406,21 @@ class TexCache:
         self.texs={}
         self.terraintexs=[]	# terrain textures will not be reloaded
         # Must be after init
+        self.maxtexsize=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
         self.npot=glInitTextureNonPowerOfTwoARB()
         self.compress=glInitTextureCompressionARB()
         self.s3tc=self.compress and glInitTextureCompressionS3tcEXT()
         self.bgra=glInitBgraEXT()
         # Texture compression appears severe on Mac, but this doesn't help
-        #if self.compress: glHint(GL_TEXTURE_COMPRESSION_HINT_ARB, GL_NICEST)
+        if self.compress: glHint(GL_TEXTURE_COMPRESSION_HINT_ARB, GL_NICEST)
+        self.casesens=False
         if glGetString(GL_VERSION) >= '1.2':
             self.clampmode=GL_CLAMP_TO_EDGE
         else:
             self.clampmode=GL_CLAMP
 
     def reset(self):
+        self.casesens=not exists(Prefs().filename.upper())	# after prefs
         if cantreleasetexs:
             # Hack round suspected memory leak causing SegFault on SUSE
             pass
@@ -454,7 +465,7 @@ class TexCache:
 
                 if pflags&DDPF_FOURCC:
                     # http://oss.sgi.com/projects/ogl-sample/registry/EXT/texture_compression_s3tc.txt
-                    if not self.s3tc: raise IOError, 'DXT compression not supported'
+                    if not self.s3tc: raise IOError, 'This video driver does not support DXT compression'
                     if fourcc=='DXT1':
                         if not (sflags&(DDSD_PITCH|DDSD_LINEARSIZE)):
                             size=width*height/2
@@ -506,6 +517,7 @@ class TexCache:
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
                     glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, data)
+                    #glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, len(data), data)
                     #if __debug__: print "%6.3f" % (time.clock()-clock), basename(path), wrap, alpha, downsample, fixsize
 
                     self.texs[path]=id
@@ -516,18 +528,18 @@ class TexCache:
                 elif pflags&DDPF_RGB:	# uncompressed
                     assert size==width*height*bits/8	# pitch appears unreliable
                     if bits==24 and redmask==0xff0000 and greenmask==0x00ff00 and bluemask==0x0000ff:
-                        if not self.bgra: raise IOError, 'BGR format not supported'
+                        if not self.bgra: raise IOError, 'This video driver does not support BGR format'
                         format=GL_BGR_EXT
                         iformat=GL_RGB
                     elif bits==24 and redmask==0x0000ff and greenmask==0x00ff00 and bluemask==0xff0000:
                         format=GL_RGB
                         iformat=GL_RGB
                     elif bits==32 and pflags&DDPF_ALPHAPIXELS and alphamask==0xff000000L and redmask==0x00ff0000 and greenmask==0x0000ff00 and bluemask==0x000000ff:
-                        if not self.bgra: raise IOError, 'BGRA format not supported'
+                        if not self.bgra: raise IOError, 'This video driver does not support BGRA format'
                         format=GL_BGRA_EXT
                         iformat=GL_RGBA
                     elif bits==32 and not pflags&DDPF_ALPHAPIXELS and redmask==0x00ff0000 and greenmask==0x0000ff00 and bluemask==0x000000ff:
-                        if not self.bgra: raise IOError, 'BGRA format not supported'
+                        if not self.bgra: raise IOError, 'This video driver does not support BGRA format'
                         format_GL_BGRA_EXT
                         iformat=GL_RGB
                     else:
@@ -554,8 +566,8 @@ class TexCache:
                 for i in [0,1]:
                     l=log(size[i],2)
                     if l!=int(l): size[i]=2**(1+int(l))
-                    if size[i]>glGetIntegerv(GL_MAX_TEXTURE_SIZE):
-                        size[i]=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
+                    if size[i]>self.maxtexsize:
+                        size[i]=self.maxtexsize
                     if size!=[image.size[0],image.size[1]]:
                         if not fixsize:
                             raise IOError, "Width and/or height is not a power of two"
@@ -612,12 +624,12 @@ class TexCache:
         except IOError, e:
             if e.errno==2:
                 if __debug__: print "%s file not found" % basename(path)
-                raise IOError, (2, "%s not found" % path)
+                raise IOError, (2, "%s: %s" % (path, e.strerror))
             elif e.strerror:
                 if __debug__: print "%s %s" % (basename(path), e.strerror)
                 raise IOError, (e.errno, e.strerror)
             else:	# PIL "cannot read interlaced PNG files"
-                if __debug__: print "%s %s" % (basename(path), e)
+                if __debug__: print "%s: %s" % (basename(path), e)
                 raise IOError, (0, str(e))
         except GLerror, e:
             if __debug__: print "%s %s" % (basename(path), e)
@@ -635,8 +647,6 @@ class VertexCache:
         self.ter={}		# name -> physical ter
         self.mesh={}		# tile -> [patches] where patch=(texture,f,v,t)
         self.meshdata={}	# tile -> [(bbox, [(points, plane coeffs)])]
-        self.nets={}		# tile -> [(type, [points])]
-        self.currenttile=None
         self.meshcache=[]	# [indices] of current tile
         self.lasttri=None	# take advantage of locality of reference
 
@@ -645,6 +655,8 @@ class VertexCache:
         self.tarray=[]
         self.valid=False
         self.dsfdirs=None	# [custom, global, default]
+
+        self.vbo=glInitVertexBufferObjectARB()
 
     def reset(self, terrain, dsfdirs):
         # invalidate geometry and textures
@@ -655,7 +667,6 @@ class VertexCache:
     
     def flush(self):
         # invalidate array indices
-        self.currenttile=None
         self.meshcache=[]
         self.varray=[]
         self.tarray=[]
@@ -665,12 +676,24 @@ class VertexCache:
     def realize(self, context):
         # need to call this before drawing
         if not self.valid:
+            if __debug__: clock=time.clock()	# Processor time
+            if False:#XXX self.vbo:
+                id=0
+                help(glGenBuffersARB)
+                id=glGenBuffersARB(1)
+                print id
+                glBindBufferARB(GL_ARRAY_BUFFER_ARB, id)
+                help(glBufferDataARB)
+                glBufferDataARB(GL_ARRAY_BUFFER_ARB, self.varray, GL_STATIC_DRAW_ARB)
+                glVertexPointer(size, type, stride, pointer)
+
             if self.varray:
                 glVertexPointerf(self.varray)
                 glTexCoordPointerf(self.tarray)
             else:	# need something or get conversion error
                 glVertexPointerf([[0,0,0]])
                 glTexCoordPointerf([[0,0]])
+            print "%6.3f time to realize arrays" % (time.clock()-clock)
             self.valid=True
 
     def allocate(self, vdata, tdata):
@@ -683,8 +706,7 @@ class VertexCache:
 
     def loadMesh(self, tile, options):
         key=(tile[0],tile[1],options&Prefs.TERRAIN)
-        netkey=(tile[0],tile[1],options&Prefs.NETWORK)
-        if key in self.mesh and netkey in self.nets:
+        if key in self.mesh:
             return	# don't reload
         dsfs=[]
         if options&Prefs.TERRAIN:
@@ -702,20 +724,9 @@ class VertexCache:
         if __debug__: clock=time.clock()	# Processor time
         for dsf in dsfs:
             try:
-                (lat, lon, placements, nets, mesh)=readDSF(dsf, False, options&Prefs.NETWORK, self.ter)
+                (lat, lon, objs, pols, nets, mesh)=readDSF(dsf, False, False, self.ter)
                 if mesh:
                     self.mesh[key]=mesh
-                    # post-process networks
-                    centrelat=lat+0.5
-                    centrelon=lon+0.5
-                    newnets=[]
-                    for (road, points) in nets:
-                        newpoints=[[(p[0]-centrelon)*onedeg*cos(radians(p[1])),
-                                    p[2],
-                                    (centrelat-p[1])*onedeg] for p in points]
-                        newnets.append((road, newpoints))
-                    self.nets[(tile[0],tile[1],0)]=[] # prevents reload on stepping down
-                    self.nets[netkey]=newnets
                     break
             except:
                 pass
@@ -737,12 +748,10 @@ class VertexCache:
                               [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],
                              [[0, 0], [100, 100], [0, 100],
                               [0, 0], [100, 0], [100, 100]])]
-            self.nets[(tile[0],tile[1],0)]=[] # prevents reload on stepping down
-            self.nets[(tile[0],tile[1],Prefs.NETWORK)]=[]
 
     # return mesh data sorted by tex for drawing
     def getMesh(self, tile, options):
-        if tile==self.currenttile:
+        if self.meshcache:
             return self.meshcache
         # merge patches that use same texture
         bytex={}
@@ -763,13 +772,7 @@ class VertexCache:
             self.meshcache.append((base, len(v), texno, flags/2))
         if __debug__: print "%6.3f time in getMesh" % (time.clock()-clock)
         self.valid=False	# new geometry -> need to update OpenGL
-        self.currenttile=tile
         return self.meshcache
-
-
-    # return net data
-    def getNets(self, tile, options):
-        return self.nets[(tile[0],tile[1],options&Prefs.NETWORK)]
 
 
     # create sets of bounding boxes for height testing

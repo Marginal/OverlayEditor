@@ -7,6 +7,7 @@ from os import chdir, getenv, listdir, mkdir, unlink, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 import sys	# for path
 from sys import exit, argv, executable, platform, version
+from traceback import print_exc
 if __debug__:
     import time
 
@@ -1322,7 +1323,7 @@ class MainWindow(wx.Frame):
             else:
                 xpver=8
                 mainaptdat=glob(join(prefs.xplane, gmain8aptdat))[0]
-            if not self.airports:	# Default apt.dat
+            if False: #XXX not self.airports:	# Default apt.dat
                 try:
                     if __debug__: clock=time.clock()	# Processor time
                     (self.airports,self.nav)=scanApt(mainaptdat)
@@ -1353,14 +1354,13 @@ class MainWindow(wx.Frame):
                     if not dsfs:
                         if glob(join(pkgnavdata, '[+-][0-9]0[+-][01][0-9]0', '[+-][0-9][0-9][+-][01][0-9][0-9].[eE][nN][vV]')): raise IOError, (0, 'This package uses v7 "ENV" files')
                     for f in dsfs:
-                        (lat, lon, p, nets, foo)=readDSF(f, True, True)
+                        (lat, lon, objs, pols, nets, foo)=readDSF(f, True, xpver>=9)
                         tile=(lat,lon)
-                        placements[tile]=p
+                        placements[tile]=objs+pols
                         networks[tile]=nets
                 except IOError, e:	# Bad DSF - restore to unloaded state
                     progress.Destroy()
-                    myMessageBox(e.strerror, "Can't edit this scenery package.",
-                                 wx.ICON_ERROR|wx.OK, None)
+                    myMessageBox(e.strerror, "Can't edit this scenery package.", wx.ICON_ERROR|wx.OK, None)
                     return
                 except:		# Bad DSF - restore to unloaded state
                     progress.Destroy()
@@ -1441,16 +1441,18 @@ class MainWindow(wx.Frame):
         self.palette.load('Objects', objects, pkgdir)
         lookup.update(objects)
 
-        defroadfile=lookupbylib['g8'].pop(NetworkDef.DEFAULTFILE,None)
         for lib in libs: self.palette.load(lib, lookupbylib[lib], None)
 
-        if not self.defnetdefs:
-            try:
-                self.defnetdefs=readNet(defroadfile)
-            except:
-                pass
-        netdefs=self.defnetdefs
         if xpver>=9:
+            defroadfile=lookupbylib['g8'].pop(NetworkDef.DEFAULTFILE,None)
+            if not self.defnetdefs:
+                try:
+                    self.defnetdefs=readNet(defroadfile)
+                except:
+                    if __debug__:
+                        print path
+                        print_exc()
+            netdefs=self.defnetdefs
             if roadfile:	# custom .net file
                 try:
                     netdefs=readNet(roadfile)
@@ -1458,14 +1460,16 @@ class MainWindow(wx.Frame):
                     roadfile=roadfile[len(pkgdir)+1:].replace('\\','/')
                 except:
                     myMessageBox("The %s file in this package is invalid." % roadfile[len(pkgdir)+1:], "Can't load network data.", wx.ICON_INFORMATION|wx.OK, self)
+                    netdefs=self.defnetdefs
                     roadfile=NetworkDef.DEFAULTFILE
             else:
                 roadfile=NetworkDef.DEFAULTFILE
-            if False: # XXX disable networks
-                names={}
-                for x in netdefs:                
-                    if x and x.name: names[x.name]=lookup[x.name]=x.name
-                self.palette.load(NetworkDef.TABNAME, names, None)
+            names={}
+            for x in netdefs:                
+                if x and x.name: names[x.name]=lookup[x.name]=x.name
+            self.palette.load(NetworkDef.TABNAME, names, None)
+        else:
+            netdefs=self.defnetdefs=[]
             
         self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], x) for x in Exclude.NAMES.keys()]), None)
 
@@ -1487,8 +1491,7 @@ class MainWindow(wx.Frame):
             dsfdirs=[join(prefs.xplane, gcustom),
                      join(prefs.xplane, gdefault)]
         self.canvas.reload(prefs.options, airports, nav, mainaptdat,
-                           self.defnetdefs, netdefs, roadfile,
-                           lookup, placements, networks,
+                           netdefs, lookup, placements, networks,
                            background, terrain, dsfdirs)
         if not self.loc:
             # Load, not reload
@@ -1582,7 +1585,6 @@ class MainWindow(wx.Frame):
                 self.menubar.Enable(wx.ID_REFRESH,False)
             dlg.Destroy()
             self.airports={}	# force reload
-            self.defnetdefs=[]	# force reload
             self.OnReload(False)
             prefs.write()
         self.canvas.goto(self.loc, options=prefs.options)
