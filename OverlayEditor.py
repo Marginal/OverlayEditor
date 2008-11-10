@@ -1128,6 +1128,9 @@ class MainWindow(wx.Frame):
                 if self.menubar: self.menubar.Enable(wx.ID_UNDO, False)
         elif event.m_keyCode==wx.WXK_F1 and platform!='darwin':
             self.OnHelp(event)
+        elif __debug__ and event.m_keyCode==ord('P'):
+            print "Profile next"
+            self.canvas.profilenext=True
         else:
             #if __debug__: print "Unknown key", event.m_keyCode
             event.Skip(True)

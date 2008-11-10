@@ -1,5 +1,6 @@
 import PIL.Image
 import PIL.PngImagePlugin, PIL.BmpImagePlugin, PIL.JpegImagePlugin 	# force for py2exe
+import OpenGL	# for __version__
 from OpenGL.GL import *
 from OpenGL.GL.EXT.bgra import glInitBgraEXT, GL_BGR_EXT, GL_BGRA_EXT
 from OpenGL.GL.ARB.texture_compression import glInitTextureCompressionARB, glCompressedTexImage2DARB, GL_COMPRESSED_RGB_ARB, GL_COMPRESSED_RGBA_ARB, GL_TEXTURE_COMPRESSION_HINT_ARB
@@ -25,6 +26,7 @@ except:
 import codecs
 from glob import glob
 from math import cos, log, pi, radians
+from Numeric import array, Float32
 from os import listdir, mkdir
 from os.path import basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
@@ -34,8 +36,6 @@ from traceback import print_exc
 import wx
 if __debug__:
     import time
-
-#from Numeric import array
 
 from clutterdef import BBox, KnownDefs, SkipDefs, NetworkDef
 from DSFLib import readDSF
@@ -516,8 +516,10 @@ class TexCache:
                         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,self.clampmode)
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-                    glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, data)
-                    #glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, len(data), data)
+                    if OpenGL.__version__ < '3':
+                        glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, data)
+                    else:
+                        glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, len(data), data)
                     #if __debug__: print "%6.3f" % (time.clock()-clock), basename(path), wrap, alpha, downsample, fixsize
 
                     self.texs[path]=id
@@ -656,7 +658,7 @@ class VertexCache:
         self.valid=False
         self.dsfdirs=None	# [custom, global, default]
 
-        self.vbo=glInitVertexBufferObjectARB()
+        self.vbo=(OpenGL.__version__ >= '3') and glInitVertexBufferObjectARB()
 
     def reset(self, terrain, dsfdirs):
         # invalidate geometry and textures
@@ -677,22 +679,24 @@ class VertexCache:
         # need to call this before drawing
         if not self.valid:
             if __debug__: clock=time.clock()	# Processor time
-            if False:#XXX self.vbo:
-                id=0
-                help(glGenBuffersARB)
-                id=glGenBuffersARB(1)
-                print id
-                glBindBufferARB(GL_ARRAY_BUFFER_ARB, id)
-                help(glBufferDataARB)
-                glBufferDataARB(GL_ARRAY_BUFFER_ARB, self.varray, GL_STATIC_DRAW_ARB)
-                glVertexPointer(size, type, stride, pointer)
-
-            if self.varray:
+            if self.vbo:
+                # PyOpenGL 3 with numpy
+                if __debug__: print "VBOs enabled!"
+                v=long(glGenBuffersARB(1))
+                glBindBufferARB(GL_ARRAY_BUFFER_ARB, v)
+                glBufferDataARB(GL_ARRAY_BUFFER_ARB, hstack((array(self.tarray, Float32), array(self.varray, Float32))).flatten(), GL_STATIC_DRAW_ARB)
+                glInterleavedArrays(GL_T2F_V3F, 0, None)
+            elif self.varray:
                 glVertexPointerf(self.varray)
                 glTexCoordPointerf(self.tarray)
+                #glInterleavedArrays(GL_T2F_V3F, 0, hstack((array(self.tarray, Float32), array(self.varray, Float32))))
+                #b=array(map(lambda x,y: x+y, self.tarray, self.varray), Float32)
+                #glInterleavedArrays(GL_T2F_V3F, 0, b.tostring())
             else:	# need something or get conversion error
+                if __debug__: print "Empty arrays!"
                 glVertexPointerf([[0,0,0]])
                 glTexCoordPointerf([[0,0]])
+                #glInterleavedArrays(GL_T2F_V3F, 0, [[0.0,0,0,0,0]])
             print "%6.3f time to realize arrays" % (time.clock()-clock)
             self.valid=True
 

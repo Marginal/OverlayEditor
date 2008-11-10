@@ -1,3 +1,5 @@
+#from OpenGL import constants	# for constants.GLdouble
+import OpenGL	# for __version__
 from OpenGL.GL import *
 from OpenGL.GLU import *
 try:
@@ -8,6 +10,7 @@ except NameError:
     gluTessVertex = GLU._gluTessVertex
 
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
+from Numeric import array, Float32, Float64
 from os.path import basename, join
 from sys import exit, platform, version
 import wx
@@ -20,7 +23,7 @@ if __debug__:
     try:
         # Not defined in PyOpenGL 2.x. Only applies when numpy installed
         from OpenGL.arrays import numpymodule
-        numpymodule.NumpyHandler.ERROR_ON_COPY = True
+        numpymodule.NumpyHandler.ERROR_ON_COPY=True	# find redundant copies
     except:
         pass
 
@@ -127,6 +130,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.d=3333.25
         self.cliprat=1000
 
+        self.profilenext=False	# profile next draw
+
         self.context=wx.glcanvas.GLContext
 
         # Must specify min sizes for glX? - see glXChooseVisual and GLXFBConfig
@@ -177,6 +182,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         #print "Canvas Init"
         # Setup state. Under X must be called after window is shown
         self.SetCurrent()
+        if OpenGL.__version__ >= '3':
+            # Suppress checking for OGL errors for speed
+            from OpenGL.error import ErrorChecker
+            ErrorChecker.registerChecker(ErrorChecker.nullGetError)
         self.vertexcache=VertexCache()	# member so can free resources
         self.selectdepth=glGetIntegerv(GL_MAX_NAME_STACK_DEPTH)*4	# XXX
         #glClearDepth(1.0)
@@ -267,7 +276,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.HasCapture(): self.ReleaseMouse()
         self.timer.Stop()
         if self.clickmode==ClickModes.DragNode:
-            #self.selectednode=self.selected[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
+            self.selectednode=self.selected[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
             self.trashlists(True)	# recompute obj and pick lists
             self.SetCursor(wx.NullCursor)
         elif self.clickmode==ClickModes.Drag:
@@ -301,7 +310,12 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.Refresh()
             elif not self.clickmode and not self.picklist:
                 # no update during node drag since will have to be recomputed
-                self.prepareselect()
+                if self.profilenext:
+                    from profile import runctx
+                    self.profilenext=False
+                    runctx('self.prepareselect()', globals(), locals(), 'profile.dmp')
+                else:
+                    self.prepareselect()
         event.Skip()
 
     def OnMouseMotion(self, event):
@@ -465,8 +479,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         placements=self.placements[self.tile]
         if not self.clutterlist:
             if __debug__: clock=time.clock()	# Processor time
-            self.clutterlist=glGenLists(1)
-            glNewList(self.clutterlist, GL_COMPILE)
+            #self.clutterlist=glGenLists(1)
+            #glNewList(self.clutterlist, GL_COMPILE)
             glEnable(GL_CULL_FACE)
             glPolygonOffset(-1, -1)
             glDisable(GL_POLYGON_OFFSET_FILL)
@@ -500,10 +514,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                         glDisable(GL_POLYGON_OFFSET_FILL)
                         glPolygonOffset(-1, -1)
                         if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
-            glEndList()
+            #glEndList()
             if __debug__:
                 print "%6.3f time to build clutterlist" % (time.clock()-clock)
-        glCallList(self.clutterlist)
+        #glCallList(self.clutterlist)
 
         # Overlays
         glDisable(GL_POLYGON_OFFSET_FILL)
@@ -633,8 +647,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_DEPTH_TEST)
         glEndList()
         if __debug__: print "%6.3f time in prepareselect" %(time.clock()-clock)
-        
-            
+
+
     def select(self):
         #print "sel", 
         #if not self.currentobjects():
@@ -664,7 +678,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         glMatrixMode(GL_MODELVIEW)
 
         placements=self.placements[self.tile]
-        if not self.picklist: self.prepareselect()
+        if not self.picklist:
+            if self.profilenext:
+                from profile import run
+                self.profilenext=False
+                runctx('self.prepareselect()', globals(), locals(), 'profile.dmp')
+            else:
+                self.prepareselect()
         glSelectBuffer(self.selectdepth)
         glRenderMode(GL_SELECT)
         glCallList(self.picklist)
@@ -1692,6 +1712,7 @@ def csgtcombine(coords, vertex, weight):
         return vertex[0]
     elif vertex[0][0][0]==vertex[1][0][0] and vertex[0][0][2]==vertex[1][0][2] and vertex[0][1]:
         # Height discontinuity in terrain mesh - eg LIEE - wtf!
+        #assert vertex[0][1]!=vertex[1][1]
         assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
         return vertex[0]
 

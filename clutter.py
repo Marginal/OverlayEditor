@@ -212,10 +212,10 @@ class Polygon(Clutter):
         if lon==None:
             Clutter.__init__(self, name)
             self.nodes=nodes		# [[(editable, lon,lat,...)]]
-            if __debug__:
-                for w in nodes:
-                    for n in w:
-                        if len(n)<3: print nodes
+            #if __debug__:
+            #    for w in nodes:
+            #        for n in w:
+            #            if len(n)<3: print nodes
         else:
             lat=nodes
             Clutter.__init__(self, name, lat, lon)
@@ -935,7 +935,6 @@ class Facade(Fitted):
         
     def layout(self, tile, options, vertexcache, selectednode=None):
         selectednode=Fitted.layout(self, tile, options, vertexcache, selectednode)
-        print self.points
         self.quads=[]
         self.roof=[]
         try:
@@ -1436,23 +1435,22 @@ def csgtvertex(vertex, data):
 
 def csgtcombine(coords, vertex, weight):
     # interp height & UV at coords from vertices (location, ismesh, uv)
-
-    print
-    print vertex[0], weight[0]
-    print vertex[1], weight[1]
-    print vertex[2], weight[2]
-    print vertex[3], weight[3]
+    #print
+    #print vertex[0], weight[0]
+    #print vertex[1], weight[1]
+    #print vertex[2], weight[2]
+    #print vertex[3], weight[3]
 
     # check for just two adjacent mesh triangles
     if vertex[0]==vertex[1]:
         # common case, or non-simple
         #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
-        print vertex[0], " ->"
+        #print vertex[0], " ->"
         return vertex[0]
     elif vertex[0][0][0]==vertex[1][0][0] and vertex[0][0][2]==vertex[1][0][2] and vertex[0][1]:
         # Height discontinuity in terrain mesh - eg LIEE - wtf!
         #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
-        print vertex[0], " ->"
+        #print vertex[0], " ->"
         return vertex[0]
 
     # intersection of two lines - use terrain mesh line for height
@@ -1489,7 +1487,7 @@ def csgtcombine(coords, vertex, weight):
             uv=(p3[2][0]+ratio*(p4[2][0]-p3[2][0]),
                 p3[2][1]+ratio*(p4[2][1]-p3[2][1]))
 
-    print ([coords[0],y,coords[2]], True, uv), " ->"
+    #print ([coords[0],y,coords[2]], True, uv), " ->"
     #assert(uv)	# only if draped
     return ([coords[0],y,coords[2]], True, uv)
 

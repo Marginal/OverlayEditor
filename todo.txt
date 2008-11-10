@@ -1,3 +1,4 @@
+prepareselect - at end of drag, not if selected (cos keyboard)
 insert node - average two _editable_ nodes
 
 fix nopoly - use drawmultielements (1.4)
