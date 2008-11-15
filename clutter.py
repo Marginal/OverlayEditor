@@ -155,20 +155,19 @@ class Object(Clutter):
         else:
             return '%s  Hdg: %-5.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg)
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         obj=self.definition
         glPushMatrix()
         glTranslatef(self.x, self.y, self.z)
-        glRotatef(-self.hdg, 0.0,1.0,0.0)
+        if self.hdg: glRotatef(-self.hdg, 0.0,1.0,0.0)
         if picking:
             # cull face disabled
             glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
         else:
             glBindTexture(GL_TEXTURE_2D, obj.texture)
-            if obj.poly and not (selected or picking or nopoly):
+            if obj.poly and not selected:
                 #glDepthMask(GL_FALSE) - doesn't work with inwards facing faces
                 glEnable(GL_POLYGON_OFFSET_FILL)
-                glPolygonOffset(-1, -1)
             if obj.culled:
                 glEnable(GL_CULL_FACE)
                 glDrawArrays(GL_TRIANGLES, obj.base, obj.culled)
@@ -176,7 +175,7 @@ class Object(Clutter):
                 glDisable(GL_CULL_FACE)
                 glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
                 glEnable(GL_CULL_FACE)
-            if obj.poly and not (selected or picking or nopoly):
+            if obj.poly and not selected:
                 #glDepthMask(GL_TRUE)
                 glDisable(GL_POLYGON_OFFSET_FILL)
         glPopMatrix()
@@ -262,17 +261,19 @@ class Polygon(Clutter):
         else:
             return '%s  Param: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, picking, nopoly=False, col=(0.25, 0.25, 0.25)):
+    def draw(self, selected, picking, col=(0.25, 0.25, 0.25)):
         # just draw outline
-        if self.nonsimple:
-            col=(1.0,0.25,0.25)	# override colour if nonsimple
         if not picking:
             glBindTexture(GL_TEXTURE_2D, 0)
+            if not selected:
+                if self.nonsimple:
+                    glColor3f(1.0,0.25,0.25)	# override colour if nonsimple
+                else:
+                    glColor3f(*col)
         glDisable(GL_DEPTH_TEST)
         for winding in self.points:
             glBegin(GL_LINE_LOOP)
             for p in winding:
-                if not selected and not picking: glColor3f(*col)
                 glVertex3f(p[0],p[1],p[2])
             glEnd()
         glEnable(GL_DEPTH_TEST)
@@ -442,10 +443,10 @@ class Beach(Polygon):
         Polygon.load(self, lookup, defs, vertexcache, usefallback=True)
         self.definition.layer=ClutterDef.BEACHESLAYER
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         # Don't draw selected so can't be picked
-        if not picking: Polygon.draw(self, selected, picking, nopoly)
-    
+        if not picking: Polygon.draw(self, selected, picking)
+
 
 class Draped(Polygon):
 
@@ -484,19 +485,18 @@ class Draped(Polygon):
         else:
             return '%s  Tex hdg: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         drp=self.definition
         if self.nonsimple:
-            Polygon.draw(self, selected, picking, nopoly)
+            Polygon.draw(self, selected, picking)
             return
         elif picking:
-            Polygon.draw(self, selected, picking, nopoly)	# for outline
+            Polygon.draw(self, selected, picking)	# for outline
         else:
             glBindTexture(GL_TEXTURE_2D, drp.texture)
-        if not (selected or picking or nopoly):
+        if not (selected or picking):
             glDepthMask(GL_FALSE)	# offset mustn't update depth
             glEnable(GL_POLYGON_OFFSET_FILL)
-            glPolygonOffset(-1, -1)
         glBegin(GL_TRIANGLES)
         if picking:
             for t in self.tris:
@@ -506,7 +506,7 @@ class Draped(Polygon):
                 glTexCoord2f(*t[2])
                 glVertex3f(*t[0])
         glEnd()
-        if not (selected or picking or nopoly):
+        if not (selected or picking):
             glDepthMask(GL_TRUE)
             glDisable(GL_POLYGON_OFFSET_FILL)
         
@@ -818,8 +818,8 @@ class Exclude(Polygon):
         # changed adjacent nodes, so do full layout immediately
         return self.layout(tile, options, vertexcache, node)
 
-    def draw(self, selected, picking, nopoly=False):
-        Polygon.draw(self, selected, picking, nopoly, (0.75, 0.25, 0.25))
+    def draw(self, selected, picking):
+        Polygon.draw(self, selected, picking, (0.75, 0.25, 0.25))
 
 
 class Facade(Polygon):
@@ -865,13 +865,13 @@ class Facade(Polygon):
         else:
             return '%s  Height: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         fac=self.definition
         if self.nonsimple or (not self.quads and not self.roof):
-            Polygon.draw(self, selected, picking, nopoly)
+            Polygon.draw(self, selected, picking)
             return
         elif picking:
-            Polygon.draw(self, selected, picking, nopoly)
+            Polygon.draw(self, selected, picking)
         else:
             glBindTexture(GL_TEXTURE_2D, fac.texture)
             if fac.two_sided:
@@ -1125,8 +1125,8 @@ class Forest(Polygon):
         else:
             return '%s  Density: %-4.1f%%  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
 
-    def draw(self, selected, picking, nopoly=False):
-        Polygon.draw(self, selected, picking, nopoly, (0.25,0.75,0.25))
+    def draw(self, selected, picking):
+        Polygon.draw(self, selected, picking, (0.25,0.75,0.25))
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
@@ -1172,19 +1172,18 @@ class Line(Polygon):
                 oc='Open'
             return '%s  %s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         drp=self.definition
         if self.nonsimple:
-            Polygon.draw(self, selected, picking, nopoly)
+            Polygon.draw(self, selected, picking)
             return
         elif picking:
-            Polygon.draw(self, selected, picking, nopoly)	# for outline
+            Polygon.draw(self, selected, picking)	# for outline
         else:
             glBindTexture(GL_TEXTURE_2D, drp.texture)
-        if not (selected or picking or nopoly):
+        if not (selected or picking):
             glDepthMask(GL_FALSE)	# offset mustn't update depth
             glEnable(GL_POLYGON_OFFSET_FILL)
-            glPolygonOffset(-1, -1)
         glBegin(GL_TRIANGLES)
         if picking:
             for t in self.tris:
@@ -1194,7 +1193,7 @@ class Line(Polygon):
                 glTexCoord2f(*t[2])
                 glVertex3f(*t[0])
         glEnd()
-        if not (selected or picking or nopoly):
+        if not (selected or picking):
             glDepthMask(GL_TRUE)
             glDisable(GL_POLYGON_OFFSET_FILL)
         
@@ -1277,7 +1276,7 @@ class Network(Polygon):
         else:
             return '%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes))
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         return	# XXX disable networks
         # just draw outline
         if picking:
@@ -1292,7 +1291,7 @@ class Network(Polygon):
             glVertex3f(p[0],p[1],p[2])
         glEnd()
         glEnable(GL_DEPTH_TEST)
-        if not selected and not picking:
+        if not (selected or picking):
             glColor3f(0.8, 0.8, 0.8)	# restore
 
     def drawnodes(self, selectednode):

@@ -398,12 +398,13 @@ class TexCache:
         self.texs={}
         self.terraintexs=[]	# terrain textures will not be reloaded
         # Must be after init
+        self.maxtexsize=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
         self.npot=glInitTextureNonPowerOfTwoARB()
         self.compress=glInitTextureCompressionARB()
         self.s3tc=self.compress and glInitTextureCompressionS3tcEXT()
         self.bgra=glInitBgraEXT()
         # Texture compression appears severe on Mac, but this doesn't help
-        #if self.compress: glHint(GL_TEXTURE_COMPRESSION_HINT_ARB, GL_NICEST)
+        if self.compress: glHint(GL_TEXTURE_COMPRESSION_HINT_ARB, GL_NICEST)
         if glGetString(GL_VERSION) >= '1.2':
             self.clampmode=GL_CLAMP_TO_EDGE
         else:
@@ -454,7 +455,7 @@ class TexCache:
 
                 if pflags&DDPF_FOURCC:
                     # http://oss.sgi.com/projects/ogl-sample/registry/EXT/texture_compression_s3tc.txt
-                    if not self.s3tc: raise IOError, 'DXT compression not supported'
+                    if not self.s3tc: raise IOError, 'This video driver does not support DXT compression'
                     if fourcc=='DXT1':
                         if not (sflags&(DDSD_PITCH|DDSD_LINEARSIZE)):
                             size=width*height/2
@@ -516,14 +517,14 @@ class TexCache:
                 elif pflags&DDPF_RGB:	# uncompressed
                     assert size==width*height*bits/8	# pitch appears unreliable
                     if bits==24 and redmask==0xff0000 and greenmask==0x00ff00 and bluemask==0x0000ff:
-                        if not self.bgra: raise IOError, 'BGR format not supported'
+                        if not self.bgra: raise IOError, 'This video driver does not support BGR format'
                         format=GL_BGR_EXT
                         iformat=GL_RGB
                     elif bits==24 and redmask==0x0000ff and greenmask==0x00ff00 and bluemask==0xff0000:
                         format=GL_RGB
                         iformat=GL_RGB
                     elif bits==32 and pflags&DDPF_ALPHAPIXELS and alphamask==0xff000000L and redmask==0x00ff0000 and greenmask==0x0000ff00 and bluemask==0x000000ff:
-                        if not self.bgra: raise IOError, 'BGRA format not supported'
+                        if not self.bgra: raise IOError, 'This video driver does not support BGRA format'
                         format=GL_BGRA_EXT
                         iformat=GL_RGBA
                     elif bits==32 and not pflags&DDPF_ALPHAPIXELS and redmask==0x00ff0000 and greenmask==0x0000ff00 and bluemask==0x000000ff:
@@ -554,8 +555,8 @@ class TexCache:
                 for i in [0,1]:
                     l=log(size[i],2)
                     if l!=int(l): size[i]=2**(1+int(l))
-                    if size[i]>glGetIntegerv(GL_MAX_TEXTURE_SIZE):
-                        size[i]=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
+                    if size[i]>self.maxtexsize:
+                        size[i]=self.maxtexsize
                     if size!=[image.size[0],image.size[1]]:
                         if not fixsize:
                             raise IOError, "Width and/or height is not a power of two"
@@ -612,12 +613,12 @@ class TexCache:
         except IOError, e:
             if e.errno==2:
                 if __debug__: print "%s file not found" % basename(path)
-                raise IOError, (2, "%s not found" % path)
+                raise IOError, (2, "%s: %s" % (path, e.strerror))
             elif e.strerror:
                 if __debug__: print "%s %s" % (basename(path), e.strerror)
                 raise IOError, (e.errno, e.strerror)
             else:	# PIL "cannot read interlaced PNG files"
-                if __debug__: print "%s %s" % (basename(path), e)
+                if __debug__: print "%s: %s" % (basename(path), e)
                 raise IOError, (0, str(e))
         except GLerror, e:
             if __debug__: print "%s %s" % (basename(path), e)
@@ -665,12 +666,15 @@ class VertexCache:
     def realize(self, context):
         # need to call this before drawing
         if not self.valid:
+            if __debug__: clock=time.clock()	# Processor time
             if self.varray:
                 glVertexPointerf(self.varray)
                 glTexCoordPointerf(self.tarray)
             else:	# need something or get conversion error
                 glVertexPointerf([[0,0,0]])
                 glTexCoordPointerf([[0,0]])
+            if __debug__:
+                print "%6.3f time to realize arrays" % (time.clock()-clock)
             self.valid=True
 
     def allocate(self, vdata, tdata):
