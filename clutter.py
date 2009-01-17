@@ -48,7 +48,9 @@ from math import atan2, ceil, cos, floor, hypot, pi, radians, sin
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from sys import maxint
-from traceback import print_exc
+if __debug__:
+    from traceback import print_exc
+
 try:
     # apparently older PyOpenGL version didn't define gluTessVertex
     gluTessVertex
@@ -345,6 +347,7 @@ class Polygon(Clutter):
             gluTessEndPolygon(tess)
         except:
             # Combine required -> not simple
+            if __debug__: print "Polygon layout failed"
             self.nonsimple=True
         
         return selectednode
@@ -1131,6 +1134,24 @@ class Forest(Polygon):
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
         if self.param>255: self.param=255
+
+    def addwinding(self, tile, options, vertexcache, size, hdg):
+        minrad=0.000007071*size
+        for j in self.nodes[0]:
+            minrad=min(minrad, abs(self.lon-j[0]), abs(self.lat-j[1]))
+        i=len(self.nodes)
+        h=radians(hdg)
+        self.nodes.append([])
+        for j in [h+5*pi/4, h+7*pi/4, h+pi/4, h+3*pi/4]:
+            self.nodes[i].append((round2res(self.lon+sin(j)*minrad),
+                                  round2res(self.lat+cos(j)*minrad)))
+        return self.layout(tile, options, vertexcache, (i,0))
+
+    def delwinding(self, tile, options, vertexcache, selectednode):
+        (i,j)=selectednode
+        if not i: return False	# don't delete outer winding
+        self.nodes.pop(i)
+        return self.layout(tile, options, vertexcache, (i-1,0))
 
 
 class Line(Polygon):
