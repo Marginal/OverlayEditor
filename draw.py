@@ -1,3 +1,4 @@
+import OpenGL	# for __version__
 from OpenGL.GL import *
 from OpenGL.GLU import *
 
@@ -20,15 +21,8 @@ import wx
 import wx.glcanvas
 if platform=='darwin':
     from os import uname	# not defined in win32 builds
-
 if __debug__:
     import time
-    try:
-        # Not defined in PyOpenGL 2.x. Only applies when numpy installed
-        from OpenGL.arrays import numpymodule
-        numpymodule.NumpyHandler.ERROR_ON_COPY = True
-    except:
-        pass
 
 from files import VertexCache, sortfolded, readApt
 from fixed8x13 import fixed8x13
@@ -114,6 +108,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.selectednode=None	# Selected node
         self.selections=[]	# List for picking
         self.selectsaved=[]	# Selection at start of ctrl drag box
+        self.selectmax=4096	# max 1024 names
         self.draginert=True
         self.dragx=wx.SystemSettings_GetMetric(wx.SYS_DRAG_X)
         self.dragy=wx.SystemSettings_GetMetric(wx.SYS_DRAG_Y)
@@ -162,7 +157,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.nopolyosinlist=False
 
         self.vertexcache=None
-        self.selectdepth=64*4
         self.multisample=False
 
         wx.EVT_PAINT(self, self.OnPaint)
@@ -185,7 +179,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Setup state. Under X must be called after window is shown
         self.SetCurrent()
         self.vertexcache=VertexCache()	# member so can free resources
-        self.selectdepth=glGetIntegerv(GL_MAX_NAME_STACK_DEPTH)*4
         try:
             glInitMultisampleARB()
             self.multisample=glIsEnabled(GL_MULTISAMPLE_ARB)
@@ -349,7 +342,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         -self.d*size.y/size.x, self.d*size.y/size.x,
                         -self.d*self.cliprat, self.d*self.cliprat)
                 glMatrixMode(GL_MODELVIEW)
-                glSelectBuffer(65536)	# = 16384 selections?
+                glSelectBuffer(self.selectmax)
                 glRenderMode(GL_SELECT)
                 glInitNames()
                 glPushName(0)
@@ -639,7 +632,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 -self.d*self.cliprat, self.d*self.cliprat)
         glMatrixMode(GL_MODELVIEW)
 
-        glSelectBuffer(self.selectdepth)
+        glSelectBuffer(self.selectmax)
         glRenderMode(GL_SELECT)
         glInitNames()
         glPushName(0)
@@ -676,7 +669,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if trysel:
                 #print "selnodes",
                 # First look for nodes in same polygon
-                glSelectBuffer(self.selectdepth)
+                glSelectBuffer(self.selectmax)
                 glRenderMode(GL_SELECT)
                 glInitNames()
                 glPushName(0)
@@ -746,7 +739,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.Refresh()
         self.frame.ShowSel()
-        
+
     def latlon2m(self, lat, lon):
         return(((lon-self.centre[1])*onedeg*cos(radians(lat)),
                 (self.centre[0]-lat)*onedeg))
@@ -1324,7 +1317,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                     for i in range(0,len(pavements),3):
                                         gluTessBeginContour(csgt)
                                         for j in range(i,i+3):
-                                            gluTessVertex(csgt, [pavements[j][0],0,pavements[j][2]], pavements[j])
+                                            gluTessVertex(csgt, [pavements[j][0][0],0,pavements[j][0][2]], pavements[j])
                                         gluTessEndContour(csgt)
                                     for meshtri in meshtris:
                                         (meshpt, coeffs)=meshtri
@@ -1373,7 +1366,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                             for i in range(0,len(pavements),3):
                                 gluTessBeginContour(csgt)
                                 for j in range(i,i+3):
-                                    gluTessVertex(csgt, [pavements[j][0],0,pavements[j][2]], pavements[j])
+                                    gluTessVertex(csgt, [pavements[j][0][0],0,pavements[j][0][2]], pavements[j])
                                 gluTessEndContour(csgt)
                             for meshtri in meshtris:
                                 (meshpt, coeffs)=meshtri
@@ -1632,10 +1625,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         #glFinish()	# redundant
         mz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
         if mz==1.0: mz=0.5	# treat off the tile edge as sea level
-        (x,y,z)=gluUnProject(mx,my,mz,
-                             glGetDoublev(GL_MODELVIEW_MATRIX),
-                             glGetDoublev(GL_PROJECTION_MATRIX),
-                             (0, 0, size[0], size[1]))
+        (x,y,z)=gluUnProject(mx,my,mz)
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
         glClear(GL_DEPTH_BUFFER_BIT)
         lat=round2res(self.centre[0]-z/onedeg)
