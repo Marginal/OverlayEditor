@@ -1,5 +1,6 @@
 import PIL.Image
 import PIL.PngImagePlugin, PIL.BmpImagePlugin, PIL.JpegImagePlugin 	# force for py2exe
+import OpenGL	# for __version__
 from OpenGL.GL import *
 from OpenGL.GL.EXT.bgra import glInitBgraEXT, GL_BGR_EXT, GL_BGRA_EXT
 from OpenGL.GL.ARB.texture_compression import glInitTextureCompressionARB, glCompressedTexImage2DARB, GL_COMPRESSED_RGB_ARB, GL_COMPRESSED_RGBA_ARB, GL_TEXTURE_COMPRESSION_HINT_ARB
@@ -17,6 +18,11 @@ try:
 except:	# not in 2.0.0.44
     def glInitTextureNonPowerOfTwoARB(): return False
 
+try:
+    from OpenGL.GL.ARB.vertex_buffer_object import glInitVertexBufferObjectARB, glGenBuffersARB, glBindBufferARB, glBufferDataARB, GL_ARRAY_BUFFER_ARB, GL_STATIC_DRAW_ARB
+except:
+    def glInitVertexBufferObjectARB(): return False
+
 import codecs
 from glob import glob
 from math import cos, log, pi, radians
@@ -27,10 +33,10 @@ from struct import unpack
 from sys import platform, maxint
 from traceback import print_exc, print_last
 import wx
+if OpenGL.__version__ >= '3':
+    from numpy import array, hstack, float32
 if __debug__:
     import time
-
-#from Numeric import array
 
 from clutterdef import BBox, KnownDefs, SkipDefs, NetworkDef
 from DSFLib import readDSF
@@ -94,15 +100,13 @@ def scanApt(filename):
         if not c: continue
         id=int(c[0])
         if id in [1,16,17]:		# Airport/Seaport/Heliport
-            if loc:
+            if code and loc:
                 airports[code]=(name,loc,offset)
                 code=name=loc=None
             offset=long(h.tell())	# cast to long for 64bit Linux
             code=c[4]#.decode('latin1')
             if len(code)>4: raise IOError	# X-Plane doesn't like
             name=(' '.join(c[5:])).decode('latin1')
-        elif id==14:	# Prefer tower location
-            loc=[float(c[1]),float(c[2])]
         elif id==18 and int(c[3]):	# Beacon - goes in nav
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), 0))
         elif id==19:	# Windsock - goes in nav
@@ -110,11 +114,11 @@ def scanApt(filename):
         elif id==21:	# VASI/PAPI - goes in nav
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
         elif id==99:
-            airports[code]=(name,loc,offset)
-            code=name=loc=None
             break
-        elif loc:
+        elif loc:	# Don't bother parsing past first location
             pass
+        elif id==14:	# Prefer tower location
+            loc=[float(c[1]),float(c[2])]
         elif id==10:	# Runway / taxiway
             loc=[float(c[1]),float(c[2])]
         elif id==100:	# 850 Runway
@@ -123,14 +127,14 @@ def scanApt(filename):
             loc=[(float(c[4])+float(c[7]))/2, (float(c[5])+float(c[8]))/2]
         elif id==102:	# 850 Helipad
             loc=[float(c[2]),float(c[3])]
-    if loc:	# No terminating 99
+    if code and loc:	# No terminating 99
         airports[code]=(name,loc,offset)
     h.close()
     return (airports, nav)
 
 # two modes of operation:
-# - without offset, return all airports and navs
-# - with offset, just return airport at offset
+# - without offset, return all airports and navs (used for custom apt.dats)
+# - with offset, just return airport at offset (used for global apt.dat)
 def readApt(filename, offset=None):
     airports={}	# (name, [lat,lon], [(lat,lon,hdg,length,width,stop,stop)]) by code
     nav=[]	# (type,lat,lon,hdg)
@@ -140,13 +144,13 @@ def readApt(filename, offset=None):
         h.seek(offset)
     else:
         if not h.readline().strip() in ['A','I']:
-            raise IOError
+            raise AssertionError, "The apt.dat file in this package is invalid."
         while True:	# NYEXPRO has a blank line here
             c=h.readline().split()
             if c: break
         ver=c[0]
         if not ver in ['600','703','715','810','850']:
-            raise IOError
+            raise AssertionError, "The apt.dat file in this package is invalid."
         ver=int(ver)
 
     code=name=loc=None
@@ -161,15 +165,17 @@ def readApt(filename, offset=None):
             pavement=[]
         if id in [1,16,17]:		# Airport/Seaport/Heliport
             if offset:	# reached next airport
+                if not run: raise AssertionError, "Airport %s does not have any runways." % code
                 h.close()
                 return run
-            if loc:
-                if not run: raise IOError
+            if code:
+                if code in airports: raise AssertionError, "Airport %s is listed more than once." % code
+                if not run: raise AssertionError, "Airport %s does not have any runways." % code
                 airports[code]=(name,loc,run)
                 code=name=loc=None
                 run=[]
             code=c[4].decode('latin1')
-            if len(code)>4: raise IOError	# X-Plane doesn't like
+            if len(code)>4: raise AssertionError, "Airport %s has an ICAO code longer than 4 characters." % code	# X-Plane doesn't like
             if not firstcode: firstcode=code
             name=(' '.join(c[5:])).decode('latin1')
         elif id==14:	# Prefer tower location
@@ -235,7 +241,9 @@ def readApt(filename, offset=None):
         elif id==21:	# VASI/PAPI - goes in nav
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
         elif id==99:
+            break
             if offset:	# reached next airport
+                if not run: raise AssertionError, "Airport %s does not have any runways." % code
                 h.close()
                 return run
             if not loc or not run: raise IOError
@@ -245,11 +253,15 @@ def readApt(filename, offset=None):
             break
     # No terminating 99
     if offset:
+        if not run: raise AssertionError, "Airport %s does not have any runways." % code
         h.close()
         return run
-    if loc:
-        if not run: raise IOError
+    if code:
+        if code in airports: raise AssertionError, "Airport %s is listed more than once." % code
+        if not run: raise AssertionError, "Airport %s does not have any runways." % code
         airports[code]=(name,loc,run)
+    else:
+        raise AssertionError, "The apt.dat file in this package is empty."
     h.close()
     return (airports, nav, firstcode)
 
@@ -325,6 +337,7 @@ def readLib(filename, objects, terrain):
                         objects[lib]={}
                     objects[lib][name]=obj
     except:
+        if __debug__: print_exc()
         if h: h.close()
             
 
@@ -506,7 +519,10 @@ class TexCache:
                         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,self.clampmode)
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-                    glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, data)
+                    if OpenGL.__version__ < '3':
+                        glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, data)
+                    else:
+                        glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, len(data), data)
                     #if __debug__: print "%6.3f" % (time.clock()-clock), basename(path), wrap, alpha, downsample, fixsize
 
                     self.texs[path]=id
@@ -528,7 +544,7 @@ class TexCache:
                         format=GL_BGRA_EXT
                         iformat=GL_RGBA
                     elif bits==32 and not pflags&DDPF_ALPHAPIXELS and redmask==0x00ff0000 and greenmask==0x0000ff00 and bluemask==0x000000ff:
-                        if not self.bgra: raise IOError, 'BGRA format not supported'
+                        if not self.bgra: raise IOError, 'This video driver does not support BGRA format'
                         format_GL_BGRA_EXT
                         iformat=GL_RGB
                     else:
@@ -647,6 +663,9 @@ class VertexCache:
         self.valid=False
         self.dsfdirs=None	# [custom, global, default]
 
+        self.vbo=(OpenGL.__version__ >= '3') and glInitVertexBufferObjectARB()
+        self.vertexbuf=0
+
     def reset(self, terrain, dsfdirs):
         # invalidate geometry and textures
         self.ter=terrain
@@ -667,10 +686,19 @@ class VertexCache:
         # need to call this before drawing
         if not self.valid:
             if __debug__: clock=time.clock()	# Processor time
-            if self.varray:
+            if self.vbo:
+                # PyOpenGL 3 with numpy
+                if __debug__: print "VBOs enabled!"
+                if not self.vertexbuf:
+                    self.vertexbuf=long(glGenBuffersARB(1))
+                glBindBufferARB(GL_ARRAY_BUFFER_ARB, self.vertexbuf)
+                glBufferDataARB(GL_ARRAY_BUFFER_ARB, hstack((array(self.tarray, float32), array(self.varray, float32))).flatten(), GL_STATIC_DRAW_ARB)
+                glInterleavedArrays(GL_T2F_V3F, 0, None)
+            elif self.varray:
                 glVertexPointerf(self.varray)
                 glTexCoordPointerf(self.tarray)
             else:	# need something or get conversion error
+                if __debug__: print "Empty arrays!"
                 glVertexPointerf([[0,0,0]])
                 glTexCoordPointerf([[0,0]])
             if __debug__:
@@ -722,7 +750,7 @@ class VertexCache:
                     self.nets[netkey]=newnets
                     break
             except:
-                pass
+                if __debug__: print_exc()
         if __debug__: print "%6.3f time in loadMesh" % (time.clock()-clock)
         if not key in self.mesh:
             for path in self.dsfdirs[1:]:
