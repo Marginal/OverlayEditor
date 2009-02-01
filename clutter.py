@@ -345,6 +345,9 @@ class Polygon(Clutter):
                     gluTessVertex(tess, [self.points[i][j][0], 0, self.points[i][j][2]], (self.points[i][j], False, None))
                 gluTessEndContour(tess)
             gluTessEndPolygon(tess)
+            if not tris:
+                if __debug__: print "Polygon layout failed"
+                self.nonsimple=True
         except:
             # Combine required -> not simple
             if __debug__: print "Polygon layout failed"
@@ -628,15 +631,17 @@ class Draped(Polygon):
                 gluTessEndContour(tess)
             gluTessEndPolygon(tess)
 
+            if not tris:
+                if __debug__: print "Draped layout failed:"
+                self.nonsimple=True
+                return selectednode
+
             if not options&Prefs.ELEVATION:
                 self.tris=tris
                 return selectednode
         except:
             # Combine required -> not simple
-            if __debug__:
-                print "Draped layout failed:"
-                print_exc()
-            self.tris=[]
+            if __debug__: print "Draped layout failed:"
             self.nonsimple=True
             return selectednode
 
