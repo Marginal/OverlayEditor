@@ -16,6 +16,8 @@ except:
 
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
 from os.path import basename, join
+from struct import unpack
+
 from sys import exit, platform, version
 import wx
 import wx.glcanvas
@@ -23,6 +25,7 @@ if platform=='darwin':
     from os import uname	# not defined in win32 builds
 if __debug__:
     import time
+    from traceback import print_exc
 
 from files import VertexCache, sortfolded, readApt
 from fixed8x13 import fixed8x13
@@ -37,7 +40,7 @@ f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 sband=12	# width of mouse scroll band around edge of window
 
-debugapt=False	# XXX
+debugapt=__debug__ and False
 
 
 class UndoEntry:
@@ -101,12 +104,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.meshlist=0
         
         self.mousenow=None	# Current position (used in timer and drag)
-        self.selected=[]	# selected placements
+        self.selected=[]	# list of selected placements
         self.clickmode=None
         self.clickpos=None	# Location of mouse down
         self.clickctrl=False	# Ctrl was held down
         self.selectednode=None	# Selected node
-        self.selections=[]	# List for picking
+        self.selections=[]	# List of hits for cycling picking
         self.selectsaved=[]	# Selection at start of ctrl drag box
         self.selectmax=4096	# max 1024 names
         self.draginert=True
@@ -189,13 +192,14 @@ class MyGL(wx.glcanvas.GLCanvas):
         glDepthFunc(GL_LESS)
         glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
-        #if debugapt: glLineWidth(2.0)
+        if debugapt: glLineWidth(2.0)
         #glLineStipple(1, 0x0f0f)	# for selection drag
         glPointSize(4.0)		# for nodes
         glFrontFace(GL_CW)
         glPolygonMode(GL_FRONT, GL_FILL)
         glCullFace(GL_BACK)
-        glPixelStorei(GL_UNPACK_ALIGNMENT,1)	# byte aligned
+        glPixelStorei(GL_UNPACK_ALIGNMENT,1)	# byte aligned glBitmap
+        glPixelStorei(GL_PACK_ALIGNMENT,1)	# byte aligned glReadPixels
         glReadBuffer(GL_BACK)	# for unproject
         #glPixelStorei(GL_UNPACK_LSB_FIRST,1)
         glEnable(GL_TEXTURE_2D)
@@ -417,12 +421,12 @@ class MyGL(wx.glcanvas.GLCanvas):
 
 
     def OnPaint(self, event):
-        dc = wx.PaintDC(self)	# Tell the window system that we're on the case
+        if event: wx.PaintDC(self)	# Tell the window system that we're on the case
         size = self.GetClientSize()
         #print "pt", size
         if size.width<=0: return	# may be junk on startup
         self.SetCurrent()
-        self.SetFocus()		# required for GTK
+        self.SetFocus()			# required for GTK
         
         glMatrixMode(GL_PROJECTION)
         glViewport(0, 0, *size)
@@ -462,7 +466,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         glCallList(self.meshlist)
 
         # Objects and Polygons
-        if __debug__: clock=time.clock()	# Processor time
+        if __debug__:
+            import time
+            clock=time.clock()	# Processor time
         placements=self.placements[self.tile]
         glEnable(GL_CULL_FACE)
         glPolygonOffset(-1, -1)
@@ -486,13 +492,15 @@ class MyGL(wx.glcanvas.GLCanvas):
                     glDepthMask(GL_FALSE)
                     glEnable(GL_POLYGON_OFFSET_FILL)
                     glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
-                    #if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+                    if __debug__:
+                        if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
                     glBindTexture(GL_TEXTURE_2D, self.vertexcache.texcache.get('Resources/surfaces.png'))
                     glDrawArrays(GL_TRIANGLES, base, length)
                     glDepthMask(GL_TRUE)
                     glDisable(GL_POLYGON_OFFSET_FILL)
                     glPolygonOffset(-1, -1)
-                    #if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
+                    if __debug__:
+                        if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
         if __debug__:
             print "%6.3f time to draw" % (time.clock()-clock)
 
@@ -605,6 +613,62 @@ class MyGL(wx.glcanvas.GLCanvas):
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
 
 
+    def newselect(self):
+        if __debug__: clock=time.clock()	# Processor time
+        size = self.GetClientSize()
+        if False:#XXX fixme self.clickmode==ClickModes.DragBox:
+            # maths goes wrong if zero-sized box
+            if self.clickpos[0]==self.mousenow[0]: self.mousenow[0]+=1
+            if self.clickpos[1]==self.mousenow[1]: self.mousenow[1]-=1
+            gluPickMatrix((self.clickpos[0]+self.mousenow[0])/2,
+                          size[1]-1-(self.clickpos[1]+self.mousenow[1])/2,
+                          abs(self.clickpos[0]-self.mousenow[0]),
+                          abs(self.clickpos[1]-self.mousenow[1]),
+                          (0, 0, size[0], size[1]))
+
+        placements=self.placements[self.tile]
+
+        # Click region must be even for 
+        # XXX check the -1 alignment with mouse cursor on Windows
+        glScissor(self.clickpos[0]-2, size[1]-2-self.clickpos[1], 5,5)
+        glEnable(GL_SCISSOR_TEST)
+        if self.multisample: glDisable(GL_MULTISAMPLE_ARB)
+        glDisable(GL_LINE_SMOOTH)
+	glDisable(GL_DITHER)
+        glClearColor(0.0, 0.0, 1.0, 0.0)	# Impossible value
+        glClear(GL_COLOR_BUFFER_BIT)
+        glDisable(GL_TEXTURE_2D)
+        glDisable(GL_CULL_FACE)
+        glDepthMask(GL_FALSE)			# So don't need to clear depth
+        #glDisable(GL_DEPTH_TEST)		# and don't need to do this
+
+        # Click:
+        # Select higher layer items first
+        selections=[]
+        for i in range(len(placements)):	# favour higher layers
+            if placements[i]:
+                glClear(GL_COLOR_BUFFER_BIT)
+                for j in range(len(placements[i])):
+                    #if i==82: print placements[i][j], j, j%32*8, (j%1024)/32*8, j/1024*8
+                    glColor3ub(j%32*8, (j%1024)/32*8, j/1024*8)	# 5bits/color
+                    placements[i][j].draw(False, True)
+                data=unpack('75B',glReadPixels(self.clickpos[0]-2, size[1]-2-self.clickpos[1], 5,5, GL_RGB, GL_UNSIGNED_BYTE))
+                #print i, len(data), data
+                for k in range(0, 75, 3):
+                    j=(data[k]/8)+(data[k+1]/8)*32+(data[k+2]/8)*1024
+                    if j!=(255/8*1024):
+                        print j, placements[i][j]
+
+        self.SwapBuffers()
+
+        glClear(GL_COLOR_BUFFER_BIT)
+        #glEnable(GL_DEPTH_TEST)
+        if self.multisample: glEnable(GL_MULTISAMPLE_ARB)
+        glEnable(GL_LINE_SMOOTH)
+        glDisable(GL_SCISSOR_TEST)
+        if __debug__: print "%6.3f time in select" %(time.clock()-clock)
+
+
     def select(self):
         #print "sel", 
         #if not self.currentobjects():
@@ -652,10 +716,10 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         selections=[]
         try:
-            for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
-                selections.append(placements[int(names)>>24][int(names)&0xffffff])
+            for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
+                selections.append(placements[int(name)>>24][int(name)&0xffffff])
         except:	# overflow
-            pass
+            if __debug__: print_exc()
 
         # Select poly node?
         self.selectednode=None
@@ -676,8 +740,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 trysel.picknodes()
                 selectnodes=[]
                 try:
-                    for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
-                        selectnodes.append((int(names)>>24, int(names)&0xffffff))
+                    for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
+                        selectnodes.append((int(name)>>24, int(name)&0xffffff))
                 except:	# overflow
                     pass
                 if selectnodes:
@@ -1453,7 +1517,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnable(GL_CULL_FACE)
             glDisable(GL_POLYGON_OFFSET_FILL)
             polystate=0
-            #if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+            if __debug__:
+                if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
             if not self.options&Prefs.ELEVATION:
                 glPushMatrix()
                 glScalef(1,0,1)		# Defeat elevation data
@@ -1479,7 +1544,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glDrawArrays(GL_TRIANGLES, base, number)
             if not self.options&Prefs.ELEVATION:
                 glPopMatrix()
-            #if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
+            if __debug__:
+                if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
 
             # networks
             glDisable(GL_TEXTURE_2D)
@@ -1515,7 +1581,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     (x,z)=self.latlon2m(lat,lon)
                     y=self.vertexcache.height(newtile,options,x,z)
                     glBindTexture(GL_TEXTURE_2D, definition.texture)
-                    if definition.poly and not self.nopolyosinlist and not polystate:
+                    if False: # was definition.poly and not self.nopolyosinlist and not polystate:
                         glPolygonOffset(-1, -1)
                         glEnable(GL_POLYGON_OFFSET_FILL)
                         polystate=definition.poly
@@ -1529,7 +1595,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     else:
                         seq=[(0,0)]
                     for (xinc,zinc) in seq:
-                        if self.nopolyosinlist:
+                        if True: # was self.nopolyosinlist:
                             glDisable(GL_DEPTH_TEST)
                         else:
                             glEnable(GL_POLYGON_OFFSET_FILL)

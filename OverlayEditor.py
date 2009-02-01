@@ -9,6 +9,7 @@ import sys	# for path
 from sys import exit, argv, executable, platform, version
 if __debug__:
     import time
+    from traceback import print_exc
 
 if platform.lower().startswith('linux') and not getenv("DISPLAY"):
     print "Can't run: DISPLAY is not set"
@@ -30,6 +31,14 @@ from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
 
 try:
     import OpenGL
+    if OpenGL.__version__ >= '3':
+        # Not defined in PyOpenGL 2.x.
+        if __debug__ and False:
+            OpenGL.ERROR_ON_COPY =True	# only applies to numpy arrays
+        else:
+            OpenGL.ERROR_CHECKING=False	# don't check OGL errors for speed
+        import OpenGL.arrays.numpymodule
+        import OpenGL.arrays.ctypesarrays
 except:
     if platform=='darwin':
         from EasyDialogs import Message
@@ -1128,7 +1137,10 @@ class MainWindow(wx.Frame):
         elif event.m_keyCode==wx.WXK_F1 and platform!='darwin':
             self.OnHelp(event)
         else:
-            #if __debug__: print "Unknown key", event.m_keyCode
+            if __debug__:
+                if event.m_keyCode==ord('P'):
+                    from cProfile import runctx
+                    runctx('self.canvas.OnPaint(None)', globals(), locals(), 'profile.dmp')
             event.Skip(True)
             return
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
@@ -1328,6 +1340,9 @@ class MainWindow(wx.Frame):
                     (self.airports,self.nav)=scanApt(mainaptdat)
                     if __debug__: print "%6.3f time in global apt" % (time.clock()-clock)
                 except:
+                    if __debug__:
+                        print "Invalid apt.dat:"
+                        print_exc()
                     self.nav=[]
                     myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
                 try:
@@ -1396,7 +1411,13 @@ class MainWindow(wx.Frame):
                 # get start location
                 if prefs.package and apt[:-23].endswith(sep+prefs.package) and thiscode and not pkgloc:
                     (name, pkgloc, run)=thisapt[thiscode]
+            except AssertionError, e:
+                if prefs.package and apt[:-23].endswith(sep+prefs.package):
+                    myMessageBox(e.message, "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
             except:
+                if __debug__:
+                    print "Invalid %s" % apt
+                    print_exc()
                 if prefs.package and apt[:-23].endswith(sep+prefs.package):
                     myMessageBox("The apt.dat file in this package is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
 
@@ -1725,10 +1746,31 @@ if __debug__:
             frame.menubar.Enable(wx.ID_REFRESH,True)
 
 
-# Load data files
-frame.Update()		# Let window draw first
-frame.OnReload(False, prefs.package)
-app.MainLoop()
+if False:	# XXX trace
+    from trace import Trace
+    from _winreg import OpenKey, QueryValueEx, HKEY_CURRENT_USER, REG_SZ, REG_EXPAND_SZ
+    handle=OpenKey(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders\\')
+    (v,t)=QueryValueEx(handle, 'Desktop')
+    handle.Close()
+    if t==REG_EXPAND_SZ:
+        dirs=v.split('\\')
+        for i in range(len(dirs)):
+            if dirs[i][0]==dirs[i][-1]=='%':
+                dirs[i]=getenv(dirs[i][1:-1],dirs[i])
+        v='\\'.join(dirs)
+    outfile=join(v, appname+'.log')
+    if exists(outfile): unlink(outfile)
+    frame.Update()		# Let window draw first
+    frame.OnReload(False, prefs.package)
+    sys.stdout=open(outfile, 'wt', 0)	# unbuffered
+    Trace(count=0, trace=1,
+          ignoremods=['DSFLib','files', 'codecs','fnmatch','glob','ntpath']
+          ).runfunc(app.MainLoop)
+else:
+    # Load data files
+    frame.Update()		# Let window draw first
+    frame.OnReload(False, prefs.package)
+    app.MainLoop()
 
 # Save prefs
 prefs.write()

@@ -581,6 +581,7 @@ class TexCache:
 
                 if downsample and image.size[0]>4 and image.size[1]>4:
                     image=image.resize((image.size[0]/4,image.size[1]/4), PIL.Image.NEAREST)
+                
                 if image.mode=='RGBA':
                     data = image.tostring("raw", 'RGBA')
                     format=iformat=GL_RGBA
@@ -590,7 +591,7 @@ class TexCache:
                 elif image.mode=='LA' or 'transparency' in image.info:
                     image=image.convert('RGBA')
                     data = image.tostring("raw", 'RGBA')
-                    format=iformat=GL_RGBA                    
+                    format=iformat=GL_RGBA
                 else:
                     image=image.convert('RGB')
                     data = image.tostring("raw", 'RGB')
@@ -599,7 +600,7 @@ class TexCache:
                 height=image.size[1]
 
             # variables used: data, format, iformat, width, height
-            if not alpha:
+            if not alpha:	# Discard alpha
                 iformat=GL_RGB
             if self.compress:
                 if iformat==GL_RGB:
@@ -663,7 +664,7 @@ class VertexCache:
         self.valid=False
         self.dsfdirs=None	# [custom, global, default]
 
-        self.vbo=(OpenGL.__version__ >= '3') and glInitVertexBufferObjectARB()
+        self.vbo=False # XXX (OpenGL.__version__ >= '3') and glInitVertexBufferObjectARB()
         self.vertexbuf=0
 
     def reset(self, terrain, dsfdirs):
