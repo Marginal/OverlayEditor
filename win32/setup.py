@@ -105,12 +105,14 @@ setup(name='OverlayEditor',
                             'bundle_files':True,
                             'compressed':True,
                             'excludes':['Carbon', 'tcl', 'Tkinter', 'mx','socket','urllib','webbrowser',
+                                        'curses', 'distutils', 'email', 'hotshot', 'setuptools', 'win32',	# Python2.5
                                         'Numeric', 'dotblas', 'numarray', 'scipy', 'nose'],	# Old Numeric stuff
                             'packages':['encodings.ascii','encodings.mbcs','encodings.utf_8','encodings.latin_1',	# latin_1 for wx.lib.masked.NumCtrl
                                         'OpenGL.platform.win32', 'OpenGL.arrays.nones', 'OpenGL.arrays.strings', 'OpenGL.arrays.lists', 'OpenGL.arrays.numbers', 'OpenGL.arrays.ctypesparameters', 'OpenGL.arrays.ctypespointers',
                                         'numpy', 'ctypes.wintypes'],
-                            'optimize':0,#XXX 2,
+                            'optimize':2,
                             },
+
                  'py2app': {'argv_emulation':False,
                             'iconfile':'MacOS/OverlayEditor.icns',
                             'includes':['wx'],
