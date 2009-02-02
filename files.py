@@ -688,14 +688,24 @@ class VertexCache:
         if not self.valid:
             if __debug__: clock=time.clock()	# Processor time
             if self.vbo:
-                # PyOpenGL 3 with numpy
-                if __debug__: print "VBOs enabled!"
+                # PyOpenGL 3b8 with numpy - broken
+                if not self.vertexbuf:
+                    from OpenGL.arrays import vbo
+                    assert vbo.get_implementation()
+                    self.vertexbuf=vbo.VBO(hstack((array(self.tarray, float32), array(self.varray, float32))).flatten())
+                    if __debug__: print "VBOs enabled! %s" % self.vertexbuf
+                self.vertexbuf.bind()
+                glInterleavedArrays(GL_T2F_V3F, 0, self.vertexbuf)
+            elif False:
+                # PyOpenGL 3b6 with numpy - also broken
                 if not self.vertexbuf:
                     self.vertexbuf=long(glGenBuffersARB(1))
+                    if __debug__: print "VBOs enabled! %s" % self.vertexbuf
                 glBindBufferARB(GL_ARRAY_BUFFER_ARB, self.vertexbuf)
                 glBufferDataARB(GL_ARRAY_BUFFER_ARB, hstack((array(self.tarray, float32), array(self.varray, float32))).flatten(), GL_STATIC_DRAW_ARB)
                 glInterleavedArrays(GL_T2F_V3F, 0, None)
             elif self.varray:
+                #glInterleavedArrays(GL_T2F_V3F, 0, hstack((array(self.tarray, float32), array(self.varray, float32))).flatten())	# XXX requires numpy
                 glVertexPointerf(self.varray)
                 glTexCoordPointerf(self.tarray)
             else:	# need something or get conversion error
