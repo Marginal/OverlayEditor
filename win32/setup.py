@@ -1,11 +1,22 @@
 #!/usr/bin/python
 
-from files import appname, appversion
 from distutils.core import setup
 from glob import glob
 from os import listdir, name
-from sys import platform
+from os.path import basename, join, pardir
+import py2exe
+import sys
 
+sys.path.insert(0, join(sys.path[0], pardir))
+from version import appname, appversion
+
+# hack to bundle MSVCP71.dll
+origIsSystemDLL = py2exe.build_exe.isSystemDLL
+def isSystemDLL(pathname):
+    if basename(pathname).lower() in ("msvcp71.dll", "dwmapi.dll"):
+        return 0
+    return origIsSystemDLL(pathname)
+py2exe.build_exe.isSystemDLL = isSystemDLL
 
 # bogus crud to get WinXP "Visual Styles"
 manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
@@ -32,7 +43,7 @@ manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
           '</assembly>\n')
 
 
-if platform=='win32':
+if sys.platform=='win32':
     # http://www.py2exe.org/  Invoke with: setup.py py2exe
     import py2exe
     platdata=[('win32',
@@ -40,7 +51,7 @@ if platform=='win32':
                 ]),
               ]
 
-elif platform.lower().startswith('darwin'):
+elif sys.platform.lower().startswith('darwin'):
     # http://undefined.org/python/py2app.html  Invoke with: setup.py py2app
     import py2app
     platdata=[('MacOS',
@@ -102,8 +113,10 @@ setup(name='OverlayEditor',
                             'dll_excludes':['w9xpopen.exe'],
                             'bundle_files':True,
                             'compressed':True,
-                            'excludes':['Carbon', 'tcl', 'Tkinter', 'mx','socket','urllib','webbrowser'],
-                            'packages':['encodings.ascii','encodings.mbcs','encodings.utf_8','encodings.latin_1'],	# latin_1 for wx.lib.masked.NumCtrl
+                            'excludes':['Carbon', 'tcl', 'Tkinter', 'mx','socket','urllib','webbrowser',
+                                        'Numeric', 'numarray', 'scipy', 'nose'],
+                            'packages':['encodings.ascii','encodings.mbcs','encodings.utf_8','encodings.latin_1',	# latin_1 for wx.lib.masked.NumCtrl
+                                        'OpenGL.platform.win32', 'ctypes.wintypes', 'numpy'],
                             'optimize':2,
                             },
                  'py2app': {'argv_emulation':False,

@@ -583,8 +583,8 @@ def writeDSF(dsfdir, key, placements, netfile):
     # must be final properties
     h.write('PROPERTY\tsim/west\t%d\n' %   west)
     h.write('PROPERTY\tsim/east\t%d\n' %  (west+1))
-    h.write('PROPERTY\tsim/north\t%d\n' % (south+1))
     h.write('PROPERTY\tsim/south\t%d\n' %  south)
+    h.write('PROPERTY\tsim/north\t%d\n' % (south+1))
     h.write('\n')
 
     objdefs=[]

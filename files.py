@@ -26,7 +26,7 @@ except:
 import codecs
 from glob import glob
 from math import cos, log, pi, radians
-from Numeric import array, Float32
+from numpy import array, hstack, float32
 from os import listdir, mkdir
 from os.path import basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
@@ -684,20 +684,21 @@ class VertexCache:
                 if __debug__: print "VBOs enabled!"
                 v=long(glGenBuffersARB(1))
                 glBindBufferARB(GL_ARRAY_BUFFER_ARB, v)
-                glBufferDataARB(GL_ARRAY_BUFFER_ARB, hstack((array(self.tarray, Float32), array(self.varray, Float32))).flatten(), GL_STATIC_DRAW_ARB)
+                glBufferDataARB(GL_ARRAY_BUFFER_ARB, hstack((array(self.tarray, float32), array(self.varray, float32))).flatten(), GL_STATIC_DRAW_ARB)
                 glInterleavedArrays(GL_T2F_V3F, 0, None)
             elif self.varray:
                 glVertexPointerf(self.varray)
                 glTexCoordPointerf(self.tarray)
-                #glInterleavedArrays(GL_T2F_V3F, 0, hstack((array(self.tarray, Float32), array(self.varray, Float32))))
-                #b=array(map(lambda x,y: x+y, self.tarray, self.varray), Float32)
+                #glInterleavedArrays(GL_T2F_V3F, 0, hstack((array(self.tarray, float32), array(self.varray, float32))))
+                #b=array(map(lambda x,y: x+y, self.tarray, self.varray), float32)
                 #glInterleavedArrays(GL_T2F_V3F, 0, b.tostring())
             else:	# need something or get conversion error
                 if __debug__: print "Empty arrays!"
                 glVertexPointerf([[0,0,0]])
                 glTexCoordPointerf([[0,0]])
                 #glInterleavedArrays(GL_T2F_V3F, 0, [[0.0,0,0,0,0]])
-            print "%6.3f time to realize arrays" % (time.clock()-clock)
+            if __debug__:
+                print "%6.3f time to realize arrays" % (time.clock()-clock)
             self.valid=True
 
     def allocate(self, vdata, tdata):

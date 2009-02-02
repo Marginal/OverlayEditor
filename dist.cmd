@@ -99,6 +99,6 @@ REM cd dist
 REM zip -r ..\OverlayEditor_%VER%_win32.zip * |findstr -vc:"adding:"
 "C:\Program Files\NSIS\makensis.exe" /nocd /v2 win32\OverlayEditor.nsi
 REM @cd %cwd%
-rd  /s /q build
+REM rd  /s /q build
 
 :end

@@ -1,3 +1,9 @@
+don't show .ter - eg lib/g8/terrain/temp_city_park.ter
+don't import into custom objects for types other than obj
+don't look in custom objects for types other than obj
+load textures from custom object textures
+
+Numeric in linux & Mac builds
 prepareselect - at end of drag, not if selected (cos keyboard)
 insert node - average two _editable_ nodes
 
