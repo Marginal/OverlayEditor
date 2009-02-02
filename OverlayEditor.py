@@ -33,7 +33,7 @@ try:
     import OpenGL
     if OpenGL.__version__ >= '3':
         # Not defined in PyOpenGL 2.x.
-        if __debug__ and False:
+        if __debug__:
             OpenGL.ERROR_ON_COPY =True	# only applies to numpy arrays
         else:
             OpenGL.ERROR_CHECKING=False	# don't check OGL errors for speed
@@ -58,7 +58,7 @@ from clutter import round2res, minres, latlondisp, Exclude	# for loading exclusi
 from clutterdef import KnownDefs, ExcludeDef, NetworkDef, previewsize
 from draw import MyGL
 from files import importObj, scanApt, readApt, readNav, readLib, readNet, sortfolded
-from palette import Palette
+from palette import Palette, PaletteEntry
 from DSFLib import readDSF, writeDSF
 from MessageBox import myMessageBox, AboutBox
 from prefs import Prefs
@@ -1430,8 +1430,8 @@ class MainWindow(wx.Frame):
         # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
         # search order is: custom libraries, default libraries, scenery package
         progress.Update(2, 'Libraries')
-        lookupbylib={}	# {name: path} by libname
-        lookup={}	# {name: path}
+        lookupbylib={}	# {name: paletteentry} by libname
+        lookup={}	# {name: paletteentry}
         terrain={}	# {name: path}
 
         clibs=glob(join(prefs.xplane, gcustom, '*', glibrary))
@@ -1456,13 +1456,14 @@ class MainWindow(wx.Frame):
                         if name.lower().startswith('custom objects'):
                             name=name[15:]
                         #if not name in lookup:	# library takes precedence
-                        objects[name]=join(path,f)
+                        objects[name]=PaletteEntry(join(path,f))
                     elif f[-4:].lower()=='.net':
                         roadfile=join(path,f)
         self.palette.load('Objects', objects, pkgdir)
         lookup.update(objects)
 
         defroadfile=lookupbylib['g8'].pop(NetworkDef.DEFAULTFILE,None)
+        if defroadfile: defroadfile=defroadfile.file
         for lib in libs: self.palette.load(lib, lookupbylib[lib], None)
 
         if not self.defnetdefs:
@@ -1488,7 +1489,7 @@ class MainWindow(wx.Frame):
                     if x and x.name: names[x.name]=lookup[x.name]=x.name
                 self.palette.load(NetworkDef.TABNAME, names, None)
             
-        self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], x) for x in Exclude.NAMES.keys()]), None)
+        self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], PaletteEntry(x)) for x in Exclude.NAMES.keys()]), None)
 
         if prefs.package and prefs.package in prefs.packageprops:
             (image, lat, lon, hdg, width, length, opacity)=prefs.packageprops[prefs.package]
@@ -1552,7 +1553,7 @@ class MainWindow(wx.Frame):
                 name=newpath[len(pkgpath)+1:].replace(sep, '/')
                 if name.lower().startswith('custom objects'):
                     name=name[15:]
-                self.canvas.lookup[name]=newpath
+                self.canvas.lookup[name]=PaletteEntry(newpath)
                 self.palette.add(name)
                 continue
             myMessageBox(msg, "Can't import %s" % path,

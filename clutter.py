@@ -127,7 +127,7 @@ class Object(Clutter):
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
                 self.definition.allocate(vertexcache, defs)	# ensure allocated
@@ -138,9 +138,9 @@ class Object(Clutter):
             # virtual name not found or can't load physical file
             if usefallback:
                 if self.name in lookup:
-                    filename=lookup[self.name]
+                    filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name]=self.name
+                    filename=lookup[self.name].file=self.name
                 if filename in defs:
                     self.definition=defs[filename]
                     self.definition.allocate(vertexcache, defs)	# ensure allocated
@@ -235,7 +235,7 @@ class Polygon(Clutter):
 
     def load(self, lookup, defs, vertexcache, usefallback=True):
         if self.name in lookup:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
         else:
             filename=None
         self.definition=PolygonDef(filename, vertexcache)
@@ -465,7 +465,7 @@ class Draped(Polygon):
         
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
             else:
@@ -474,9 +474,9 @@ class Draped(Polygon):
         except:
             if usefallback:
                 if self.name in lookup:
-                    filename=lookup[self.name]
+                    filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name]=self.name
+                    filename=lookup[self.name].file=self.name
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
@@ -842,7 +842,7 @@ class Facade(Polygon):
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
             else:
@@ -858,9 +858,9 @@ class Facade(Polygon):
                 self.param=1
             if usefallback:
                 if self.name in lookup:
-                    filename=lookup[self.name]
+                    filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name]=self.name
+                    filename=lookup[self.name].file=self.name
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
@@ -1109,7 +1109,7 @@ class Forest(Polygon):
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
             else:
@@ -1118,9 +1118,9 @@ class Forest(Polygon):
         except:
             if usefallback:
                 if self.name in lookup:
-                    filename=lookup[self.name]
+                    filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name]=self.name
+                    filename=lookup[self.name].file=self.name
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
@@ -1170,7 +1170,7 @@ class Line(Polygon):
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
             else:
@@ -1179,9 +1179,9 @@ class Line(Polygon):
         except:
             if usefallback:
                 if self.name in lookup:
-                    filename=lookup[self.name]
+                    filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name]=self.name
+                    filename=lookup[self.name].file=self.name
                 if filename in defs:
                     self.definition=defs[filename]
                 else:

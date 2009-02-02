@@ -3,10 +3,22 @@ import wx
 
 from os.path import dirname, exists, join
 
-from files import sortfolded
 from clutterdef import ClutterDefFactory, PolygonDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
 from MessageBox import myMessageBox
 
+
+# 2.3 version of case-insensitive sort
+# 2.4-only version is faster: sort(cmp=lambda x,y: cmp(x.lower(), y.lower()))
+def sortfolded(seq):
+    seq.sort(lambda x,y: cmp(x.lower(), y.lower()))
+
+
+class PaletteEntry():
+
+    def __init__(self, file):
+        self.file=file
+        self.multiple=False
+    
 
 class PaletteListBox(wx.VListBox):
 
@@ -26,29 +38,29 @@ class PaletteListBox(wx.VListBox):
         (x,self.height)=self.GetTextExtent("Mq")
         self.height=max(13,self.height)
         self.indent=4
-        names=objects.keys()
         self.pkgdir=pkgdir
-        self.populate(parent, tabname, tabno, names)
+        self.populate(parent, tabname, tabno, objects)
 
-    def populate(self, parent, tabname, tabno, names):
+    def populate(self, parent, tabname, tabno, objects):
         self.choices=[]
-        for i in range(len(names)):
-            name=realname=names[i]
+        names=objects.keys()
+        for name,entry in objects.iteritems():
+            realname=name
             ext=name[-4:].lower()
             if tabname==NetworkDef.TABNAME:
-                imgno=5
-            elif tabname==ExcludeDef.TABNAME:
                 imgno=6
-            elif ext in UnknownDefs:
+            elif tabname==ExcludeDef.TABNAME:
                 imgno=7
+            elif ext in UnknownDefs:
+                imgno=5
             elif name in parent.bad:
-                imgno=8
+                imgno=14
             elif ext==PolygonDef.DRAPED:
                 imgno=3
                 if tabno==0 and self.pkgdir:
                     # find orthos - assume library objects aren't
                     try:
-                        h=file(join(self.pkgdir,realname), 'rU')
+                        h=file(join(self.pkgdir,entry.file), 'rU')
                         for line in h:
                             line=line.strip()
                             if line.startswith('TEXTURE_NOWRAP') or line.startswith('TEXTURE_LIT_NOWRAP'):
@@ -77,6 +89,7 @@ class PaletteListBox(wx.VListBox):
                 name=name[15:-4]
             else:
                 name=name[:-4]
+            if entry.multiple: imgno+=8
             self.choices.append((imgno, name, realname))
         self.SetItemCount(len(self.choices))
 
@@ -122,9 +135,15 @@ class PaletteChoicebook(wx.Choicebook):
         self.imgs.Add(wx.Bitmap("Resources/for.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/pol.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/ortho.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/unknown.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/net.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/exc.png", wx.BITMAP_TYPE_PNG))
-        self.imgs.Add(wx.Bitmap("Resources/unknown.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/objs.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/facs.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/fors.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/pols.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/orthos.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/unknowns.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/bad.png", wx.BITMAP_TYPE_PNG))	# bad assumed below to be last
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)	# appears to do nowt on Windows
         wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
@@ -182,10 +201,11 @@ class PaletteChoicebook(wx.Choicebook):
             self.bad[name]=True
 
         l=self.lists[0]
-        names=[realname for (imgno, foo, realname) in l.choices]
-        if not name in names:
-            names.append(name)
-            l.populate(self, 'Objects', 0, names)
+        lookup=self.frame.canvas.lookup
+        objects=dict([(realname, lookup[realname]) for (imgno, foo, realname) in l.choices])
+        objects[name]=lookup[name]
+        l.populate(self, 'Objects', 0, objects)
+        self.Refresh()
 
         if not bad:
             # Select added name
@@ -233,7 +253,7 @@ class PaletteChoicebook(wx.Choicebook):
                 if realname in self.bad:
                     return	# already bad
                 self.bad[realname]=True
-                l.choices[i]=(8, name, realname)
+                l.choices[i]=(14, name, realname)
                 self.Refresh()
                 break
         else:
@@ -357,7 +377,7 @@ class Palette(wx.SplitterWindow):
 
             # Look for library screenshot - <object>.jpg, picture.png or screenshot.jpg
             if not self.previewimg:
-                newfile=self.frame.canvas.lookup[self.previewkey][:-3]+'jpg'
+                newfile=self.frame.canvas.lookup[self.previewkey].file[:-3]+'jpg'
                 try:
                     if exists(newfile):
                         self.previewimg=wx.Image(newfile, wx.BITMAP_TYPE_JPEG)
@@ -388,7 +408,7 @@ class Palette(wx.SplitterWindow):
                 self.preview.ClearBackground()
 
                 # Display object data
-                filename=self.frame.canvas.lookup[self.previewkey]
+                filename=self.frame.canvas.lookup[self.previewkey].file
                 try:
                     if filename in self.frame.canvas.defs:
                         definition=self.frame.canvas.defs[filename]

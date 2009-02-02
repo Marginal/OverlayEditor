@@ -1001,9 +1001,9 @@ class MyGL(wx.glcanvas.GLCanvas):
     def nextsel(self, name, withctrl, withshift):
         # returns new location or None
         # we have 0 or more items of the same type selected
-        if not self.lookup[name] in self.defs:
+        if not self.lookup[name].file in self.defs:
             return None	# can't exist in this tile if not loaded
-        definition=self.defs[self.lookup[name]]
+        definition=self.defs[self.lookup[name].file]
         placements=self.placements[self.tile][definition.layer]
         if withctrl and withshift:
             self.selected=[]
@@ -1496,7 +1496,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     if name[0]=='*':
                         filename=name
                     else:
-                        filename=self.lookup[name]
+                        filename=self.lookup[name].file
                     if filename in self.defs:
                         self.defs[filename].allocate(self.vertexcache, self.defs)
                     else:
@@ -1573,9 +1573,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                     if objs[i][0]=='*':
                         definition=self.defs[objs[i]]
                     elif objs[i] not in self.lookup:
+                        if __debug__: print "Missing navaid %s" % objs[i]
                         continue	# missing in this version of X-Plane
                     else:
-                        definition=self.defs[self.lookup[objs[i]]]
+                        definition=self.defs[self.lookup[objs[i]].file]
                     coshdg=cos(radians(hdg))
                     sinhdg=sin(radians(hdg))
                     (x,z)=self.latlon2m(lat,lon)

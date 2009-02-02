@@ -40,6 +40,7 @@ if __debug__:
 
 from clutterdef import BBox, KnownDefs, SkipDefs, NetworkDef
 from DSFLib import readDSF
+from palette import PaletteEntry
 from prefs import Prefs
 from version import appname, appversion
 
@@ -286,6 +287,7 @@ def readNav(filename):
 
 
 def readLib(filename, objects, terrain):
+    thisfileobjs={}
     h=None
     path=dirname(filename)
     if basename(dirname(filename))=='800 objects':
@@ -332,10 +334,17 @@ def readLib(filename, objects, terrain):
                     terrain[name]=obj
                 else:
                     if lib in objects:
-                        if name in objects[lib]: continue
+                        if name in thisfileobjs:
+                            objects[lib][name].multiple=True
+                            continue
+                        else:
+                            thisfileobjs[name]=True
+                            if name in objects[lib]:
+                                continue	# already defined elsewhere
                     else:
+                        thisfileobjs[name]=True
                         objects[lib]={}
-                    objects[lib][name]=obj
+                    objects[lib][name]=PaletteEntry(obj)
     except:
         if __debug__: print_exc()
         if h: h.close()
@@ -1029,10 +1038,17 @@ def importObj(pkgpath, path):
                     tex=line[len(c[0]):].strip()
                     tex=tex.replace(':', sep)
                     tex=tex.replace('/', sep)
-                    header+=c[0]+'\t'+newtexprefix+basename(tex)+'\n'
-                    if not isdir(newtexpath): mkdir(newtexpath)
-                    if exists(join(oldtexpath, tex)) and not exists(join(newtexpath, basename(tex))):
-                        copyfile(join(oldtexpath, tex), join(newtexpath, basename(tex)))
+                    (tex, ext)=splitext(tex)
+                    for e in [ext, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                        if exists(join(oldtexpath, tex+e)):
+                            if not isdir(newtexpath): mkdir(newtexpath)
+                            if not exists(join(newtexpath, basename(tex)+e)):
+                                copyfile(join(oldtexpath, tex+e),
+                                         join(newtexpath, basename(tex)+e))
+                            header+=c[0]+'\t'+newtexprefix+basename(tex)+e+'\n'
+                            break
+                    else:
+                        header+=c[0]+'\t'+newtexprefix+basename(tex)+ext+'\n'
             else:
                 header+=line+'\n'
                 break	# Stop at first non-texture statement
