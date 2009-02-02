@@ -13,7 +13,7 @@ def sortfolded(seq):
     seq.sort(lambda x,y: cmp(x.lower(), y.lower()))
 
 
-class PaletteEntry():
+class PaletteEntry:
 
     def __init__(self, file):
         self.file=file

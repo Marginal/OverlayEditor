@@ -1,7 +1,7 @@
 @echo off
 @setlocal
 
-for /f "usebackq tokens=1,2,3" %%I in (`c:\Progra~1\Python24\python.exe -c "from version import appversion; print '%%4.2f %%d'%%(appversion, round(appversion*100,0))"`) do (set VERSION=%%I&set VER=%%J)
+for /f "usebackq tokens=1,2,3" %%I in (`c:\Progra~1\Python25\python.exe -c "from version import appversion; print '%%4.2f %%d'%%(appversion, round(appversion*100,0))"`) do (set VERSION=%%I&set VER=%%J)
 set RELEASE=1
 set RPM=%TMP%\overlayeditor
 
@@ -16,17 +16,17 @@ if exist "%RPM%" rd /s /q "%RPM%"
 if exist dist rd /s /q dist >nul: 2>&1
 REM del /s /q *.bak >nul: 2>&1
 del /s /q *.pyc >nul: 2>&1
+del /q *.pyo >nul: 2>&1
 
 @set PY=OverlayEditor.py clutter.py clutterdef.py draw.py DSFLib.py files.py fixed8x13.py MessageBox.py palette.py prefs.py version.py
 @set DATA=OverlayEditor.html
-@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/windsock.obj Resources/windsock.png Resources/bad.png Resources/exc.png Resources/fac.png Resources/for.png Resources/net.png Resources/obj.png Resources/ortho.png Resources/pol.png Resources/unknown.png Resources/airport0_000.png Resources/Sea01.png Resources/surfaces.png Resources/OverlayEditor.png Resources/screenshot.jpg Resources/800library.txt
+@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/windsock.obj Resources/windsock.png Resources/bad.png Resources/exc.png Resources/fac.png Resources/facs.png Resources/for.png Resources/fors.png Resources/net.png Resources/obj.png Resources/objs.png Resources/ortho.png Resources/orthos.png Resources/pol.png Resources/pols.png Resources/unknown.png Resources/unknowns.png Resources/airport0_000.png Resources/Sea01.png Resources/surfaces.png Resources/OverlayEditor.png Resources/screenshot.jpg Resources/800library.txt
 @set PREV=Resources/previews
 
 :source
-zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% %DATA% %RSRC% %PREV% linux MacOS win32 -x */CVS/ -x */CVS/* -x */*/CVS/ -x */*/CVS/* |findstr -vc:"adding:"
+REM zip -r OverlayEditor_%VER%_src.zip dist.cmd %PY% %DATA% %RSRC% %PREV% linux MacOS win32 -x */CVS/ -x */CVS/* -x */*/CVS/ -x */*/CVS/* |findstr -vc:"adding:"
 
 :linux
-REM tar -zcf OverlayEditor_%VER%_linux.tar.gz %PY% %DATA% %RSRC% linux win32/DSFTool.exe
 set RPMRT=%TMP%\overlayeditor\root
 mkdir "%RPM%\BUILD"
 mkdir "%RPM%\SOURCES"

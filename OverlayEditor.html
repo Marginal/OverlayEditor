@@ -265,15 +265,15 @@ the heading "Objects", including those that are present in the scenery
 package folder but are not used in the scenery.
 The type of object is indicated by a symbol:</p>
 <dl>
-  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="obj" src="Resources/obj.png"></a> - 3D object (<code>.obj</code>)</dd>
-  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="fac" src="Resources/fac.png"></a> - Facade polygon (<code>.fac</code>)</dd>
-  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="for" src="Resources/for.png"></a> - Forest polygon (<code>.for</code>)</dd>
-  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="pol" src="Resources/pol.png"></a> - Draped polygon (<code>.pol</code>) with a <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later)</dd>
-  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="ortho" src="Resources/ortho.png"></a> - Draped polygon (<code>.pol</code>) for use as an <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later)</dd>
-  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="unknown" src="Resources/unknown.png"></a> - Other polygon</dd>
-  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="net" src="Resources/net.png"></a> - Road, Railway or Powerline network (requires X-Plane 9.00 or later)</dd>
-  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="exc" src="Resources/exc.png"></a> - Exclusion region</dd>
-  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="bad" src="Resources/bad.png"></a> - Missing or unreadable object or polygon</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="obj" src="Resources/obj.png"> - 3D object (<code>.obj</code>)</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="fac" src="Resources/fac.png"> - Facade polygon (<code>.fac</code>)</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="for" src="Resources/for.png"> - Forest polygon (<code>.for</code>)</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="pol" src="Resources/pol.png"> - Draped polygon (<code>.pol</code>) with a <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later)</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="ortho" src="Resources/ortho.png"> - Draped polygon (<code>.pol</code>) for use as an <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later)</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="unknown" src="Resources/unknown.png"> - Other polygon</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="net" src="Resources/net.png"> - Road, Railway or Powerline network (requires X-Plane 9.00 or later)</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="exc" src="Resources/exc.png"> - Exclusion region</dd>
+  <dd><img style="border: 0px solid ; width: 12px; height: 12px;" alt="bad" src="Resources/bad.png"> - Missing or unreadable object or polygon</dd>
 </dl>
 <p>Objects that have been made available by scenery libraries, including
 X-Plane's built-in libraries, are listed under further headings in the
@@ -282,9 +282,16 @@ libraries than earlier versions, so you you should always design using the
 earliest version of X-Plane that you want your scenery package to work
 with.
 (See <a target="_blank" href="http://marginal.org.uk/x-planescenery/library_tutorial/index.html">this tutorial</a> if you're interested in making your own scenery libraries).</p>
+<p>Some library objects are shown in these lists with a symbol 
+<img style="border: 0px solid ; width: 12px; height: 12px;" alt="objs" src="Resources/objs.png">
+instead of the normal symbol
+<img style="border: 0px solid ; width: 12px; height: 12px;" alt="obj" src="Resources/obj.png">.
+This means that the library object exists in multiple versions; X-Plane will
+choose which version of the object to display at random, but this application
+always displays the same version.</p>
 <p>You can only add objects to your scenery that appear in these lists -
 think of these lists as an artist's
-<a href="http://en.wikipedia.org/wiki/Palette">palette</a>:</p>
+<a href="http://en.wikipedia.org/wiki/Palette">palette</a>.</p>
 <ul>
   <li>Use <a href="#import"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Import" src="Resources/import.png"></a> to copy objects from another scenery <u>package</u>. (Don't use this to copy objects from a scenery
 <u>library</u>; just select the object from the appropriate list).</li>
@@ -294,12 +301,6 @@ think of these lists as an artist's
 <h4>Preview picture</h4>
 <p>A preview of the currently selected object is shown (when available)
 underneath the list of objects.</p>
-<p>If more than one picture is shown this
-means that the library object exists in multiple versions; X-Plane will
-choose which version of the object to display at random, but this
-application always displays the same version.
-(However if only one picture is shown for a library object then you should not
-assume that there is only one version).</p>
 <p>You can drag the separators between the preview window and the other
 windows to make the preview picture smaller.</p>
 
@@ -555,7 +556,7 @@ that you make using these tools, but you are under no obligation.</p>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 2.02 &copy; 2007,2008 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 2.03 &copy; 2007-2009 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/3.0/">
 <img alt="Creative Commons License" style="border: 0px solid ; width: 88px; height: 31px; vertical-align: text-bottom;" src="http://creativecommons.org/images/public/somerights20.png"></a></td>
     </tr>

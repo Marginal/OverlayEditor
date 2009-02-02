@@ -1,3 +1,6 @@
+regional variants - eg lib/g8/pol/wet_warm_hill_s.pol:
+- Resources\default scenery\900 red terrain\pol\wet_warm_hill_s.pol
+- Resources\default scenery\900 world terrain\pol\wet_warm_hill_s.pol
 gettext
 don't change position on undo?
 display ramp starting points
