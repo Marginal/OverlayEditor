@@ -71,6 +71,8 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             pols.append(Exclude(Exclude.NAMES[c[i]], 0,
                                 [[(True,v[0],v[1]),(True,v[2],v[1]),
                                   (True,v[2],v[3]),(True,v[0],v[3])]]))
+    centrelat=lat+0.5
+    centrelon=lon+0.5
     if wantoverlay and not overlay:
         # Not an Overlay DSF - bail early
         h.close()
@@ -80,8 +82,6 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
         h.close()
         raise IOError (0, "%s is an overlay." % basename(path))
         
-    centrelat=lat+0.5
-    centrelon=lon+0.5
     h.seek(headend)
 
     # Definitions Atom

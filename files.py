@@ -26,7 +26,6 @@ except:
 import codecs
 from glob import glob
 from math import cos, log, pi, radians
-from numpy import array, hstack, float32
 from os import listdir, mkdir
 from os.path import basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
@@ -34,11 +33,14 @@ from struct import unpack
 from sys import platform, maxint
 from traceback import print_exc
 import wx
+if OpenGL.__version__ >= '3':
+    from numpy import array, hstack, float32
 if __debug__:
     import time
 
 from clutterdef import BBox, KnownDefs, SkipDefs, NetworkDef
 from DSFLib import readDSF
+from palette import PaletteEntry
 from prefs import Prefs
 from version import appname, appversion
 
@@ -99,15 +101,13 @@ def scanApt(filename):
         if not c: continue
         id=int(c[0])
         if id in [1,16,17]:		# Airport/Seaport/Heliport
-            if loc:
+            if code and loc:
                 airports[code]=(name,loc,offset)
                 code=name=loc=None
             offset=long(h.tell())	# cast to long for 64bit Linux
             code=c[4]#.decode('latin1')
             if len(code)>4: raise IOError	# X-Plane doesn't like
             name=(' '.join(c[5:])).decode('latin1')
-        elif id==14:	# Prefer tower location
-            loc=[float(c[1]),float(c[2])]
         elif id==18 and int(c[3]):	# Beacon - goes in nav
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), 0))
         elif id==19:	# Windsock - goes in nav
@@ -115,11 +115,11 @@ def scanApt(filename):
         elif id==21:	# VASI/PAPI - goes in nav
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
         elif id==99:
-            airports[code]=(name,loc,offset)
-            code=name=loc=None
             break
-        elif loc:
+        elif loc:	# Don't bother parsing past first location
             pass
+        elif id==14:	# Prefer tower location
+            loc=[float(c[1]),float(c[2])]
         elif id==10:	# Runway / taxiway
             loc=[float(c[1]),float(c[2])]
         elif id==100:	# 850 Runway
@@ -128,14 +128,14 @@ def scanApt(filename):
             loc=[(float(c[4])+float(c[7]))/2, (float(c[5])+float(c[8]))/2]
         elif id==102:	# 850 Helipad
             loc=[float(c[2]),float(c[3])]
-    if loc:	# No terminating 99
+    if code and loc:	# No terminating 99
         airports[code]=(name,loc,offset)
     h.close()
     return (airports, nav)
 
 # two modes of operation:
-# - without offset, return all airports and navs
-# - with offset, just return airport at offset
+# - without offset, return all airports and navs (used for custom apt.dats)
+# - with offset, just return airport at offset (used for global apt.dat)
 def readApt(filename, offset=None):
     airports={}	# (name, [lat,lon], [(lat,lon,hdg,length,width,stop,stop)]) by code
     nav=[]	# (type,lat,lon,hdg)
@@ -145,13 +145,13 @@ def readApt(filename, offset=None):
         h.seek(offset)
     else:
         if not h.readline().strip() in ['A','I']:
-            raise IOError
+            raise AssertionError, "The apt.dat file in this package is invalid."
         while True:	# NYEXPRO has a blank line here
             c=h.readline().split()
             if c: break
         ver=c[0]
         if not ver in ['600','703','715','810','850']:
-            raise IOError
+            raise AssertionError, "The apt.dat file in this package is invalid."
         ver=int(ver)
 
     code=name=loc=None
@@ -166,15 +166,17 @@ def readApt(filename, offset=None):
             pavement=[]
         if id in [1,16,17]:		# Airport/Seaport/Heliport
             if offset:	# reached next airport
+                if not run: raise AssertionError, "Airport %s does not have any runways." % code
                 h.close()
                 return run
-            if loc:
-                if not run: raise IOError
+            if code:
+                if code in airports: raise AssertionError, "Airport %s is listed more than once." % code
+                if not run: raise AssertionError, "Airport %s does not have any runways." % code
                 airports[code]=(name,loc,run)
                 code=name=loc=None
                 run=[]
             code=c[4].decode('latin1')
-            if len(code)>4: raise IOError	# X-Plane doesn't like
+            if len(code)>4: raise AssertionError, "Airport %s has an ICAO code longer than 4 characters." % code	# X-Plane doesn't like
             if not firstcode: firstcode=code
             name=(' '.join(c[5:])).decode('latin1')
         elif id==14:	# Prefer tower location
@@ -240,7 +242,9 @@ def readApt(filename, offset=None):
         elif id==21:	# VASI/PAPI - goes in nav
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
         elif id==99:
+            break
             if offset:	# reached next airport
+                if not run: raise AssertionError, "Airport %s does not have any runways." % code
                 h.close()
                 return run
             if not loc or not run: raise IOError
@@ -250,11 +254,15 @@ def readApt(filename, offset=None):
             break
     # No terminating 99
     if offset:
+        if not run: raise AssertionError, "Airport %s does not have any runways." % code
         h.close()
         return run
-    if loc:
-        if not run: raise IOError
+    if code:
+        if code in airports: raise AssertionError, "Airport %s is listed more than once." % code
+        if not run: raise AssertionError, "Airport %s does not have any runways." % code
         airports[code]=(name,loc,run)
+    else:
+        raise AssertionError, "The apt.dat file in this package is empty."
     h.close()
     return (airports, nav, firstcode)
 
@@ -279,6 +287,7 @@ def readNav(filename):
 
 
 def readLib(filename, objects, terrain):
+    thisfileobjs={}
     h=None
     path=dirname(filename)
     if basename(dirname(filename))=='800 objects':
@@ -325,11 +334,19 @@ def readLib(filename, objects, terrain):
                     terrain[name]=obj
                 else:
                     if lib in objects:
-                        if name in objects[lib]: continue
+                        if name in thisfileobjs:
+                            objects[lib][name].multiple=True
+                            continue
+                        else:
+                            thisfileobjs[name]=True
+                            if name in objects[lib]:
+                                continue	# already defined elsewhere
                     else:
+                        thisfileobjs[name]=True
                         objects[lib]={}
-                    objects[lib][name]=obj
+                    objects[lib][name]=PaletteEntry(obj)
     except:
+        if __debug__: print_exc()
         if h: h.close()
         if __debug__:
             print filename
@@ -578,6 +595,7 @@ class TexCache:
 
                 if downsample and image.size[0]>4 and image.size[1]>4:
                     image=image.resize((image.size[0]/4,image.size[1]/4), PIL.Image.NEAREST)
+                
                 if image.mode=='RGBA':
                     data = image.tostring("raw", 'RGBA')
                     format=iformat=GL_RGBA
@@ -587,7 +605,7 @@ class TexCache:
                 elif image.mode=='LA' or 'transparency' in image.info:
                     image=image.convert('RGBA')
                     data = image.tostring("raw", 'RGBA')
-                    format=iformat=GL_RGBA                    
+                    format=iformat=GL_RGBA
                 else:
                     image=image.convert('RGB')
                     data = image.tostring("raw", 'RGB')
@@ -596,7 +614,7 @@ class TexCache:
                 height=image.size[1]
 
             # variables used: data, format, iformat, width, height
-            if not alpha:
+            if not alpha:	# Discard alpha
                 iformat=GL_RGB
             if self.compress:
                 if iformat==GL_RGB:
@@ -658,7 +676,8 @@ class VertexCache:
         self.valid=False
         self.dsfdirs=None	# [custom, global, default]
 
-        self.vbo=(OpenGL.__version__ >= '3') and glInitVertexBufferObjectARB()
+        self.vbo=False # XXX (OpenGL.__version__ >= '3') and glInitVertexBufferObjectARB()
+        self.vertexbuf=0
 
     def reset(self, terrain, dsfdirs):
         # invalidate geometry and textures
@@ -680,23 +699,33 @@ class VertexCache:
         if not self.valid:
             if __debug__: clock=time.clock()	# Processor time
             if self.vbo:
-                # PyOpenGL 3 with numpy
-                if __debug__: print "VBOs enabled!"
-                v=long(glGenBuffersARB(1))
-                glBindBufferARB(GL_ARRAY_BUFFER_ARB, v)
+                # PyOpenGL 3b8 with numpy - broken
+                if not self.vertexbuf:
+                    from OpenGL.arrays import vbo
+                    assert vbo.get_implementation()
+                    self.vertexbuf=vbo.VBO(hstack((array(self.tarray, float32), array(self.varray, float32))).flatten())
+                    if __debug__: print "VBOs enabled! %s" % self.vertexbuf
+                self.vertexbuf.bind()
+                glInterleavedArrays(GL_T2F_V3F, 0, self.vertexbuf)
+            elif False:
+                # PyOpenGL 3b6 with numpy - also broken
+                if not self.vertexbuf:
+                    self.vertexbuf=long(glGenBuffersARB(1))
+                    if __debug__: print "VBOs enabled! %s" % self.vertexbuf
+                glBindBufferARB(GL_ARRAY_BUFFER_ARB, self.vertexbuf)
                 glBufferDataARB(GL_ARRAY_BUFFER_ARB, hstack((array(self.tarray, float32), array(self.varray, float32))).flatten(), GL_STATIC_DRAW_ARB)
                 glInterleavedArrays(GL_T2F_V3F, 0, None)
             elif self.varray:
+                #glInterleavedArrays(GL_T2F_V3F, 0, hstack((array(self.tarray, float32), array(self.varray, float32))).flatten())	# XXX requires numpy
                 glVertexPointerf(self.varray)
                 glTexCoordPointerf(self.tarray)
-                #glInterleavedArrays(GL_T2F_V3F, 0, hstack((array(self.tarray, float32), array(self.varray, float32))))
                 #b=array(map(lambda x,y: x+y, self.tarray, self.varray), float32)
                 #glInterleavedArrays(GL_T2F_V3F, 0, b.tostring())
             else:	# need something or get conversion error
                 if __debug__: print "Empty arrays!"
+                #glInterleavedArrays(GL_T2F_V3F, 0, [[0.0,0,0,0,0]])
                 glVertexPointerf([[0,0,0]])
                 glTexCoordPointerf([[0,0]])
-                #glInterleavedArrays(GL_T2F_V3F, 0, [[0.0,0,0,0,0]])
             if __debug__:
                 print "%6.3f time to realize arrays" % (time.clock()-clock)
             self.valid=True
@@ -734,7 +763,7 @@ class VertexCache:
                     self.mesh[key]=mesh
                     break
             except:
-                pass
+                if __debug__: print_exc()
         if __debug__: print "%6.3f time in loadMesh" % (time.clock()-clock)
         if not key in self.mesh:
             for path in self.dsfdirs[1:]:
@@ -994,10 +1023,17 @@ def importObj(pkgpath, path):
                     tex=line[len(c[0]):].strip()
                     tex=tex.replace(':', sep)
                     tex=tex.replace('/', sep)
-                    header+=c[0]+'\t'+newtexprefix+basename(tex)+'\n'
-                    if not isdir(newtexpath): mkdir(newtexpath)
-                    if exists(join(oldtexpath, tex)) and not exists(join(newtexpath, basename(tex))):
-                        copyfile(join(oldtexpath, tex), join(newtexpath, basename(tex)))
+                    (tex, ext)=splitext(tex)
+                    for e in [ext, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                        if exists(join(oldtexpath, tex+e)):
+                            if not isdir(newtexpath): mkdir(newtexpath)
+                            if not exists(join(newtexpath, basename(tex)+e)):
+                                copyfile(join(oldtexpath, tex+e),
+                                         join(newtexpath, basename(tex)+e))
+                            header+=c[0]+'\t'+newtexprefix+basename(tex)+e+'\n'
+                            break
+                    else:
+                        header+=c[0]+'\t'+newtexprefix+basename(tex)+ext+'\n'
             else:
                 header+=line+'\n'
                 break	# Stop at first non-texture statement

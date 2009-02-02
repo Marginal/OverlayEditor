@@ -1,6 +1,7 @@
 import OpenGL	# for __version__
 from OpenGL.GL import *
 from OpenGL.GLU import *
+
 try:
     # apparently older PyOpenGL version didn't define gluTessVertex
     gluTessVertex
@@ -21,15 +22,9 @@ import wx
 import wx.glcanvas
 if platform=='darwin':
     from os import uname	# not defined in win32 builds
-
 if __debug__:
     import time
-    try:
-        # Not defined in PyOpenGL 2.x. Only applies when numpy installed
-        from OpenGL.arrays import numpymodule
-        numpymodule.NumpyHandler.ERROR_ON_COPY=True	# find redundant copies
-    except:
-        pass
+    from traceback import print_exc
 
 from files import VertexCache, sortfolded, readApt
 from fixed8x13 import fixed8x13
@@ -44,7 +39,7 @@ f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 sband=12	# width of mouse scroll band around edge of window
 
-debugapt=True	# XXX
+debugapt=__debug__ and False
 
 
 class UndoEntry:
@@ -104,18 +99,16 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.defs={}		# loaded ClutterDefs by filename
         self.placements={}	# [Clutter] by layer and tile
         self.unsorted={}	# [Clutter] by tile
-        self.clutterlist=0
         self.background=None
         self.meshlist=0
         
         self.mousenow=None	# Current position (used in timer and drag)
-        self.picklist=0
-        self.selected=[]	# selected placements
+        self.selected=[]	# list of selected placements
         self.clickmode=None
         self.clickpos=None	# Location of mouse down
         self.clickctrl=False	# Ctrl was held down
         self.selectednode=None	# Selected node
-        self.selections=[]	# List for picking
+        self.selections=[]	# List of hits for cycling picking
         self.selectsaved=[]	# Selection at start of ctrl drag box
         self.selectmax=4096	# max 1024 names
         self.draginert=True
@@ -134,8 +127,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.e=90
         self.d=3333.25
         self.cliprat=1000
-
-        self.profilenext=False	# profile next draw
 
         self.context=wx.glcanvas.GLContext
 
@@ -161,10 +152,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Can't use polygon offset in display list on OSX 10.3 or early
         # versions of 10.4. 10.4.8 (Darwin 8.8.1) onwards is OK?
         # Note 10.4 Intel 950 drivers ship with OGL 1.2
-        self.nopolyosinlist=False
         if platform=='darwin':
             ver=uname()[2].split('.')
             self.nopolyosinlist=(int(ver[0])<8 or (int(ver[0])==8 and int(ver[1])<8))
+        else:
+            self.nopolyosinlist=False
+
         self.vertexcache=None
         self.multisample=False
 
@@ -198,13 +191,14 @@ class MyGL(wx.glcanvas.GLCanvas):
         glDepthFunc(GL_LESS)
         glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
-        #if debugapt: glLineWidth(2.0)
+        if debugapt: glLineWidth(2.0)
         #glLineStipple(1, 0x0f0f)	# for selection drag
         glPointSize(4.0)		# for nodes
         glFrontFace(GL_CW)
         glPolygonMode(GL_FRONT, GL_FILL)
         glCullFace(GL_BACK)
-        glPixelStorei(GL_UNPACK_ALIGNMENT,1)	# byte aligned
+        glPixelStorei(GL_UNPACK_ALIGNMENT,1)	# byte aligned glBitmap
+        glPixelStorei(GL_PACK_ALIGNMENT,1)	# byte aligned glReadPixels
         glReadBuffer(GL_BACK)	# for unproject
         #glPixelStorei(GL_UNPACK_LSB_FIRST,1)
         glEnable(GL_TEXTURE_2D)
@@ -313,14 +307,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.selectednode=self.selected[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
                 assert self.selectednode
                 self.Refresh()
-            elif False:#XXX not self.clickmode and not self.picklist:
-                # no update during node drag since will have to be recomputed
-                if self.profilenext:
-                    from profile import runctx
-                    self.profilenext=False
-                    runctx('self.prepareselect()', globals(), locals(), 'profile.dmp')
-                else:
-                    self.prepareselect()
         event.Skip()
 
     def OnMouseMotion(self, event):
@@ -349,7 +335,6 @@ class MyGL(wx.glcanvas.GLCanvas):
 
             # Change cursor if over a node
             if len(self.selected)==1 and isinstance(self.selected[0], Polygon):
-                glViewport(0, 0, *size)
                 glMatrixMode(GL_PROJECTION)
                 glPushMatrix()
                 glLoadIdentity()
@@ -435,12 +420,12 @@ class MyGL(wx.glcanvas.GLCanvas):
 
 
     def OnPaint(self, event):
-        dc = wx.PaintDC(self)	# Tell the window system that we're on the case
+        if event: wx.PaintDC(self)	# Tell the window system that we're on the case
         size = self.GetClientSize()
         #print "pt", size
         if size.width<=0: return	# may be junk on startup
         self.SetCurrent()
-        self.SetFocus()		# required for GTK
+        self.SetFocus()			# required for GTK
         
         glMatrixMode(GL_PROJECTION)
         glViewport(0, 0, *size)
@@ -480,48 +465,43 @@ class MyGL(wx.glcanvas.GLCanvas):
         glCallList(self.meshlist)
 
         # Objects and Polygons
+        if __debug__:
+            import time
+            clock=time.clock()	# Processor time
         placements=self.placements[self.tile]
-        if not self.clutterlist:
-            if __debug__: clock=time.clock()	# Processor time
-            #self.clutterlist=glGenLists(1)
-            #glNewList(self.clutterlist, GL_COMPILE)
-            glEnable(GL_CULL_FACE)
-            glPolygonOffset(-1, -1)
-            glDisable(GL_POLYGON_OFFSET_FILL)
+        glEnable(GL_CULL_FACE)
+        glPolygonOffset(-1, -1)
+        glDisable(GL_POLYGON_OFFSET_FILL)
 
-            glColor3f(0.8, 0.8, 0.8)	# Unpainted
-            #glEnable(GL_DEPTH_TEST)
-            for layer in range(ClutterDef.LAYERCOUNT):
-                #print layer, placements[layer]
-                for placement in placements[layer]:
-                    if self.clickmode==ClickModes.DragBox or not placement in self.selected:
-                        placement.draw(False, False, self.nopolyosinlist)
-                # pavements
-                if layer in [ClutterDef.SHOULDERLAYER, ClutterDef.TAXIWAYLAYER,
-                             ClutterDef.RUNWAYSLAYER]:
-                    data={ClutterDef.SHOULDERLAYER:self.shoulderdata,
-                          ClutterDef.TAXIWAYLAYER: self.taxiwaydata,
-                          ClutterDef.RUNWAYSLAYER: self.runwaysdata}[layer]
-                    if data:
-                        (base, length)=data
-                        glDepthMask(GL_FALSE)
-                        if self.nopolyosinlist:
-                            glDisable(GL_DEPTH_TEST)
-                        else:
-                            glEnable(GL_POLYGON_OFFSET_FILL)
-                            glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
+        glColor3f(0.8, 0.8, 0.8)	# Unpainted
+        #glEnable(GL_DEPTH_TEST)
+        for layer in range(ClutterDef.LAYERCOUNT):
+            #print layer, placements[layer]
+            for placement in placements[layer]:
+                if self.clickmode==ClickModes.DragBox or not placement in self.selected:
+                    placement.draw(False, False)
+            # pavements
+            if layer in [ClutterDef.SHOULDERLAYER, ClutterDef.TAXIWAYLAYER,
+                         ClutterDef.RUNWAYSLAYER]:
+                data={ClutterDef.SHOULDERLAYER:self.shoulderdata,
+                      ClutterDef.TAXIWAYLAYER: self.taxiwaydata,
+                      ClutterDef.RUNWAYSLAYER: self.runwaysdata}[layer]
+                if data:
+                    (base, length)=data
+                    glDepthMask(GL_FALSE)
+                    glEnable(GL_POLYGON_OFFSET_FILL)
+                    glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
+                    if __debug__:
                         if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
-                        glBindTexture(GL_TEXTURE_2D, self.vertexcache.texcache.get('Resources/surfaces.png'))
-                        glDrawArrays(GL_TRIANGLES, base, length)
-                        glDepthMask(GL_TRUE)
-                        glEnable(GL_DEPTH_TEST)
-                        glDisable(GL_POLYGON_OFFSET_FILL)
-                        glPolygonOffset(-1, -1)
+                    glBindTexture(GL_TEXTURE_2D, self.vertexcache.texcache.get('Resources/surfaces.png'))
+                    glDrawArrays(GL_TRIANGLES, base, length)
+                    glDepthMask(GL_TRUE)
+                    glDisable(GL_POLYGON_OFFSET_FILL)
+                    glPolygonOffset(-1, -1)
+                    if __debug__:
                         if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
-            #glEndList()
-            if __debug__:
-                print "%6.3f time to build clutterlist" % (time.clock()-clock)
-        #glCallList(self.clutterlist)
+        if __debug__:
+            print "%6.3f time to draw" % (time.clock()-clock)
 
         # Overlays
         glDisable(GL_POLYGON_OFFSET_FILL)
@@ -632,27 +612,60 @@ class MyGL(wx.glcanvas.GLCanvas):
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
 
 
-    def prepareselect(self):
-        # Pre-prepare selection list - assumes self.picklist==0
+    def newselect(self):
         if __debug__: clock=time.clock()	# Processor time
-        assert not self.picklist
-        #self.picklist=glGenLists(1)
-        #glNewList(self.picklist, GL_COMPILE)
-        glInitNames()
-        glPushName(0)
-        glDisable(GL_TEXTURE_2D)
-        glDisable(GL_DEPTH_TEST)
-        glDisable(GL_CULL_FACE)
+        size = self.GetClientSize()
+        if False:#XXX fixme self.clickmode==ClickModes.DragBox:
+            # maths goes wrong if zero-sized box
+            if self.clickpos[0]==self.mousenow[0]: self.mousenow[0]+=1
+            if self.clickpos[1]==self.mousenow[1]: self.mousenow[1]-=1
+            gluPickMatrix((self.clickpos[0]+self.mousenow[0])/2,
+                          size[1]-1-(self.clickpos[1]+self.mousenow[1])/2,
+                          abs(self.clickpos[0]-self.mousenow[0]),
+                          abs(self.clickpos[1]-self.mousenow[1]),
+                          (0, 0, size[0], size[1]))
+
         placements=self.placements[self.tile]
-        for i in range(len(placements)-1,-1,-1):	# favour higher layers
-            for j in range(len(placements[i])):
-                glLoadName((i<<24)+j)
-                placements[i][j].draw(False, True, None)
-                #glBegin(GL_LINES)	# Xiachunyi hack for speed
-                #glEnd()
-        glEnable(GL_DEPTH_TEST)
-        #glEndList()
-        if __debug__: print "%6.3f time in prepareselect" %(time.clock()-clock)
+
+        # Click region must be even for 
+        # XXX check the -1 alignment with mouse cursor on Windows
+        glScissor(self.clickpos[0]-2, size[1]-2-self.clickpos[1], 5,5)
+        glEnable(GL_SCISSOR_TEST)
+        if self.multisample: glDisable(GL_MULTISAMPLE_ARB)
+        glDisable(GL_LINE_SMOOTH)
+	glDisable(GL_DITHER)
+        glClearColor(0.0, 0.0, 1.0, 0.0)	# Impossible value
+        glClear(GL_COLOR_BUFFER_BIT)
+        glDisable(GL_TEXTURE_2D)
+        glDisable(GL_CULL_FACE)
+        glDepthMask(GL_FALSE)			# So don't need to clear depth
+        #glDisable(GL_DEPTH_TEST)		# and don't need to do this
+
+        # Click:
+        # Select higher layer items first
+        selections=[]
+        for i in range(len(placements)):	# favour higher layers
+            if placements[i]:
+                glClear(GL_COLOR_BUFFER_BIT)
+                for j in range(len(placements[i])):
+                    #if i==82: print placements[i][j], j, j%32*8, (j%1024)/32*8, j/1024*8
+                    glColor3ub(j%32*8, (j%1024)/32*8, j/1024*8)	# 5bits/color
+                    placements[i][j].draw(False, True)
+                data=unpack('75B',glReadPixels(self.clickpos[0]-2, size[1]-2-self.clickpos[1], 5,5, GL_RGB, GL_UNSIGNED_BYTE))
+                #print i, len(data), data
+                for k in range(0, 75, 3):
+                    j=(data[k]/8)+(data[k+1]/8)*32+(data[k+2]/8)*1024
+                    if j!=(255/8*1024):
+                        print j, placements[i][j]
+
+        self.SwapBuffers()
+
+        glClear(GL_COLOR_BUFFER_BIT)
+        #glEnable(GL_DEPTH_TEST)
+        if self.multisample: glEnable(GL_MULTISAMPLE_ARB)
+        glEnable(GL_LINE_SMOOTH)
+        glDisable(GL_SCISSOR_TEST)
+        if __debug__: print "%6.3f time in select" %(time.clock()-clock)
 
 
     def select(self):
@@ -702,10 +715,10 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         selections=[]
         try:
-            for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
-                selections.append(placements[int(names)>>24][int(names)&0xffffff])
+            for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
+                selections.append(placements[int(name)>>24][int(name)&0xffffff])
         except:	# overflow
-            pass
+            if __debug__: print_exc()
 
         # Select poly node?
         self.selectednode=None
@@ -726,8 +739,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 trysel.picknodes()
                 selectnodes=[]
                 try:
-                    for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
-                        selectnodes.append((int(names)>>24, int(names)&0xffffff))
+                    for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
+                        selectnodes.append((int(name)>>24, int(name)&0xffffff))
                 except:	# overflow
                     pass
                 if selectnodes:
@@ -790,175 +803,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.Refresh()
         self.frame.ShowSel()
 
-
-    def newselect(self):
-        #print "sel", 
-        #if not self.currentobjects():
-        #    self.selections=[]	# Can't remember
-        size = self.GetClientSize()
-        if self.clickmode==ClickModes.DragBox:
-            # maths goes wrong if zero-sized box
-            if self.clickpos[0]==self.mousenow[0]: self.mousenow[0]+=1
-            if self.clickpos[1]==self.mousenow[1]: self.mousenow[1]-=1
-            gluPickMatrix((self.clickpos[0]+self.mousenow[0])/2,
-                          size[1]-1-(self.clickpos[1]+self.mousenow[1])/2,
-                          abs(self.clickpos[0]-self.mousenow[0]),
-                          abs(self.clickpos[1]-self.mousenow[1]),
-                          (0, 0, size[0], size[1]))
-        elif 0:	# at point
-            gluPickMatrix(self.clickpos[0],
-                          size[1]-1-self.clickpos[1], 5,5,
-                          (0, 0, size[0], size[1]))
-
-        placements=self.placements[self.tile]
-
-        if __debug__: clock=time.clock()	# Processor time
-        glScissor(self.clickpos[0]-2, size[1]-3-self.clickpos[1], 5,5)
-        glEnable(GL_SCISSOR_TEST)
-        if self.multisample: glDisable(GL_MULTISAMPLE_ARB)
-        glDisable(GL_LINE_SMOOTH)
-	glDisable(GL_DITHER)
-        glClearColor(0.0, 0.0, 1.0, 0.0)	# Impossible value
-        glDisable(GL_TEXTURE_2D)
-        glDisable(GL_DEPTH_TEST)
-        glDisable(GL_CULL_FACE)
-        glDepthMask(GL_FALSE)
-
-        glSelectBuffer(self.selectmax)
-        glRenderMode(GL_SELECT)
-        glInitNames()
-        glPushName(0)
-        for i in range(len(placements)-1,-1,-1):	# favour higher layers
-            if placements[i]:
-                #glClear(GL_COLOR_BUFFER_BIT)
-                for j in range(len(placements[i])):
-                    #glColor3b(j%32*8, (j%1024)/32*8, j/1024*8)	# 5bits/color
-                    glLoadName((i<<24)+j)
-                    placements[i][j].draw(False, True, None)
-                #print i, unpack('75B', glReadPixels(self.clickpos[0]-2, size[1]-3-self.clickpos[1], 5,5, GL_RGB, GL_UNSIGNED_BYTE))
-
-        #self.SwapBuffers()#XXX
-        selections=[]
-        try:
-            for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
-                selections.append(placements[int(names)>>24][int(names)&0xffffff])
-                print names
-        except:	# overflow
-            pass
-        print selections
-
-        #glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
-        #glClear(GL_COLOR_BUFFER_BIT)
-	glEnable(GL_DITHER)
-        if self.multisample: glEnable(GL_MULTISAMPLE_ARB)
-        glEnable(GL_LINE_SMOOTH)
-        glEnable(GL_DEPTH_TEST)
-        glDepthMask(GL_TRUE)
-        glDisable(GL_SCISSOR_TEST)
-        if __debug__: print "%6.3f time in select" %(time.clock()-clock)
-
-        return
-        
-        if False:#XXX not self.picklist:
-            if self.profilenext:
-                from profile import run
-                self.profilenext=False
-                runctx('self.prepareselect()', globals(), locals(), 'profile.dmp')
-            else:
-                self.prepareselect()
-        glSelectBuffer(self.selectmax)
-        glRenderMode(GL_SELECT)
-        self.prepareselect()	#XXX glCallList(self.picklist)
-        selections=[]
-        try:
-            for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
-                selections.append(placements[int(names)>>24][int(names)&0xffffff])
-        except:	# overflow
-            pass
-
-        # Select poly node?
-        self.selectednode=None
-        if self.clickmode==ClickModes.Undecided:
-            if len(self.selected)==1 and isinstance(self.selected[0], Polygon) and self.selected[0] in selections:
-                trysel=self.selected[0]
-            elif len(selections)==1 and isinstance(selections[0], Polygon):
-                trysel=selections[0]
-            else:
-                trysel=None
-            if trysel:
-                #print "selnodes",
-                # First look for nodes in same polygon
-                glSelectBuffer(self.selectmax)
-                glRenderMode(GL_SELECT)
-                glInitNames()
-                glPushName(0)
-                trysel.picknodes()
-                selectnodes=[]
-                try:
-                    for min_depth, max_depth, (names,) in glRenderMode(GL_RENDER):
-                        selectnodes.append((int(names)>>24, int(names)&0xffffff))
-                except:	# overflow
-                    pass
-                if selectnodes:
-                    self.clickmode=ClickModes.DragNode
-                    self.selected=[trysel]
-                    self.selectednode=selectnodes[0]
-            
-        # Restore state for unproject
-        glViewport(0, 0, *size)
-        glMatrixMode(GL_PROJECTION)
-        glPopMatrix()	
-        glMatrixMode(GL_MODELVIEW)
-
-        if self.selectednode:
-            self.trashlists()	# selection changes
-            self.Refresh()
-            self.frame.ShowSel()
-            return
-
-        if self.clickmode==ClickModes.DragBox:	# drag - add or remove all
-            if self.clickctrl:
-                self.selected=list(self.selectsaved)	# reset each time
-                for i in selections:
-                    if not i in self.selected:
-                        self.selected.append(i)
-                    else:
-                        self.selected.remove(i)
-            else:
-                self.selected=list(selections)
-        else:			# click - Add or remove one
-            if not selections:
-                self.clickmode=ClickModes.DragBox
-                self.selectsaved=self.selected
-            else:
-                self.clickmode=ClickModes.Drag
-            self.trashlists()	# selection changes
-            if self.clickctrl:
-                for i in selections:
-                    if not i in self.selected:
-                        self.selected.append(i)
-                        break
-                else:	# all selected - remove one
-                    for i in self.selected:
-                        if i in selections:
-                            self.selected.remove(i)
-                            break
-            else:
-                if not selections:
-                    self.selected=[]
-                elif selections==self.selections and len(self.selected)==1 and self.selected[0] in self.selections:
-                    # cycle through selections
-                    self.selected=[selections[(selections.index(self.selected[0])+1)%len(selections)]]
-                else:
-                    self.selected=[selections[0]]
-        self.selections=selections
-        if __debug__:
-            for selection in self.selected:
-                print basename(selection.definition.filename), selection.definition.layer
-
-        self.Refresh()
-        self.frame.ShowSel()
-        
     def latlon2m(self, lat, lon):
         return(((lon-self.centre[1])*onedeg*cos(radians(lat)),
                 (self.centre[0]-lat)*onedeg))
@@ -1057,8 +901,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             if not (self.undostack and self.undostack[-1].equals(newundo)):
                 self.undostack.append(newundo)
 
-        if self.picklist: glDeleteLists(self.picklist, 1)
-        self.picklist=0
         self.Refresh()
         self.frame.ShowSel()
         return True
@@ -1158,9 +1000,9 @@ class MyGL(wx.glcanvas.GLCanvas):
     def nextsel(self, name, withctrl, withshift):
         # returns new location or None
         # we have 0 or more items of the same type selected
-        if not self.lookup[name] in self.defs:
+        if not self.lookup[name].file in self.defs:
             return None	# can't exist in this tile if not loaded
-        definition=self.defs[self.lookup[name]]
+        definition=self.defs[self.lookup[name].file]
         placements=self.placements[self.tile][definition.layer]
         if withctrl and withshift:
             self.selected=[]
@@ -1655,7 +1497,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     if name[0]=='*':
                         filename=name
                     else:
-                        filename=self.lookup[name]
+                        filename=self.lookup[name].file
                     if filename in self.defs:
                         self.defs[filename].allocate(self.vertexcache, self.defs)
                     else:
@@ -1676,7 +1518,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnable(GL_CULL_FACE)
             glDisable(GL_POLYGON_OFFSET_FILL)
             polystate=0
-            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+            if __debug__:
+                if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
             if not self.options&Prefs.ELEVATION:
                 glPushMatrix()
                 glScalef(1,0,1)		# Defeat elevation data
@@ -1702,7 +1545,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glDrawArrays(GL_TRIANGLES, base, number)
             if not self.options&Prefs.ELEVATION:
                 glPopMatrix()
-            if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
+            if __debug__:
+                if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
 
             # navaids
             glColor3f(0.8, 0.8, 0.8)	# Unpainted
@@ -1718,15 +1562,16 @@ class MyGL(wx.glcanvas.GLCanvas):
                     if objs[i][0]=='*':
                         definition=self.defs[objs[i]]
                     elif objs[i] not in self.lookup:
+                        if __debug__: print "Missing navaid %s" % objs[i]
                         continue	# missing in this version of X-Plane
                     else:
-                        definition=self.defs[self.lookup[objs[i]]]
+                        definition=self.defs[self.lookup[objs[i]].file]
                     coshdg=cos(radians(hdg))
                     sinhdg=sin(radians(hdg))
                     (x,z)=self.latlon2m(lat,lon)
                     y=self.vertexcache.height(newtile,options,x,z)
                     glBindTexture(GL_TEXTURE_2D, definition.texture)
-                    if definition.poly and not self.nopolyosinlist and not polystate:
+                    if False: # was definition.poly and not self.nopolyosinlist and not polystate:
                         glPolygonOffset(-1, -1)
                         glEnable(GL_POLYGON_OFFSET_FILL)
                         polystate=definition.poly
@@ -1740,7 +1585,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     else:
                         seq=[(0,0)]
                     for (xinc,zinc) in seq:
-                        if self.nopolyosinlist:
+                        if True: # was self.nopolyosinlist:
                             glDisable(GL_DEPTH_TEST)
                         else:
                             glEnable(GL_POLYGON_OFFSET_FILL)
@@ -1823,11 +1668,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.meshlist=0
             if self.codeslist: glDeleteLists(self.codeslist, 1)
             self.codeslist=0
-        if picktoo:
-            if self.picklist: glDeleteLists(self.picklist, 1)
-            self.picklist=0
-        if self.clutterlist: glDeleteLists(self.clutterlist, 1)
-        self.clutterlist=0
 
     def getworldloc(self, mx, my):
         self.SetCurrent()

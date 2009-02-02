@@ -4,19 +4,10 @@ from distutils.core import setup
 from glob import glob
 from os import listdir, name
 from os.path import basename, join, pardir
-import py2exe
 import sys
 
 sys.path.insert(0, join(sys.path[0], pardir))
 from version import appname, appversion
-
-# hack to bundle MSVCP71.dll
-origIsSystemDLL = py2exe.build_exe.isSystemDLL
-def isSystemDLL(pathname):
-    if basename(pathname).lower() in ("msvcp71.dll", "dwmapi.dll"):
-        return 0
-    return origIsSystemDLL(pathname)
-py2exe.build_exe.isSystemDLL = isSystemDLL
 
 # bogus crud to get WinXP "Visual Styles"
 manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
@@ -91,12 +82,18 @@ setup(name='OverlayEditor',
                     'Resources/bad.png',
                     'Resources/exc.png',
                     'Resources/fac.png',
+                    'Resources/facs.png',
                     'Resources/for.png',
+                    'Resources/fors.png',
                     'Resources/net.png',
                     'Resources/obj.png',
+                    'Resources/objs.png',
                     'Resources/ortho.png',
+                    'Resources/orthos.png',
                     'Resources/pol.png',
+                    'Resources/pols.png',
                     'Resources/unknown.png',
+                    'Resources/unknowns.png',
                     'Resources/airport0_000.png',
                     'Resources/Sea01.png',
                     'Resources/surfaces.png',
@@ -113,12 +110,16 @@ setup(name='OverlayEditor',
                             'dll_excludes':['w9xpopen.exe'],
                             'bundle_files':True,
                             'compressed':True,
+                            # http://www.py2exe.org/index.cgi/OptimizingSize
                             'excludes':['Carbon', 'tcl', 'Tkinter', 'mx','socket','urllib','webbrowser',
-                                        'Numeric', 'numarray', 'scipy', 'nose'],
+                                        'curses', 'difflib', 'distutils', 'doctest', 'email', 'hotshot', 'inspect', 'pdb', 'setuptools', 'unittest', 'win32',	# Python2.5
+                                        'Numeric', 'dotblas', 'numarray', 'scipy', 'nose'],	# Old Numeric stuff
                             'packages':['encodings.ascii','encodings.mbcs','encodings.utf_8','encodings.latin_1',	# latin_1 for wx.lib.masked.NumCtrl
-                                        'OpenGL.platform.win32', 'ctypes.wintypes', 'numpy'],
+                                        'OpenGL.platform.win32', 'OpenGL.arrays.nones', 'OpenGL.arrays.strings', 'OpenGL.arrays.lists', 'OpenGL.arrays.numbers', 'OpenGL.arrays.ctypesparameters', 'OpenGL.arrays.ctypespointers',
+                                        'numpy', 'ctypes.wintypes'],
                             'optimize':2,
                             },
+
                  'py2app': {'argv_emulation':False,
                             'iconfile':'MacOS/OverlayEditor.icns',
                             'includes':['wx'],

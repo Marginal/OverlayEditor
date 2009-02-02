@@ -7,9 +7,9 @@ from os import chdir, getenv, listdir, mkdir, unlink, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 import sys	# for path
 from sys import exit, argv, executable, platform, version
-from traceback import print_exc
 if __debug__:
     import time
+    from traceback import print_exc
 
 if platform.lower().startswith('linux') and not getenv("DISPLAY"):
     print "Can't run: DISPLAY is not set"
@@ -31,6 +31,14 @@ from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
 
 try:
     import OpenGL
+    if OpenGL.__version__ >= '3':
+        # Not defined in PyOpenGL 2.x.
+        if __debug__:
+            OpenGL.ERROR_ON_COPY =True	# only applies to numpy arrays
+        else:
+            OpenGL.ERROR_CHECKING=False	# don't check OGL errors for speed
+        import OpenGL.arrays.numpymodule
+        import OpenGL.arrays.ctypesarrays
 except:
     if platform=='darwin':
         from EasyDialogs import Message
@@ -50,7 +58,7 @@ from clutter import round2res, minres, latlondisp, Exclude	# for loading exclusi
 from clutterdef import KnownDefs, ExcludeDef, NetworkDef, previewsize
 from draw import MyGL
 from files import importObj, scanApt, readApt, readNav, readLib, readNet, sortfolded
-from palette import Palette
+from palette import Palette, PaletteEntry
 from DSFLib import readDSF, writeDSF
 from MessageBox import myMessageBox, AboutBox
 from prefs import Prefs
@@ -1128,11 +1136,11 @@ class MainWindow(wx.Frame):
                 if self.menubar: self.menubar.Enable(wx.ID_UNDO, False)
         elif event.m_keyCode==wx.WXK_F1 and platform!='darwin':
             self.OnHelp(event)
-        elif __debug__ and event.m_keyCode==ord('P'):
-            print "Profile next"
-            self.canvas.profilenext=True
         else:
-            #if __debug__: print "Unknown key", event.m_keyCode
+            if __debug__:
+                if event.m_keyCode==ord('P'):
+                    from cProfile import runctx
+                    runctx('self.canvas.OnPaint(None)', globals(), locals(), 'profile.dmp')
             event.Skip(True)
             return
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
@@ -1332,6 +1340,9 @@ class MainWindow(wx.Frame):
                     (self.airports,self.nav)=scanApt(mainaptdat)
                     if __debug__: print "%6.3f time in global apt" % (time.clock()-clock)
                 except:
+                    if __debug__:
+                        print "Invalid apt.dat:"
+                        print_exc()
                     self.nav=[]
                     myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
                 try:
@@ -1363,7 +1374,8 @@ class MainWindow(wx.Frame):
                         networks[tile]=nets
                 except IOError, e:	# Bad DSF - restore to unloaded state
                     progress.Destroy()
-                    myMessageBox(e.strerror, "Can't edit this scenery package.", wx.ICON_ERROR|wx.OK, None)
+                    myMessageBox(e.strerror, "Can't edit this scenery package.",
+                                 wx.ICON_ERROR|wx.OK, None)
                     return
                 except:		# Bad DSF - restore to unloaded state
                     progress.Destroy()
@@ -1399,7 +1411,13 @@ class MainWindow(wx.Frame):
                 # get start location
                 if prefs.package and apt[:-23].endswith(sep+prefs.package) and thiscode and not pkgloc:
                     (name, pkgloc, run)=thisapt[thiscode]
+            except AssertionError, e:
+                if prefs.package and apt[:-23].endswith(sep+prefs.package):
+                    myMessageBox(e.message, "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
             except:
+                if __debug__:
+                    print "Invalid %s" % apt
+                    print_exc()
                 if prefs.package and apt[:-23].endswith(sep+prefs.package):
                     myMessageBox("The apt.dat file in this package is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
 
@@ -1412,8 +1430,8 @@ class MainWindow(wx.Frame):
         # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
         # search order is: custom libraries, default libraries, scenery package
         progress.Update(2, 'Libraries')
-        lookupbylib={}	# {name: path} by libname
-        lookup={}	# {name: path}
+        lookupbylib={}	# {name: paletteentry} by libname
+        lookup={}	# {name: paletteentry}
         terrain={}	# {name: path}
 
         clibs=glob(join(prefs.xplane, gcustom, '*', glibrary))
@@ -1438,7 +1456,7 @@ class MainWindow(wx.Frame):
                         if name.lower().startswith('custom objects'):
                             name=name[15:]
                         #if not name in lookup:	# library takes precedence
-                        objects[name]=join(path,f)
+                        objects[name]=PaletteEntry(join(path,f))
                     elif f[-4:].lower()=='.net':
                         roadfile=join(path,f)
         self.palette.load('Objects', objects, pkgdir)
@@ -1448,6 +1466,7 @@ class MainWindow(wx.Frame):
 
         if xpver>=9:
             defroadfile=lookupbylib['g8'].pop(NetworkDef.DEFAULTFILE,None)
+            if defroadfile: defroadfile=defroadfile.file
             if not self.defnetdefs:
                 try:
                     self.defnetdefs=readNet(defroadfile)
@@ -1469,12 +1488,12 @@ class MainWindow(wx.Frame):
                 roadfile=NetworkDef.DEFAULTFILE
             names={}
             for x in netdefs:                
-                if x and x.name: names[x.name]=lookup[x.name]=x.name
+                if x and x.name: names[x.name]=lookup[x.name]=PaletteEntry(x.name)
             self.palette.load(NetworkDef.TABNAME, names, None)
         else:
             netdefs=self.defnetdefs=[]
             
-        self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], x) for x in Exclude.NAMES.keys()]), None)
+        self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], PaletteEntry(x)) for x in Exclude.NAMES.keys()]), None)
 
         if prefs.package and prefs.package in prefs.packageprops:
             (image, lat, lon, hdg, width, length, opacity)=prefs.packageprops[prefs.package]
@@ -1537,7 +1556,7 @@ class MainWindow(wx.Frame):
                 name=newpath[len(pkgpath)+1:].replace(sep, '/')
                 if name.lower().startswith('custom objects'):
                     name=name[15:]
-                self.canvas.lookup[name]=newpath
+                self.canvas.lookup[name]=PaletteEntry(newpath)
                 self.palette.add(name)
                 continue
             myMessageBox(msg, "Can't import %s" % path,

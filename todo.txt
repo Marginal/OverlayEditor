@@ -1,10 +1,14 @@
+regional variants - eg lib/g8/pol/wet_warm_hill_s.pol:
+- Resources\default scenery\900 red terrain\pol\wet_warm_hill_s.pol
+- Resources\default scenery\900 world terrain\pol\wet_warm_hill_s.pol
+cut / copy / paste
+import sceneries - http://forums.x-plane.org/index.php?showtopic=36042
+
 don't show .ter - eg lib/g8/terrain/temp_city_park.ter
 don't import into custom objects for types other than obj
 don't look in custom objects for types other than obj
 load textures from custom object textures
 
-Numeric in linux & Mac builds
-prepareselect - at end of drag, not if selected (cos keyboard)
 insert node - average two _editable_ nodes
 
 fix nopoly - use drawmultielements (1.4)

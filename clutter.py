@@ -48,7 +48,9 @@ from math import atan2, ceil, cos, floor, hypot, pi, radians, sin
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from sys import maxint
-from traceback import print_exc
+if __debug__:
+    from traceback import print_exc
+
 try:
     # apparently older PyOpenGL version didn't define gluTessVertex
     gluTessVertex
@@ -125,7 +127,7 @@ class Object(Clutter):
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
                 self.definition.allocate(vertexcache, defs)	# ensure allocated
@@ -136,9 +138,9 @@ class Object(Clutter):
             # virtual name not found or can't load physical file
             if usefallback:
                 if self.name in lookup:
-                    filename=lookup[self.name]
+                    filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name]=self.name
+                    filename=lookup[self.name].file=self.name
                 if filename in defs:
                     self.definition=defs[filename]
                     self.definition.allocate(vertexcache, defs)	# ensure allocated
@@ -155,7 +157,7 @@ class Object(Clutter):
         else:
             return '%s  Hdg: %-5.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg)
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         obj=self.definition
         glPushMatrix()
         glTranslatef(self.x, self.y, self.z)
@@ -165,7 +167,7 @@ class Object(Clutter):
             glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
         else:
             glBindTexture(GL_TEXTURE_2D, obj.texture)
-            if obj.poly and not (selected or picking or nopoly):
+            if obj.poly and not selected:
                 #glDepthMask(GL_FALSE) - doesn't work with inwards facing faces
                 glEnable(GL_POLYGON_OFFSET_FILL)
             if obj.culled:
@@ -175,7 +177,7 @@ class Object(Clutter):
                 glDisable(GL_CULL_FACE)
                 glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
                 glEnable(GL_CULL_FACE)
-            if obj.poly and not (selected or nopoly):
+            if obj.poly and not selected:
                 #glDepthMask(GL_TRUE)
                 glDisable(GL_POLYGON_OFFSET_FILL)
         glPopMatrix()
@@ -238,7 +240,7 @@ class Polygon(Clutter):
 
     def load(self, lookup, defs, vertexcache, usefallback=True):
         if self.name in lookup:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
         else:
             filename=None
         self.definition=PolygonDef(filename, vertexcache)
@@ -266,17 +268,19 @@ class Polygon(Clutter):
         else:
             return '%s  Param: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, picking, nopoly=False, col=(0.25, 0.25, 0.25)):
+    def draw(self, selected, picking, col=(0.25, 0.25, 0.25)):
         # just draw outline
         if not picking:
-            if self.nonsimple:
-                col=(1.0,0.25,0.25)	# override colour if nonsimple
             glBindTexture(GL_TEXTURE_2D, 0)
+            if not selected:
+                if self.nonsimple:
+                    glColor3f(1.0,0.25,0.25)	# override colour if nonsimple
+                else:
+                    glColor3f(*col)
         glDisable(GL_DEPTH_TEST)
         for winding in self.points:
             glBegin(GL_LINE_LOOP)
             for p in winding:
-                if not selected and not picking: glColor3f(*col)
                 glVertex3f(p[0],p[1],p[2])
             glEnd()
         glEnable(GL_DEPTH_TEST)
@@ -346,8 +350,12 @@ class Polygon(Clutter):
                     gluTessVertex(tess, [self.points[i][j][0], 0, self.points[i][j][2]], (self.points[i][j], False, None))
                 gluTessEndContour(tess)
             gluTessEndPolygon(tess)
+            if not tris:
+                if __debug__: print "Polygon layout failed"
+                self.nonsimple=True
         except:
             # Combine required -> not simple
+            if __debug__: print "Polygon layout failed"
             self.nonsimple=True
         
         return selectednode
@@ -450,10 +458,10 @@ class Beach(Polygon):
         Polygon.load(self, lookup, defs, vertexcache, usefallback=True)
         self.definition.layer=ClutterDef.BEACHESLAYER
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         # Don't draw selected so can't be picked
-        if not picking: Polygon.draw(self, selected, picking, nopoly)
-    
+        if not picking: Polygon.draw(self, selected, picking)
+
 
 class Draped(Polygon):
 
@@ -466,7 +474,7 @@ class Draped(Polygon):
         
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
             else:
@@ -475,9 +483,9 @@ class Draped(Polygon):
         except:
             if usefallback:
                 if self.name in lookup:
-                    filename=lookup[self.name]
+                    filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name]=self.name
+                    filename=lookup[self.name].file=self.name
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
@@ -492,19 +500,18 @@ class Draped(Polygon):
         else:
             return '%s  Tex hdg: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         drp=self.definition
         if self.nonsimple:
-            Polygon.draw(self, selected, picking, nopoly)
+            Polygon.draw(self, selected, picking)
             return
         elif picking:
-            Polygon.draw(self, selected, picking, nopoly)	# for outline
+            Polygon.draw(self, selected, picking)	# for outline
         else:
             glBindTexture(GL_TEXTURE_2D, drp.texture)
-        if not (selected or picking or nopoly):
+        if not (selected or picking):
             glDepthMask(GL_FALSE)	# offset mustn't update depth
             glEnable(GL_POLYGON_OFFSET_FILL)
-            glPolygonOffset(-1, -1)
         glBegin(GL_TRIANGLES)
         if picking:
             for t in self.tris:
@@ -514,7 +521,7 @@ class Draped(Polygon):
                 glTexCoord2f(*t[2])
                 glVertex3f(*t[0])
         glEnd()
-        if not (selected or picking or nopoly):
+        if not (selected or picking):
             glDepthMask(GL_TRUE)
             glDisable(GL_POLYGON_OFFSET_FILL)
         
@@ -635,15 +642,17 @@ class Draped(Polygon):
                 gluTessEndContour(tess)
             gluTessEndPolygon(tess)
 
+            if not tris:
+                if __debug__: print "Draped layout failed:"
+                self.nonsimple=True
+                return selectednode
+
             if not options&Prefs.ELEVATION:
                 self.tris=tris
                 return selectednode
         except:
             # Combine required -> not simple
-            if __debug__:
-                print "Draped layout failed:"
-                print_exc()
-            self.tris=[]
+            if __debug__: print "Draped layout failed:"
             self.nonsimple=True
             return selectednode
 
@@ -830,8 +839,8 @@ class Exclude(Polygon):
         # changed adjacent nodes, so do full layout immediately
         return self.layout(tile, options, vertexcache, node)
 
-    def draw(self, selected, picking, nopoly=False):
-        Polygon.draw(self, selected, picking, nopoly, (0.75, 0.25, 0.25))
+    def draw(self, selected, picking):
+        Polygon.draw(self, selected, picking, (0.75, 0.25, 0.25))
 
 
 class Fitted(Polygon):
@@ -872,7 +881,7 @@ class Facade(Fitted):
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
             else:
@@ -888,9 +897,9 @@ class Facade(Fitted):
                 self.param=1
             if usefallback:
                 if self.name in lookup:
-                    filename=lookup[self.name]
+                    filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name]=self.name
+                    filename=lookup[self.name].file=self.name
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
@@ -903,13 +912,13 @@ class Facade(Fitted):
         else:
             return '%s  Height: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         fac=self.definition
         if self.nonsimple or (not self.quads and not self.roof):
-            Polygon.draw(self, selected, picking, nopoly)
+            Polygon.draw(self, selected, picking)
             return
         elif picking:
-            Polygon.draw(self, selected, picking, nopoly)
+            Polygon.draw(self, selected, picking)
         else:
             glBindTexture(GL_TEXTURE_2D, fac.texture)
             if fac.two_sided:
@@ -928,7 +937,7 @@ class Facade(Fitted):
             glEnd()
         if not picking and fac.two_sided:
             glEnable(GL_CULL_FACE)
-
+        
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam=max(dparam, 1-self.param)	# can't have height 0
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
@@ -1139,7 +1148,7 @@ class Forest(Polygon):
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
             else:
@@ -1148,9 +1157,9 @@ class Forest(Polygon):
         except:
             if usefallback:
                 if self.name in lookup:
-                    filename=lookup[self.name]
+                    filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name]=self.name
+                    filename=lookup[self.name].file=self.name
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
@@ -1163,12 +1172,30 @@ class Forest(Polygon):
         else:
             return '%s  Density: %-4.1f%%  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
 
-    def draw(self, selected, picking, nopoly=False):
-        Polygon.draw(self, selected, picking, nopoly, (0.25,0.75,0.25))
+    def draw(self, selected, picking):
+        Polygon.draw(self, selected, picking, (0.25,0.75,0.25))
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
         if self.param>255: self.param=255
+
+    def addwinding(self, tile, options, vertexcache, size, hdg):
+        minrad=0.000007071*size
+        for j in self.nodes[0]:
+            minrad=min(minrad, abs(self.lon-j[0]), abs(self.lat-j[1]))
+        i=len(self.nodes)
+        h=radians(hdg)
+        self.nodes.append([])
+        for j in [h+5*pi/4, h+7*pi/4, h+pi/4, h+3*pi/4]:
+            self.nodes[i].append((round2res(self.lon+sin(j)*minrad),
+                                  round2res(self.lat+cos(j)*minrad)))
+        return self.layout(tile, options, vertexcache, (i,0))
+
+    def delwinding(self, tile, options, vertexcache, selectednode):
+        (i,j)=selectednode
+        if not i: return False	# don't delete outer winding
+        self.nodes.pop(i)
+        return self.layout(tile, options, vertexcache, (i-1,0))
 
 
 class Line(Polygon):
@@ -1182,7 +1209,7 @@ class Line(Polygon):
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
-            filename=lookup[self.name]
+            filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
             else:
@@ -1191,9 +1218,9 @@ class Line(Polygon):
         except:
             if usefallback:
                 if self.name in lookup:
-                    filename=lookup[self.name]
+                    filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name]=self.name
+                    filename=lookup[self.name].file=self.name
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
@@ -1210,19 +1237,18 @@ class Line(Polygon):
                 oc='Open'
             return '%s  %s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         drp=self.definition
         if self.nonsimple:
-            Polygon.draw(self, selected, picking, nopoly)
+            Polygon.draw(self, selected, picking)
             return
         elif picking:
-            Polygon.draw(self, selected, picking, nopoly)	# for outline
+            Polygon.draw(self, selected, picking)	# for outline
         else:
             glBindTexture(GL_TEXTURE_2D, drp.texture)
-        if not (selected or picking or nopoly):
+        if not (selected or picking):
             glDepthMask(GL_FALSE)	# offset mustn't update depth
             glEnable(GL_POLYGON_OFFSET_FILL)
-            glPolygonOffset(-1, -1)
         glBegin(GL_TRIANGLES)
         if picking:
             for t in self.tris:
@@ -1232,7 +1258,7 @@ class Line(Polygon):
                 glTexCoord2f(*t[2])
                 glVertex3f(*t[0])
         glEnd()
-        if not (selected or picking or nopoly):
+        if not (selected or picking):
             glDepthMask(GL_TRUE)
             glDisable(GL_POLYGON_OFFSET_FILL)
         
@@ -1309,7 +1335,7 @@ class Network(Fitted):
         else:
             return '%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes))
 
-    def draw(self, selected, picking, nopoly=False):
+    def draw(self, selected, picking):
         # just draw outline
         if picking:
             # Can't pick if no elevation
@@ -1323,7 +1349,7 @@ class Network(Fitted):
             glVertex3f(p[0],p[1],p[2])
         glEnd()
         glEnable(GL_DEPTH_TEST)
-        if not selected and not picking:
+        if not (selected or picking):
             glColor3f(0.8, 0.8, 0.8)	# restore
 
     def drawnodes(self, selectednode):
