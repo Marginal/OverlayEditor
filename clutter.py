@@ -59,6 +59,7 @@ except NameError:
     gluTessVertex = GLU._gluTessVertex
 
 from clutterdef import ObjectDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox
+from palette import PaletteEntry
 from prefs import Prefs
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
@@ -140,7 +141,8 @@ class Object(Clutter):
                 if self.name in lookup:
                     filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name].file=self.name
+                    filename=self.name
+                    lookup[self.name]=PaletteEntry(self.name)
                 if filename in defs:
                     self.definition=defs[filename]
                     self.definition.allocate(vertexcache, defs)	# ensure allocated
@@ -476,7 +478,8 @@ class Draped(Polygon):
                 if self.name in lookup:
                     filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name].file=self.name
+                    filename=self.name
+                    lookup[self.name]=PaletteEntry(self.name)
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
@@ -632,7 +635,7 @@ class Draped(Polygon):
             gluTessEndPolygon(tess)
 
             if not tris:
-                if __debug__: print "Draped layout failed:"
+                if __debug__: print "Draped layout failed - no tris"
                 self.nonsimple=True
                 return selectednode
 
@@ -641,7 +644,7 @@ class Draped(Polygon):
                 return selectednode
         except:
             # Combine required -> not simple
-            if __debug__: print "Draped layout failed:"
+            if __debug__: print "Draped layout failed - non-simple"
             self.nonsimple=True
             return selectednode
 
@@ -716,12 +719,14 @@ class Draped(Polygon):
                                 tris[t][2][1]+a*(tris[t+1][2][1]-tris[t][2][1])+b*(tris[t+2][2][1]-tris[t][2][1]))
                             break
                     else:
-                        uv=None
+                        # Provide something in case tessellation screws up
+                        uv=(0,0)
                     gluTessVertex(csgt, [x,0,z], (meshpt[m],True, uv))
                 gluTessEndContour(csgt)
 
         gluTessEndPolygon(csgt)
         return selectednode
+
 
     def addnode(self, tile, options, vertexcache, selectednode, clockwise):
         if self.param==65535:
@@ -860,7 +865,8 @@ class Facade(Polygon):
                 if self.name in lookup:
                     filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name].file=self.name
+                    filename=self.name
+                    lookup[self.name]=PaletteEntry(self.name)
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
@@ -1120,7 +1126,8 @@ class Forest(Polygon):
                 if self.name in lookup:
                     filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name].file=self.name
+                    filename=self.name
+                    lookup[self.name]=PaletteEntry(self.name)
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
@@ -1181,7 +1188,8 @@ class Line(Polygon):
                 if self.name in lookup:
                     filename=lookup[self.name].file
                 else:
-                    filename=lookup[self.name].file=self.name
+                    filename=self.name
+                    lookup[self.name]=PaletteEntry(self.name)
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
@@ -1496,64 +1504,3 @@ gluTessProperty(csgt, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
 gluTessCallback(csgt, GLU_TESS_VERTEX_DATA,  csgtvertex)
 gluTessCallback(csgt, GLU_TESS_COMBINE,      csgtcombine)
 gluTessCallback(csgt, GLU_TESS_EDGE_FLAG,    csgtedge)	# no strips
-
-
-def csglvertex(vertex, data):
-    data.append(vertex)
-
-def csglcombine(coords, vertex, weight):
-    # interp height & UV at coords from vertices (location, ismesh, uv)
-    
-    # check for just two adjacent mesh triangles
-    if vertex[0]==vertex[1]:
-        # common case, or non-simple
-        #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
-        return vertex[0]
-    elif vertex[0][0][0]==vertex[1][0][0] and vertex[0][0][2]==vertex[1][0][2] and vertex[0][1]:
-        # Height discontinuity in terrain mesh - eg LIEE - wtf!
-        assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
-        return vertex[0]
-
-    # intersection of two lines - use terrain mesh line for height
-    elif vertex[0][1]:
-        #assert weight[0] and weight[1] and weight[2] and weight[3] and vertex[1][1]
-        p1=vertex[0]
-        p2=vertex[1]
-        p3=vertex[2]
-        p4=vertex[3]
-    else:
-        assert weight[0] and weight[1] and weight[2] and weight[3]
-        p1=vertex[2]
-        p2=vertex[3]
-        p3=vertex[0]
-        p4=vertex[1]
-
-    # height
-    d=hypot(p2[0][0]-p1[0][0], p2[0][2]-p1[0][2])
-    if not d:
-        y=p1[0][1]
-    else:
-        ratio=(hypot(coords[0]-p1[0][0], coords[2]-p1[0][2])/d)
-        y=p1[0][1]+ratio*(p2[0][1]-p1[0][1])
-
-    # UV
-    if not p3[2]:
-        uv=None
-    else:
-        d=hypot(p4[0][0]-p3[0][0], p4[0][2]-p3[0][2])
-        if not d:
-            uv=p3[2]
-        else:
-            ratio=(hypot(coords[0]-p3[0][0], coords[2]-p3[0][2])/d)
-            uv=(p3[2][0]+ratio*(p4[2][0]-p3[2][0]),
-                p3[2][1]+ratio*(p4[2][1]-p3[2][1]))
-    
-    return ([coords[0],y,coords[2]], True, uv)
-
-csgl=gluNewTess()
-gluTessNormal(csgl, 0, -1, 0)
-gluTessProperty(csgl, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
-gluTessProperty(csgl, GLU_TESS_BOUNDARY_ONLY,GL_TRUE)
-gluTessCallback(csgl, GLU_TESS_VERTEX_DATA,  csglvertex)
-gluTessCallback(csgl, GLU_TESS_COMBINE,      csglcombine)
-
