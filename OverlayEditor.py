@@ -58,9 +58,10 @@ from clutter import round2res, minres, latlondisp, Exclude	# for loading exclusi
 from clutterdef import KnownDefs, ExcludeDef, NetworkDef, previewsize
 from draw import MyGL
 from files import importObj, scanApt, readApt, readNav, readLib, readNet, sortfolded
+from lock import LockDialog
 from palette import Palette, PaletteEntry
 from DSFLib import readDSF, writeDSF
-from MessageBox import myMessageBox, AboutBox
+from MessageBox import myCreateStdDialogButtonSizer, myMessageBox, AboutBox
 from prefs import Prefs
 from version import appname, appversion
 
@@ -104,33 +105,6 @@ if platform=='darwin':
 else:
     pad=0
     browse="Browse..."
-
-class myCreateStdDialogButtonSizer(wx.BoxSizer):
-    # Dialog.CreateStdDialogButtonSizer for pre 2.6
-    def __init__(self, parent, style):
-        assert not (style & ~(wx.OK|wx.CANCEL))
-        wx.BoxSizer.__init__(self, wx.HORIZONTAL)
-
-        ok=style&wx.OK
-        no=style&wx.CANCEL
-        
-        # adjust order of buttons per Windows or Mac conventions
-        if platform!='darwin':
-            if ok: buttonok=wx.Button(parent, wx.ID_OK)
-            if no: buttonno=wx.Button(parent, wx.ID_CANCEL)
-            self.Add([0,0], 1)		# push following buttons to right
-            if ok: self.Add(buttonok, 0, wx.ALL, pad)
-            if ok and no: self.Add([6,0], 0)	# cosmetic
-            if no: self.Add(buttonno, 0, wx.ALL, pad)
-        else:
-            if no: buttonno=wx.Button(parent, wx.ID_CANCEL)
-            if ok: buttonok=wx.Button(parent, wx.ID_OK)
-            self.Add([0,0], 1)		# push following buttons to right
-            if no: self.Add(buttonno, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, pad)
-            if ok and no: self.Add([6,0], 0)	# cosmetic
-            if ok: self.Add(buttonok, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, pad)
-            self.Add([0,0], 1)	# centre
-        if ok: buttonok.SetDefault()
 
 
 class myListBox(wx.VListBox):
@@ -387,6 +361,7 @@ class GotoDialog(wx.Dialog):
         if self.ShowModal()!=wx.ID_OK: return None
         return (self.lat.GetValue(), self.lon.GetValue())
 
+
 class PreferencesDialog(wx.Dialog):
 
     def __init__(self, parent, id, title):
@@ -409,10 +384,11 @@ class PreferencesDialog(wx.Dialog):
         panel1.SetSizer(box1)
 
         self.display = wx.RadioBox(panel2, -1, "Terrain", style=wx.VERTICAL,
-                                   choices=["No terrain", "Show terrain", "Show terrain and elevation", "Show terrain, elevation, powerlines, railways, roads"])
-        if prefs.options&Prefs.NETWORK:
-            self.display.SetSelection(3)
-        elif prefs.options&Prefs.ELEVATION:
+                                   choices=["No terrain", "Show terrain", "Show terrain and elevation"])
+        # "Show terrain, elevation, powerlines, railways, roads"])
+        #if prefs.options&Prefs.NETWORK:
+        #    self.display.SetSelection(3)
+        if prefs.options&Prefs.ELEVATION:
             self.display.SetSelection(2)
         elif prefs.options&Prefs.TERRAIN:
             self.display.SetSelection(1)
@@ -743,7 +719,7 @@ class BackgroundDialog(wx.Dialog):
 class MainWindow(wx.Frame):
     def __init__(self, parent, id, title):
 
-        self.loc=None	# (lat,lon)
+        self.loc=(0.5,0.5)	# (lat,lon)
         self.hdg=0
         self.elev=45
         self.dist=2048*zoom
@@ -876,6 +852,11 @@ class MainWindow(wx.Frame):
                                   'Go to airport')
         wx.EVT_TOOL(self.toolbar, wx.ID_FORWARD, self.OnGoto)
         self.toolbar.AddSeparator()
+        self.toolbar.AddLabelTool(wx.ID_APPLY, 'Lock object types',
+                                  self.icon(['stock_lock', 'security-medium'], 'padlock.png'),
+                                  wx.NullBitmap, 0,
+                                  'Lock object types')
+        wx.EVT_TOOL(self.toolbar, wx.ID_APPLY, self.OnLock)
         self.toolbar.AddLabelTool(wx.ID_PREFERENCES, 'Preferences',
                                   self.icon(['preferences-desktop', 'preferences-system', 'package-settings'], 'prefs.png'),
                                   wx.NullBitmap, 0,
@@ -1179,7 +1160,19 @@ class MainWindow(wx.Frame):
     def OnNew(self, event):
         if not self.SaveDialog(): return
         package=self.NewDialog(True)
-        if package: self.OnReload(False, package)
+        if package:
+            self.OnReload(False, package)
+            self.toolbar.EnableTool(wx.ID_SAVE, False)
+            self.toolbar.EnableTool(wx.ID_ADD,  False)
+            self.toolbar.EnableTool(wx.ID_UNDO, False)
+            self.toolbar.EnableTool(wx.ID_PASTE,   True)
+            self.toolbar.EnableTool(wx.ID_REFRESH, True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_SAVE, False)
+                self.menubar.Enable(wx.ID_UNDO, False)
+                self.menubar.Enable(wx.ID_ADD,  False)
+                self.menubar.Enable(wx.ID_PASTE,   True)
+                self.menubar.Enable(wx.ID_REFRESH, True)
         
 
     def OnOpen(self, event):
@@ -1209,8 +1202,6 @@ class MainWindow(wx.Frame):
         if r==wx.ID_OK:
             package=list1.GetStringSelection()
             dlg.Destroy()
-            #self.loc=None
-            #self.hdg=0
             self.OnReload(False, package)
             if prefs.package:
                 self.toolbar.EnableTool(wx.ID_SAVE, False)
@@ -1266,7 +1257,13 @@ class MainWindow(wx.Frame):
                              wx.ICON_ERROR|wx.OK, None)
                 return False
         self.toolbar.EnableTool(wx.ID_SAVE, False)
-        if self.menubar: self.menubar.Enable(wx.ID_SAVE, False)
+        self.toolbar.EnableTool(wx.ID_PASTE,   True)
+        self.toolbar.EnableTool(wx.ID_REFRESH, True)
+        if self.menubar:
+            self.menubar.Enable(wx.ID_SAVE, False)
+            self.menubar.Enable(wx.ID_PASTE,   True)
+            self.menubar.Enable(wx.ID_REFRESH, True)
+
         return True
         
     def OnAdd(self, event):
@@ -1334,7 +1331,7 @@ class MainWindow(wx.Frame):
             else:
                 xpver=8
                 mainaptdat=glob(join(prefs.xplane, gmain8aptdat))[0]
-            if not self.airports:	# Default apt.dat
+            if False:#XXXnot self.airports:	# Default apt.dat
                 try:
                     if __debug__: clock=time.clock()	# Processor time
                     (self.airports,self.nav)=scanApt(mainaptdat)
@@ -1351,13 +1348,13 @@ class MainWindow(wx.Frame):
                     else:
                         self.nav.extend(readNav(glob(join(prefs.xplane,gmain8navdat))[0]))
                 except:
-                    pass
+                    if __debug__:
+                        print "Invalid nav.dat:"
+                        print_exc()
                 
         if not reload:
             # Load, not reload
             progress.Update(0, 'Overlay DSFs')
-            self.loc=None
-            self.hdg=0
             self.elev=45
             self.dist=2048*zoom
             placements={}
@@ -1512,17 +1509,19 @@ class MainWindow(wx.Frame):
                            self.defnetdefs, netdefs, roadfile,
                            lookup, placements, networks,
                            background, terrain, dsfdirs)
-        if not self.loc:
+        if not reload:
             # Load, not reload
             if pkgloc:	# go to first airport by name
                 self.loc=pkgloc
+                self.hdg=0
             else:
                 for p in placements.values():
                     if p:
                         self.loc=p[0].location()
+                        self.hdg=0
                         break
                 else:	# Fallback / Untitled
-                    self.loc=(0.5,0.5)
+                    pass	# keep existing
         self.loc=(round2res(self.loc[0]),round2res(self.loc[1]))
         progress.Destroy()
         
@@ -1568,11 +1567,20 @@ class MainWindow(wx.Frame):
             self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
             self.ShowLoc()
 
+    def OnLock(self, event):
+        dlg=LockDialog(self, wx.ID_ANY, "Lock")
+        dlg.CenterOnParent()	# Otherwise is top-left on Mac
+        if dlg.ShowModal()==wx.ID_OK:
+            # apply to currently selected
+            self.canvas.selected=[x for x in self.canvas.selected if not x.definition.type & self.canvas.locked]
+            self.canvas.Refresh()
+            self.ShowSel()
+
     def OnPrefs(self, event):
         dlg=PreferencesDialog(self, wx.ID_ANY, "Preferences")
         dlg.CenterOnParent()	# Otherwise is top-left on Mac
         x=dlg.ShowModal()
-        if x!=wx.ID_OK:            
+        if x!=wx.ID_OK:
             if x: dlg.Destroy()
             return
         if dlg.display.GetSelection()==3:
@@ -1685,11 +1693,6 @@ class MainWindow(wx.Frame):
                                      wx.ICON_ERROR|wx.OK, self)
                         break
                 else:
-                    self.toolbar.EnableTool(wx.ID_SAVE, False)
-                    self.toolbar.EnableTool(wx.ID_UNDO, False)
-                    if self.menubar:
-                        self.menubar.Enable(wx.ID_SAVE, False)
-                        self.menubar.Enable(wx.ID_UNDO, False)
                     mkdir(join(base,v))
                     mkdir(join(base,v,'Earth nav data'))
                     dlg.Destroy()

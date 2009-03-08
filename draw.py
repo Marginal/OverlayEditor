@@ -85,6 +85,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.dragcursor=wx.StockCursor(wx.CURSOR_CROSS)
 
         self.valid=False	# do we have valid data for a redraw?
+        self.needclear=False	# pending clear
         self.options=0		# display options
         self.tile=(0,999)	# [lat,lon] of SW
         self.centre=None	# [lat,lon] of centre
@@ -104,6 +105,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.meshlist=0
         
         self.mousenow=None	# Current position (used in timer and drag)
+        self.locked=0		# locked object types
         self.selected=[]	# list of selected placements
         self.clickmode=None
         self.clickpos=None	# Location of mouse down
@@ -157,7 +159,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             ver=uname()[2].split('.')
             self.nopolyosinlist=(int(ver[0])<8 or (int(ver[0])==8 and int(ver[1])<8))
         else:
-            self.nopolyosinlist=False
+            self.nopolyosinlist=True#XXXFalse
 
         self.vertexcache=None
         self.multisample=False
@@ -188,19 +190,20 @@ class MyGL(wx.glcanvas.GLCanvas):
         except:
             self.multisample=False
         #glClearDepth(1.0)
+        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glEnable(GL_DEPTH_TEST)
         glDepthFunc(GL_LESS)
         glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
         if debugapt: glLineWidth(2.0)
-        #glLineStipple(1, 0x0f0f)	# for selection drag
-        glPointSize(4.0)		# for nodes
+        #glLineStipple(1, 0x0f0f)		# for selection drag
+        glPointSize(4.0)			# for nodes
         glFrontFace(GL_CW)
         glPolygonMode(GL_FRONT, GL_FILL)
         glCullFace(GL_BACK)
         glPixelStorei(GL_UNPACK_ALIGNMENT,1)	# byte aligned glBitmap
         glPixelStorei(GL_PACK_ALIGNMENT,1)	# byte aligned glReadPixels
-        glReadBuffer(GL_BACK)	# for unproject
+        glReadBuffer(GL_BACK)			# for unproject
         #glPixelStorei(GL_UNPACK_LSB_FIRST,1)
         glEnable(GL_TEXTURE_2D)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -216,8 +219,8 @@ class MyGL(wx.glcanvas.GLCanvas):
 
 
     def OnEraseBackground(self, event):
-        #print "eb"
-        pass	# Prevent flicker when resizing / painting on MSW
+        # Prevent flicker when resizing / painting on MSW
+        self.needclear=True	# ATI drivers require clear afer resize
 
     def OnKeyDown(self, event):
         if self.clickmode:
@@ -427,7 +430,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if size.width<=0: return	# may be junk on startup
         self.SetCurrent()
         self.SetFocus()			# required for GTK
-        
+
         glMatrixMode(GL_PROJECTION)
         glViewport(0, 0, *size)
         glLoadIdentity()
@@ -446,7 +449,6 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if not self.valid:
             # Sea
-            glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
             glColor3f(0.25, 0.25, 0.50)
             glBindTexture(GL_TEXTURE_2D, 0)
@@ -458,8 +460,12 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnd()
             self.SwapBuffers()
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+            self.needclear=False
             return
-
+        elif self.needclear:
+            glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+            self.needclear=False
+        
         self.vertexcache.realize(self)
 
         # Static stuff: mesh, networks, navaids
@@ -609,8 +615,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Display
         self.SwapBuffers()
 
-        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        self.needclear=False
 
 
     def newselect(self):
@@ -708,8 +714,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         placements=self.placements[self.tile]
         for i in range(len(placements)-1,-1,-1):	# favour higher layers
             for j in range(len(placements[i])):
-                glLoadName((i<<24)+j)
-                placements[i][j].draw(False, True)
+                if not placements[i][j].definition.type & self.locked:
+                    glLoadName((i<<24)+j)
+                    placements[i][j].draw(False, True)
         glEnable(GL_DEPTH_TEST)
         if self.multisample: glEnable(GL_MULTISAMPLE_ARB)
         glEnable(GL_LINE_SMOOTH)
@@ -1096,6 +1103,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     else:
                         name=None	# fallback
                     self.unsorted[key].append(Network(name, road, [points]))
+            self.locked=0	# reset locked on loading new
         else:
             # clear layers
             for key in self.placements.keys():
@@ -1725,7 +1733,7 @@ tess=gluNewTess()
 gluTessNormal(tess, 0, -1, 0)
 gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
 gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
-gluTessCallback(tess, GLU_TESS_COMBINE, tesscombine)
+gluTessCallback(tess, GLU_TESS_COMBINE,      tesscombine)
 gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
 
 
@@ -1763,7 +1771,7 @@ def csgtcombine(coords, vertex, weight):
     else:
         ratio=(hypot(coords[0]-p1[0][0], coords[2]-p1[0][2])/d)
         y=p1[0][1]+ratio*(p2[0][1]-p1[0][1])
-    return ([coords[0],y,coords[2]], True, p3[2])
+    return ([coords[0],y,coords[2]], True, p3[2] or p1[2])
 
 def csgtedge(flag):
     pass	# dummy
@@ -1771,7 +1779,7 @@ def csgtedge(flag):
 csgt = gluNewTess()
 gluTessNormal(csgt, 0, -1, 0)
 gluTessProperty(csgt, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
-gluTessCallback(csgt, GLU_TESS_VERTEX_DATA, csgtvertex)
-gluTessCallback(csgt, GLU_TESS_COMBINE, csgtcombine)
-gluTessCallback(csgt, GLU_TESS_EDGE_FLAG, csgtedge)	# no strips
+gluTessCallback(csgt, GLU_TESS_VERTEX_DATA,  csgtvertex)
+gluTessCallback(csgt, GLU_TESS_COMBINE,      csgtcombine)
+gluTessCallback(csgt, GLU_TESS_EDGE_FLAG,    csgtedge)	# no strips
 
