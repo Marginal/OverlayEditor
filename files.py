@@ -815,8 +815,8 @@ class VertexCache:
             base=len(self.varray)
             self.varray.extend(v)
             self.tarray.extend(t)
-            texno=self.texcache.get(texture, True, False, flags&1)
-            self.meshcache.append((base, len(v), texno, flags/2))
+            texno=self.texcache.get(texture, flags&8, False, flags&1)
+            self.meshcache.append((base, len(v), texno, flags&2))
         if __debug__: print "%6.3f time in getMesh" % (time.clock()-clock)
         self.valid=False	# new geometry -> need to update OpenGL
         self.currenttile=tile

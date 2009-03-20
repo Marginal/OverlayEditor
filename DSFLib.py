@@ -215,7 +215,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     roadtype=0
     curter='terrain_Water'
     curpatch=[]
-    tercache={'terrain_Water':(join('Resources','Sea01.png'), 0, 0.001,0.001)}
+    tercache={'terrain_Water':(join('Resources','Sea01.png'), 8, 0, 0.001,0.001)}
     while h.tell()<cmdsend:
         (c,)=unpack('<B', h.read(1))
         if c==1:	# Coordinate Pool Select
@@ -312,10 +312,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
         elif c==13:	# Polygon Range (DSF2Text uses this one)
             (param,first,last)=unpack('<HHH', h.read(6))
             if not wantoverlay or last-first<2: continue
-            winding=[]
-            for d in range(first, last):
-                p=pool[curpool][d]
-                winding.append(tuple(p))
+            winding=pool[curpool][first:last]
             placements.append(PolygonFactory(polygons[idx], param, [winding]))
             
         elif c==14:	# Nested Polygon
@@ -341,11 +338,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             if not wantoverlay: continue
             windings=[]
             for j in range(n):
-                winding=[]
-                for d in range(i[j],i[j+1]):
-                    p=pool[curpool][d]
-                    winding.append(tuple(p))
-                windings.append(winding)
+                windings.append(pool[curpool][i[j]:i[j+1]])
             placements.append(PolygonFactory(polygons[idx], param, windings))
             
         elif c==16:	# Terrain Patch
@@ -390,11 +383,27 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
         elif c==25:	# Patch Triangle Range
             (first,last)=unpack('<HH', h.read(4))
             curpatch.extend(pool[curpool][first:last])
-            
-        #elif c==26:	# Patch Triangle Strip (not used by DSF2Text)
-        #elif c==27:
-        #elif c==28:
-        
+
+        elif c==26:	# Patch Triangle Strip (used by g2xpl, not Laminar)
+            (l,)=unpack('<B', h.read(1))
+            points=[]
+            for i in range(l):
+                (d,)=unpack('<H', h.read(2))
+                points.append(pool[curpool][d])
+            curpatch.extend(meshstrip(points))
+
+        elif c==27:	# Patch Triangle Strip - cross-pool
+            (l,)=unpack('<B', h.read(1))
+            points=[]
+            for i in range(l):
+                (p,d)=unpack('<HH', h.read(4))
+                points.append(pool[p][d])
+            curpatch.extend(meshstrip(points))
+
+        elif c==28:	# Patch Triangle Strip Range
+            (first,last)=unpack('<HH', h.read(4))
+            curpatch.extend(meshstrip(pool[curpool][first:last]))
+
         elif c==29:	# Patch Triangle Fan
             (l,)=unpack('<B', h.read(1))
             points=[]
@@ -402,7 +411,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
                 (d,)=unpack('<H', h.read(2))
                 points.append(pool[curpool][d])
             curpatch.extend(meshfan(points))
-            
+
         elif c==30:	# Patch Triangle Fan - cross-pool
             (l,)=unpack('<B', h.read(1))
             points=[]
@@ -440,20 +449,28 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     #print nets
     return (lat, lon, placements, nets, mesh)
 
+def meshstrip(points):
+    tris=[]
+    for i in range(len(points)-2):
+        if i%2:
+            tris.extend([points[i+2], points[i+1], points[i]])
+        else:
+            tris.extend([points[i],   points[i+1], points[i+2]])
+    return tris
+
 def meshfan(points):
     tris=[]
     for i in range(1,len(points)-1):
-        tris.append(points[0])
-        tris.append(points[i])
-        tris.append(points[i+1])
+        tris.extend([points[0], points[i], points[i+1]])
     return tris
 
 def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
     # Get terrain info
     if ter in tercache:
-        (texture, angle, xscale, zscale)=tercache[ter]
+        (texture, texflags, angle, xscale, zscale)=tercache[ter]
     else:
         texture=None
+        texflags=8	# wrap
         angle=0
         xscale=zscale=0
         try:
@@ -471,6 +488,7 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
                 c=line.split()
                 if not c: continue
                 if c[0] in ['BASE_TEX', 'BASE_TEX_NOWRAP']:
+                    texflags=(c[0]=='BASE_TEX' and 8)
                     texture=line[len(c[0]):].strip()
                     texture=texture.replace(':', sep)
                     texture=texture.replace('/', sep)
@@ -485,11 +503,12 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
             h.close()
         except:
             if __debug__: print 'Failed to load terrain "%s"' % ter
-        tercache[ter]=(texture, angle, xscale, zscale)
+        tercache[ter]=(texture, texflags, angle, xscale, zscale)
 
     # Make mesh
     v=[]
     t=[]
+    flags|=texflags
     if flags&1 and (len(patch[0])<7 or xscale):	# hard and no st coords
         for p in patch:
             x=(p[0]-centrelon)*onedeg*cos(radians(p[1]))
