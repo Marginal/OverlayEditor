@@ -14,17 +14,15 @@
 # 3 draw modes: normal, selected, picking:
 #
 # normal:
-#   called in display list
 #   GL_TEXTURE_2D enabled
 #   CULL_FACE enabled
 #   GL_POLYGON_OFFSET_FILL disabled
-#   can use PolygonOffset -1 (unless MacOS 10.3)
+#   can use PolygonOffset -1
 #   GL_DEPTH_TEST: enabled
 #   glDepthMask enabled
 #   glColor3f(unpainted colour)
 #
 # selected / drawnodes:
-#   NOT called in display list
 #   GL_TEXTURE_2D enabled
 #   CULL_FACE enabled
 #   GL_POLYGON_OFFSET_FILL enabled
@@ -34,7 +32,6 @@
 #   glColor3f(selected colour)
 #
 # picking:
-#   called in display list
 #   GL_TEXTURE_2D disabled
 #   CULL_FACE disabled (so can select reverse)
 #   GL_POLYGON_OFFSET_FILL disabled

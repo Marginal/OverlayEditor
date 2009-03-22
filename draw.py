@@ -21,8 +21,6 @@ from struct import unpack
 from sys import exit, platform, version
 import wx
 import wx.glcanvas
-if platform=='darwin':
-    from os import uname	# not defined in win32 builds
 if __debug__:
     import time
     from traceback import print_exc
@@ -120,6 +118,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.dragx<=1 or self.dragx>8 or self.dragy<=1 or self.dragy>8:
             self.dragx=self.dragy=5	# Finder on Mac appears to use 5
 
+        self.clipboard=None
         self.undostack=[]
 
         # Values during startup
@@ -151,15 +150,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                          "Can't initialise OpenGL.",
                          wx.ICON_ERROR|wx.OK, self)
             exit(1)
-
-        # Can't use polygon offset in display list on OSX 10.3 or early
-        # versions of 10.4. 10.4.8 (Darwin 8.8.1) onwards is OK?
-        # Note 10.4 Intel 950 drivers ship with OGL 1.2
-        if platform=='darwin':
-            ver=uname()[2].split('.')
-            self.nopolyosinlist=(int(ver[0])<8 or (int(ver[0])==8 and int(ver[1])<8))
-        else:
-            self.nopolyosinlist=True#XXXFalse
 
         self.vertexcache=None
         self.multisample=False
@@ -574,15 +564,17 @@ class MyGL(wx.glcanvas.GLCanvas):
         glTranslatef(-self.x, -self.y, -self.z)	# set up for picking
 
         # Selections
-        glColor3f(1.0, 0.5, 1.0)
-        glEnable(GL_DEPTH_TEST)
-        glDepthMask(GL_TRUE)
-        glPolygonOffset(-2, -2)
-        glEnable(GL_POLYGON_OFFSET_FILL)
-        for placement in self.selected:
-            placement.draw(True, False)
-        if len(self.selected)==1:
-            placement.drawnodes(self.selectednode)
+        if self.selected:
+            glColor3f(1.0, 0.5, 1.0)
+            glEnable(GL_DEPTH_TEST)
+            glDepthMask(GL_TRUE)
+            glPolygonOffset(-2, -2)
+            glEnable(GL_POLYGON_OFFSET_FILL)
+            for placement in self.selected:
+                placement.draw(True, False)
+            if len(self.selected)==1:
+                placement.drawnodes(self.selectednode)
+            glDisable(GL_POLYGON_OFFSET_FILL)
 
 	# drag box
         if self.clickmode==ClickModes.DragBox:
@@ -894,10 +886,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.selectednode:
             placement=self.selected[0]
             layer=placement.definition.layer
-            newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
+            newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
+            if not (self.undostack and self.undostack[-1].equals(newundo)):
+                self.undostack.append(newundo)
             self.selectednode=placement.movenode(self.selectednode, dlat, dlon, self.tile, self.options, self.vertexcache, False)
             assert self.selectednode
-            self.undostack.append(newundo)
         else:
             moved=[]
             placements=self.placements[self.tile]
@@ -1511,7 +1504,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         self.defs[filename]=ObjectDef(filename, self.vertexcache)
                 except:
                     # Older versions of X-Plane don't have eg beacon_seaport
-                    pass
+                    if __debug__: print_exc()
                 
             # Prepare static stuff: mesh, networks, navaids
             progress.Update(15, 'Done')
@@ -1523,7 +1516,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnable(GL_DEPTH_TEST)
             glDepthMask(GL_TRUE)
             glEnable(GL_CULL_FACE)
-            glDisable(GL_POLYGON_OFFSET_FILL)
             polystate=0
             if __debug__:
                 if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
@@ -1532,21 +1524,16 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glScalef(1,0,1)		# Defeat elevation data
             for (base,number,texno,poly) in self.vertexcache.getMesh(newtile,options):
                 if poly:		# eg overlaid photoscenery
+                    # Can't use polygon offset in display list on OSX<10.4.8?
+                    # or ATI drivers>7.11? on Windows.
                     if polystate!=poly:
                         glDepthMask(GL_FALSE)	# offset mustn't update depth
-                        if self.nopolyosinlist:
-                            glDisable(GL_DEPTH_TEST)
-                        else:
-                            glEnable(GL_POLYGON_OFFSET_FILL)
-                            glPolygonOffset(-10*poly, -10*poly)
+                        glDisable(GL_DEPTH_TEST)
                     polystate=poly
                 else:
                     if polystate:
                         glDepthMask(GL_TRUE)
-                        if self.nopolyosinlist:
-                            glEnable(GL_DEPTH_TEST)
-                        else:
-                            glDisable(GL_POLYGON_OFFSET_FILL)
+                        glEnable(GL_DEPTH_TEST)
                     polystate=0
                 glBindTexture(GL_TEXTURE_2D, texno)
                 glDrawArrays(GL_TRIANGLES, base, number)
@@ -1574,8 +1561,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             glDepthMask(GL_TRUE)
             #glEnable(GL_CULL_FACE)	# already enabled
             cullstate=True
-            glDisable(GL_POLYGON_OFFSET_FILL)
-            polystate=0
             for (i, lat, lon, hdg) in self.navaids:
                 if (int(floor(lat)),int(floor(lon)))==newtile and i in objs:
                     if objs[i][0]=='*':
@@ -1590,13 +1575,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                     (x,z)=self.latlon2m(lat,lon)
                     y=self.vertexcache.height(newtile,options,x,z)
                     glBindTexture(GL_TEXTURE_2D, definition.texture)
-                    if False: # was definition.poly and not self.nopolyosinlist and not polystate:
-                        glPolygonOffset(-1, -1)
-                        glEnable(GL_POLYGON_OFFSET_FILL)
-                        polystate=definition.poly
-                    elif polystate:
-                        glDisable(GL_POLYGON_OFFSET_FILL)
-                        polystate=0
                     if i==211:
                         seq=[(1,75),(-1,75),(1,-75),(-1,-75)]
                     elif i in range(212,215):
@@ -1604,10 +1582,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                     else:
                         seq=[(0,0)]
                     for (xinc,zinc) in seq:
-                        if True: # was self.nopolyosinlist:
-                            glDisable(GL_DEPTH_TEST)
-                        else:
-                            glEnable(GL_POLYGON_OFFSET_FILL)
                         glPushMatrix()
                         glTranslatef(x+xinc*coshdg-zinc*sinhdg, y,
                                      z+xinc*sinhdg+zinc*coshdg)
@@ -1622,7 +1596,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                             glDrawArrays(GL_TRIANGLES, definition.base+definition.culled, definition.nocull)
                         glPopMatrix()
             if not cullstate: glEnable(GL_CULL_FACE)
-            if polystate: glDisable(GL_POLYGON_OFFSET_FILL)
             glEndList()
 
             # labels
