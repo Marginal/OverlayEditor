@@ -848,7 +848,7 @@ class VertexCache:
         tot=0
         if __debug__: clock=time.clock()	# Processor time
         for (texture, flags, v, t) in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
-            if flags>1: continue	# not interested in overlays
+            if not flags&1: continue	# not interested in overlays
             minx=minz=maxint
             maxx=maxz=-maxint
             tris=[]
