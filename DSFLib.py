@@ -312,7 +312,10 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
         elif c==13:	# Polygon Range (DSF2Text uses this one)
             (param,first,last)=unpack('<HHH', h.read(6))
             if not wantoverlay or last-first<2: continue
-            winding=pool[curpool][first:last]
+            winding=[]
+            for d in range(first, last):
+                p=pool[curpool][d]
+                winding.append(tuple(p))
             placements.append(PolygonFactory(polygons[idx], param, [winding]))
             
         elif c==14:	# Nested Polygon
@@ -338,7 +341,11 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             if not wantoverlay: continue
             windings=[]
             for j in range(n):
-                windings.append(pool[curpool][i[j]:i[j+1]])
+                winding=[]
+                for d in range(i[j],i[j+1]):
+                    p=pool[curpool][d]
+                    winding.append(tuple(p))
+                windings.append(winding)
             placements.append(PolygonFactory(polygons[idx], param, windings))
             
         elif c==16:	# Terrain Patch
