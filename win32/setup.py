@@ -73,10 +73,12 @@ setup(name='OverlayEditor',
                     'Resources/import.png',
                     'Resources/new.png',
                     'Resources/open.png',
+                    'Resources/padlock.png',
                     'Resources/prefs.png',
                     'Resources/reload.png',
                     'Resources/save.png',
                     'Resources/undo.png',
+                    'Resources/fallback.png',
                     'Resources/windsock.obj',
                     'Resources/windsock.png',
                     'Resources/bad.png',
@@ -110,8 +112,9 @@ setup(name='OverlayEditor',
                             'dll_excludes':['w9xpopen.exe'],
                             'bundle_files':True,
                             'compressed':True,
+                            # http://www.py2exe.org/index.cgi/OptimizingSize
                             'excludes':['Carbon', 'tcl', 'Tkinter', 'mx','socket','urllib','webbrowser',
-                                        'curses', 'distutils', 'email', 'hotshot', 'setuptools', 'win32',	# Python2.5
+                                        'curses', 'distutils', 'doctest', 'email', 'hotshot', 'inspect', 'pdb', 'setuptools', 'win32',	# Python2.5
                                         'Numeric', 'dotblas', 'numarray', 'scipy', 'nose'],	# Old Numeric stuff
                             'packages':['encodings.ascii','encodings.mbcs','encodings.utf_8','encodings.latin_1',	# latin_1 for wx.lib.masked.NumCtrl
                                         'OpenGL.platform.win32', 'OpenGL.arrays.nones', 'OpenGL.arrays.strings', 'OpenGL.arrays.lists', 'OpenGL.arrays.numbers', 'OpenGL.arrays.ctypesparameters', 'OpenGL.arrays.ctypespointers',
