@@ -118,7 +118,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.dragx<=1 or self.dragx>8 or self.dragy<=1 or self.dragy>8:
             self.dragx=self.dragy=5	# Finder on Mac appears to use 5
 
-        self.clipboard=None
+        self.clipboard=[]
         self.undostack=[]
 
         # Values during startup
@@ -1111,6 +1111,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.background=(image, lat, lon, hdg, width, length, opacity,None)
         else:
             self.background=None
+        self.clipboard=[]	# layers might have changed
         self.undostack=[]	# layers might have changed
         self.selected=[]	# may not have same indices in new list
         self.selectednode=None
@@ -1671,14 +1672,17 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_DEPTH_TEST)
         glCallList(self.meshlist)	# Terrain only
         #glFinish()	# redundant
-        mz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
-        if mz==1.0: mz=0.5	# treat off the tile edge as sea level
+        dz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
+        if dz==0.0 or dz==1.0:
+            mz=0.5	# treat off the tile edge as sea level
+        else:
+            mz=dz
         (x,y,z)=gluUnProject(mx,my,mz)
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
         glClear(GL_DEPTH_BUFFER_BIT)
         lat=round2res(self.centre[0]-z/onedeg)
         lon=round2res(self.centre[1]+x/(onedeg*cos(radians(lat))))
-        #print "%3d %3d %5.3f, %5d %5.1f %5d, %10.6f %11.6f" % (mx,my,mz, x,y,z, lat,lon)
+        #print "%3d %3d %.6f, %5d %5.1f %5d, %10.6f %11.6f" % (mx,my,mz, x,y,z, lat,lon)
         return (lat,lon)
 
 
