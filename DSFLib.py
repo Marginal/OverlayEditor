@@ -661,16 +661,6 @@ def writeDSF(dsfdir, key, placements, netfile):
     if junctions: h.write('\n')
     
     h.close()
-    if platform.startswith('linux') and not isdir(join(expanduser('~'), '.wine')):
-        # Let Wine initialise font cache etc on first run
-        progress=wx.ProgressDialog('Setting up Wine', 'Please wait')
-        (i,o,e)=popen3('wine --version')
-        i.close()
-        o.read()
-        e.read()
-        o.close()
-        e.close()
-        progress.Destroy()
     if platform=='win32':
         # Bug - how to suppress environment variable expansion?
         cmds='%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename) #.replace('%','%%'))
