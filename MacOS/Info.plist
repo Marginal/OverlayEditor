@@ -19,9 +19,9 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleShortVersionString</key>
-	<string>appversion</string>
+	<string>2.04.3</string>
 	<key>CFBundleGetInfoString</key>
-	<string>OverlayEditor appversion, © 2007-2009 Jonathan Harris</string>
+	<string>OverlayEditor 2.04.3, © 2007-2009 Jonathan Harris</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
