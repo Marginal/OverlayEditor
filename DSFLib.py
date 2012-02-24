@@ -393,10 +393,26 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             (first,last)=unpack('<HH', h.read(4))
             curpatch.extend(pool[curpool][first:last])
             
-        #elif c==26:	# Patch Triangle Strip (not used by DSF2Text)
-        #elif c==27:
-        #elif c==28:
-        
+        elif c==26:	# Patch Triangle Strip (used by g2xpl and MeshTool)
+            (l,)=unpack('<B', h.read(1))
+            points=[]
+            for i in range(l):
+                (d,)=unpack('<H', h.read(2))
+                points.append(pool[curpool][d])
+            curpatch.extend(meshstrip(points))
+
+        elif c==27:	# Patch Triangle Strip - cross-pool
+            (l,)=unpack('<B', h.read(1))
+            points=[]
+            for i in range(l):
+                (p,d)=unpack('<HH', h.read(4))
+                points.append(pool[p][d])
+            curpatch.extend(meshstrip(points))
+
+        elif c==28:	# Patch Triangle Strip Range
+            (first,last)=unpack('<HH', h.read(4))
+            curpatch.extend(meshstrip(pool[curpool][first:last]))
+
         elif c==29:	# Patch Triangle Fan
             (l,)=unpack('<B', h.read(1))
             points=[]
@@ -461,12 +477,19 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     #print nets
     return (lat, lon, objs, pols, nets, mesh)
 
+def meshstrip(points):
+    tris=[]
+    for i in range(len(points)-2):
+        if i%2:
+            tris.extend([points[i+2], points[i+1], points[i]])
+        else:
+            tris.extend([points[i],   points[i+1], points[i+2]])
+    return tris
+
 def meshfan(points):
     tris=[]
     for i in range(1,len(points)-1):
-        tris.append(points[0])
-        tris.append(points[i])
-        tris.append(points[i+1])
+        tris.extend([points[0], points[i], points[i+1]])
     return tris
 
 def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
@@ -583,8 +606,8 @@ def writeDSF(dsfdir, key, placements, netfile):
     # must be final properties
     h.write('PROPERTY\tsim/west\t%d\n' %   west)
     h.write('PROPERTY\tsim/east\t%d\n' %  (west+1))
-    h.write('PROPERTY\tsim/south\t%d\n' %  south)
     h.write('PROPERTY\tsim/north\t%d\n' % (south+1))
+    h.write('PROPERTY\tsim/south\t%d\n' %  south)
     h.write('\n')
 
     objdefs=[]

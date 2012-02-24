@@ -33,7 +33,7 @@ try:
     import OpenGL
     if OpenGL.__version__ >= '3':
         # Not defined in PyOpenGL 2.x.
-        if __debug__:
+	if False:#XXX __debug__:
             OpenGL.ERROR_ON_COPY =True	# only applies to numpy arrays
         else:
             OpenGL.ERROR_CHECKING=False	# don't check OGL errors for speed
@@ -1334,7 +1334,7 @@ class MainWindow(wx.Frame):
             else:
                 xpver=8
                 mainaptdat=glob(join(prefs.xplane, gmain8aptdat))[0]
-            if False: #XXX not self.airports:	# Default apt.dat
+            if not self.airports:	# Default apt.dat
                 try:
                     if __debug__: clock=time.clock()	# Processor time
                     (self.airports,self.nav)=scanApt(mainaptdat)
@@ -1351,7 +1351,9 @@ class MainWindow(wx.Frame):
                     else:
                         self.nav.extend(readNav(glob(join(prefs.xplane,gmain8navdat))[0]))
                 except:
-                    pass
+                    if __debug__:
+                        print "Invalid nav.dat:"
+                        print_exc()
                 
         if not reload:
             # Load, not reload

@@ -272,7 +272,11 @@ def readNav(filename):
     h=open(filename, 'rU')
     if not h.readline().strip() in ['A','I']:
         raise IOError
-    if not h.readline().split()[0] in ['740','810']:
+    while True:
+        c=h.readline().split()
+        if c: break
+    ver=c[0]
+    if not ver in ['740','810']:
         raise IOError
     for line in h:
         c=line.split()
