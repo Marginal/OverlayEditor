@@ -130,8 +130,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.d=3333.25
         self.cliprat=1000
 
-        self.context=wx.glcanvas.GLContext
-
         # Must specify min sizes for glX? - see glXChooseVisual and GLXFBConfig
         wx.glcanvas.GLCanvas.__init__(self, parent,
                                       style=GL_RGBA|GL_DOUBLEBUFFER|GL_DEPTH|wx.FULL_REPAINT_ON_RESIZE,
@@ -150,11 +148,12 @@ class MyGL(wx.glcanvas.GLCanvas):
                          "Can't initialise OpenGL.",
                          wx.ICON_ERROR|wx.OK, self)
             exit(1)
+        if wx.VERSION >= (2,9):
+            self.context = wx.glcanvas.GLContext(self)
 
         self.vertexcache=None
         self.multisample=False
 
-        wx.EVT_PAINT(self, self.OnPaint)
         wx.EVT_ERASE_BACKGROUND(self, self.OnEraseBackground)
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)
         wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
@@ -172,7 +171,10 @@ class MyGL(wx.glcanvas.GLCanvas):
     def glInit(self):
         #print "Canvas Init"
         # Setup state. Under X must be called after window is shown
-        self.SetCurrent()
+        if wx.VERSION >= (2,9):
+            self.SetCurrent(self.context)
+        else:
+            self.SetCurrent()
         self.vertexcache=VertexCache()	# member so can free resources
         try:
             glInitMultisampleARB()
@@ -206,6 +208,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glTranslatef(0, 1, 0)
         glScalef(1, -1, 1)	# OpenGL textures are backwards
         glMatrixMode(GL_MODELVIEW)
+        wx.EVT_PAINT(self, self.OnPaint)	# start generating paint events only now we're set up
 
 
     def OnEraseBackground(self, event):

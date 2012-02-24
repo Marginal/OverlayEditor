@@ -449,6 +449,8 @@ class ObjectDef(ClutterDef):
         glVertex3f(0, 0, 0)
         glEnd()
         glColor3f(0.8, 0.8, 0.8)	# Unpainted
+        glEnable(GL_DEPTH_TEST)
+        glDepthMask(GL_TRUE)
         glBindTexture(GL_TEXTURE_2D, self.texture)
         if self.culled:
             glDrawArrays(GL_TRIANGLES, self.base, self.culled)

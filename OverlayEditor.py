@@ -20,32 +20,18 @@ elif platform=='darwin':
 try:
     import wx
 except:
-    if platform=='darwin':
-        from EasyDialogs import Message
-        Message("wxPython is not installed.\nThis application requires wxPython 2.5.3 or later, built for Python %s." % version[:3])
-    else:	# linux
-        import tkMessageBox
-        tkMessageBox._show("Error", "wxPython is not installed.\nThis application requires python wxgtk 2.5.3 or later.", icon="error", type="ok")
+    import Tkinter, tkMessageBox
+    Tkinter.Tk().withdraw()
+    tkMessageBox.showerror("Error", "wxPython is not installed.\nThis application requires wxPython 2.5.3 or later.")
     exit(1)
 from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
 
 try:
     import OpenGL
-    if OpenGL.__version__ >= '3':
-        # Not defined in PyOpenGL 2.x.
-        if __debug__:
-            OpenGL.ERROR_ON_COPY =True	# only applies to numpy arrays
-        else:
-            OpenGL.ERROR_CHECKING=False	# don't check OGL errors for speed
-        import OpenGL.arrays.numpymodule
-        import OpenGL.arrays.ctypesarrays
 except:
-    if platform=='darwin':
-        from EasyDialogs import Message
-        Message("PyOpenGL is not installed.\nThis application requires PyOpenGL 2 or later.")
-    else:	# linux
-        import tkMessageBox
-        tkMessageBox._show("Error", "PyOpenGL is not installed.\nThis application requires PyOpenGL 2 or later.", icon="error", type="ok")
+    import Tkinter, tkMessageBox
+    Tkinter.Tk().withdraw()
+    tkMessageBox.showerror("Error", "PyOpenGL is not installed.\nThis application\nrequires PyOpenGL 2.x.")
     exit(1)
 
 if not 'startfile' in dir(os):
@@ -96,8 +82,6 @@ global prefs
 
 
 if platform=='darwin':
-    from Carbon import Menu
-    from EasyDialogs import AskFolder
     # Hack: wxMac 2.5 requires the following to get shadows to look OK:
     # ... wx.ALIGN_CENTER_VERTICAL|wx.TOP|wx.BOTTOM, 2)
     pad=2
@@ -416,18 +400,14 @@ class PreferencesDialog(wx.Dialog):
 
     def OnBrowse(self, event):
         while True:
-            if platform=='darwin':
-                path=AskFolder('Please locate your X-Plane folder', defaultLocation=self.path.GetValue(), wanted=unicode)
-                if not path: return wx.ID_CANCEL
-            else:
-                style=wx.DEFAULT_DIALOG_STYLE|wx.RESIZE_BORDER
-                if 'DD_DIR_MUST_EXIST' in dir(wx): style|=wx.DD_DIR_MUST_EXIST
-                dlg=wx.DirDialog(self, 'Please locate your X-Plane folder', self.path.GetValue(), style)
-                if dlg.ShowModal()!=wx.ID_OK:
-                    dlg.Destroy()
-                    return wx.ID_CANCEL
-                path=dlg.GetPath()
+            style=wx.DEFAULT_DIALOG_STYLE|wx.RESIZE_BORDER
+            if 'DD_DIR_MUST_EXIST' in dir(wx): style|=wx.DD_DIR_MUST_EXIST
+            dlg=wx.DirDialog(self, 'Please locate your X-Plane folder', self.path.GetValue(), style)
+            if dlg.ShowModal()!=wx.ID_OK:
                 dlg.Destroy()
+                return wx.ID_CANCEL
+            path=dlg.GetPath()
+            dlg.Destroy()
             if glob(join(path, gcustom)) and (glob(join(path, gmain8aptdat)) or glob(join(path, gmain9aptdat))):
                 self.path.SetValue(path.strip())
                 self.FindWindowById(wx.ID_OK).Enable()
@@ -656,7 +636,7 @@ class BackgroundDialog(wx.Dialog):
             f=''
         dlg=wx.FileDialog(self, "Location of background image:", dir, f,
                           "Image files|*.bmp;*.jpg;*.jpeg;*.png|BMP files (*.bmp)|*.bmp|JPEG files (*.jpg, *.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png|All files|*.*",
-                          wx.OPEN|wx.HIDE_READONLY)
+                          wx.OPEN)
         if dlg.ShowModal()==wx.ID_OK:
             self.image=dlg.GetPath()
             self.setpath()
@@ -758,7 +738,7 @@ class MainWindow(wx.Frame):
             wx.EVT_MENU(self, wx.ID_DOWN, self.OnImport)
             # ID_EXIT moved to application menu
             filemenu.Append(wx.ID_EXIT, u'Quit %s\tCtrl-Q' % appname)
-            #wx.EVT_MENU(self, wx.ID_EXIT, self.OnClose)	# don't do this -> generates CommandEvent not CloseEvent
+            wx.EVT_MENU(self, wx.ID_EXIT, self.OnClose)
             self.menubar.Append(filemenu, 'File')
 
             editmenu = wx.Menu()
@@ -919,6 +899,7 @@ class MainWindow(wx.Frame):
         if platform=='darwin':
             # Hack! Change name on application menu. wxMac always uses id 1.
             try:
+                from Carbon import Menu
                 Menu.GetMenuHandle(1).SetMenuTitleWithCFString(appname)
             except:
                 pass
@@ -1151,13 +1132,13 @@ class MainWindow(wx.Frame):
         event.Skip(True)
     
     def OnMouseWheel(self, event):
-        if event.m_wheelRotation>0:
+        if event.GetWheelRotation()>0:
             if event.m_shiftDown:
                 self.dist/=zoom2
             else:
                 self.dist/=zoom
             if self.dist<1.0: self.dist=1.0
-        elif event.m_wheelRotation<0:
+        elif event.GetWheelRotation()<0:
             if event.m_shiftDown:
                 self.dist*=zoom2
             else:
@@ -1563,7 +1544,7 @@ class MainWindow(wx.Frame):
         self.Refresh()
 
     def OnImport(self, event):
-        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Draped, Facades, Forests|*.obj;*.pol;*.fac;*.for|Object files (*.obj)|*.obj|Draped polygon files (*.pol)|*.pol|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|All files|*.*", wx.OPEN|wx.MULTIPLE|wx.HIDE_READONLY)
+        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Draped, Facades, Forests|*.obj;*.pol;*.fac;*.for|Object files (*.obj)|*.obj|Draped polygon files (*.pol)|*.pol|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|All files|*.*", wx.OPEN|wx.MULTIPLE)
         if dlg.ShowModal()!=wx.ID_OK:
             dlg.Destroy()
             return
@@ -1737,7 +1718,7 @@ class MainWindow(wx.Frame):
             
         
 # main
-app=wx.PySimpleApp()
+app=wx.App()
 if platform=='win32':
     if app.GetComCtl32Version()>=600 and wx.DisplayDepth()>=32:
         wx.SystemOptions.SetOptionInt('msw.remap', 2)
@@ -1806,8 +1787,7 @@ if False:	# XXX trace
           ).runfunc(app.MainLoop)
 else:
     # Load data files
-    frame.Update()		# Let window draw first
-    frame.OnReload(False, prefs.package)
+    wx.PostEvent(frame.toolbar, wx.PyCommandEvent(wx.EVT_TOOL.typeId, wx.ID_REFRESH))
     app.MainLoop()
 
 # Save prefs

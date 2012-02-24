@@ -696,10 +696,12 @@ class VertexCache:
         self.valid=False
         self.lasttri=None
 
-    def realize(self, context):
+    def realize(self, canvas):
         # need to call this before drawing
         if not self.valid:
             if __debug__: clock=time.clock()	# Processor time
+            if wx.VERSION >= (2,9):
+                canvas.SetCurrent(canvas.context)
             if self.vbo:
                 # PyOpenGL 3b8 with numpy - broken
                 if not self.vertexbuf:
