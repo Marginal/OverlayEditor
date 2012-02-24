@@ -4,8 +4,10 @@
 # Force default Python so picks up system wxPython
 exec /bin/bash -s<<EOF
 if [[ `sw_vers -productVersion` < 10.5 ]]; then
-    exec /usr/bin/pythonw2.3 -OO "$0.py";
+    exec /usr/bin/pythonw2.3 -OO "$0.py";	# Panther and Tiger
+elif [[ `sw_vers -productVersion` < 10.7 ]]; then
+    exec /usr/bin/pythonw2.5 -OO "$0.py";	# Leopard. Stay with 32bit version on Snow Leopard so builtin wxPython works
 else
-    exec /usr/bin/pythonw2.5 -OO "$0.py";
+    exec /usr/bin/pythonw2.7 -OO "$0.py";	# Lion
 fi
 EOF
