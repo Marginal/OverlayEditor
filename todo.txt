@@ -15,7 +15,6 @@ fix nopoly - use drawmultielements (1.4)
 gettext
 don't change position on undo?
 display ramp starting points
-cut / copy / paste
 property dialog, allowing replacement of object or polygon. Lock items?
 select multiple in object list - add adds all
 import whole package

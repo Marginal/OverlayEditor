@@ -350,7 +350,6 @@ def readLib(filename, objects, terrain):
                         objects[lib]={}
                     objects[lib][name]=PaletteEntry(obj)
     except:
-        if __debug__: print_exc()
         if h: h.close()
         if __debug__:
             print filename
@@ -671,6 +670,8 @@ class VertexCache:
         self.ter={}		# name -> physical ter
         self.mesh={}		# tile -> [patches] where patch=(texture,f,v,t)
         self.meshdata={}	# tile -> [(bbox, [(points, plane coeffs)])]
+        self.nets={}		# tile -> [(type, [points])]
+        self.currenttile=None
         self.meshcache=[]	# [indices] of current tile
         self.lasttri=None	# take advantage of locality of reference
 
@@ -692,16 +693,19 @@ class VertexCache:
     
     def flush(self):
         # invalidate array indices
+        self.currenttile=None
         self.meshcache=[]
         self.varray=[]
         self.tarray=[]
         self.valid=False
         self.lasttri=None
 
-    def realize(self, context):
+    def realize(self, canvas):
         # need to call this before drawing
         if not self.valid:
             if __debug__: clock=time.clock()	# Processor time
+            if wx.VERSION >= (2,9):
+                canvas.SetCurrent(canvas.context)
             if self.vbo:
                 # PyOpenGL 3b8 with numpy - broken
                 if not self.vertexbuf:
@@ -744,7 +748,8 @@ class VertexCache:
 
     def loadMesh(self, tile, options):
         key=(tile[0],tile[1],options&Prefs.TERRAIN)
-        if key in self.mesh:
+        netkey=(tile[0],tile[1],options&Prefs.NETWORK)
+        if key in self.mesh and netkey in self.nets:
             return	# don't reload
         dsfs=[]
         if options&Prefs.TERRAIN:
@@ -765,6 +770,17 @@ class VertexCache:
                 (lat, lon, objs, pols, nets, mesh)=readDSF(dsf, False, False, self.ter)
                 if mesh:
                     self.mesh[key]=mesh
+                    # post-process networks
+                    centrelat=lat+0.5
+                    centrelon=lon+0.5
+                    newnets=[]
+                    for (road, points) in nets:
+                        newpoints=[[(p[0]-centrelon)*onedeg*cos(radians(p[1])),
+                                    p[2],
+                                    (centrelat-p[1])*onedeg] for p in points]
+                        newnets.append((road, newpoints))
+                    self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
+                    self.nets[netkey]=newnets
                     break
             except:
                 if __debug__: print_exc()
@@ -786,10 +802,12 @@ class VertexCache:
                               [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],
                              [[0, 0], [100, 100], [0, 100],
                               [0, 0], [100, 0], [100, 100]])]
+            self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
+            self.nets[(tile[0],tile[1],Prefs.NETWORK)]=[]
 
     # return mesh data sorted by tex for drawing
     def getMesh(self, tile, options):
-        if self.meshcache:
+        if tile==self.currenttile:
             return self.meshcache
         # merge patches that use same texture
         bytex={}
@@ -806,11 +824,17 @@ class VertexCache:
             base=len(self.varray)
             self.varray.extend(v)
             self.tarray.extend(t)
-            texno=self.texcache.get(texture, True, False, flags&1)
-            self.meshcache.append((base, len(v), texno, flags/2))
+            texno=self.texcache.get(texture, flags&8, False, flags&1)
+            self.meshcache.append((base, len(v), texno, flags&2))
         if __debug__: print "%6.3f time in getMesh" % (time.clock()-clock)
         self.valid=False	# new geometry -> need to update OpenGL
+        self.currenttile=tile
         return self.meshcache
+
+
+    # return net data
+    def getNets(self, tile, options):
+        return self.nets[(tile[0],tile[1],options&Prefs.NETWORK)]
 
 
     # create sets of bounding boxes for height testing
@@ -833,7 +857,7 @@ class VertexCache:
         tot=0
         if __debug__: clock=time.clock()	# Processor time
         for (texture, flags, v, t) in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
-            if flags>1: continue	# not interested in overlays
+            if not flags&1: continue	# not interested in overlays
             minx=minz=maxint
             maxx=maxz=-maxint
             tris=[]

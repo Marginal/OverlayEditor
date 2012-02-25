@@ -1,0 +1,14 @@
+dist
+build
+
+*.app
+*.exe
+*.bak
+*.pyc
+*.pyo
+*.zip
+*.rpm
+*.deb
+
+.DS_Store
+Thumbs.db

@@ -219,7 +219,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     roadtype=0
     curter='terrain_Water'
     curpatch=[]
-    tercache={'terrain_Water':(join('Resources','Sea01.png'), 0, 0.001,0.001)}
+    tercache={'terrain_Water':(join('Resources','Sea01.png'), 8, 0, 0.001,0.001)}
     while h.tell()<cmdsend:
         (c,)=unpack('<B', h.read(1))
         if c==1:	# Coordinate Pool Select
@@ -420,7 +420,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
                 (d,)=unpack('<H', h.read(2))
                 points.append(pool[curpool][d])
             curpatch.extend(meshfan(points))
-            
+
         elif c==30:	# Patch Triangle Fan - cross-pool
             (l,)=unpack('<B', h.read(1))
             points=[]
@@ -495,9 +495,10 @@ def meshfan(points):
 def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
     # Get terrain info
     if ter in tercache:
-        (texture, angle, xscale, zscale)=tercache[ter]
+        (texture, texflags, angle, xscale, zscale)=tercache[ter]
     else:
         texture=None
+        texflags=8	# wrap
         angle=0
         xscale=zscale=0
         try:
@@ -515,6 +516,7 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
                 c=line.split()
                 if not c: continue
                 if c[0] in ['BASE_TEX', 'BASE_TEX_NOWRAP']:
+                    texflags=(c[0]=='BASE_TEX' and 8)
                     texture=line[len(c[0]):].strip()
                     texture=texture.replace(':', sep)
                     texture=texture.replace('/', sep)
@@ -529,11 +531,12 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
             h.close()
         except:
             if __debug__: print 'Failed to load terrain "%s"' % ter
-        tercache[ter]=(texture, angle, xscale, zscale)
+        tercache[ter]=(texture, texflags, angle, xscale, zscale)
 
     # Make mesh
     v=[]
     t=[]
+    flags|=texflags
     if flags&1 and (len(patch[0])<7 or xscale):	# hard and no st coords
         for p in patch:
             x=(p[0]-centrelon)*onedeg*cos(radians(p[1]))
@@ -679,16 +682,6 @@ def writeDSF(dsfdir, key, placements, netfile):
     if junctions: h.write('\n')
     
     h.close()
-    if platform.startswith('linux') and not isdir(join(expanduser('~'), '.wine')):
-        # Let Wine initialise font cache etc on first run
-        progress=wx.ProgressDialog('Setting up Wine', 'Please wait')
-        (i,o,e)=popen3('wine --version')
-        i.close()
-        o.read()
-        e.read()
-        o.close()
-        e.close()
-        progress.Destroy()
     if platform=='win32':
         # Bug - how to suppress environment variable expansion?
         cmds='%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename) #.replace('%','%%'))

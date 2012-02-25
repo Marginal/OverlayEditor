@@ -8,7 +8,8 @@ Vendor: Jonathan Harris <x-plane@marginal.org.uk>
 Prefix: /usr/local
 #Suse: python-wxGTK provides wxPython
 #Fedora: PyOpenGL provides python-opengl
-Requires: bash, python >= 2.4, wxPython >= 2.6, python-imaging >= 1.1.4, python-opengl >= 2.0.1, python-opengl < 3, wine
+Requires: bash, python >= 2.4, wxPython >= 2.6, python-imaging >= 1.1.4, python-opengl >= 2.0.1, python-opengl < 3
+BuildArch: noarch
 
 %description
 This application edits DSF overlay scenery packages

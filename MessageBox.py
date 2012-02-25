@@ -4,6 +4,33 @@ import wx
 
 from version import appname, appversion
 
+class myCreateStdDialogButtonSizer(wx.BoxSizer):
+    # Dialog.CreateStdDialogButtonSizer for pre 2.6
+    def __init__(self, parent, style):
+        assert not (style & ~(wx.OK|wx.CANCEL))
+        wx.BoxSizer.__init__(self, wx.HORIZONTAL)
+
+        ok=style&wx.OK
+        no=style&wx.CANCEL
+        
+        # adjust order of buttons per Windows or Mac conventions
+        if platform!='darwin':
+            if ok: buttonok=wx.Button(parent, wx.ID_OK)
+            if no: buttonno=wx.Button(parent, wx.ID_CANCEL)
+            self.Add([0,0], 1)		# push following buttons to right
+            if ok: self.Add(buttonok, 0, wx.ALL)
+            if ok and no: self.Add([6,0], 0)	# cosmetic
+            if no: self.Add(buttonno, 0, wx.ALL)
+        else:
+            if no: buttonno=wx.Button(parent, wx.ID_CANCEL)
+            if ok: buttonok=wx.Button(parent, wx.ID_OK)
+            self.Add([0,0], 1)		# push following buttons to right
+            if no: self.Add(buttonno, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 2)
+            if ok and no: self.Add([6,0], 0)	# cosmetic
+            if ok: self.Add(buttonok, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 2)
+            self.Add([0,0], 1)	# centre
+        if ok: buttonok.SetDefault()
+
 # Custom MessageBox/MessageDialog to replace crappy wxMac default icons
 def myMessageBox(message, caption, style=wx.OK, parent=None):
 
@@ -95,7 +122,8 @@ def myMessageBox(message, caption, style=wx.OK, parent=None):
     panel0.SetSizerAndFit(grid)
 
     dlg.SetClientSize(panel0.GetMinSize())
-    #dlg.CenterOnParent()	# crashes on wxMac 2.8.6 when display asleep
+    if wx.VERSION>=(2,9):	# crashes on wxMac 2.8 (and earlier?) when display asleep
+        dlg.CenterOnParent()	# see http://trac.wxwidgets.org/ticket/11557
     wx.EVT_BUTTON(dlg, wx.ID_OK, OnButton)
     wx.EVT_BUTTON(dlg, wx.ID_SAVE, OnButton)    
     wx.EVT_BUTTON(dlg, wx.ID_NO, OnButton)
@@ -122,7 +150,7 @@ def AboutBox(parent=None):
     ver=wx.StaticText(panel0, -1, "Version %4.2f" % appversion)
     ver.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
 
-    blurb=wx.StaticText(panel0, -1, "Copyright 2007 Jonathan Harris")
+    blurb=wx.StaticText(panel0, -1, "Copyright 2007-2012 Jonathan Harris")
     blurb.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
 
     box=wx.BoxSizer(wx.VERTICAL)

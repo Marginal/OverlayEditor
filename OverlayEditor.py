@@ -20,12 +20,9 @@ elif platform=='darwin':
 try:
     import wx
 except:
-    if platform=='darwin':
-        from EasyDialogs import Message
-        Message("wxPython is not installed. This application requires\nwxPython 2.5.3 or later, built for Python %s." % version[:3])
-    else:	# linux
-        import tkMessageBox
-        tkMessageBox._show("Error", "wxPython is not installed. This application\nrequires python wxgtk 2.5.3 or later.", icon="error", type="ok")
+    import Tkinter, tkMessageBox
+    Tkinter.Tk().withdraw()
+    tkMessageBox.showerror("Error", "wxPython is not installed.\nThis application requires wxPython 2.5.3 or later.")
     exit(1)
 from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
 
@@ -40,12 +37,9 @@ try:
         import OpenGL.arrays.numpymodule
         import OpenGL.arrays.ctypesarrays
 except:
-    if platform=='darwin':
-        from EasyDialogs import Message
-        Message("PyOpenGL is not installed. This application\nrequires PyOpenGL 2 or later.")
-    else:	# linux
-        import tkMessageBox
-        tkMessageBox._show("Error", "PyOpenGL is not installed. This application\nrequires PyOpenGL 2 or later.", icon="error", type="ok")
+    import Tkinter, tkMessageBox
+    Tkinter.Tk().withdraw()
+    tkMessageBox.showerror("Error", "PyOpenGL is not installed.\nThis application\nrequires PyOpenGL 2.x.")
     exit(1)
 
 if not 'startfile' in dir(os):
@@ -58,9 +52,10 @@ from clutter import round2res, minres, latlondisp, Exclude	# for loading exclusi
 from clutterdef import KnownDefs, ExcludeDef, NetworkDef, previewsize
 from draw import MyGL
 from files import importObj, scanApt, readApt, readNav, readLib, readNet, sortfolded
+from lock import LockDialog
 from palette import Palette, PaletteEntry
 from DSFLib import readDSF, writeDSF
-from MessageBox import myMessageBox, AboutBox
+from MessageBox import myCreateStdDialogButtonSizer, myMessageBox, AboutBox
 from prefs import Prefs
 from version import appname, appversion
 
@@ -95,8 +90,6 @@ global prefs
 
 
 if platform=='darwin':
-    from Carbon import Menu
-    from EasyDialogs import AskFolder
     # Hack: wxMac 2.5 requires the following to get shadows to look OK:
     # ... wx.ALIGN_CENTER_VERTICAL|wx.TOP|wx.BOTTOM, 2)
     pad=2
@@ -104,33 +97,6 @@ if platform=='darwin':
 else:
     pad=0
     browse="Browse..."
-
-class myCreateStdDialogButtonSizer(wx.BoxSizer):
-    # Dialog.CreateStdDialogButtonSizer for pre 2.6
-    def __init__(self, parent, style):
-        assert not (style & ~(wx.OK|wx.CANCEL))
-        wx.BoxSizer.__init__(self, wx.HORIZONTAL)
-
-        ok=style&wx.OK
-        no=style&wx.CANCEL
-        
-        # adjust order of buttons per Windows or Mac conventions
-        if platform!='darwin':
-            if ok: buttonok=wx.Button(parent, wx.ID_OK)
-            if no: buttonno=wx.Button(parent, wx.ID_CANCEL)
-            self.Add([0,0], 1)		# push following buttons to right
-            if ok: self.Add(buttonok, 0, wx.ALL, pad)
-            if ok and no: self.Add([6,0], 0)	# cosmetic
-            if no: self.Add(buttonno, 0, wx.ALL, pad)
-        else:
-            if no: buttonno=wx.Button(parent, wx.ID_CANCEL)
-            if ok: buttonok=wx.Button(parent, wx.ID_OK)
-            self.Add([0,0], 1)		# push following buttons to right
-            if no: self.Add(buttonno, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, pad)
-            if ok and no: self.Add([6,0], 0)	# cosmetic
-            if ok: self.Add(buttonok, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, pad)
-            self.Add([0,0], 1)	# centre
-        if ok: buttonok.SetDefault()
 
 
 class myListBox(wx.VListBox):
@@ -387,6 +353,7 @@ class GotoDialog(wx.Dialog):
         if self.ShowModal()!=wx.ID_OK: return None
         return (self.lat.GetValue(), self.lon.GetValue())
 
+
 class PreferencesDialog(wx.Dialog):
 
     def __init__(self, parent, id, title):
@@ -409,10 +376,11 @@ class PreferencesDialog(wx.Dialog):
         panel1.SetSizer(box1)
 
         self.display = wx.RadioBox(panel2, -1, "Terrain", style=wx.VERTICAL,
-                                   choices=["No terrain", "Show terrain", "Show terrain and elevation", "Show terrain, elevation, powerlines, railways, roads"])
-        if prefs.options&Prefs.NETWORK:
-            self.display.SetSelection(3)
-        elif prefs.options&Prefs.ELEVATION:
+                                   choices=["No terrain", "Show terrain", "Show terrain and elevation"])
+        # "Show terrain, elevation, powerlines, railways, roads"])
+        #if prefs.options&Prefs.NETWORK:
+        #    self.display.SetSelection(3)
+        if prefs.options&Prefs.ELEVATION:
             self.display.SetSelection(2)
         elif prefs.options&Prefs.TERRAIN:
             self.display.SetSelection(1)
@@ -440,18 +408,14 @@ class PreferencesDialog(wx.Dialog):
 
     def OnBrowse(self, event):
         while True:
-            if platform=='darwin':
-                path=AskFolder('Please locate your X-Plane folder', defaultLocation=self.path.GetValue(), wanted=unicode)
-                if not path: return wx.ID_CANCEL
-            else:
-                style=wx.DEFAULT_DIALOG_STYLE|wx.RESIZE_BORDER
-                if 'DD_DIR_MUST_EXIST' in dir(wx): style|=wx.DD_DIR_MUST_EXIST
-                dlg=wx.DirDialog(self, 'Please locate your X-Plane folder', self.path.GetValue(), style)
-                if dlg.ShowModal()!=wx.ID_OK:
-                    dlg.Destroy()
-                    return wx.ID_CANCEL
-                path=dlg.GetPath()
+            style=wx.DEFAULT_DIALOG_STYLE|wx.RESIZE_BORDER
+            if 'DD_DIR_MUST_EXIST' in dir(wx): style|=wx.DD_DIR_MUST_EXIST
+            dlg=wx.DirDialog(self, 'Please locate your X-Plane folder', self.path.GetValue(), style)
+            if dlg.ShowModal()!=wx.ID_OK:
                 dlg.Destroy()
+                return wx.ID_CANCEL
+            path=dlg.GetPath()
+            dlg.Destroy()
             if glob(join(path, gcustom)) and (glob(join(path, gmain8aptdat)) or glob(join(path, gmain9aptdat))):
                 self.path.SetValue(path.strip())
                 self.FindWindowById(wx.ID_OK).Enable()
@@ -680,7 +644,7 @@ class BackgroundDialog(wx.Dialog):
             f=''
         dlg=wx.FileDialog(self, "Location of background image:", dir, f,
                           "Image files|*.bmp;*.jpg;*.jpeg;*.png|BMP files (*.bmp)|*.bmp|JPEG files (*.jpg, *.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png|All files|*.*",
-                          wx.OPEN|wx.HIDE_READONLY)
+                          wx.OPEN)
         if dlg.ShowModal()==wx.ID_OK:
             self.image=dlg.GetPath()
             self.setpath()
@@ -743,7 +707,7 @@ class BackgroundDialog(wx.Dialog):
 class MainWindow(wx.Frame):
     def __init__(self, parent, id, title):
 
-        self.loc=None	# (lat,lon)
+        self.loc=(0.5,0.5)	# (lat,lon)
         self.hdg=0
         self.elev=45
         self.dist=2048*zoom
@@ -765,9 +729,10 @@ class MainWindow(wx.Frame):
             self.SetIcon(wx.Icon('Resources/%s.png' % appname,
                                  wx.BITMAP_TYPE_PNG))
             self.menubar=None
-        elif platform=='darwin':
+        
+        if platform=='darwin' or (__debug__ and False):
             # icon pulled from Resources via Info.plist. Need minimal menu
-            # http://developer.apple.com/documentation/UserExperience/Conceptual/OSXHIGuidelines/XHIGMenus/chapter_16_section_4.html
+            # http://developer.apple.com/documentation/UserExperience/Conceptual/AppleHIGuidelines/XHIGMenus/XHIGMenus.html#//apple_ref/doc/uid/TP30000356-TPXREF103
             self.menubar = wx.MenuBar()
             filemenu = wx.Menu()
             filemenu.Append(wx.ID_NEW, u'New\u2026\tCtrl-N')
@@ -777,17 +742,23 @@ class MainWindow(wx.Frame):
             filemenu.Append(wx.ID_SAVE, u'Save\tCtrl-S')
             wx.EVT_MENU(self, wx.ID_SAVE, self.OnSave)
             filemenu.AppendSeparator()
-            filemenu.Append(wx.ID_PASTE, u'Import\u2026')
-            wx.EVT_MENU(self, wx.ID_PASTE, self.OnImport)
+            filemenu.Append(wx.ID_DOWN, u'Import\u2026')
+            wx.EVT_MENU(self, wx.ID_DOWN, self.OnImport)
             # ID_EXIT moved to application menu
             filemenu.Append(wx.ID_EXIT, u'Quit %s\tCtrl-Q' % appname)
-            #wx.EVT_MENU(self, wx.ID_EXIT, self.OnClose)	# don't do this -> generates CommandEvent not CloseEvent
+            wx.EVT_MENU(self, wx.ID_EXIT, self.OnClose)
             self.menubar.Append(filemenu, 'File')
 
             editmenu = wx.Menu()
             editmenu.Append(wx.ID_UNDO, u'Undo\tCtrl-Z')
             wx.EVT_MENU(self, wx.ID_UNDO, self.OnUndo)
             editmenu.AppendSeparator()
+            #editmenu.Append(wx.ID_CUT, u'Cut\tCtrl-X')
+            #wx.EVT_MENU(self, wx.ID_CUT, self.OnCut)
+            #editmenu.Append(wx.ID_COPY, u'Copy\tCtrl-C')
+            #wx.EVT_MENU(self, wx.ID_COPY, self.OnCopy)
+            #editmenu.Append(wx.ID_PASTE, u'Paste\tCtrl-V')
+            #wx.EVT_MENU(self, wx.ID_PASTE, self.OnPaste)
             editmenu.Append(wx.ID_ADD, u'Add\tEnter')
             wx.EVT_MENU(self, wx.ID_ADD, self.OnAdd)
             editmenu.Append(wx.ID_DELETE, u'Delete')
@@ -838,11 +809,11 @@ class MainWindow(wx.Frame):
                                   wx.NullBitmap, 0,
                                   'Save scenery package')
         wx.EVT_TOOL(self.toolbar, wx.ID_SAVE, self.OnSave)
-        self.toolbar.AddLabelTool(wx.ID_PASTE, 'Import',
+        self.toolbar.AddLabelTool(wx.ID_DOWN, 'Import',
                                   self.icon(['fileimport'], 'import.png'),	# not in spec - KDE3 name
                                   wx.NullBitmap, 0,
                                   'Import objects from another package')
-        wx.EVT_TOOL(self.toolbar, wx.ID_PASTE, self.OnImport)
+        wx.EVT_TOOL(self.toolbar, wx.ID_DOWN, self.OnImport)
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_ADD, 'Add',
                                   self.icon(['list-add', 'add'], 'add.png'),
@@ -876,6 +847,11 @@ class MainWindow(wx.Frame):
                                   'Go to airport')
         wx.EVT_TOOL(self.toolbar, wx.ID_FORWARD, self.OnGoto)
         self.toolbar.AddSeparator()
+        self.toolbar.AddLabelTool(wx.ID_APPLY, 'Lock object types',
+                                  self.icon(['stock_lock', 'security-medium'], 'padlock.png'),
+                                  wx.NullBitmap, 0,
+                                  'Lock object types')
+        wx.EVT_TOOL(self.toolbar, wx.ID_APPLY, self.OnLock)
         self.toolbar.AddLabelTool(wx.ID_PREFERENCES, 'Preferences',
                                   self.icon(['preferences-desktop', 'preferences-system', 'package-settings'], 'prefs.png'),
                                   wx.NullBitmap, 0,
@@ -889,13 +865,16 @@ class MainWindow(wx.Frame):
         wx.EVT_TOOL(self.toolbar, wx.ID_HELP, self.OnHelp)
         
         self.toolbar.Realize()
-        self.toolbar.EnableTool(wx.ID_PASTE,  False)
+        self.toolbar.EnableTool(wx.ID_DOWN,   False)
         self.toolbar.EnableTool(wx.ID_ADD,    False)
         self.toolbar.EnableTool(wx.ID_DELETE, False)
         self.toolbar.EnableTool(wx.ID_UNDO,   False)
         self.toolbar.EnableTool(wx.ID_REFRESH,False)
         if self.menubar:
-            self.menubar.Enable(wx.ID_PASTE,  False)
+            self.menubar.Enable(wx.ID_DOWN,   False)
+            #self.menubar.Enable(wx.ID_CUT,    False)
+            #self.menubar.Enable(wx.ID_COPY,   False)
+            #self.menubar.Enable(wx.ID_PASTE,  False)
             self.menubar.Enable(wx.ID_ADD,    False)
             self.menubar.Enable(wx.ID_DELETE, False)
             self.menubar.Enable(wx.ID_UNDO,   False)
@@ -928,6 +907,7 @@ class MainWindow(wx.Frame):
         if platform=='darwin':
             # Hack! Change name on application menu. wxMac always uses id 1.
             try:
+                from Carbon import Menu
                 Menu.GetMenuHandle(1).SetMenuTitleWithCFString(appname)
             except:
                 pass
@@ -1041,12 +1021,6 @@ class MainWindow(wx.Frame):
             else:
                 changed=self.canvas.movesel(round2res(zinc*cos(hr)),
                                             round2res(xinc*sin(hr)))
-        elif event.m_keyCode in [ord('C'), wx.WXK_NUMPAD5]:
-            (names,string,lat,lon,hdg)=self.canvas.getsel(prefs.options&Prefs.DMS)
-            if lat==None: return
-            self.loc=(round2res(lat),round2res(lon))
-            if hdg!=None and event.m_shiftDown:
-                self.hdg=round(hdg,1)
         elif event.m_keyCode in [ord('Q'), wx.WXK_NUMPAD7]:
             if event.m_controlDown:
                 changed=self.canvas.movesel(0, 0, -0.1, 0, self.loc)
@@ -1115,6 +1089,18 @@ class MainWindow(wx.Frame):
                 changed=True
         elif event.m_keyCode in [wx.WXK_DELETE, wx.WXK_BACK, wx.WXK_NUMPAD_DELETE]: # wx.WXK_NUMPAD_DECIMAL]:
             changed=self.canvas.delsel(event.m_controlDown, event.m_shiftDown)
+        elif event.m_keyCode==ord('Z') and event.CmdDown():
+            self.OnUndo()
+            return
+        #elif event.m_keyCode==ord('X') and event.CmdDown():
+        #    self.OnCut()
+        #    return
+        #elif event.m_keyCode==ord('C') and event.CmdDown():
+        #    self.OnCopy()
+        #    return
+        #elif event.m_keyCode==ord('V') and event.CmdDown():
+        #    self.OnPaste()
+        #    return
         elif event.m_keyCode==wx.WXK_SPACE:
             # not Cmd because Cmd-Space = Spotlight
             self.canvas.allsel(event.m_controlDown)
@@ -1126,16 +1112,15 @@ class MainWindow(wx.Frame):
                 if loc:
                     self.loc=loc
                     self.ShowSel()
-        elif event.m_keyCode==ord('Z') and event.CmdDown():
-            loc=self.canvas.undo()
-            if loc:
-                self.loc=loc
-                self.ShowSel()
-            if not self.canvas.undostack:
-                self.toolbar.EnableTool(wx.ID_UNDO, False)
-                if self.menubar: self.menubar.Enable(wx.ID_UNDO, False)
+        elif event.m_keyCode in [ord('C'), wx.WXK_NUMPAD5]:
+            (names,string,lat,lon,hdg)=self.canvas.getsel(prefs.options&Prefs.DMS)
+            if lat==None: return
+            self.loc=(round2res(lat),round2res(lon))
+            if hdg!=None and event.m_shiftDown:
+                self.hdg=round(hdg,1)
         elif event.m_keyCode==wx.WXK_F1 and platform!='darwin':
             self.OnHelp(event)
+            return
         else:
             if __debug__:
                 if event.m_keyCode==ord('P'):
@@ -1155,13 +1140,13 @@ class MainWindow(wx.Frame):
         event.Skip(True)
     
     def OnMouseWheel(self, event):
-        if event.m_wheelRotation>0:
+        if event.GetWheelRotation()>0:
             if event.m_shiftDown:
                 self.dist/=zoom2
             else:
                 self.dist/=zoom
             if self.dist<1.0: self.dist=1.0
-        elif event.m_wheelRotation<0:
+        elif event.GetWheelRotation()<0:
             if event.m_shiftDown:
                 self.dist*=zoom2
             else:
@@ -1179,7 +1164,22 @@ class MainWindow(wx.Frame):
     def OnNew(self, event):
         if not self.SaveDialog(): return
         package=self.NewDialog(True)
-        if package: self.OnReload(False, package)
+        if package:
+            self.OnReload(False, package)
+            self.toolbar.EnableTool(wx.ID_SAVE, False)
+            self.toolbar.EnableTool(wx.ID_ADD,  False)
+            self.toolbar.EnableTool(wx.ID_UNDO, False)
+            self.toolbar.EnableTool(wx.ID_DOWN, True)
+            self.toolbar.EnableTool(wx.ID_REFRESH, True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_SAVE,  False)
+                self.menubar.Enable(wx.ID_UNDO,  False)
+                #self.menubar.Enable(wx.ID_CUT,   False)
+                #self.menubar.Enable(wx.ID_COPY,  False)
+                #self.menubar.Enable(wx.ID_PASTE, False)
+                self.menubar.Enable(wx.ID_ADD,   False)
+                self.menubar.Enable(wx.ID_DOWN,  True)
+                self.menubar.Enable(wx.ID_REFRESH, True)
         
 
     def OnOpen(self, event):
@@ -1209,20 +1209,21 @@ class MainWindow(wx.Frame):
         if r==wx.ID_OK:
             package=list1.GetStringSelection()
             dlg.Destroy()
-            #self.loc=None
-            #self.hdg=0
             self.OnReload(False, package)
             if prefs.package:
                 self.toolbar.EnableTool(wx.ID_SAVE, False)
                 self.toolbar.EnableTool(wx.ID_ADD,  False)
                 self.toolbar.EnableTool(wx.ID_UNDO, False)
-                self.toolbar.EnableTool(wx.ID_PASTE,   True)
+                self.toolbar.EnableTool(wx.ID_DOWN, True)
                 self.toolbar.EnableTool(wx.ID_REFRESH, True)
                 if self.menubar:
                     self.menubar.Enable(wx.ID_SAVE, False)
                     self.menubar.Enable(wx.ID_ADD,  False)
                     self.menubar.Enable(wx.ID_UNDO, False)
-                    self.menubar.Enable(wx.ID_PASTE,   True)
+                    #self.menubar.Enable(wx.ID_CUT,   False)
+                    #self.menubar.Enable(wx.ID_COPY,  False)
+                    #self.menubar.Enable(wx.ID_PASTE, False)
+                    self.menubar.Enable(wx.ID_DOWN,  True)
                     self.menubar.Enable(wx.ID_REFRESH, True)
         else:
             dlg.Destroy()
@@ -1266,7 +1267,13 @@ class MainWindow(wx.Frame):
                              wx.ICON_ERROR|wx.OK, None)
                 return False
         self.toolbar.EnableTool(wx.ID_SAVE, False)
-        if self.menubar: self.menubar.Enable(wx.ID_SAVE, False)
+        self.toolbar.EnableTool(wx.ID_DOWN, True)
+        self.toolbar.EnableTool(wx.ID_REFRESH, True)
+        if self.menubar:
+            self.menubar.Enable(wx.ID_SAVE, False)
+            self.menubar.Enable(wx.ID_DOWN, True)
+            self.menubar.Enable(wx.ID_REFRESH, True)
+
         return True
         
     def OnAdd(self, event):
@@ -1298,6 +1305,16 @@ class MainWindow(wx.Frame):
         if not self.canvas.undostack:
             self.toolbar.EnableTool(wx.ID_UNDO, False)
             if self.menubar: self.menubar.Enable(wx.ID_UNDO, False)
+
+    def OnCut(self, event):
+        self.onCopy(event)
+        self.onDelete(event)
+
+    def OnCopy(self, event):
+        event.skip()
+
+    def OnPaste(self, event):
+        event.skip()
 
     def OnBackground(self, event):
         self.canvas.clearsel()
@@ -1358,8 +1375,6 @@ class MainWindow(wx.Frame):
         if not reload:
             # Load, not reload
             progress.Update(0, 'Overlay DSFs')
-            self.loc=None
-            self.hdg=0
             self.elev=45
             self.dist=2048*zoom
             placements={}
@@ -1464,8 +1479,6 @@ class MainWindow(wx.Frame):
         self.palette.load('Objects', objects, pkgdir)
         lookup.update(objects)
 
-        for lib in libs: self.palette.load(lib, lookupbylib[lib], None)
-
         if xpver>=9:
             defroadfile=lookupbylib['g8'].pop(NetworkDef.DEFAULTFILE,None)
             if defroadfile: defroadfile=defroadfile.file
@@ -1517,17 +1530,19 @@ class MainWindow(wx.Frame):
         self.canvas.reload(prefs.options, airports, nav, mainaptdat,
                            netdefs, lookup, placements, networks,
                            background, terrain, dsfdirs)
-        if not self.loc:
+        if not reload:
             # Load, not reload
             if pkgloc:	# go to first airport by name
                 self.loc=pkgloc
+                self.hdg=0
             else:
                 for p in placements.values():
                     if p:
                         self.loc=p[0].location()
+                        self.hdg=0
                         break
                 else:	# Fallback / Untitled
-                    self.loc=(0.5,0.5)
+                    pass	# keep existing
         self.loc=(round2res(self.loc[0]),round2res(self.loc[1]))
         progress.Destroy()
         
@@ -1538,7 +1553,7 @@ class MainWindow(wx.Frame):
         self.Refresh()
 
     def OnImport(self, event):
-        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Draped, Facades, Forests|*.obj;*.pol;*.fac;*.for|Object files (*.obj)|*.obj|Draped polygon files (*.pol)|*.pol|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|All files|*.*", wx.OPEN|wx.MULTIPLE|wx.HIDE_READONLY)
+        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Draped, Facades, Forests|*.obj;*.pol;*.fac;*.for|Object files (*.obj)|*.obj|Draped polygon files (*.pol)|*.pol|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|All files|*.*", wx.OPEN|wx.MULTIPLE)
         if dlg.ShowModal()!=wx.ID_OK:
             dlg.Destroy()
             return
@@ -1573,11 +1588,20 @@ class MainWindow(wx.Frame):
             self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
             self.ShowLoc()
 
+    def OnLock(self, event):
+        dlg=LockDialog(self, wx.ID_ANY, "Lock")
+        dlg.CenterOnParent()	# Otherwise is top-left on Mac
+        if dlg.ShowModal()==wx.ID_OK:
+            # apply to currently selected
+            self.canvas.selected=[x for x in self.canvas.selected if not x.definition.type & self.canvas.locked]
+            self.canvas.Refresh()
+            self.ShowSel()
+
     def OnPrefs(self, event):
         dlg=PreferencesDialog(self, wx.ID_ANY, "Preferences")
         dlg.CenterOnParent()	# Otherwise is top-left on Mac
         x=dlg.ShowModal()
-        if x!=wx.ID_OK:            
+        if x!=wx.ID_OK:
             if x: dlg.Destroy()
             return
         if dlg.display.GetSelection()==3:
@@ -1595,20 +1619,24 @@ class MainWindow(wx.Frame):
             prefs.xplane=dlg.path.GetValue()
             prefs.package=None
             self.toolbar.EnableTool(wx.ID_SAVE,   True)
-            self.toolbar.EnableTool(wx.ID_PASTE,  False)
+            self.toolbar.EnableTool(wx.ID_DOWN,   False)
             self.toolbar.EnableTool(wx.ID_ADD,    False)
             self.toolbar.EnableTool(wx.ID_DELETE, False)
             self.toolbar.EnableTool(wx.ID_UNDO,   False)
             self.toolbar.EnableTool(wx.ID_REFRESH,False)
             if self.menubar:
                 self.menubar.Enable(wx.ID_SAVE,   True)
-                self.menubar.Enable(wx.ID_PASTE,  False)
+                self.menubar.Enable(wx.ID_DOWN,   False)
+                #self.menubar.Enable(wx.ID_CUT,    False)
+                #self.menubar.Enable(wx.ID_COPY,   False)
+                #self.menubar.Enable(wx.ID_PASTE,  False)
                 self.menubar.Enable(wx.ID_ADD,    False)
                 self.menubar.Enable(wx.ID_DELETE, False)
                 self.menubar.Enable(wx.ID_UNDO,   False)
                 self.menubar.Enable(wx.ID_REFRESH,False)
             dlg.Destroy()
             self.airports={}	# force reload
+            self.defnetdefs=[]	# force reload
             self.OnReload(False)
             prefs.write()
         self.canvas.goto(self.loc, options=prefs.options)
@@ -1689,11 +1717,6 @@ class MainWindow(wx.Frame):
                                      wx.ICON_ERROR|wx.OK, self)
                         break
                 else:
-                    self.toolbar.EnableTool(wx.ID_SAVE, False)
-                    self.toolbar.EnableTool(wx.ID_UNDO, False)
-                    if self.menubar:
-                        self.menubar.Enable(wx.ID_SAVE, False)
-                        self.menubar.Enable(wx.ID_UNDO, False)
                     mkdir(join(base,v))
                     mkdir(join(base,v,'Earth nav data'))
                     dlg.Destroy()
@@ -1704,7 +1727,7 @@ class MainWindow(wx.Frame):
             
         
 # main
-app=wx.PySimpleApp()
+app=wx.App()
 if platform=='win32':
     if app.GetComCtl32Version()>=600 and wx.DisplayDepth()>=32:
         wx.SystemOptions.SetOptionInt('msw.remap', 2)
@@ -1774,8 +1797,7 @@ if False:	# XXX trace
           ).runfunc(app.MainLoop)
 else:
     # Load data files
-    frame.Update()		# Let window draw first
-    frame.OnReload(False, prefs.package)
+    wx.PostEvent(frame.toolbar, wx.PyCommandEvent(wx.EVT_TOOL.typeId, wx.ID_REFRESH))
     app.MainLoop()
 
 # Save prefs

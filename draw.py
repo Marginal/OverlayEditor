@@ -22,6 +22,7 @@ import wx
 import wx.glcanvas
 if platform=='darwin':
     from os import uname	# not defined in win32 builds
+
 if __debug__:
     import time
     from traceback import print_exc
@@ -84,6 +85,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.dragcursor=wx.StockCursor(wx.CURSOR_CROSS)
 
         self.valid=False	# do we have valid data for a redraw?
+        self.needclear=False	# pending clear
         self.options=0		# display options
         self.tile=(0,999)	# [lat,lon] of SW
         self.centre=None	# [lat,lon] of centre
@@ -103,6 +105,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.meshlist=0
         
         self.mousenow=None	# Current position (used in timer and drag)
+        self.locked=0		# locked object types
         self.selected=[]	# list of selected placements
         self.clickmode=None
         self.clickpos=None	# Location of mouse down
@@ -117,6 +120,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.dragx<=1 or self.dragx>8 or self.dragy<=1 or self.dragy>8:
             self.dragx=self.dragy=5	# Finder on Mac appears to use 5
 
+        self.clipboard=[]
         self.undostack=[]
 
         # Values during startup
@@ -127,8 +131,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.e=90
         self.d=3333.25
         self.cliprat=1000
-
-        self.context=wx.glcanvas.GLContext
 
         # Must specify min sizes for glX? - see glXChooseVisual and GLXFBConfig
         wx.glcanvas.GLCanvas.__init__(self, parent,
@@ -158,10 +160,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             self.nopolyosinlist=False
 
+        if wx.VERSION >= (2,9):
+            self.context = wx.glcanvas.GLContext(self)
+
         self.vertexcache=None
         self.multisample=False
 
-        wx.EVT_PAINT(self, self.OnPaint)
         wx.EVT_ERASE_BACKGROUND(self, self.OnEraseBackground)
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)
         wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
@@ -179,7 +183,10 @@ class MyGL(wx.glcanvas.GLCanvas):
     def glInit(self):
         #print "Canvas Init"
         # Setup state. Under X must be called after window is shown
-        self.SetCurrent()
+        if wx.VERSION >= (2,9):
+            self.SetCurrent(self.context)
+        else:
+            self.SetCurrent()
         self.vertexcache=VertexCache()	# member so can free resources
         try:
             glInitMultisampleARB()
@@ -187,19 +194,20 @@ class MyGL(wx.glcanvas.GLCanvas):
         except:
             self.multisample=False
         #glClearDepth(1.0)
+        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glEnable(GL_DEPTH_TEST)
         glDepthFunc(GL_LESS)
         glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
         if debugapt: glLineWidth(2.0)
-        #glLineStipple(1, 0x0f0f)	# for selection drag
-        glPointSize(4.0)		# for nodes
+        #glLineStipple(1, 0x0f0f)		# for selection drag
+        glPointSize(4.0)			# for nodes
         glFrontFace(GL_CW)
         glPolygonMode(GL_FRONT, GL_FILL)
         glCullFace(GL_BACK)
         glPixelStorei(GL_UNPACK_ALIGNMENT,1)	# byte aligned glBitmap
         glPixelStorei(GL_PACK_ALIGNMENT,1)	# byte aligned glReadPixels
-        glReadBuffer(GL_BACK)	# for unproject
+        glReadBuffer(GL_BACK)			# for unproject
         #glPixelStorei(GL_UNPACK_LSB_FIRST,1)
         glEnable(GL_TEXTURE_2D)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -212,11 +220,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         glTranslatef(0, 1, 0)
         glScalef(1, -1, 1)	# OpenGL textures are backwards
         glMatrixMode(GL_MODELVIEW)
+        wx.EVT_PAINT(self, self.OnPaint)	# start generating paint events only now we're set up
 
 
     def OnEraseBackground(self, event):
-        #print "eb"
-        pass	# Prevent flicker when resizing / painting on MSW
+        # Prevent flicker when resizing / painting on MSW
+        self.needclear=True	# ATI drivers require clear afer resize
 
     def OnKeyDown(self, event):
         if self.clickmode:
@@ -426,7 +435,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if size.width<=0: return	# may be junk on startup
         self.SetCurrent()
         self.SetFocus()			# required for GTK
-        
+
         glMatrixMode(GL_PROJECTION)
         glViewport(0, 0, *size)
         glLoadIdentity()
@@ -445,7 +454,6 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if not self.valid:
             # Sea
-            glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
             glColor3f(0.25, 0.25, 0.50)
             glBindTexture(GL_TEXTURE_2D, 0)
@@ -457,8 +465,12 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnd()
             self.SwapBuffers()
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+            self.needclear=False
             return
-
+        elif self.needclear:
+            glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+            self.needclear=False
+        
         self.vertexcache.realize(self)
 
         # Static stuff: mesh, networks, navaids
@@ -567,15 +579,17 @@ class MyGL(wx.glcanvas.GLCanvas):
         glTranslatef(-self.x, -self.y, -self.z)	# set up for picking
 
         # Selections
-        glColor3f(1.0, 0.5, 1.0)
-        glEnable(GL_DEPTH_TEST)
-        glDepthMask(GL_TRUE)
-        glPolygonOffset(-2, -2)
-        glEnable(GL_POLYGON_OFFSET_FILL)
-        for placement in self.selected:
-            placement.draw(True, False)
-        if len(self.selected)==1:
-            placement.drawnodes(self.selectednode)
+        if self.selected:
+            glColor3f(1.0, 0.5, 1.0)
+            glEnable(GL_DEPTH_TEST)
+            glDepthMask(GL_TRUE)
+            glPolygonOffset(-2, -2)
+            glEnable(GL_POLYGON_OFFSET_FILL)
+            for placement in self.selected:
+                placement.draw(True, False)
+            if len(self.selected)==1:
+                placement.drawnodes(self.selectednode)
+            glDisable(GL_POLYGON_OFFSET_FILL)
 
 	# drag box
         if self.clickmode==ClickModes.DragBox:
@@ -608,8 +622,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Display
         self.SwapBuffers()
 
-        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        self.needclear=False
 
 
     def newselect(self):
@@ -707,8 +721,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         placements=self.placements[self.tile]
         for i in range(len(placements)-1,-1,-1):	# favour higher layers
             for j in range(len(placements[i])):
-                glLoadName((i<<24)+j)
-                placements[i][j].draw(False, True)
+                if not placements[i][j].definition.type & self.locked:
+                    glLoadName((i<<24)+j)
+                    placements[i][j].draw(False, True)
         glEnable(GL_DEPTH_TEST)
         if self.multisample: glEnable(GL_MULTISAMPLE_ARB)
         glEnable(GL_LINE_SMOOTH)
@@ -886,10 +901,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.selectednode:
             placement=self.selected[0]
             layer=placement.definition.layer
-            newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
+            newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
+            if not (self.undostack and self.undostack[-1].equals(newundo)):
+                self.undostack.append(newundo)
             self.selectednode=placement.movenode(self.selectednode, dlat, dlon, self.tile, self.options, self.vertexcache, False)
             assert self.selectednode
-            self.undostack.append(newundo)
         else:
             moved=[]
             placements=self.placements[self.tile]
@@ -1092,6 +1108,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     else:
                         name='Network #%03d    ' % road	# fallback
                     self.unsorted[key].append(Network(name, road, [points]))
+            self.locked=0	# reset locked on loading new
         else:
             # clear layers
             for key in self.placements.keys():
@@ -1111,6 +1128,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.background=(image, lat, lon, hdg, width, length, opacity,None)
         else:
             self.background=None
+        self.clipboard=[]	# layers might have changed
         self.undostack=[]	# layers might have changed
         self.selected=[]	# may not have same indices in new list
         self.selectednode=None
@@ -1504,7 +1522,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         self.defs[filename]=ObjectDef(filename, self.vertexcache)
                 except:
                     # Older versions of X-Plane don't have eg beacon_seaport
-                    pass
+                    if __debug__: print_exc()
                 
             # Prepare static stuff: mesh, networks, navaids
             progress.Update(15, 'Done')
@@ -1516,7 +1534,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnable(GL_DEPTH_TEST)
             glDepthMask(GL_TRUE)
             glEnable(GL_CULL_FACE)
-            glDisable(GL_POLYGON_OFFSET_FILL)
             polystate=0
             if __debug__:
                 if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
@@ -1525,21 +1542,16 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glScalef(1,0,1)		# Defeat elevation data
             for (base,number,texno,poly) in self.vertexcache.getMesh(newtile,options):
                 if poly:		# eg overlaid photoscenery
+                    # Can't use polygon offset in display list on OSX<10.4.8?
+                    # or ATI drivers>7.11? on Windows.
                     if polystate!=poly:
                         glDepthMask(GL_FALSE)	# offset mustn't update depth
-                        if self.nopolyosinlist:
-                            glDisable(GL_DEPTH_TEST)
-                        else:
-                            glEnable(GL_POLYGON_OFFSET_FILL)
-                            glPolygonOffset(-10*poly, -10*poly)
+                        glDisable(GL_DEPTH_TEST)
                     polystate=poly
                 else:
                     if polystate:
                         glDepthMask(GL_TRUE)
-                        if self.nopolyosinlist:
-                            glEnable(GL_DEPTH_TEST)
-                        else:
-                            glDisable(GL_POLYGON_OFFSET_FILL)
+                        glEnable(GL_DEPTH_TEST)
                     polystate=0
                 glBindTexture(GL_TEXTURE_2D, texno)
                 glDrawArrays(GL_TRIANGLES, base, number)
@@ -1548,6 +1560,18 @@ class MyGL(wx.glcanvas.GLCanvas):
             if __debug__:
                 if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
 
+            # networks
+            glDisable(GL_TEXTURE_2D)
+            for (roadtype, points) in self.vertexcache.getNets(newtile,options):
+                if roadtype<=len(self.defnetdefs) and self.defnetdefs[roadtype].color:
+                    glColor3f(*self.defnetdefs[roadtype].color)
+                else:
+                    glColor3f(0.5,0.5,0.5)
+                glBegin(GL_LINE_STRIP)
+                for (x,y,z) in points:
+                    glVertex3f(x,y,z)
+                glEnd()
+
             # navaids
             glColor3f(0.8, 0.8, 0.8)	# Unpainted
             glEnable(GL_TEXTURE_2D)
@@ -1555,8 +1579,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             glDepthMask(GL_TRUE)
             #glEnable(GL_CULL_FACE)	# already enabled
             cullstate=True
-            glDisable(GL_POLYGON_OFFSET_FILL)
-            polystate=0
             for (i, lat, lon, hdg) in self.navaids:
                 if (int(floor(lat)),int(floor(lon)))==newtile and i in objs:
                     if objs[i][0]=='*':
@@ -1603,7 +1625,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                             glDrawArrays(GL_TRIANGLES, definition.base+definition.culled, definition.nocull)
                         glPopMatrix()
             if not cullstate: glEnable(GL_CULL_FACE)
-            if polystate: glDisable(GL_POLYGON_OFFSET_FILL)
             glEndList()
 
             # labels
@@ -1679,14 +1700,17 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_DEPTH_TEST)
         glCallList(self.meshlist)	# Terrain only
         #glFinish()	# redundant
-        mz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
-        if mz==1.0: mz=0.5	# treat off the tile edge as sea level
+        dz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
+        if dz==0.0 or dz==1.0:
+            mz=0.5	# treat off the tile edge as sea level
+        else:
+            mz=dz
         (x,y,z)=gluUnProject(mx,my,mz)
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
         glClear(GL_DEPTH_BUFFER_BIT)
         lat=round2res(self.centre[0]-z/onedeg)
         lon=round2res(self.centre[1]+x/(onedeg*cos(radians(lat))))
-        #print "%3d %3d %5.3f, %5d %5.1f %5d, %10.6f %11.6f" % (mx,my,mz, x,y,z, lat,lon)
+        #print "%3d %3d %.6f, %5d %5.1f %5d, %10.6f %11.6f" % (mx,my,mz, x,y,z, lat,lon)
         return (lat,lon)
 
 
@@ -1714,7 +1738,7 @@ tess=gluNewTess()
 gluTessNormal(tess, 0, -1, 0)
 gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
 gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
-gluTessCallback(tess, GLU_TESS_COMBINE, tesscombine)
+gluTessCallback(tess, GLU_TESS_COMBINE,      tesscombine)
 gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
 
 
@@ -1753,7 +1777,7 @@ def csgtcombine(coords, vertex, weight):
     else:
         ratio=(hypot(coords[0]-p1[0][0], coords[2]-p1[0][2])/d)
         y=p1[0][1]+ratio*(p2[0][1]-p1[0][1])
-    return ([coords[0],y,coords[2]], True, p3[2])
+    return ([coords[0],y,coords[2]], True, p3[2] or p1[2])
 
 def csgtedge(flag):
     pass	# dummy
@@ -1761,7 +1785,7 @@ def csgtedge(flag):
 csgt = gluNewTess()
 gluTessNormal(csgt, 0, -1, 0)
 gluTessProperty(csgt, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
-gluTessCallback(csgt, GLU_TESS_VERTEX_DATA, csgtvertex)
-gluTessCallback(csgt, GLU_TESS_COMBINE, csgtcombine)
-gluTessCallback(csgt, GLU_TESS_EDGE_FLAG, csgtedge)	# no strips
+gluTessCallback(csgt, GLU_TESS_VERTEX_DATA,  csgtvertex)
+gluTessCallback(csgt, GLU_TESS_COMBINE,      csgtcombine)
+gluTessCallback(csgt, GLU_TESS_EDGE_FLAG,    csgtedge)	# no strips
 

@@ -146,21 +146,14 @@ class PaletteChoicebook(wx.Choicebook):
         self.imgs.Add(wx.Bitmap("Resources/unknowns.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/bad.png", wx.BITMAP_TYPE_PNG))	# bad assumed below to be last
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)	# appears to do nowt on Windows
-        wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)
         if 'GetChoiceCtrl' in dir(self):	# not available on wxMac 2.5
             if platform=='win32':
                 self.GetChoiceCtrl().SetWindowVariant(wx.WINDOW_VARIANT_LARGE)
             wx.EVT_KEY_DOWN(self.GetChoiceCtrl(), self.OnKeyDown)
-            wx.EVT_MOUSEWHEEL(self.GetChoiceCtrl(), self.OnMouseWheel)
 
     def OnKeyDown(self, event):
         # Override & manually propagate
         self.frame.OnKeyDown(event)
-        event.Skip(False)
-
-    def OnMouseWheel(self, event):
-        # Override & manually propagate
-        self.frame.OnMouseWheel(event)
         event.Skip(False)
 
     def OnChoice(self, event):
@@ -190,7 +183,6 @@ class PaletteChoicebook(wx.Choicebook):
         self.AddPage(l, tabname)
         wx.EVT_LISTBOX(self, l.GetId(), self.OnChoice)
         wx.EVT_KEY_DOWN(l, self.OnKeyDown)
-        wx.EVT_MOUSEWHEEL(l, self.OnMouseWheel)
     
     def add(self, name, bad):
         #print "cbadd", name, bad
@@ -278,7 +270,6 @@ class Palette(wx.SplitterWindow):
         self.lastheight=self.GetSize().y
         wx.EVT_SIZE(self, self.OnSize)
         wx.EVT_KEY_DOWN(self.preview, self.OnKeyDown)
-        wx.EVT_MOUSEWHEEL(self.preview, self.OnMouseWheel)
         wx.EVT_SPLITTER_SASH_POS_CHANGING(self, self.GetId(), self.OnSashPositionChanging)
         wx.EVT_PAINT(self.preview, self.OnPaint)
 
@@ -307,11 +298,6 @@ class Palette(wx.SplitterWindow):
     def OnKeyDown(self, event):
         # Override & manually propagate
         self.frame.OnKeyDown(event)
-        event.Skip(False)
-
-    def OnMouseWheel(self, event):
-        # Override & manually propagate
-        self.frame.OnMouseWheel(event)
         event.Skip(False)
 
     def flush(self):

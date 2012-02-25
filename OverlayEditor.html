@@ -20,9 +20,9 @@ h5 { font-family: Arial,Helvetica,sans-serif; }
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Marginal &raquo; <a href="http://marginal.org.uk/x-planescenery/">X-Plane
-Scenery</a> &raquo; <a href="http://marginal.org.uk/x-planescenery/tools.html">Tools</a>
-&raquo; OverlayEditor</td>
+      <td class="banner">Marginal &rarr; <a href="http://marginal.org.uk/x-planescenery/">X-Plane
+Scenery</a> &rarr; <a href="http://marginal.org.uk/x-planescenery/tools.html">Tools</a>
+&rarr; OverlayEditor</td>
     </tr>
   </tbody>
 </table>
@@ -48,30 +48,37 @@ contains the X-Plane, Plane-Maker etc applications).<p>
 
 <h3>The application window</h3>
 <p>The application window consists of five parts:</p>
-<img style="border: 0px solid;" alt="main window" src="Resources/screenshot.jpg">
+<img style="border: 0px solid; width: 800px; height: 578px;" alt="application window" src="Resources/screenshot.jpg" usemap="#appwinmap">
+<map name="appwinmap">
+  <area shape="rect" coords="0,0,799,38" href="#toolbar" title="Tool bar">
+  <area shape="rect" coords="0,39,527,556" href="#mainwindow" title="Main window">
+  <area shape="rect" coords="0,557,799,577" href="#statusbar" title="Status bar">
+  <area shape="rect" coords="528,39,799,293" href="#objectlist" title="List of objects">
+  <area shape="rect" coords="528,294,799,556" href="#preview" title="Preview">
+</map>
 
-<h4>Tool bar</h4>
+<h4><a name="toolbar">Tool bar</a></h4>
 <table style="width: 100%;" border="0">
   <tbody>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="New" src="Resources/new.png"></td>
-      <td>Create a new scenery package. This creates a new folder
-in X-Plane's<code> Custom&nbsp;Scenery </code>folder.</td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="New" src="Resources/new.png"></td>
+      <td>Create a new scenery package.<br>
+This creates a new folder in X-Plane's<code> Custom&nbsp;Scenery </code>folder.</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Open" src="Resources/open.png"></td>
-      <td>Open an existing scenery package. All the packages in
-X-Plane's<code> Custom&nbsp;Scenery </code>folder are listed but you
-can only actually edit those that use DSF overlays (rather than
-ENVs or "full" DSFs).</td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Open" src="Resources/open.png"></td>
+      <td>Open an existing scenery package.<br>
+All the packages in X-Plane's<code> Custom&nbsp;Scenery </code>folder are
+listed,  but you can only actually edit those that use DSF overlays
+(rather than ENVs or "full" DSFs).</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Save" src="Resources/save.png"></td>
-      <td>Save the scenery package. Any existing <code>.dsf</code>
-files are backed up with the extension <code>.dsf.bak</code></td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Save" src="Resources/save.png"></td>
+      <td>Save the scenery package.<br>
+<small>Note: Any existing <code>.dsf</code> files are backed up with the extension <code>.dsf.bak</code></small></td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="import"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Go To" src="Resources/import.png"></td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="import"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Go To" src="Resources/import.png"></td>
       <td>Import objects and their textures from another scenery package and add them to the <a href="#objectlist">list of objects</a>.<br>
 The imported objects are placed in<code> custom&nbsp;objects </code>or<code> objects </code>if either of these folders exist, otherwise in the package's top-level folder.
 <small>(So this button is only available once you have saved the scenery package).</small>
@@ -81,26 +88,26 @@ the license terms; these often prohibit re-distribution of individual
 objects.</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Add" src="Resources/add.png"></td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Add" src="Resources/add.png"></td>
       <td>Add the object that is highlighted in the
-<a href="#objectlist">list of objects</a> to the scenery.
-The object is added at the current location and with the current heading.</td>
+<a href="#objectlist">list of objects</a> to the scenery.<br>
+The object is added at the current cursor location and with the current heading.</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Delete" src="Resources/delete.png"></td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Delete" src="Resources/delete.png"></td>
       <td>Delete the selected object(s).</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Undo" src="Resources/undo.png"></td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Undo" src="Resources/undo.png"></td>
       <td>Undo the last edit.</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Background" src="Resources/background.png"></td>
-      <td>Set a background image.
-You can use the <samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp>, <samp>Q</samp>, <samp>E</samp> and <samp>C</samp> keys to adjust the background image.</td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Background" src="Resources/background.png"></td>
+      <td>Set a background image.<br>
+You can use the <samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp>, <samp>Q</samp>, <samp>E</samp> and <samp>C</samp> keys to adjust the background image while the dialog is open.</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="reload"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Reload" src="Resources/reload.png"></a></td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="reload"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Reload" src="Resources/reload.png"></a></td>
       <td>Reload the object, texture and apt.dat files in the scenery package.<br>
 Use this if you have modified any of these files outside of this application.
 Also use this if you have added new objects and you want these new objects
@@ -108,25 +115,30 @@ to appear in the <a href="#objectlist">list of objects</a>.
 <small>(Note that the DSF files are not reloaded - just re-open the package if you want to revert to the last saved version)</small>.</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Go To" src="Resources/goto.png"></td>
-      <td>Go to an airport.</td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Go To" src="Resources/goto.png"></td>
+      <td>Go to an airport or lat/lon location.</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="preferences"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Preferences" src="Resources/prefs.png"></a></td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="lock"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Lock" src="Resources/padlock.png"></a></td>
+      <td>Lock object types. Locked objects can't be selected or modified.<br>
+Use this to avoid accidentally editing certain kinds of objects.</td>
+    </tr>
+    <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><a name="preferences"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Preferences" src="Resources/prefs.png"></a></td>
       <td>Change X-Plane's top-level folder and display options.<br>
 Do not change the location of X-Plane's top-level folder while you are editing a scenery package, otherwise your unsaved changes will be lost.</td>
     </tr>
     <tr>
-      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid ; width: 32px; height: 32px;" alt="Help" src="Resources/help.png"></a></td>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Help" src="Resources/help.png"></a></td>
       <td>Show this help file.</td>
     </tr>
   </tbody>
 </table>
 
-<h4>Main window</h4>
+<h4><a name="mainwindow">Main window</a></h4>
 <p>This shows the objects in a 1&deg;&times;1&deg; region of the loaded
 scenery package.</p>
-<p>By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Preferences" src="Resources/prefs.png"></a>.
+<p>By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Preferences" src="Resources/prefs.png"></a>.
 Runways, taxiways and navaids are displayed in simplified form and cannot
 be edited.
 Scenery objects from other scenery packages and "autogen" scenery objects
@@ -200,64 +212,74 @@ for tiny steps:</p>
 <table style="margin-left: 40px;" border="0">
   <tbody>
     <tr>
-      <td style="width: 33%;">Mouse click and drag</td>
-      <td>Move object or polygon/network node</td>
+      <td style="width: 33%; vertical-align: top;">Mouse click and drag</td>
+      <td>Move selected object(s) or polygon/network node.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
-      <td>Move selected objects or polygon/network node</td>
+      <td style="width: 33%; vertical-align: top;"><samp>W</samp>, <samp>S</samp>, <samp>A</samp>, <samp>D</samp></td>
+      <td>Move selected object(s) or polygon/network node.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Q</samp>, <samp>E</samp></td>
-      <td>Rotate selected objects</td>
+      <td style="width: 33%; vertical-align: top;"><samp>Q</samp>, <samp>E</samp></td>
+      <td>Rotate selected object(s) about the cursor. To rotate a single object about its origin, select it and press <samp>C</samp> before rotating.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>R</samp>, <samp>F</samp></td>
+      <td style="width: 33%; vertical-align: top;"><samp>R</samp>, <samp>F</samp></td>
       <td>Increase/decrease facade height, network node height or forest density, or rotate a draped polygon's texture.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>C</samp></td>
-      <td>Centre on selected objects or polygon/network node</td>
+      <td style="width: 33%; vertical-align: top;"><samp>C</samp></td>
+      <td>Centre the cursor on the selected object(s) or polygon/network node.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>N</samp></td>
-      <td>Select the next use of this object in the current 1&deg;&times;1&deg; region.</td>
+      <td style="width: 33%; vertical-align: top;"><samp>N</samp></td>
+      <td>Select the next use in this 1&deg;&times;1&deg; region of the object
+that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Ctrl-N</samp></td>
-      <td>Add the next use of this object to the selection.</td>
+      <td style="width: 33%; vertical-align: top;"><samp>Ctrl-N</samp></td>
+      <td>Add the next use of the highlighted object to the selection.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Ctrl-Shift-N</samp></td>
-      <td>Select all uses of this object in the current 1&deg;&times;1&deg; region.</td>
+      <td style="width: 33%; vertical-align: top;"><samp>Ctrl-Shift-N</samp></td>
+      <td>Select all uses in this 1&deg;&times;1&deg; region of the highlighted object.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Insert</samp>/<samp>Enter</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
-      <td>Add new object or polygon/network node</td>
+      <td style="width: 33%; vertical-align: top;"><samp>Insert</samp>/<samp>Enter</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
+      <td>Add new object or polygon/network node.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Ctrl-Insert</samp>/<samp>Enter</samp></td>
-      <td>Add new polygon node (going clockwise) or new network node</td>
+      <td style="width: 33%; vertical-align: top;"><samp>Ctrl-Insert</samp>/<samp>Enter</samp></td>
+      <td>Add new polygon node (going clockwise) or new network node.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Shift-Insert</samp>/<samp>Enter</samp></td>
-      <td>Add a hole in a forest or draped polygon</td>
+      <td style="width: 33%; vertical-align: top;"><samp>Shift-Insert</samp>/<samp>Enter</samp></td>
+      <td>Add a hole in selected forest or draped polygon.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
-      <td>Delete selected objects or polygon/network node</td>
+      <td style="width: 33%; vertical-align: top;"><samp>Delete</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
+      <td>Delete selected object(s) or polygon/network node.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Shift-Delete</samp></td>
-      <td>Delete selected hole in a polygon</td>
+      <td style="width: 33%; vertical-align: top;"><samp>Shift-Delete</samp></td>
+      <td>Delete selected hole in a polygon.</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Ctrl</samp>/<samp>Cmd-Z</samp>, or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
+      <td style="width: 33%; vertical-align: top;"><samp>Ctrl</samp>/<samp>Cmd-Z</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
       <td>Undo the last edit.</td>
+    </tr>
+    <tr>
+      <td style="width: 33%; vertical-align: top;"><samp>Ctrl</samp>/<samp>Cmd-X</samp> / <samp>C</samp> / <samp>V</samp></td>
+      <td>Cut / Copy / Paste.</td>
     </tr>
   </tbody>
 </table>
-<p><small>Note: You can also use the keys on the numeric keypad (if your keyboard has one) - ensure that </small><samp>NumLock</samp><small> is on.</small></p>
+<p><small>Note: You can also use the keys on the numeric keypad (if your keyboard has one) - ensure that <samp>NumLock</samp> is on.</small></p>
+
+<h4><a name="statusbar">Status bar</a></h4>
+<p>This shows the cursor location, heading, elevation and, if you have
+selected an object or polygon node, the object or node's location, heading and
+elevation (or average location if you have selected more than one object).</p>
 
 <h4><a name="objectlist">List of objects</a></h4>
 <p>All the objects, facades etc in the scenery package folder are listed under
@@ -293,21 +315,16 @@ always displays the same version.</p>
 think of these lists as an artist's
 <a href="http://en.wikipedia.org/wiki/Palette">palette</a>.</p>
 <ul>
-  <li>Use <a href="#import"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Import" src="Resources/import.png"></a> to copy objects from another scenery <u>package</u>. (Don't use this to copy objects from a scenery
+  <li>Use <a href="#import"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Import" src="Resources/import.png"></a> to copy objects from another scenery <u>package</u>. (Don't use this to copy objects from a scenery
 <u>library</u>; just select the object from the appropriate list).</li>
-  <li>Use <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have otherwise added or modified objects in the scenery package folder, or if you have installed a new scenery library.</li>
+  <li>Use <a href="#reload"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> if you have otherwise added or modified objects in the scenery package folder, or if you have installed a new scenery library.</li>
 </ul>
 
-<h4>Preview picture</h4>
+<h4><a name="preview">Preview picture</a></h4>
 <p>A preview of the currently selected object is shown (when available)
 underneath the list of objects.</p>
 <p>You can drag the separators between the preview window and the other
 windows to make the preview picture smaller.</p>
-
-<h4>Status bar</h4>
-<p>This shows your current location, heading, elevation and, if you have
-selected an object or polygon node, the object or node's location, heading and
-elevation (or average location if you have selected more than one object).</p>
 
 <!--
 <h3>Road, Railway &amp; Powerline Networks</h3>
@@ -324,7 +341,7 @@ file inside of your scenery package
 v9 <small>(DSF overlay files that contain network segments can cause X-Plane v8 to crash)</small>,
 and if the OverlayEditor preferences are set to display terrain and elevation.</li>
   <li>When you create a new network segment in OverlayEditor it has two nodes.
-You can extend the segment by selecting an end node and pressing <samp>Insert</samp>/<samp>Enter</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>.</li>
+You can extend the segment by selecting an end node and pressing <samp>Insert</samp>/<samp>Enter</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>.</li>
   <li>You can add additional intermediate nodes by selecting a node and pressing <samp>Ctrl Insert</samp>/<samp>Enter</samp>.</li>
   <li>You can join the node at each end of a segment to another segment of the
 same or of a different type -
@@ -359,7 +376,7 @@ are of this latter type)</small>.
 <ul>
   <li>No lights, lines, materials, shading or animation. 
 3D objects that only contain lights or lines are displayed as small
-"placeholder" cubes so that they can be edited.</li>
+"placeholders" so that they can be edited.</li>
   <li>This application can only display 3D objects, facades and draped
 polygons.
 Other types of polygon (beaches, forests, lines, strings <i>etc</i>) are
@@ -383,7 +400,7 @@ however this application does not understand or display bezier polygon curves.
 Any bezier control points will be deleted if you edit the polygon.</li>
   <li>Terrain textures are simplified - no beaches or overlay textures.</li>
   <li>No flattening of terrain around airports. Terrain is displayed as if the
-X-Plane "allow sloped runways" rendering option is turned on.</li>
+X-Plane "allow sloped runways" rendering setting is turned on.</li>
 </ul>
 <a name="priority">
 <p>X-Plane prioritises scenery packages; and it doesn't load scenery from
@@ -398,9 +415,9 @@ You can see the order in which X-Plane prioritises your packages
 by looking at the file <code>Log.txt</code> in X-Plane's top-level folder.</p>
 <p>When you open or reload a scenery package this application warns about any
 objects that are missing or that it can't read, but lets you edit and save
-the scenery package anyway. X-Plane will crash unless you either provide
-implementations of missing and unreadable objects, or remove all uses of
-these objects from the scenery.<p>
+the scenery package anyway. X-Plane will not display an error unless you
+either provide implementations of missing and unreadable objects, or remove
+all uses of these objects from the scenery.<p>
 <p>X-Plane supports having multiple versions of a single library object,
 and chooses which object to display at random.
 However, this application always displays the first version of an object
@@ -419,33 +436,32 @@ if the preferences are set to display terrain. Closing other applications,
 particularly applications like X-Plane that also make heavy use of textures,
 will make OverlayEditor load faster. Or you can tell OverlayEditor not to
 display terrain; press
-<a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
+<a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
 and select "No terrain".</p>
 <p>Editing is slower when the preferences are set to display terrain elevation.
 This is particularly noticable when editing polygons because OverlayEditor
 has to fit the polygons to the terrain mesh. OverlayEditor runs much
 faster if you tell it not to display elevation; press
-<a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
+<a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
 and select "No terrain" or "Show terrain".
 <!-- But note that you need to display elevation in order to edit network segments. --></p>
 
 <h4>OverlayEditor complains that it "Can't read one or more objects"</h4>
 <p>Your scenery package uses objects that are either missing or unreadable.
-Missing or unreadable 3D objects are displayed as small grey "placeholder" cubes.
-Missing or unreadable polygons are displayed as grey "placeholder" shapes.</p>
+Missing or unreadable 3D objects are displayed as small "placeholders".
+Missing or unreadable polygons are displayed as "placeholder" shapes.</p>
 <dl>
   <dt>To delete all uses of the missing or unreadable 3D object or polygon in the current 1&deg;&times;1&deg; region:</dt>
   <dd>Select the 3D object or polygon in the <a href="#objectlist">list of objects</a></dd>
   <dd>Press <samp>Ctrl-Shift-N</samp></dd>
-  <dd>Press <samp>Delete</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></dd>
+  <dd>Press <samp>Delete</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></dd>
 </dl>
 <p>Note that neither X-Plane nor OverlayEditor can read objects designed for
 X-Plane v5. You can identify objects by looking at them in a text editor;
 the second line should start with <code>2</code>, <code>700</code> or a larger
 number and the third line should start with <code>OBJ</code>.
 Otherwise this is either an X-Plane v5 object or it is not an X-Plane
-object at all.</p>
-<p>If the object looks OK then please report the problem to the
+object at all. If the object looks OK then please report the problem to the
 <a href="mailto:x-plane@marginal.org.uk">author</a>.</p>
 
 <h4>OverlayEditor complains that it "Can't read one or more textures"</h4>
@@ -455,13 +471,13 @@ OverlayEditor expects the texture filename to have the correct case -
 edit your object to correct the texture filename.<br>
 OverlayEditor cannot read interlaced PNG files - save your
 PNG file in 24bit or 32bit non-interlaced format.<br>
-Then press <a href="#reload"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> to tell OverlayEditor to re-read your objects and textures.<br>
+Then press <a href="#reload"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Reload" src="Resources/reload.png"></a> to tell OverlayEditor to re-read your objects and textures.<br>
 Note that OverlayEditor only reports problems with textures when you load or
 reload a scenery package, and when you first add an object to the scenery.</p>
 
 <h4>My 3D object just appears as a small grey blob in OverlayEditor</h4>
 <p>OverlayEditor doesn't draw lights or lines - 3D objects that only contain
-lights or lines are displayed as small "placeholder" cubes.
+lights or lines are displayed as small "placeholders".
 This is a limitation of the application.</p>
     
 <h4>My forest/draped polygon just appears as a red outline in OverlayEditor</h4>
@@ -476,7 +492,7 @@ OverlayEditor displays non-simple polygons as a bright red outline.</p>
   <dd>Navigate to the area from which you want to remove the scenery objects.</dd>
   <dd>Select "Exclusions" from the drop-down <a href="#objectlist">Objects</a> menu.</dd>
   <dd>Choose the type of object that you want to exclude.</dd>
-  <dd>Press <samp>Enter</samp> or <img style="border: 0px solid ; width: 16px; height: 16px;" alt="Add" src="Resources/add.png">.</dd>
+  <dd>Press <samp>Enter</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Add" src="Resources/add.png">.</dd>
   <dd>Drag the corners of the new region as desired.</dd>
 </dl>
 <p>OverlayEditor doesn't display the "autogen" scenery objects, so you may have to experiment a bit.</p>
@@ -503,7 +519,7 @@ using a 3D modelling application.</p>
 it looks OK.</dd>
   <dt>&nbsp;</dt>
   <dt>Check that OverlayEditor saved your package in the correct copy of X-Plane:</dt>
-  <dd>Press <a href="#preferences"><img style="border: 0px solid ; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
+  <dd>Press <a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
 and check that the "X-Plane location" points to the copy of X-Plane
 that you're running.<br>
 If it doesn't, change the "X-Plane location" setting.
@@ -511,7 +527,7 @@ Then, in Explorer or the Finder, move your scenery package folder to the
 copy of X-Plane that you're running.</dd>
   <dt>&nbsp;</dt>
   <dt>Check your X-Plane settings:</dt>
-  <dd>Run X-Plane and choose <samp>Settings &raquo; Rendering&nbsp;Options</samp>.<br>
+  <dd>Run X-Plane and choose <samp>Settings &rarr; Rendering&nbsp;Options</samp>.<br>
 Check that "number of objects" is not set to "None".</dd>
   <dt>&nbsp;</dt>
   <dt>Check that X-Plane found your scenery package:</dt>
@@ -519,7 +535,7 @@ Check that "number of objects" is not set to "None".</dd>
 X-Plane folder.
 Your scenery package should be listed at least twice in this file;
 firstly in the list of scenery packages, eg:
-<div style="margin-left: 40px;"><code>4 Custom Scenery\<i>My package</i>\</code></div>
+<div style="margin-left: 40px;"><code><i>n</i> Custom Scenery\<i>My package</i>\</code></div>
 and secondly when X-Plane loads the DSF(s) from your scenery package, eg:
 <div style="margin-left: 40px;"><code>DSF load time: <i>nnn</i> for file Custom Scenery\<i>My package</i>\Earth nav data:+50-010\+51-001.dsf</code></div>
 If X-Plane is not loading DSFs from your package then this is probably
@@ -558,7 +574,7 @@ that you make using these tools, but you are under no obligation.</p>
     <tr>
       <td class="banner">Version 2.10 &copy; 2007-2009 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/3.0/">
-<img alt="Creative Commons License" style="border: 0px solid ; width: 88px; height: 31px; vertical-align: text-bottom;" src="http://creativecommons.org/images/public/somerights20.png"></a></td>
+<img alt="Creative Commons License" style="border: none ; width: 88px; height: 31px; vertical-align: text-bottom;" src="http://i.creativecommons.org/l/by-nc-sa/3.0/88x31.png"></a>
     </tr>
   </tbody>
 </table>

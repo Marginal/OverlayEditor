@@ -18,12 +18,11 @@ REM del /s /q *.bak >nul: 2>&1
 del /s /q *.pyc >nul: 2>&1
 del /q *.pyo >nul: 2>&1
 
-REM XXX
 goto win32
 
-@set PY=OverlayEditor.py clutter.py clutterdef.py draw.py DSFLib.py files.py fixed8x13.py MessageBox.py palette.py prefs.py version.py
+@set PY=OverlayEditor.py clutter.py clutterdef.py draw.py DSFLib.py files.py fixed8x13.py MessageBox.py lock.py palette.py prefs.py version.py
 @set DATA=OverlayEditor.html
-@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/windsock.obj Resources/windsock.png Resources/bad.png Resources/exc.png Resources/fac.png Resources/facs.png Resources/for.png Resources/fors.png Resources/net.png Resources/obj.png Resources/objs.png Resources/ortho.png Resources/orthos.png Resources/pol.png Resources/pols.png Resources/unknown.png Resources/unknowns.png Resources/airport0_000.png Resources/Sea01.png Resources/surfaces.png Resources/OverlayEditor.png Resources/screenshot.jpg Resources/800library.txt
+@set RSRC=Resources/add.png Resources/background.png Resources/delete.png Resources/goto.png Resources/help.png Resources/import.png Resources/new.png Resources/open.png Resources/padlock.png Resources/prefs.png Resources/reload.png Resources/save.png Resources/undo.png Resources/fallback.png Resources/windsock.obj Resources/windsock.png Resources/bad.png Resources/exc.png Resources/fac.png Resources/facs.png Resources/for.png Resources/fors.png Resources/net.png Resources/obj.png Resources/objs.png Resources/ortho.png Resources/orthos.png Resources/pol.png Resources/pols.png Resources/unknown.png Resources/unknowns.png Resources/airport0_000.png Resources/Sea01.png Resources/surfaces.png Resources/OverlayEditor.png Resources/screenshot.jpg Resources/800library.txt
 @set PREV=Resources/previews
 
 :source
