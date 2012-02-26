@@ -4,6 +4,33 @@ import wx
 
 from version import appname, appversion
 
+class myCreateStdDialogButtonSizer(wx.BoxSizer):
+    # Dialog.CreateStdDialogButtonSizer for pre 2.6
+    def __init__(self, parent, style):
+        assert not (style & ~(wx.OK|wx.CANCEL))
+        wx.BoxSizer.__init__(self, wx.HORIZONTAL)
+
+        ok=style&wx.OK
+        no=style&wx.CANCEL
+
+        # adjust order of buttons per Windows or Mac conventions
+        if platform!='darwin':
+            if ok: buttonok=wx.Button(parent, wx.ID_OK)
+            if no: buttonno=wx.Button(parent, wx.ID_CANCEL)
+            self.Add([0,0], 1)		# push following buttons to right
+            if ok: self.Add(buttonok, 0, wx.ALL)
+            if ok and no: self.Add([6,0], 0)	# cosmetic
+            if no: self.Add(buttonno, 0, wx.ALL)
+        else:
+            if no: buttonno=wx.Button(parent, wx.ID_CANCEL)
+            if ok: buttonok=wx.Button(parent, wx.ID_OK)
+            self.Add([0,0], 1)		# push following buttons to right
+            if no: self.Add(buttonno, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 2)
+            if ok and no: self.Add([6,0], 0)	# cosmetic
+            if ok: self.Add(buttonok, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 2)
+            self.Add([0,0], 1)	# centre
+        if ok: buttonok.SetDefault()
+
 # Custom MessageBox/MessageDialog to replace crappy wxMac default icons
 def myMessageBox(message, caption, style=wx.OK, parent=None):
 

@@ -1,0 +1,71 @@
+#!/bin/sh
+
+VERSION=`python -c "from version import appversion; print '%4.2f' % appversion"`
+VER=`python -c "from version import appversion; print int(round(appversion*100,0))"`
+APPNAME=`python -c "from version import appname; print appname"`
+APPLINUX=`python -c "from version import appname; print appname.lower()"`
+RELEASE=1
+
+rm -f ${APPNAME}_${VER}_src.zip
+rm -f ${APPLINUX}-$VERSION-$RELEASE.noarch.rpm
+rm -f ${APPLINUX}_$VERSION-$RELEASE_all.deb
+rm -f ${APPNAME}_${VER}_mac.zip
+rm -rf ${APPNAME}.app
+
+PY='OverlayEditor.py clutter.py clutterdef.py draw.py DSFLib.py files.py fixed8x13.py MessageBox.py lock.py palette.py prefs.py version.py'
+DATA='OverlayEditor.html'
+RSRC='Resources/*.png Resources/windsock.obj Resources/screenshot.jpg Resources/800library.txt'
+PREV='Resources/previews/*.jpg'
+
+# linux
+RPM=/tmp/${APPLINUX}
+RPMRT=$RPM/root
+rm -rf $RPM
+mkdir -p $RPM/BUILD
+mkdir -p $RPM/SOURCES
+mkdir -p $RPM/SPECS
+mkdir -p $RPM/RPMS/noarch
+mkdir -p $RPMRT/usr/local/bin
+mkdir -p $RPMRT/usr/local/lib/${APPLINUX}/Resources
+mkdir -p $RPMRT/usr/local/lib/${APPLINUX}/Resources/previews
+mkdir -p $RPMRT/usr/local/lib/${APPLINUX}/linux
+mkdir -p $RPMRT/usr/local/lib/${APPLINUX}/win32
+cp linux/${APPLINUX}.desktop $RPMRT/usr/local/lib/${APPLINUX}/
+cp -p linux/${APPLINUX}.spec $RPM/SPECS/
+cp -p linux/${APPLINUX} $RPMRT/usr/local/bin/
+for i in $PY $DATA; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/; done
+for i in $RSRC; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/Resources/; done
+for i in $PREV; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/Resources/previews/; done
+cp -p linux/DSFTool $RPMRT/usr/local/lib/${APPLINUX}/linux/
+rpmbuild -bb --buildroot $RPMRT --define "_topdir $RPM" --define "_unpackaged_files_terminate_build 0" --define "version $VERSION" --define "release $RELEASE" --quiet $RPM/SPECS/${APPLINUX}.spec
+mv $RPM/RPMS/noarch/${APPLINUX}-$VERSION-$RELEASE.noarch.rpm .
+
+# Debian/Ubuntu
+mkdir -p $RPMRT/DEBIAN
+mkdir -p $RPMRT/usr/local/share/applications
+mkdir -p $RPMRT/usr/local/share/icons/hicolor/48x48/apps
+cp -p linux/${APPLINUX}.desktop $RPMRT/usr/local/share/applications/
+cp -p Resources/${APPNAME}.png $RPMRT/usr/local/share/icons/hicolor/48x48/apps/${APPLINUX}.png
+echo Version: $VERSION-$RELEASE> $RPMRT/DEBIAN/control
+cat   linux/control >> $RPMRT/DEBIAN/control
+cp -p linux/postinst $RPMRT/DEBIAN/
+sudo chown -R 0:0 $RPMRT/*
+dpkg-deb -b $RPMRT .	# requires gnu-tar
+sudo chown -R $USER:staff $RPMRT/*
+
+# mac
+mkdir -p ${APPNAME}.app/Contents/MacOS
+for i in $DATA; do cp -p "$i" ${APPNAME}.app/Contents/; done
+cp -pr MacOS/* ${APPNAME}.app/Contents/MacOS/
+rm -f ${APPNAME}.app/Contents/MacOS/Info.plist
+rm -f ${APPNAME}.app/Contents/MacOS/*.bak
+for i in $PY; do cp -p "$i" ${APPNAME}.app/Contents/MacOS/; done
+mkdir -p ${APPNAME}.app/Contents/Resources
+for i in $RSRC; do cp -p "$i" ${APPNAME}.app/Contents/Resources/; done
+mkdir -p ${APPNAME}.app/Contents/Resources/previews
+for i in $PREV; do cp -p "$i" ${APPNAME}.app/Contents/Resources/previews/; done
+sed s/appversion/$VERSION/ <MacOS/Info.plist >${APPNAME}.app/Contents/Info.plist
+mv ${APPNAME}.app/Contents/MacOS/*.icns ${APPNAME}.app/Contents/Resources/
+mv -f ${APPNAME}.app/Contents/MacOS/*.png ${APPNAME}.app/Contents/Resources/	# overwrite with Mac versions
+mv -f ${APPNAME}.app/Contents/MacOS/screenshot.jpg ${APPNAME}.app/Contents/Resources/
+zip -r ${APPNAME}_${VER}_mac.zip ${APPNAME}.app
