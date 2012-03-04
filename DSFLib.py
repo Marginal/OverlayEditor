@@ -1,14 +1,15 @@
 from math import cos, floor, pi, radians
-from os import mkdir, popen3, rename, unlink
+from os import mkdir, popen3, rename, unlink, SEEK_CUR, SEEK_END
 from os.path import basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 from struct import unpack
 from sys import platform, maxint
 from tempfile import gettempdir
 import types
+import time
+import py7zlib
+from cStringIO import StringIO
 if __debug__:
-    import time
-
-import wx
+    from traceback import print_exc
 
 from clutter import PolygonFactory, Object, Polygon, Draped, Exclude, Network, minres, minhdg
 from version import appname, appversion
@@ -41,10 +42,36 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     assert wantoverlay or terrains
     baddsf=(0, "Invalid DSF file", path)
 
-    #print path
     h=file(path, 'rb')
-    if h.read(8)!='XPLNEDSF' or unpack('<I',h.read(4))!=(1,) or h.read(4)!='DAEH':
+    sig=h.read(8)
+    if sig.startswith('7z\xBC\xAF\x27\x1C'):	# X-Plane 10 compressed
+        if __debug__: clock=time.clock()
+        h.seek(0)
+        data=py7zlib.Archive7z(h).getmember(basename(path)).read()
+        h.close()
+        h=StringIO(data)
+        sig=h.read(8)
+        if __debug__: print "%6.3f time in decompression" % (time.clock()-clock)
+    if sig!='XPLNEDSF' or unpack('<I',h.read(4))!=(1,):
         raise IOError, baddsf
+
+    # scan for contents
+    table={}
+    h.seek(-16,SEEK_END)	# stop at MD5 checksum
+    end=h.tell()
+    p=12
+    while p<end:
+        h.seek(p)
+        d=h.read(8)
+        (c,l)=unpack('<4sI', d)
+        table[c]=p+4
+        p+=l
+    if __debug__: print path, table
+    if not 'DAEH' in table or not 'NFED' in table or not 'DOEG' in table or not 'SDMC' in table:
+        raise IOError, baddsf
+
+    # header
+    h.seek(table['DAEH'])
     (l,)=unpack('<I', h.read(4))
     headend=h.tell()+l-8
     if h.read(4)!='PORP':
@@ -58,8 +85,8 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     overlay=0
     for i in range(0, len(c)-1, 2):
         if c[i]=='sim/overlay': overlay=int(c[i+1])
-        elif c[i]=='sim/south': lat=int(c[i+1])
-        elif c[i]=='sim/west': lon=int(c[i+1])
+        elif c[i]=='sim/south': south=int(c[i+1])
+        elif c[i]=='sim/west': west=int(c[i+1])
         elif c[i] in Exclude.NAMES:
             if ',' in c[i+1]:	# Fix for FS2XPlane 0.99
                 v=[float(x) for x in c[i+1].split(',')]
@@ -68,24 +95,21 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             placements.append(Exclude(Exclude.NAMES[c[i]], 0,
                                       [[(v[0],v[1]),(v[2],v[1]),
                                         (v[2],v[3]),(v[0],v[3])]]))
-    centrelat=lat+0.5
-    centrelon=lon+0.5
     if wantoverlay and not overlay:
         # Not an Overlay DSF - bail early
         h.close()
         raise IOError (0, "%s is not an overlay." % basename(path))
     if not wantoverlay and overlay:
         # only interested in mesh data - bail early
-        return (lat, lon, placements, nets, mesh)
+        return (south, west, placements, nets, mesh)
         
     h.seek(headend)
 
     # Definitions Atom
-    if h.read(4)!='NFED':
-        raise IOError, baddsf
+    h.seek(table['NFED'])
     (l,)=unpack('<I', h.read(4))
     defnend=h.tell()+l-8
-    terrain=objects=polygons=network=[]
+    terrain=objects=polygons=network=rasternames=[]
     while h.tell()<defnend:
         c=h.read(4)
         (l,)=unpack('<I', h.read(4))
@@ -103,13 +127,15 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
         elif c=='WTEN':
             networks=h.read(l-9).replace('\\','/').replace(':','/').split('\0')
             h.read(1)
+        elif c=='NMED':
+            rasternames=h.read(l-9).replace('\\','/').replace(':','/').split('\0')
+            h.read(1)
         else:
             h.seek(l-8, 1)
 
     # Geodata Atom
     if __debug__: clock=time.clock()	# Processor time
-    if h.read(4)!='DOEG':
-        raise IOError, baddsf
+    h.seek(table['DOEG'])
     (l,)=unpack('<I', h.read(4))
     geodend=h.tell()+l-8
     pool=[]
@@ -137,6 +163,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             thispool=[]
             (n,)=unpack('<I', h.read(4))
             (p,)=unpack('<B', h.read(1))
+            #if __debug__: print c,n,p
             for i in range(p):
                 thisplane=[]
                 (e,)=unpack('<B', h.read(1))
@@ -186,6 +213,8 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
         assert len(poolkind)==len(scalkind)
         for i in range(len(poolkind)):	# number of pools
             curpool=poolkind[i]
+            if len(curpool)==0:		# empty
+                continue
             n=len(curpool[0])		# number of entries in this pool
             newpool=[[] for j in range(n)]
             for plane in range(len(curpool)):	# number of planes in this pool
@@ -200,10 +229,55 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             poolkind[i]=newpool
     if __debug__: print "%6.3f time in rescale" % (time.clock()-clock)
 
+    # X-Plane 10 raster data
+    raster={}
+    elev=elevwidth=elevheight=None
+    if 'SMED' in table:
+        if __debug__: clock=time.clock()
+        h.seek(table['SMED'])
+        (l,)=unpack('<I', h.read(4))
+        demsend=h.tell()+l-8
+        layerno=0
+        while h.tell()<demsend:
+            if h.read(4)!='IMED': raise IOError, baddsf
+            (l,)=unpack('<I', h.read(4))
+            (ver,bpp,flags,width,height,scale,offset)=unpack('<BBHIIff', h.read(20))
+            if __debug__: print 'IMED', ver, bpp, flags, width, height, scale, offset, rasternames[layerno]
+            if h.read(4)!='DMED': raise IOError, baddsf
+            (l,)=unpack('<I', h.read(4))
+            assert l==8+bpp*width*height
+            if flags&3==0:	# float
+                fmt='f'
+                assert bpp==4
+            elif flags&3==3:
+                raise IOError, baddsf
+            else:		# signed
+                if bpp==1:
+                    fmt='b'
+                elif bpp==2:
+                    fmt='h'
+                elif bpp==4:
+                    fmt='i'
+                else:
+                    raise IOError, baddsf
+                if flags&3==2:	# unsigned
+                    fmt=fmt.upper()
+            data=[]
+            for i in range(height):
+                data.append(unpack('<%d%s' % (width, fmt), h.read(bpp*width)))
+            raster[rasternames[layerno]]=data
+            if rasternames[layerno]=='elevation':	# we're only interested in elevation
+                assert flags&4				# algorithm below assumes post-centric data
+                assert scale==1.0 and offset==0		# we don't handle other cases
+                elev=raster['elevation']
+                elevwidth=width-1
+                elevheight=height-1
+            layerno+=1
+        if __debug__: print "%6.3f time in DEMS atom" % (time.clock()-clock)
+
     # Commands Atom
     if __debug__: clock=time.clock()	# Processor time
-    if h.read(4)!='SDMC':
-        raise IOError, baddsf
+    h.seek(table['SDMC'])
     (l,)=unpack('<I', h.read(4))
     cmdsend=h.tell()+l-8
     curpool=0
@@ -350,14 +424,14 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             
         elif c==16:	# Terrain Patch
             if curpatch:
-                newmesh=makemesh(flags,path,curter,curpatch,centrelat,centrelon,terrains,tercache)
+                newmesh=makemesh(flags,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
                 if newmesh: mesh.append(newmesh)
             curter=terrain[idx]
             curpatch=[]
             
         elif c==17:	# Terrain Patch w/ flags
             if curpatch:
-                newmesh=makemesh(flags,path,curter,curpatch,centrelat,centrelon,terrains,tercache)
+                newmesh=makemesh(flags,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
                 if newmesh: mesh.append(newmesh)
             (flags,)=unpack('<B', h.read(1))
             curter=terrain[idx]
@@ -365,9 +439,10 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             
         elif c==18:	# Terrain Patch w/ flags & LOD
             if curpatch:
-                newmesh=makemesh(flags,path,curter,curpatch,centrelat,centrelon,terrains,tercache)
+                newmesh=makemesh(flags,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
                 if newmesh: mesh.append(newmesh)
             (flags,near,far)=unpack('<Bff', h.read(9))
+            assert near==0	# We don't currently handle LOD
             curter=terrain[idx]
             curpatch=[]
 
@@ -448,13 +523,13 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
 
     # Last one
     if curpatch:
-        newmesh=makemesh(flags,path,curter,curpatch,centrelat,centrelon,terrains,tercache)
+        newmesh=makemesh(flags,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
         if newmesh: mesh.append(newmesh)
     if __debug__: print "%6.3f time in CMDS atom" % (time.clock()-clock)
-    
+
     h.close()
-    #print nets
-    return (lat, lon, placements, nets, mesh)
+    return (south, west, placements, nets, mesh)
+
 
 def meshstrip(points):
     tris=[]
@@ -471,7 +546,36 @@ def meshfan(points):
         tris.extend([points[0], points[i], points[i+1]])
     return tris
 
-def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
+def makemesh(flags,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,tercache):
+
+    def elevation(lat,lon,south,west,elev,elevwidth,elevheight):
+        # elevation from raster data - see DEMGeo::value_linear in xptools
+        x_fract=(lon-west)*elevwidth
+        z_fract=(lat-south)*elevwidth
+        x=int(x_fract)
+        z=int(z_fract)
+        x_fract-=x
+        z_fract-=z
+        v1=elev[z][x]
+        if x>=elevwidth:
+            v2=v1		# east boundary
+            if z>=elevheight:
+                v4=v3=v2=v1	# north east corner
+            else:
+                v4=v3=elev[z+1][x]
+        elif z>=elevheight:
+            v3=v1		# north boundary
+            v4=v2=elev[z][x+1]
+        else:
+            v2=elev[z  ][x+1]
+            v3=elev[z+1][x  ]
+            v4=elev[z+1][x+1]
+        w1=(1.0 - x_fract) * (1.0 - z_fract)
+        w2=(      x_fract) * (1.0 - z_fract)
+        w3=(1.0 - x_fract) * (      z_fract)
+        w4=(      x_fract) * (      z_fract)
+        return (v1 * w1 + v2 * w2 + v3 * w3 + v4 * w4) / (w1 + w2 + w3 + w4)
+
     # Get terrain info
     if ter in tercache:
         (texture, texflags, angle, xscale, zscale)=tercache[ter]
@@ -509,18 +613,25 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
                         angle=int(float(c[4]))
             h.close()
         except:
-            if __debug__: print 'Failed to load terrain "%s"' % ter
+            if __debug__:
+                print 'Failed to load terrain "%s"' % ter
+                print_exc()
         tercache[ter]=(texture, texflags, angle, xscale, zscale)
 
     # Make mesh
+    centrelat=south+0.5
+    centrelon=west+0.5
     v=[]
     t=[]
-    flags|=texflags
     if flags&1 and (len(patch[0])<7 or xscale):	# hard and no st coords
         for p in patch:
             x=(p[0]-centrelon)*onedeg*cos(radians(p[1]))
             z=(centrelat-p[1])*onedeg
-            v.append([x, p[2], z])
+            if p[2]!=-32768:
+                y=p[2]
+            else:	# elevation from raster data
+                y=elevation(p[1],p[0],south,west,elev,elevwidth,elevheight)
+            v.append([x, y, z])
             if not angle:
                 t.append([x*xscale, -z*zscale])
             elif angle==90:
@@ -533,13 +644,17 @@ def makemesh(flags,path, ter, patch, centrelat, centrelon, terrains, tercache):
                 t.append([x*xscale, -z*zscale])
     elif not (len(patch[0])<7 or xscale):	# st coords but not projected
         for p in patch:
+            if p[2]!=-32768:
+                y=p[2]
+            else:	# elevation from raster data
+                y=elevation(p[1],p[0],south,west,elev,elevwidth,elevheight)
             v.append([(p[0]-centrelon)*onedeg*cos(radians(p[1])),
-                      p[2], (centrelat-p[1])*onedeg])
+                      y, (centrelat-p[1])*onedeg])
             t.append([p[5],p[6]])
     else:
         # skip not hard and no st coords - complicated blending required
         return None
-    return (texture,flags,v,t)
+    return (texture,flags|texflags,v,t)
 
 
 def writeDSF(dsfdir, key, placements, netfile):

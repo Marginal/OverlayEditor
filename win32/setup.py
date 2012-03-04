@@ -89,7 +89,7 @@ setup(name='OverlayEditor',
                             'excludes':['Carbon', 'tcl', 'Tkinter', 'mx','socket','urllib','webbrowser',
                                         'curses', 'distutils', 'doctest', 'email', 'hotshot', 'inspect', 'pdb', 'setuptools', 'win32',	# Python2.5
                                         'Numeric', 'dotblas', 'numarray', 'scipy', 'nose'],	# Old Numeric stuff
-                            'packages':['encodings.ascii','encodings.mbcs','encodings.latin_1','encodings.utf_8','encodings.cp437'],
+                            'packages':['encodings.ascii','encodings.mbcs','encodings.latin_1','encodings.utf_8','encodings.utf_16','encodings.cp437'],
                             'optimize':2,
                             },
 
