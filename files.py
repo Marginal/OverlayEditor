@@ -31,12 +31,11 @@ from os.path import basename, curdir, dirname, exists, isdir, join, normpath, pa
 from shutil import copyfile
 from struct import unpack
 from sys import platform, maxint
+import time
 from traceback import print_exc, print_last
 import wx
 if OpenGL.__version__ >= '3':
     from numpy import array, hstack, float32
-if __debug__:
-    import time
 
 from clutterdef import BBox, KnownDefs, SkipDefs, NetworkDef
 from DSFLib import readDSF
@@ -150,7 +149,7 @@ def readApt(filename, offset=None):
             c=h.readline().split()
             if c: break
         ver=c[0]
-        if not ver in ['600','703','715','810','850']:
+        if not ver in ['600','703','715','810','850','1000']:
             raise AssertionError, "The apt.dat file in this package is invalid."
         ver=int(ver)
 
@@ -307,11 +306,16 @@ def readLib(filename, objects, terrain):
             raise IOError
         if not h.readline().split()[0]=='LIBRARY':
             raise IOError
+        regionskip=False
         for line in h:
             c=line.split()
             if not c: continue
             id=c[0]
-            if id in ['EXPORT', 'EXPORT_RATIO', 'EXPORT_EXTEND']:
+            if id=='REGION':
+                regionskip=(c[1]!='all')	# we don't yet handle region-specific libraries (e.g. terrain)
+            elif regionskip:
+                continue
+            elif id in ['EXPORT', 'EXPORT_RATIO', 'EXPORT_EXTEND', 'EXPORT_EXCLUDE']:
                 # ignore EXPORT_BACKUP
                 if id=='EXPORT_RATIO': c.pop(1)
                 if len(c)<3 or (c[1][-4:].lower() in SkipDefs and c[1]!=NetworkDef.DEFAULTFILE): continue
@@ -457,10 +461,22 @@ class TexCache:
 
         #if __debug__: clock=time.clock()	# Processor time
 
+        # X-Plane 10 will load dds or png depending on user's compression settings.
+        # We will prefer dds if the texture is to be downsampled (terrain), otherwise png (objects).
+        (base,oldext)=splitext(path)
+        if downsample:
+            for ext in ['.dds', '.DDS', '.png', '.PNG']:
+                if exists(base+ext): break
+                else: ext=oldext
+        else:
+            for ext in ['.png', '.PNG', '.dds', '.DDS']:
+                if exists(base+ext): break
+                else: ext=oldext
+
         try:
-            if path[-4:].lower()=='.dds':
+            if ext.lower()=='.dds':
                 # Do DDS manually - files need flipping
-                h=file(path,'rb')
+                h=file(base+ext,'rb')
                 if h.read(4)!='DDS ': raise IOError, 'This is not a DDS file'
                 (ssize,sflags,height,width,size,depth,mipmaps)=unpack('<7I', h.read(28))
                 #print ssize,sflags,height,width,size,depth,mipmaps
@@ -579,7 +595,7 @@ class TexCache:
                     raise IOError, 'Invalid compression type'
 
             else:	# supported PIL formats
-                image = PIL.Image.open(path)
+                image = PIL.Image.open(base+ext)
                 size=[image.size[0],image.size[1]]
                 for i in [0,1]:
                     l=log(size[i],2)
@@ -756,7 +772,6 @@ class VertexCache:
                                            cmp(x,y)))
                 dsfs+=thisdsfs
                 #print join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))
-            if __debug__: print dsfs
         if __debug__: clock=time.clock()	# Processor time
         for dsf in dsfs:
             try:

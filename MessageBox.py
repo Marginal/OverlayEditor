@@ -95,9 +95,9 @@ def myMessageBox(message, caption, style=wx.OK, parent=None):
 
     if style&~wx.ICON_MASK in [wx.OK,wx.CANCEL]:
         button=wx.Button(panel0, wx.ID_OK)
-        button.SetDefault()
     else:
         button=wx.Button(panel0, wx.ID_SAVE)
+    button.SetDefault()
     
     grid=wx.GridBagSizer()	# 7 rows, 8 cols
     grid.SetEmptyCellSize((0,0))
