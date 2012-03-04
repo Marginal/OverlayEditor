@@ -1387,6 +1387,8 @@ class MainWindow(wx.Frame):
                                  wx.ICON_ERROR|wx.OK, None)
                     return
                 except:		# Bad DSF - restore to unloaded state
+                    if __debug__:
+                        print_exc()
                     progress.Destroy()
                     myMessageBox("Failed to read %s." % basename(f), "Can't edit this scenery package.", wx.ICON_ERROR|wx.OK, None)
                     return
@@ -1450,6 +1452,7 @@ class MainWindow(wx.Frame):
         dlibs=glob(join(prefs.xplane, gdefault, '*', glibrary))
         dlibs.sort()	# asciibetical
         libpaths=clibs+glibs+dlibs
+        if __debug__: print "libraries", libpaths
         for lib in libpaths: readLib(lib, lookupbylib, terrain)
         libs=lookupbylib.keys()
         sortfolded(libs)	# dislay order in palette
@@ -1734,19 +1737,19 @@ if not prefs.xplane or not (glob(join(prefs.xplane, gcustom)) and (glob(join(pre
     if platform.startswith('linux'):	# prompt is not displayed on Linux
         myMessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder", wx.ICON_INFORMATION|wx.OK, frame)
     if platform=='win32' and glob(join('C:\\X-Plane', gcustom)) and (glob(join('C:\\X-Plane', gmain8aptdat)) or glob(join('C:\\X-Plane', gmain9aptdat))):
-        prefs.xplane='C:\\X-Plane'
+        prefs.xplane=u'C:\\X-Plane'
     elif platform=='win32':
-        prefs.xplane='C:\\'
-    elif isdir(join(expanduser('~'), 'X-Plane')):
-        prefs.xplane=join(expanduser('~'), 'X-Plane')
-    elif isdir(join(expanduser('~'), 'Desktop', 'X-Plane')):
-        prefs.xplane=join(expanduser('~'), 'Desktop', 'X-Plane')
-    elif isdir(join(sep, 'Applications', 'X-Plane')):
-        prefs.xplane=join(sep, 'Applications', 'X-Plane')
+        prefs.xplane=u'C:\\'
+    elif isdir(join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'X-Plane')):
+        prefs.xplane=join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'X-Plane')
+    elif isdir(join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'Desktop', 'X-Plane')):
+        prefs.xplane=join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'Desktop', 'X-Plane')
+    elif isdir(join(sep, u'Applications', 'X-Plane')):
+        prefs.xplane=join(sep, u'Applications', 'X-Plane')
     elif platform=='darwin':
-        prefs.xplane=join(sep, 'Applications')
+        prefs.xplane=join(sep, u'Applications')
     else:
-        prefs.xplane=expanduser('~')
+        prefs.xplane=expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8')
     dlg=PreferencesDialog(frame, wx.ID_ANY, '')
     if dlg.OnBrowse(None)!=wx.ID_OK: exit(1)	# User cancelled
     prefs.xplane=dlg.path.GetValue()
@@ -1765,29 +1768,15 @@ if __debug__ and len(argv)>1:	# allow package name on command line
         frame.menubar.Enable(wx.ID_REFRESH, True)
 
 
+# Load data files
+wx.PostEvent(frame.toolbar, wx.PyCommandEvent(wx.EVT_TOOL.typeId, wx.ID_REFRESH))
 if False:	# XXX trace
     from trace import Trace
-    from _winreg import OpenKey, QueryValueEx, HKEY_CURRENT_USER, REG_SZ, REG_EXPAND_SZ
-    handle=OpenKey(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders\\')
-    (v,t)=QueryValueEx(handle, 'Desktop')
-    handle.Close()
-    if t==REG_EXPAND_SZ:
-        dirs=v.split('\\')
-        for i in range(len(dirs)):
-            if dirs[i][0]==dirs[i][-1]=='%':
-                dirs[i]=getenv(dirs[i][1:-1],dirs[i])
-        v='\\'.join(dirs)
-    outfile=join(v, appname+'.log')
-    if exists(outfile): unlink(outfile)
-    frame.Update()		# Let window draw first
-    frame.OnReload(False, prefs.package)
-    sys.stdout=open(outfile, 'wt', 0)	# unbuffered
+    sys.stdout=open(appname+'.log', 'wt', 0)	# unbuffered
     Trace(count=0, trace=1,
-          ignoremods=['DSFLib','files', 'codecs','fnmatch','glob','ntpath']
+          ignoremods=['codecs','fnmatch','glob','posixpath','_core']
           ).runfunc(app.MainLoop)
 else:
-    # Load data files
-    wx.PostEvent(frame.toolbar, wx.PyCommandEvent(wx.EVT_TOOL.typeId, wx.ID_REFRESH))
     app.MainLoop()
 
 # Save prefs
