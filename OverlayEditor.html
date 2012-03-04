@@ -32,16 +32,16 @@ Scenery</a> &rarr; <a href="http://marginal.org.uk/x-planescenery/tools.html">To
 <h3>Overview</h3>
 <p>This application edits X-Plane<small><sup>&reg;</sup></small>
 DSF overlay scenery packages for X-Plane 8.30 or later.
-It runs on Windows 2000 or later, MacOS 10.3.9 or later and Linux.</p>
+It runs on Windows 2000 or later, MacOS 10.5 or later and Linux.</p>
 <p>This document is a reference - it is assumed that you're familiar with
 X-Plane's scenery system and that you know how to create X-Plane scenery
 objects. If not, then you can get started by following
 <a target="_blank" href="http://marginal.org.uk/x-planescenery/hangar_tutorial/index.html">this tutorial</a>.<p>
 
 <h3>Setting up</h3>
-<p>Users of MacOS 10.3 should first install
-<a href="http://prdownloads.sourceforge.net/wxpython/wxPython2.5-osx-unicode-2.5.3.1-panther-py2.3.dmg">wxPython 2.5.3</a> or later <small>(you don't need to
-install MacPython - it's already installed on 10.3)</small>.</p>
+<p>Users of Mac OS 10.7 (Lion) should first <a target="_blank" href="http://www.wxpython.org/download.php">download</a>
+and install wxPython for Cocoa and Python 2.7 - the lastest version at time of writing is
+<a href="http://downloads.sourceforge.net/wxpython/wxPython2.9-osx-2.9.3.1-cocoa-py2.7.dmg">wxPython2.9-osx-cocoa-py2.7</a>.</p>
 <p>The first time that you run the application you are asked to
 identify X-Plane's top-level folder (<i>ie</i> the folder which
 contains the X-Plane, Plane-Maker etc applications).<p>
@@ -415,7 +415,7 @@ You can see the order in which X-Plane prioritises your packages
 by looking at the file <code>Log.txt</code> in X-Plane's top-level folder.</p>
 <p>When you open or reload a scenery package this application warns about any
 objects that are missing or that it can't read, but lets you edit and save
-the scenery package anyway. X-Plane will not display an error unless you
+the scenery package anyway. X-Plane will display an error unless you
 either provide implementations of missing and unreadable objects, or remove
 all uses of these objects from the scenery.<p>
 <p>X-Plane supports having multiple versions of a single library object,
@@ -549,10 +549,11 @@ Rename one or both of the packages to change their relative priority.</dd>
 
 <h3>Limitations</h3>
 <ul>
+  <li>Does not understand X-Plane 10 <code>.agp</code> and enhanced facade objects.</li>
   <li>Does not display roads, railway or powerline networks.</li>
   <li>Does not display autogen scenery.</li>
   <li>Does not display lights or lines in 3D objects.</li>
-  <li>Does not convert or edit <code>.env</code> files.</li>
+  <li>Does not convert or edit X-Plane 7 and earlier <code>.env</code> files.</li>
   <li>Displays but does not edit runways, taxiways, navaids etc.</li>
   <li>There is a limit to the number of objects that you can select at once. The number depends on your graphics hardware.</li>
   <li>Interlaced PNG files appear untextured.</li>
@@ -572,7 +573,7 @@ that you make using these tools, but you are under no obligation.</p>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 2.04 &copy; 2007-2009 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 2.05 &copy; 2007-2012 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/3.0/">
 <img alt="Creative Commons License" style="border: 0px solid; width: 88px; height: 31px; vertical-align: text-bottom;" src="http://creativecommons.org/images/public/somerights20.png"></a></td>
     </tr>
