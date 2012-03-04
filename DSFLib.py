@@ -735,7 +735,7 @@ def writeDSF(dsfdir, key, placements, netfile):
 
     for obj in objects:
         # DSFTool rounds down, so round up here first
-        h.write('OBJECT\t\t%d\t%12.7f %12.7f %5.1f\n' % (
+        h.write('OBJECT\t%d\t%12.7f%13.7f%6.1f\n' % (
             objdefs.index(obj.name), min(west+1, obj.lon+minres/2), min(south+1, obj.lat+minres/2), round(obj.hdg,1)+minhdg/2))
     if objects: h.write('\n')
     
@@ -743,18 +743,20 @@ def writeDSF(dsfdir, key, placements, netfile):
         if isinstance(poly, Network): continue
         h.write('BEGIN_POLYGON\t%d\t%d %d\n' % (
             polydefs.index(poly.name), poly.param, len(poly.nodes[0][0])))
-            #polydefs.index(poly.name), poly.param, 2))
         for w in poly.nodes:
             h.write('BEGIN_WINDING\n')
             for p in w:
-                h.write('POLYGON_POINT\t')
-                for n in range(len(p)):
-                    if 0<=p[n]<=1:
-                        h.write('%12.7f ' % p[n]) # don't adjust UV coords
-                    elif n&1:	# lat
-                        h.write('%12.7f ' % min(south+1, p[n]+minres/2))
-                    else:	# lon
-                        h.write('%12.7f ' % min(west+1, p[n]+minres/2))
+                # DSFTool rounds down, so round up here first
+                h.write('POLYGON_POINT\t%12.7f%13.7f' % (min(west+1, p[0]+minres/2), min(south+1, p[1]+minres/2)))
+                if len(p)==4 and poly.param!=65535: # don't adjust UV coords
+                    h.write('%13.7f%13.7f' % (min(west+1, p[2]+minres/2), min(south+1, p[3]+minres/2)))
+                elif len(p)==5:
+                    h.write('%13.7f%13.7f%13.7f' % (p[2], min(west+1, p[3]+minres/2), min(south+1, p[4]+minres/2)))
+                elif len(p)==8:
+                    h.write('%13.7f%13.7f%13.7f%13.7f%13.7f%13.7f' % (min(west+1, p[2]+minres/2), min(south+1, p[3]+minres/2), p[4], p[5], p[6], p[7]))
+                else:
+                    for n in range(3,len(p)):
+                        h.write('%13.7f' % p[n])
                 h.write('\n')
             h.write('END_WINDING\n')
         h.write('END_POLYGON\n')
