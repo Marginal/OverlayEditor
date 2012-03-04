@@ -117,7 +117,7 @@ class Object(Clutter):
         self.y=y
 
     def __str__(self):
-        return '<"%s" %11.6f %10.6f %d %s>' % (
+        return '<Object "%s" %11.6f %10.6f %d %s>' % (
             self.name, self.lat, self.lon, self.hdg, self.y)
 
     def clone(self):

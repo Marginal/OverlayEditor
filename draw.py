@@ -849,10 +849,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                 return False
         else:
             # Add new clutter
-            if name.lower().endswith('.obj'):
+            if name.lower()[-4:] in ['.obj','.agp']:
                 placement=Object(name, lat, lon, hdg)
             else:
                 placement=PolygonFactory(name, None, lat, lon, size, hdg)
+            if __debug__: print "add", placement
             
             if not placement.load(self.lookup, self.defs, self.vertexcache):
                 myMessageBox("Can't read " + name, 'Cannot add this object.',
@@ -1198,7 +1199,8 @@ class MyGL(wx.glcanvas.GLCanvas):
 
                     if not placement.load(self.lookup, self.defs, self.vertexcache, True) and placement.name not in errobjs:
                         errobjs.append(placement.name)
-                        self.frame.palette.add(placement.name, True)
+                        if placement.name not in self.lookup:
+                            self.frame.palette.add(placement.name, True)
 
                     if placement.definition.texerr:
                         s=u"%s: %s" % (placement.definition.texerr.filename, placement.definition.texerr.strerror)
