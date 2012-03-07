@@ -74,7 +74,7 @@ class PaletteListBox(wx.VListBox):
             elif ext in KnownDefs:
                 imgno=KnownDefs.index(ext)
             else:
-                continue	# wtf?
+                imgno=14	# wtf?
             if tabname in [NetworkDef.TABNAME, ExcludeDef.TABNAME]:
                 pass
             elif not self.pkgdir:
@@ -185,7 +185,7 @@ class PaletteChoicebook(wx.Choicebook):
         wx.EVT_KEY_DOWN(l, self.OnKeyDown)
     
     def add(self, name, bad):
-        #print "cbadd", name, bad
+        if __debug__: print "cbadd", name, bad
         # Add to objects tab - assumes that this is first tab
         if bad:
             if name in self.bad:

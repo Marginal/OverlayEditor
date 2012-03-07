@@ -57,7 +57,7 @@ def ClutterDefFactory(filename, vertexcache):
     if filename.startswith(PolygonDef.EXCLUDE):
         return ExcludeDef(filename, vertexcache)        
     ext=filename.lower()[-4:]
-    if ext==ObjectDef.OBJECT:
+    if ext==ObjectDef.OBJECT or ext=='.agp':
         return ObjectDef(filename, vertexcache)
     elif ext==PolygonDef.DRAPED:
         return DrapedDef(filename, vertexcache)
@@ -1034,6 +1034,7 @@ class NetworkFallback(PolygonDef):
         self.canpreview=False
         self.type=Locked.NET
 
-UnknownDefs=['.lin','.str']	# Known unknowns
+
+UnknownDefs=['.lin','.str','.agp']	# Known unknowns
 SkipDefs=['.bch','.net']	# Ignore in library
 KnownDefs=[ObjectDef.OBJECT, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.DRAPED]+UnknownDefs

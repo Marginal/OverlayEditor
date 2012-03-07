@@ -3,7 +3,7 @@
 from glob import glob
 from math import cos, floor, sin, pi, radians, sqrt
 import os	# for startfile
-from os import chdir, getenv, listdir, mkdir, unlink, walk
+from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 import sys	# for path
 from sys import exit, argv, executable, platform, version
@@ -1385,9 +1385,9 @@ class MainWindow(wx.Frame):
                     if not dsfs:
                         if glob(join(pkgnavdata, '[+-][0-9]0[+-][01][0-9]0', '[+-][0-9][0-9][+-][01][0-9][0-9].[eE][nN][vV]')): raise IOError, (0, 'This package uses v7 "ENV" files')
                     for f in dsfs:
-                        (lat, lon, objs, pols, nets, foo)=readDSF(f, True, xpver>=9)
+                        (lat, lon, p, nets, foo)=readDSF(f, True, xpver>=9)
                         tile=(lat,lon)
-                        placements[tile]=objs+pols
+                        placements[tile]=p
                         networks[tile]=nets
                 except IOError, e:	# Bad DSF - restore to unloaded state
                     progress.Destroy()
@@ -1395,6 +1395,8 @@ class MainWindow(wx.Frame):
                                  wx.ICON_ERROR|wx.OK, None)
                     return
                 except:		# Bad DSF - restore to unloaded state
+                    if __debug__:
+                        print_exc()
                     progress.Destroy()
                     myMessageBox("Failed to read %s." % basename(f), "Can't edit this scenery package.", wx.ICON_ERROR|wx.OK, None)
                     return
@@ -1458,6 +1460,7 @@ class MainWindow(wx.Frame):
         dlibs=glob(join(prefs.xplane, gdefault, '*', glibrary))
         dlibs.sort()	# asciibetical
         libpaths=clibs+glibs+dlibs
+        if __debug__: print "libraries", libpaths
         for lib in libpaths: readLib(lib, lookupbylib, terrain)
         libs=lookupbylib.keys()
         sortfolded(libs)	# dislay order in palette
@@ -1739,24 +1742,23 @@ app.SetTopWindow(frame)
 
 # user prefs
 prefs=Prefs()
-prefs.read()
 if not prefs.xplane or not (glob(join(prefs.xplane, gcustom)) and (glob(join(prefs.xplane, gmain8aptdat)) or glob(join(prefs.xplane, gmain9aptdat)))):
     if platform.startswith('linux'):	# prompt is not displayed on Linux
         myMessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder", wx.ICON_INFORMATION|wx.OK, frame)
     if platform=='win32' and glob(join('C:\\X-Plane', gcustom)) and (glob(join('C:\\X-Plane', gmain8aptdat)) or glob(join('C:\\X-Plane', gmain9aptdat))):
-        prefs.xplane='C:\\X-Plane'
+        prefs.xplane=u'C:\\X-Plane'
     elif platform=='win32':
-        prefs.xplane='C:\\'
-    elif isdir(join(expanduser('~'), 'X-Plane')):
-        prefs.xplane=join(expanduser('~'), 'X-Plane')
-    elif isdir(join(expanduser('~'), 'Desktop', 'X-Plane')):
-        prefs.xplane=join(expanduser('~'), 'Desktop', 'X-Plane')
-    elif isdir(join(sep, 'Applications', 'X-Plane')):
-        prefs.xplane=join(sep, 'Applications', 'X-Plane')
+        prefs.xplane=u'C:\\'
+    elif isdir(join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'X-Plane')):
+        prefs.xplane=join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'X-Plane')
+    elif isdir(join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'Desktop', 'X-Plane')):
+        prefs.xplane=join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'Desktop', 'X-Plane')
+    elif isdir(join(sep, u'Applications', 'X-Plane')):
+        prefs.xplane=join(sep, u'Applications', 'X-Plane')
     elif platform=='darwin':
-        prefs.xplane=join(sep, 'Applications')
+        prefs.xplane=join(sep, u'Applications')
     else:
-        prefs.xplane=expanduser('~')
+        prefs.xplane=expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8')
     dlg=PreferencesDialog(frame, wx.ID_ANY, '')
     if dlg.OnBrowse(None)!=wx.ID_OK: exit(1)	# User cancelled
     prefs.xplane=dlg.path.GetValue()
@@ -1768,36 +1770,22 @@ if __debug__:
     if len(argv)>1 and glob(join(prefs.xplane, gcustom, basename(argv[1]))):
         prefs.package=basename(argv[1])
         frame.toolbar.EnableTool(wx.ID_SAVE,  False)
-        frame.toolbar.EnableTool(wx.ID_PASTE,  True)
+        frame.toolbar.EnableTool(wx.ID_DOWN,  True)
         frame.toolbar.EnableTool(wx.ID_REFRESH,True)
         if frame.menubar:
             frame.menubar.Enable(wx.ID_SAVE,  False)
-            frame.menubar.Enable(wx.ID_PASTE,  True)
+            frame.menubar.Enable(wx.ID_DOWN,  True)
             frame.menubar.Enable(wx.ID_REFRESH,True)
 
+# Load data files
+wx.PostEvent(frame.toolbar, wx.PyCommandEvent(wx.EVT_TOOL.typeId, wx.ID_REFRESH))
 if False:	# XXX trace
     from trace import Trace
-    from _winreg import OpenKey, QueryValueEx, HKEY_CURRENT_USER, REG_SZ, REG_EXPAND_SZ
-    handle=OpenKey(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders\\')
-    (v,t)=QueryValueEx(handle, 'Desktop')
-    handle.Close()
-    if t==REG_EXPAND_SZ:
-        dirs=v.split('\\')
-        for i in range(len(dirs)):
-            if dirs[i][0]==dirs[i][-1]=='%':
-                dirs[i]=getenv(dirs[i][1:-1],dirs[i])
-        v='\\'.join(dirs)
-    outfile=join(v, appname+'.log')
-    if exists(outfile): unlink(outfile)
-    frame.Update()		# Let window draw first
-    frame.OnReload(False, prefs.package)
-    sys.stdout=open(outfile, 'wt', 0)	# unbuffered
+    sys.stdout=open(appname+'.log', 'wt', 0)	# unbuffered
     Trace(count=0, trace=1,
-          ignoremods=['DSFLib','files', 'codecs','fnmatch','glob','ntpath']
+          ignoremods=['codecs','fnmatch','glob','posixpath','_core']
           ).runfunc(app.MainLoop)
 else:
-    # Load data files
-    wx.PostEvent(frame.toolbar, wx.PyCommandEvent(wx.EVT_TOOL.typeId, wx.ID_REFRESH))
     app.MainLoop()
 
 # Save prefs

@@ -20,8 +20,6 @@ from struct import unpack
 from sys import exit, platform, version
 import wx
 import wx.glcanvas
-if platform=='darwin':
-    from os import uname	# not defined in win32 builds
 
 if __debug__:
     import time
@@ -155,6 +153,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         # versions of 10.4. 10.4.8 (Darwin 8.8.1) onwards is OK?
         # Note 10.4 Intel 950 drivers ship with OGL 1.2
         if platform=='darwin':
+            from os import uname	# not defined in win32 builds
             ver=uname()[2].split('.')
             self.nopolyosinlist=(int(ver[0])<8 or (int(ver[0])==8 and int(ver[1])<8))
         else:
@@ -861,10 +860,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                 return False
         else:
             # Add new clutter
-            if name.lower().endswith('.obj'):
+            if name.lower()[-4:] in ['.obj','.agp']:
                 placement=Object(name, lat, lon, hdg)
             else:
                 placement=PolygonFactory(name, None, lat, lon, size, hdg)
+            if __debug__: print "add", placement
             
             if not placement.load(self.lookup, self.defs, self.vertexcache):
                 myMessageBox("Can't read " + name, 'Cannot add this object.',
@@ -1212,7 +1212,8 @@ class MyGL(wx.glcanvas.GLCanvas):
 
                     if not placement.load(self.lookup, self.defs, self.vertexcache, True) and placement.name not in errobjs:
                         errobjs.append(placement.name)
-                        self.frame.palette.add(placement.name, True)
+                        if placement.name not in self.lookup:
+                            self.frame.palette.add(placement.name, True)
 
                     if placement.definition.texerr:
                         s=u"%s: %s" % (placement.definition.texerr.filename, placement.definition.texerr.strerror.decode('utf-8'))

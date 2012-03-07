@@ -60,6 +60,7 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\OverlayEditor.lnk"; old versions used current user
   SetShellVarContext all
   Delete "$SMPROGRAMS\OverlayEditor.lnk"
+  Delete "$INSTDIR\MSVCP71.dll"
   Delete "$INSTDIR\MSVCR71.dll"
   Delete "$INSTDIR\OverlayEditor.exe"
   Delete "$INSTDIR\OverlayEditor.exe.log"

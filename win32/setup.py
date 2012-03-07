@@ -1,13 +1,14 @@
 #!/usr/bin/python
 
 from distutils.core import setup
+from os import getcwd, listdir, name
 from glob import glob
-from os import listdir, name
-from os.path import basename, join, pardir
-import sys
 
-sys.path.insert(0, join(sys.path[0], pardir))
+import sys
+sys.path.insert(0, getcwd())
+
 from version import appname, appversion
+
 
 # bogus crud to get WinXP "Visual Styles"
 manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
@@ -33,12 +34,15 @@ manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
           '</dependency>\n'+
           '</assembly>\n')
 
-
 if sys.platform=='win32':
     # http://www.py2exe.org/  Invoke with: setup.py py2exe
     import py2exe
     platdata=[('win32',
                ['win32/DSFTool.exe',
+                ]),
+              ('',
+                [r'C:\Program Files\Python25\lib\site-packages\wx-2.8-msw-unicode\wx\MSVCP71.dll',
+                 r'C:\WINDOWS\system32\msvcr71.dll',
                 ]),
               ]
 
@@ -55,6 +59,12 @@ elif sys.platform.lower().startswith('darwin'):
               #  ]),
               ]
 
+res=["Resources/windsock.obj",
+     "Resources/screenshot.jpg",
+     "Resources/800library.txt"]
+for f in listdir('Resources'):
+    if f[-4:]=='.png': res.append('Resources/%s' % f)
+
 setup(name='OverlayEditor',
       version=("%4.2f" % appversion),
       description='DSF overlay editor',
@@ -65,44 +75,7 @@ setup(name='OverlayEditor',
                    ['OverlayEditor.html',
                     ]),
                   ('Resources',
-                   ['Resources/add.png',
-                    'Resources/background.png',
-                    'Resources/delete.png',
-                    'Resources/goto.png',
-                    'Resources/help.png',
-                    'Resources/import.png',
-                    'Resources/new.png',
-                    'Resources/open.png',
-                    'Resources/padlock.png',
-                    'Resources/prefs.png',
-                    'Resources/reload.png',
-                    'Resources/save.png',
-                    'Resources/undo.png',
-                    'Resources/fallback.png',
-                    'Resources/windsock.obj',
-                    'Resources/windsock.png',
-                    'Resources/bad.png',
-                    'Resources/exc.png',
-                    'Resources/fac.png',
-                    'Resources/facs.png',
-                    'Resources/for.png',
-                    'Resources/fors.png',
-                    'Resources/net.png',
-                    'Resources/obj.png',
-                    'Resources/objs.png',
-                    'Resources/ortho.png',
-                    'Resources/orthos.png',
-                    'Resources/pol.png',
-                    'Resources/pols.png',
-                    'Resources/unknown.png',
-                    'Resources/unknowns.png',
-                    'Resources/airport0_000.png',
-                    'Resources/Sea01.png',
-                    'Resources/surfaces.png',
-                    'Resources/OverlayEditor.png',
-                    'Resources/screenshot.jpg',
-                    'Resources/800library.txt',
-                    ]),
+                   res),
                   ('Resources/previews',
                    glob('Resources/previews/*.jpg')
                    ),
@@ -116,9 +89,7 @@ setup(name='OverlayEditor',
                             'excludes':['Carbon', 'tcl', 'Tkinter', 'mx','socket','urllib','webbrowser',
                                         'curses', 'difflib', 'distutils', 'doctest', 'email', 'hotshot', 'inspect', 'pdb', 'setuptools', 'unittest', 'win32',	# Python2.5
                                         'Numeric', 'dotblas', 'numarray', 'scipy', 'nose'],	# Old Numeric stuff
-                            'packages':['encodings.ascii','encodings.mbcs','encodings.utf_8','encodings.latin_1',	# latin_1 for wx.lib.masked.NumCtrl
-                                        'OpenGL.platform.win32', 'OpenGL.arrays.nones', 'OpenGL.arrays.strings', 'OpenGL.arrays.lists', 'OpenGL.arrays.numbers', 'OpenGL.arrays.ctypesparameters', 'OpenGL.arrays.ctypespointers',
-                                        'numpy', 'ctypes.wintypes'],
+                            'packages':['encodings.ascii','encodings.mbcs','encodings.latin_1','encodings.utf_8','encodings.utf_16','encodings.cp437'],
                             'optimize':2,
                             },
 

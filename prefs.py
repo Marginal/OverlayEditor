@@ -1,7 +1,7 @@
 import codecs
 from os import getenv, mkdir
 from os.path import dirname, isdir, join, expanduser
-from sys import platform
+from sys import platform, getfilesystemencoding
 
 from version import appname, appversion
 
@@ -23,14 +23,14 @@ class Prefs:
         if platform=='win32':
             from _winreg import OpenKey, QueryValueEx, HKEY_CURRENT_USER, REG_SZ, REG_EXPAND_SZ
             try:
-                handle=OpenKey(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders\\')
+                handle=OpenKey(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders')
                 (v,t)=QueryValueEx(handle, 'AppData')
                 handle.Close()
                 if t==REG_EXPAND_SZ:
-                    dirs=v.split('\\')
+                    dirs=v.rstrip('\0').decode('mbcs').strip().split('\\')
                     for i in range(len(dirs)):
                         if dirs[i][0]==dirs[i][-1]=='%':
-                            dirs[i]=getenv(dirs[i][1:-1],dirs[i])
+                            dirs[i]=getenv(dirs[i][1:-1],dirs[i]).decode('mbcs')
                         v='\\'.join(dirs)
                 if t in [REG_SZ,REG_EXPAND_SZ] and isdir(v):
                     self.filename=join(v,'marginal.org',appname)
@@ -39,7 +39,8 @@ class Prefs:
             except:
                 pass
         if not self.filename:
-            self.filename=join(expanduser('~'), '.%s' % appname.lower())
+            self.filename=join(expanduser('~').decode(getfilesystemencoding() or 'utf-8'), '.%s' % appname.lower())
+        self.read()
 
     def read(self):
         try:
