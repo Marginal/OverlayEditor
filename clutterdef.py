@@ -99,10 +99,12 @@ class ClutterDef:
                     if f.lower()=='custom object textures':
                         self.texpath=join(base,f)
                         break
-        self.texture=0
+            self.texture=vertexcache.texcache.get(fallbacktexture)
+        else:
+            self.texture=0
         self.texerr=None
         self.layer=ClutterDef.DEFAULTLAYER
-        self.canpreview=True
+        self.canpreview=False
         self.type=0	# for locking
         
     def __str__(self):
@@ -137,6 +139,7 @@ class ObjectDef(ClutterDef):
     def __init__(self, filename, vertexcache):
         ClutterDef.__init__(self, filename, vertexcache)
         self.layer=None
+        self.canpreview=True
         self.type=Locked.OBJ
 
         h=None
@@ -481,11 +484,7 @@ class ObjectDef(ClutterDef):
 class ObjectFallback(ObjectDef):
     def __init__(self, filename, vertexcache):
         ClutterDef.__init__(self, filename, vertexcache)
-        self.filename=filename
-        self.texture=vertexcache.texcache.get(fallbacktexture)
-        self.texerr=None
         self.layer=ClutterDef.DEFAULTLAYER
-        self.canpreview=False
         self.type=Locked.OBJ
         self.vdata=[[0.5,1.0,-0.5], [-0.5,1.0,0.5], [-0.5,1.0,-0.5], [0.5,1.0,0.5], [-0.5,1.0,0.5], [0.5,1.0,-0.5], [0.0,0.0,0.0], [-0.5,1.0,0.5], [0.5,1.0,0.5], [0.0,0.0,0.0], [-0.5,1.0,-0.5], [-0.5,1.0,0.5], [0.0,0.0,0.0], [0.5,1.0,-0.5], [-0.5,1.0,-0.5], [0.5,1.0,-0.5], [0.0,0.0,0.0], [0.5,1.0,0.5]]
         self.tdata=[[1.0,1.0], [0.0,0.0], [0.0,1.0], [1.0,0.0], [0.0,0.0], [1.0,1.0], [0.5,0.0], [0.0,0.0], [1.0,0.0], [0.0,0.5], [0.0,1.0], [0.0,0.0], [0.5,1.0], [1.0,1.0], [0.0,1.0], [1.0,1.0], [1.0,0.5], [1.0,0.0]]
@@ -561,6 +560,7 @@ class DrapedDef(PolygonDef):
 
     def __init__(self, filename, vertexcache):
         PolygonDef.__init__(self, filename, vertexcache)
+        self.canpreview=True
         self.type=Locked.POL
         self.ortho=False
         self.hscale=100
@@ -605,13 +605,9 @@ class DrapedDef(PolygonDef):
             self.texerr=IOError(0,e.strerror,texture)
 
 
-class DrapedFallback(PolygonDef):
+class DrapedFallback(DrapedDef):
     def __init__(self, filename, vertexcache):
-        self.filename=filename
-        self.texture=vertexcache.texcache.get(fallbacktexture)
-        self.texerr=None
-        self.layer=ClutterDef.DEFAULTLAYER
-        self.canpreview=False
+        PolygonDef.__init__(self, filename, None)
         self.type=Locked.POL
         self.ortho=False
         self.hscale=10
@@ -622,19 +618,15 @@ class ExcludeDef(PolygonDef):
     TABNAME='Exclusions'
 
     def __init__(self, filename, vertexcache):
-        # PolygonDef.__init__(self, filename, vertexcache) - don't fanny about with tex paths
-        self.filename=filename
-        self.texture=0
-        self.texerr=None
+        PolygonDef.__init__(self, filename, None)
         self.layer=ClutterDef.OUTLINELAYER
-        self.canpreview=False
-        self.fittomesh=False
         self.type=Locked.EXCLUSION
 
 
 class FacadeDef(PolygonDef):
     def __init__(self, filename, vertexcache):
         PolygonDef.__init__(self, filename, vertexcache)
+        self.canpreview=True
         self.type=Locked.FAC
 
         # Only reads first wall in first LOD
@@ -725,13 +717,9 @@ class FacadeDef(PolygonDef):
                                   self.horiz[-1][1], self.vert[-1][1])
 
 
-class FacadeFallback(PolygonDef):
+class FacadeFallback(FacadeDef):
     def __init__(self, filename, vertexcache):
-        self.filename=filename
-        self.texture=vertexcache.texcache.get(fallbacktexture)
-        self.texerr=None
-        self.layer=ClutterDef.DEFAULTLAYER
-        self.canpreview=False
+        PolygonDef.__init__(self, filename, None)
         self.type=Locked.FAC
         self.ring=1
         self.two_sided=True
@@ -750,6 +738,7 @@ class ForestDef(PolygonDef):
     def __init__(self, filename, vertexcache):
         PolygonDef.__init__(self, filename, vertexcache)
         self.layer=ClutterDef.OUTLINELAYER
+        self.canpreview=True
         self.type=Locked.FOR
         self.tree=None
         scalex=scaley=1
@@ -798,14 +787,12 @@ class ForestDef(PolygonDef):
         return PolygonDef.preview(self, canvas, vertexcache, *self.tree)
 
 
-class ForestFallback(PolygonDef):
+class ForestFallback(ForestDef):
     def __init__(self, filename, vertexcache):
-        self.filename=filename
-        self.texture=0	# texture not displayed
-        self.texerr=None
+        PolygonDef.__init__(self, filename, None)
         self.layer=ClutterDef.OUTLINELAYER
-        self.canpreview=False
         self.type=Locked.FOR
+        self.tree=None
 
 
 class LineDef(PolygonDef):
@@ -813,6 +800,7 @@ class LineDef(PolygonDef):
     def __init__(self, filename, vertexcache):
         PolygonDef.__init__(self, filename, vertexcache)
         self.layer=ClutterDef.MARKINGLAYER
+        self.canpreview=True
         self.type=Locked.LIN
         self.offsets=[]
         self.hscale=self.vscale=1
@@ -858,13 +846,10 @@ class LineDef(PolygonDef):
                                   self.vscale/self.hscale)
         
 
-class LineFallback(PolygonDef):
+class LineFallback(LineDef):
     def __init__(self, filename, vertexcache):
-        self.filename=filename
-        self.texture=vertexcache.texcache.get(fallbacktexture)
-        self.texerr=None
+        PolygonDef.__init__(self, filename, None)
         self.layer=ClutterDef.MARKINGLAYER
-        self.canpreview=False
         self.type=Locked.LIN
 
 
@@ -875,6 +860,7 @@ class NetworkDef(PolygonDef):
     def __init__(self, filename, name, index, width, length, texture, poly, color):
         PolygonDef.__init__(self, filename, None)
         self.layer=ClutterDef.NETWORKLAYER
+        self.canpreview=True
         self.type=Locked.NET
         self.name=name
         self.index=index
@@ -1023,21 +1009,19 @@ class NetworkDef(PolygonDef):
         return img.Mirror(False)        
 
 
-class NetworkFallback(PolygonDef):
+class NetworkFallback(NetworkDef):
     def __init__(self, filename, name, index):
-        self.filename=filename
+        PolygonDef.__init__(self, filename, None)
+        self.layer=ClutterDef.NETWORKLAYER
+        self.canpreview=False
+        self.type=Locked.NET
         self.name=name
         self.index=index
         self.width=1
         self.length=1
         self.height=None	# (min,max) height
-        self.texture=0
-        self.texerr=None
         self.color=(1.0,0.0,0.0)
         self.even=False
-        self.layer=ClutterDef.NETWORKLAYER
-        self.canpreview=False
-        self.type=Locked.NET
 
 
 UnknownDefs=['.lin','.str','.agb','.ags']	# Known unknowns

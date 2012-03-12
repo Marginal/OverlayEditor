@@ -3,7 +3,7 @@ import wx
 
 from os.path import dirname, exists, join
 
-from clutterdef import ClutterDefFactory, PolygonDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
+from clutterdef import ClutterDefFactory, ClutterDef, PolygonDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
 from MessageBox import myMessageBox
 
 
