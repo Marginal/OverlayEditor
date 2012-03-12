@@ -1057,7 +1057,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.selectednode:
             placement=self.selected[0]
             (i,j)=self.selectednode
-            return ([placement.name], placement.locationstr(dms, self.selectednode), placement.nodes[i][j][2], placement.nodes[i][j][1], None)
+            return ([placement.name], placement.locationstr(dms, self.selectednode), placement.nodes[i][j][1], placement.nodes[i][j][0], None)
         elif len(self.selected)==1:
             placement=self.selected[0]
             if isinstance(placement, Polygon):
@@ -1081,7 +1081,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         return self.y
 
     def reload(self, options, airports, navaids, aptdatfile,
-               netdefs, lookup, placements, networks,
+               netdefs, netfile,
+               lookup, placements, networks,
                background, terrain, dsfdirs):
         self.valid=False
         self.options=options
@@ -1090,6 +1091,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.navaids=navaids
         self.aptdatfile=aptdatfile
         self.netdefs=netdefs
+        self.netfile=netfile	# logical name of .net file used
         self.codes={}		# need to re-layout airports
         self.lookup=lookup
         self.defs=dict([(x.name, x) for x in netdefs[1:] if x])

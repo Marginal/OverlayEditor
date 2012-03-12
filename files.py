@@ -780,7 +780,7 @@ class VertexCache:
         if __debug__: clock=time.clock()	# Processor time
         for dsf in dsfs:
             try:
-                (lat, lon, objs, pols, nets, mesh)=readDSF(dsf, False, False, self.ter)
+                (lat, lon, placements, nets, mesh)=readDSF(dsf, False, False, self.ter)
                 if mesh:
                     self.mesh[key]=mesh
                     # post-process networks

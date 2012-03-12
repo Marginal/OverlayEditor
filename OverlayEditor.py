@@ -1257,11 +1257,13 @@ class MainWindow(wx.Frame):
             try:
                 writeDSF(dsfdir, key, stuff[key], self.canvas.netfile)
             except IOError, e:
+                if __debug__: print_exc()
                 myMessageBox(str(e.strerror),
                              "Can't save %+03d%+04d.dsf." % (key[0], key[1]), 
                              wx.ICON_ERROR|wx.OK, None)
                 return False
             except:
+                if __debug__: print_exc()
                 myMessageBox('',
                              "Can't save %+03d%+04d.dsf." % (key[0], key[1]),
                              wx.ICON_ERROR|wx.OK, None)
@@ -1371,7 +1373,7 @@ class MainWindow(wx.Frame):
                     if __debug__:
                         print "Invalid nav.dat:"
                         print_exc()
-                
+
         if not reload:
             # Load, not reload
             progress.Update(0, 'Overlay DSFs')
@@ -1481,6 +1483,7 @@ class MainWindow(wx.Frame):
                         roadfile=join(path,f)
         self.palette.load('Objects', objects, pkgdir)
         lookup.update(objects)
+        for lib in libs: self.palette.load(lib, lookupbylib[lib], None)
 
         if xpver>=9:
             defroadfile=lookupbylib['g8'].pop(NetworkDef.DEFAULTFILE,None)
@@ -1490,7 +1493,7 @@ class MainWindow(wx.Frame):
                     self.defnetdefs=readNet(defroadfile)
                 except:
                     if __debug__:
-                        print path
+                        print defroadfile
                         print_exc()
             netdefs=self.defnetdefs
             if roadfile:	# custom .net file
@@ -1531,7 +1534,8 @@ class MainWindow(wx.Frame):
             dsfdirs=[join(prefs.xplane, gcustom),
                      join(prefs.xplane, gdefault)]
         self.canvas.reload(prefs.options, airports, nav, mainaptdat,
-                           netdefs, lookup, placements, networks,
+                           netdefs, roadfile,
+                           lookup, placements, networks,
                            background, terrain, dsfdirs)
         if not reload:
             # Load, not reload

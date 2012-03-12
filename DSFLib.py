@@ -348,26 +348,26 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
                 continue
             #print "\nChain %d" % l
             (d,)=unpack('<H', h.read(2))
-            thisnet=[(True,)+tuple(po32[curpool][d+netbase])]
+            thisnet=[po32[curpool][d+netbase]]
             for i in range(l-1):
                 (d,)=unpack('<H', h.read(2))
                 p=po32[curpool][d+netbase]
-                thisnet.append((True,)+tuple(p))
+                thisnet.append(p)
                 if p[3]:	# this is a junction
                     nets.append((roadtype, thisnet))
-                    thisnet=[(True,)+tuple(p)]
+                    thisnet=[p]
             
         elif c==10:	# Network Chain Range
             (first,last)=unpack('<HH', h.read(4))
             if not wantnetwork or last-first<2: continue
             #print "\nChain Range %d %d" % (first,last)
-            thisnet=[(True,)+tuple(po32[curpool][first+netbase])]
+            thisnet=[po32[curpool][first+netbase]]
             for d in range(first+netbase+1, last+netbase):
                 p=po32[curpool][d]
-                thisnet.append((True,)+tuple(p))
+                thisnet.append(p)
                 if p[3]:	# this is a junction
                     nets.append((roadtype, thisnet))
-                    thisnet=[(True,)+tuple(p)]
+                    thisnet=[p]
             
         elif c==11:	# Network Chain 32
             (l,)=unpack('<B', h.read(1))
@@ -376,14 +376,14 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
                 continue
             #print "\nChain32 %d" % l
             (d,)=unpack('<I', h.read(4))
-            thisnet=[(True,)+tuple(po32[curpool][d])]
+            thisnet=[po32[curpool][d]]
             for i in range(l-1):
                 (d,)=unpack('<I', h.read(4))
                 p=po32[curpool][d]
-                thisnet.append((True,)+tuple(p))
+                thisnet.append(p)
                 if p[3]:	# this is a junction
                     nets.append((roadtype, thisnet))
-                    thisnet=[(True,)+tuple(p)]
+                    thisnet=[p]
             
         elif c==12:	# Polygon
             (param,l)=unpack('<HB', h.read(3))
@@ -394,7 +394,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             for i in range(l):
                 (d,)=unpack('<H', h.read(2))
                 p=pool[curpool][d]
-                winding.append((True,)+tuple(p))
+                winding.append(tuple(p))
             placements.append(PolygonFactory(polygons[idx], param, [winding]))
             
         elif c==13:	# Polygon Range (DSF2Text uses this one)
@@ -403,7 +403,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             winding=[]
             for d in range(first, last):
                 p=pool[curpool][d]
-                winding.append((True,)+tuple(p))
+                winding.append(tuple(p))
             placements.append(PolygonFactory(polygons[idx], param, [winding]))
             
         elif c==14:	# Nested Polygon
@@ -415,7 +415,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
                 for j in range(l):
                     (d,)=unpack('<H', h.read(2))
                     p=pool[curpool][d]
-                    winding.append((True,)+tuple(p))
+                    winding.append(tuple(p))
                 windings.append(winding)
             if wantoverlay and n>0 and len(windings[0])>=2:
                 placements.append(PolygonFactory(polygons[idx], param, windings))
@@ -432,7 +432,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
                 winding=[]
                 for d in range(i[j],i[j+1]):
                     p=pool[curpool][d]
-                    winding.append((True,)+tuple(p))
+                    winding.append(tuple(p))
                 windings.append(winding)
             placements.append(PolygonFactory(polygons[idx], param, windings))
             
@@ -762,14 +762,14 @@ def writeDSF(dsfdir, key, placements, netfile):
             for p in w:
                 # DSFTool rounds down, so round up here first
                 h.write('POLYGON_POINT\t%12.7f%13.7f' % (min(west+1, p[0]+minres/2), min(south+1, p[1]+minres/2)))
-                if len(p)==4 and poly.param!=65535: # don't adjust UV coords
+                if len(p)==4 and poly.param!=65535: # bezier
                     h.write('%13.7f%13.7f' % (min(west+1, p[2]+minres/2), min(south+1, p[3]+minres/2)))
-                elif len(p)==5:
-                    h.write('%13.7f%13.7f%13.7f' % (p[2], min(west+1, p[3]+minres/2), min(south+1, p[4]+minres/2)))
-                elif len(p)==8:
+                elif len(p)==5:	# Facade with wall type and bezier
+                      h.write('%13.7f%13.7f%13.7f' % (p[2], min(west+1, p[3]+minres/2), min(south+1, p[4]+minres/2)))
+                elif len(p)==8:	# Draped/Ortho with bezier and UV
                     h.write('%13.7f%13.7f%13.7f%13.7f%13.7f%13.7f' % (min(west+1, p[2]+minres/2), min(south+1, p[3]+minres/2), p[4], p[5], p[6], p[7]))
                 else:
-                    for n in range(3,len(p)):
+                    for n in range(2,len(p)):
                         h.write('%13.7f' % p[n])
                 h.write('\n')
             h.write('END_WINDING\n')
