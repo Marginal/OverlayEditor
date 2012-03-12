@@ -7,9 +7,9 @@ Group: Amusements/Games
 URL: http://marginal.org.uk/x-planescenery
 Vendor: Jonathan Harris <x-plane@marginal.org.uk>
 Prefix: /usr/local
-#Suse: python-wxGTK provides wxPython
-#Fedora: PyOpenGL provides python-opengl
-Requires: bash, python >= 2.4, wxPython >= 2.6, python-imaging >= 1.1.4, python-opengl >= 2.0.1, python-opengl < 3
+#Suse: python-wxGTK provides wxPython, python-numpy provides numpy, python-tk provides python-tkinter, python-pylzma
+#Fedora: PyOpenGL provides python-opengl, tkinter provides tkinter, pyliblzma
+Requires: bash, numpy, p7zip, python >= 2.4, python-imaging >= 1.1.4, python-opengl >= 3.0.1, wxPython >= 2.6
 BuildArch: noarch
 
 %description

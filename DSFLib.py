@@ -6,12 +6,15 @@ from sys import platform, maxint
 from tempfile import gettempdir
 import types
 import time
-import py7zlib
-from cStringIO import StringIO
+try:
+    from py7zlib import Archive7z
+    from cStringIO import StringIO
+except:
+    Archive7z=False	# not available packaged in most Linux distros
 if __debug__:
     from traceback import print_exc
 
-from clutter import PolygonFactory, Object, Polygon, Draped, Exclude, Network, minres, minhdg
+from clutter import PolygonFactory, ObjectFactory, Object, Polygon, Draped, Exclude, Network, minres, minhdg
 from version import appname, appversion
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
@@ -46,12 +49,24 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     sig=h.read(8)
     if sig.startswith('7z\xBC\xAF\x27\x1C'):	# X-Plane 10 compressed
         if __debug__: clock=time.clock()
-        h.seek(0)
-        data=py7zlib.Archive7z(h).getmember(basename(path)).read()
-        h.close()
-        h=StringIO(data)
-        sig=h.read(8)
+        if Archive7z:
+            h.seek(0)
+            data=Archive7z(h).getmember(basename(path)).read()
+            h.close()
+            h=StringIO(data)
+        else:
+            h.close()
+            cmds=exists('/usr/bin/7zr') and '/usr/bin/7zr' or '/usr/bin/7za'
+            cmds='%s e "%s" -o"%s" "%s"' % (cmds, path, gettempdir(), basename(path))
+            (i,o,e)=popen3(cmds)
+            i.close()
+            err=o.read()
+            err+=e.read()
+            o.close()
+            e.close()
+            h=file(join(gettempdir(), basename(path)), 'rb')
         if __debug__: print "%6.3f time in decompression" % (time.clock()-clock)
+        sig=h.read(8)
     if sig!='XPLNEDSF' or unpack('<I',h.read(4))!=(1,):
         raise IOError, baddsf
 
