@@ -55,7 +55,7 @@ except NameError:
     from OpenGL import GLU
     gluTessVertex = GLU._gluTessVertex
 
-from clutterdef import ObjectDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox
+from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox
 from palette import PaletteEntry
 from prefs import Prefs
 
@@ -71,8 +71,16 @@ def round2res(x):
     return i+round((x-i)*resolution,0)*minres
 
 
+def ObjectFactory(name, lat, lon, hdg, y=None):
+    "creates and initialises appropriate Object subclass based on file extension"
+    if name.lower()[-4:]==AutoGenPointDef.AGP:
+        return AutoGenPoint(name, lat, lon, hdg, y)
+    else:
+        return Object(name, lat, lon, hdg, y)
+
+
 def PolygonFactory(name, param, nodes, lon=None, size=None, hdg=None):
-    "creates and initialises appropriate Polgon subclass based on file extension"
+    "creates and initialises appropriate Polygon subclass based on file extension"
     # would like to have made this a 'static' method of Polygon
     if name.startswith(PolygonDef.EXCLUDE):
         return Exclude(name, param, nodes, lon, size, hdg)

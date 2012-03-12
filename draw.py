@@ -28,7 +28,7 @@ if __debug__:
 from files import VertexCache, sortfolded, readApt
 from fixed8x13 import fixed8x13
 from clutter import PolygonFactory, Draped, Facade, Object, Polygon, Network, Exclude, resolution, round2res, latlondisp
-from clutterdef import BBox, ClutterDef, ObjectDef
+from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef
 from MessageBox import myMessageBox
 from prefs import Prefs
 from version import appname
@@ -860,7 +860,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 return False
         else:
             # Add new clutter
-            if name.lower()[-4:] in ['.obj','.agp']:
+            if name.lower()[-4:] in [ObjectDef.OBJECT, AutoGenPointDef.AGP]:
                 placement=Object(name, lat, lon, hdg)
             else:
                 placement=PolygonFactory(name, None, lat, lon, size, hdg)
@@ -1216,6 +1216,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                         errobjs.append(placement.name)
                         if placement.name not in self.lookup:
                             self.frame.palette.add(placement.name, True)
+                        else:
+                            self.frame.palette.markbad(placement.name)
 
                     if placement.definition.texerr:
                         s=u"%s: %s" % (placement.definition.texerr.filename, placement.definition.texerr.strerror.decode('utf-8'))

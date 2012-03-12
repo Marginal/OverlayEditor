@@ -48,15 +48,15 @@ class PaletteListBox(wx.VListBox):
             realname=name
             ext=name[-4:].lower()
             if tabname==NetworkDef.TABNAME:
-                imgno=6
-            elif tabname==ExcludeDef.TABNAME:
                 imgno=7
+            elif tabname==ExcludeDef.TABNAME:
+                imgno=8
             elif ext in UnknownDefs:
-                imgno=5
+                imgno=6
             elif name in parent.bad:
-                imgno=14
+                imgno=16
             elif ext==PolygonDef.DRAPED:
-                imgno=3
+                imgno=4
                 if tabno==0 and self.pkgdir:
                     # find orthos - assume library objects aren't
                     try:
@@ -74,7 +74,7 @@ class PaletteListBox(wx.VListBox):
             elif ext in KnownDefs:
                 imgno=KnownDefs.index(ext)
             else:
-                imgno=14	# wtf?
+                imgno=16	# wtf?
             if tabname in [NetworkDef.TABNAME, ExcludeDef.TABNAME]:
                 pass
             elif not self.pkgdir:
@@ -91,7 +91,7 @@ class PaletteListBox(wx.VListBox):
                 name=name[15:-4]
             else:
                 name=name[:-4]
-            if entry.multiple: imgno+=8
+            if entry.multiple and imgno!=16: imgno+=9
             self.choices.append((imgno, name, realname))
         self.SetItemCount(len(self.choices))
 
@@ -114,6 +114,7 @@ class PaletteListBox(wx.VListBox):
         else:
             dc.SetTextForeground(self.inafg)
         (imgno, name, realname)=self.choices[n]
+        assert 0<=imgno<self.imgs.GetImageCount(), "Palette imgno %d out of range for %s (%s)" % (imgno, name, realname)
         self.imgs.Draw(imgno, dc, rect.x+self.indent, rect.y,
                        wx.IMAGELIST_DRAW_TRANSPARENT, True)
         dc.DrawText(name, rect.x+12+2*self.indent, rect.y)
@@ -133,6 +134,7 @@ class PaletteChoicebook(wx.Choicebook):
         self.imgs=wx.ImageList(12,12,True,0)
         # must be in same order as KnownDefs
         self.imgs.Add(wx.Bitmap("Resources/obj.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/obj.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/fac.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/for.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/pol.png", wx.BITMAP_TYPE_PNG))
@@ -140,6 +142,7 @@ class PaletteChoicebook(wx.Choicebook):
         self.imgs.Add(wx.Bitmap("Resources/unknown.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/net.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/exc.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/objs.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/objs.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/facs.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/fors.png", wx.BITMAP_TYPE_PNG))
@@ -256,7 +259,7 @@ class PaletteChoicebook(wx.Choicebook):
                 if realname in self.bad:
                     return	# already bad
                 self.bad[realname]=True
-                l.choices[i]=(14, name, realname)
+                l.choices[i]=(16, name, realname)
                 self.Refresh()
                 break
         else:

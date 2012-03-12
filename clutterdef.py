@@ -56,7 +56,7 @@ def ClutterDefFactory(filename, vertexcache):
     if filename.startswith(PolygonDef.EXCLUDE):
         return ExcludeDef(filename, vertexcache)        
     ext=filename.lower()[-4:]
-    if ext==ObjectDef.OBJECT or ext=='.agp':
+    if ext==ObjectDef.OBJECT or ext==AutoGenPointDef.AGP:
         return ObjectDef(filename, vertexcache)
     elif ext==PolygonDef.DRAPED:
         return DrapedDef(filename, vertexcache)
@@ -496,6 +496,11 @@ class ObjectFallback(ObjectDef):
         self.height=1.0
         self.base=None
         self.allocate(vertexcache)
+
+
+class AutoGenPointDef(ObjectDef):
+
+    AGP='.agp'
 
 
 class PolygonDef(ClutterDef):
@@ -1035,6 +1040,6 @@ class NetworkFallback(PolygonDef):
         self.type=Locked.NET
 
 
-UnknownDefs=['.lin','.str','.agp']	# Known unknowns
-SkipDefs=['.bch','.net']	# Ignore in library
-KnownDefs=[ObjectDef.OBJECT, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.DRAPED]+UnknownDefs
+UnknownDefs=['.lin','.str','.agb','.ags']	# Known unknowns
+SkipDefs=['.bch','.net']			# Ignore in library
+KnownDefs=[ObjectDef.OBJECT, AutoGenPointDef.AGP, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.DRAPED]+UnknownDefs

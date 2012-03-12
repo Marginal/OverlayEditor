@@ -332,14 +332,14 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             (d,)=unpack('<H', h.read(2))
             p=pool[curpool][d]
             if wantoverlay:
-                placements.append(Object(objects[idx], p[1],p[0], round(p[2],1)))
+                placements.append(ObjectFactory(objects[idx], p[1],p[0], round(p[2],1)))
                 
         elif c==8:	# Object Range
             (first,last)=unpack('<HH', h.read(4))
             if wantoverlay:
                 for d in range(first, last):
                     p=pool[curpool][d]
-                    placements.append(Object(objects[idx], p[1],p[0], round(p[2],1)))
+                    placements.append(ObjectFactory(objects[idx], p[1],p[0], round(p[2],1)))
                     
         elif c==9:	# Network Chain
             (l,)=unpack('<B', h.read(1))
@@ -801,6 +801,7 @@ def writeDSF(dsfdir, key, placements, netfile):
     else:
         # See "QUOTING" in bash(1)
         cmds='%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename.replace('\\','\\\\').replace('"','\\"').replace("$", "\\$").replace("`", "\\`"))
+    if __debug__: print cmds
     (i,o,e)=popen3(cmds)
     i.close()
     err=o.read()
