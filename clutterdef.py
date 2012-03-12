@@ -11,7 +11,6 @@ if __debug__:
 
 from lock import Locked
 
-previewsize=400	# size of image in preview window
 fallbacktexture='Resources/fallback.png'
 
 class BBox:
@@ -85,10 +84,11 @@ class ClutterDef:
     NETWORKLAYER=LAYERNAMES.index('roads')*11+5	# for draped & exclusions
     OUTLINELAYER=LAYERNAMES.index('roads')*11+5	# for draped & exclusions
     DEFAULTLAYER=LAYERNAMES.index('objects')*11+5
+    PREVIEWSIZE=400	# size of image in preview window
 
     def __init__(self, filename, vertexcache):
         self.filename=filename
-        if filename:
+        if filename and vertexcache:
             if filename[0]=='*':	# this application's resource
                 self.filename=join('Resources', filename[1:])
             self.texpath=dirname(self.filename)        
@@ -418,8 +418,8 @@ class ObjectDef(ClutterDef):
         self.allocate(vertexcache, canvas.defs)
         vertexcache.realize(canvas)
         canvas.SetCurrent()
-        xoff=canvas.GetClientSize()[0]-previewsize
-        glViewport(xoff, 0, previewsize, previewsize)
+        xoff=canvas.GetClientSize()[0]-ClutterDef.PREVIEWSIZE
+        glViewport(xoff, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         glMatrixMode(GL_PROJECTION)
@@ -462,8 +462,8 @@ class ObjectDef(ClutterDef):
             glDrawArrays(GL_TRIANGLES, self.base+self.culled, self.nocull)
             glEnable(GL_CULL_FACE)
         #glFinish()	# redundant
-        data=glReadPixels(xoff,0, previewsize,previewsize, GL_RGB, GL_UNSIGNED_BYTE)
-        img=wx.EmptyImage(previewsize, previewsize, False)
+        data=glReadPixels(xoff,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
         
         # Restore state for unproject & selection
@@ -515,7 +515,7 @@ class PolygonDef(ClutterDef):
     def preview(self, canvas, vertexcache, l=0, b=0, r=1, t=1, hscale=1):
         if not self.texture or not self.canpreview: return None
         canvas.SetCurrent()
-        glViewport(0, 0, previewsize, previewsize)
+        glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         glMatrixMode(GL_PROJECTION)
@@ -536,8 +536,8 @@ class PolygonDef(ClutterDef):
         glTexCoord2f(l,t)
         glVertex3f(-hscale, -1, 0)
         glEnd()
-        data=glReadPixels(0,0, previewsize,previewsize, GL_RGB, GL_UNSIGNED_BYTE)
-        img=wx.EmptyImage(previewsize, previewsize, False)
+        data=glReadPixels(0,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
         
         # Restore state for unproject & selection
@@ -943,7 +943,7 @@ class NetworkDef(PolygonDef):
         self.allocate(vertexcache, canvas.defs)
         vertexcache.realize(canvas)
         canvas.SetCurrent()
-        glViewport(0, 0, previewsize, previewsize)
+        glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         glMatrixMode(GL_PROJECTION)
@@ -1002,8 +1002,8 @@ class NetworkDef(PolygonDef):
                 
 
         #glFinish()	# redundant
-        data=glReadPixels(0,0, previewsize,previewsize, GL_RGB, GL_UNSIGNED_BYTE)
-        img=wx.EmptyImage(previewsize, previewsize, False)
+        data=glReadPixels(0,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
         
         # Restore state for unproject & selection

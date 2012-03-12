@@ -26,17 +26,17 @@ class PaletteListBox(wx.VListBox):
         if platform=='win32': style|=wx.ALWAYS_SHOW_SB	# fails on GTK
         wx.VListBox.__init__(self, parent, id, style=style)
         self.font=wx.SystemSettings_GetFont(wx.SYS_DEFAULT_GUI_FONT)
-        if platform!='win32':	# Default is too big on Mac & Linux
-            self.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
         if platform.startswith('linux'):
-            self.font.SetPointSize(8)
+            self.font.SetPointSize(10)	# Default is too big on Linux
+        self.SetFont(self.font)
+        (x,self.height)=self.GetTextExtent("Mq")
+        if platform.startswith('linux'):
+            self.height-=1
         self.imgs=parent.imgs
         self.actfg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHTTEXT)
         self.actbg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHT)
         self.inafg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
         self.inabg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENU)
-        (x,self.height)=self.GetTextExtent("Mq")
-        self.height=max(13,self.height)
         self.indent=4
         self.pkgdir=pkgdir
         self.populate(parent, tabname, tabno, objects)
@@ -80,8 +80,10 @@ class PaletteListBox(wx.VListBox):
             elif not self.pkgdir:
                 # library object
                 if name.startswith('/'): name=name[1:]
-                if name.startswith('lib/'): name=name[4:]
-                if name.startswith(tabname+'/'): name=name[len(tabname)+1:]
+                if name.startswith('lib/'):
+                    name=name[4:]
+                elif name.startswith(tabname+'/'):
+                    name=name[len(tabname)+1:]
                 name=name[:-4]
             elif name.lower().startswith('objects/') and name[8:] not in names:
                 name=name[8:-4]
@@ -236,8 +238,17 @@ class PaletteChoicebook(wx.Choicebook):
             self.frame.toolbar.EnableTool(wx.ID_ADD, False)
             if self.frame.menubar: self.frame.menubar.Enable(wx.ID_ADD, False)
 
-    def markbad(self):
-        # mark current selection as bad
+    def markbad(self, name=None):
+        # mark name as bad, or current selection if no name
+        if name:
+            assert name in self.lookup, "%s not in lookup" % name
+            if name not in self.lookup: return
+            (ontab,ind)=self.lookup[name]
+            (imgno, name, realname)=self.lists[ontab].choices[ind]
+            if realname in self.bad: return	# already bad
+            self.bad[realname]=True
+            self.lists[ontab].choices[ind]=(16, name, realname)
+            return
         for l in self.lists:
             i=l.GetSelection()
             if i!=-1:
@@ -266,7 +277,7 @@ class Palette(wx.SplitterWindow):
         self.cb=PaletteChoicebook(self, frame)
         self.preview=wx.Panel(self, wx.ID_ANY, style=wx.FULL_REPAINT_ON_RESIZE)
         self.SetMinimumPaneSize(1)
-        self.SplitHorizontally(self.cb, self.preview)
+        self.SplitHorizontally(self.cb, self.preview, -ClutterDef.PREVIEWSIZE)
         self.lastheight=self.GetSize().y
         wx.EVT_SIZE(self, self.OnSize)
         wx.EVT_KEY_DOWN(self.preview, self.OnKeyDown)
@@ -324,6 +335,9 @@ class Palette(wx.SplitterWindow):
             self.cb.set(key)
             self.lastkey=key
             self.preview.Refresh()
+
+    def markbad(self, key):
+        return self.cb.markbad(key)
 
     def OnPaint(self, event):
         #print "preview", self.lastkey

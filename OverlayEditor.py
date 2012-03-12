@@ -49,7 +49,7 @@ if not 'startfile' in dir(os):
     import webbrowser
 
 from clutter import round2res, minres, latlondisp, Exclude	# for loading exclusions into palette
-from clutterdef import KnownDefs, ExcludeDef, NetworkDef, previewsize
+from clutterdef import ClutterDef, KnownDefs, ExcludeDef, NetworkDef
 from draw import MyGL
 from files import importObj, scanApt, readApt, readNav, readLib, readNet, sortfolded
 from lock import LockDialog
@@ -891,7 +891,7 @@ class MainWindow(wx.Frame):
         self.canvas = MyGL(self.splitter, self) # needed by palette!
         self.palette = Palette(self.splitter, self)
         self.splitter.SetMinimumPaneSize(100)
-        self.splitter.SplitVertically(self.canvas, self.palette)
+        self.splitter.SplitVertically(self.canvas, self.palette, -ClutterDef.PREVIEWSIZE)
         box0=wx.BoxSizer()
         box0.Add(self.splitter, 1, wx.EXPAND)
         self.SetSizerAndFit(box0)
@@ -985,16 +985,16 @@ class MainWindow(wx.Frame):
         delta=event.GetSize().x-self.lastwidth
         #print "size", delta
         pos=self.splitter.GetSashPosition()+delta
-        if pos<previewsize: pos=previewsize	# required for preview
+        if pos<ClutterDef.PREVIEWSIZE: pos=ClutterDef.PREVIEWSIZE	# required for preview
         self.splitter.SetSashPosition(pos, False)
         self.lastwidth=event.GetSize().x
         event.Skip()
 
     def OnSashPositionChanging(self, event):
         #print "sash", event.GetSashPosition()
-        if event.GetSashPosition()<previewsize:
+        if event.GetSashPosition()<ClutterDef.PREVIEWSIZE:
             # One-way minimum pane size
-            event.SetSashPosition(previewsize)
+            event.SetSashPosition(ClutterDef.PREVIEWSIZE)
 
     def OnKeyDown(self, event):
         changed=False

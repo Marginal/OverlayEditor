@@ -325,8 +325,11 @@ def readLib(filename, objects, terrain):
                 else:
                     lib=name
                     if lib.startswith('/'): lib=lib[1:]
-                    if lib.startswith('lib/'): lib=lib[4:]
-                    if not '/' in lib:
+                    if lib.startswith('lib/'):
+                        lib=lib[4:lib.index('/',4)]
+                    elif lib.startswith('opensceneryx/'):
+                        lib=lib[:lib.index('/',13)]
+                    elif not '/' in lib:
                         lib="uncategorised"
                     else:
                         lib=lib[:lib.index('/')]
