@@ -26,6 +26,7 @@ except:
 import codecs
 from glob import glob
 from math import cos, log, pi, radians
+from numpy import array, concatenate, empty, hstack, float32, uint32
 from os import listdir, mkdir
 from os.path import basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
@@ -34,8 +35,6 @@ from sys import platform, maxint
 from traceback import print_exc
 import time
 import wx
-if OpenGL.__version__ >= '3':
-    from numpy import array, hstack, float32
 
 from clutterdef import BBox, KnownDefs, SkipDefs, NetworkDef
 from DSFLib import readDSF
@@ -456,7 +455,7 @@ class TexCache:
                     a.append(self.texs[name])
                     self.texs.pop(name)
             if a:
-                glDeleteTextures(a)
+                glDeleteTextures(array(a,uint32))
 
     def get(self, path, wrap=True, alpha=True, downsample=False, fixsize=False):
         if not path: return self.blank
@@ -693,8 +692,8 @@ class VertexCache:
         self.lasttri=None	# take advantage of locality of reference
 
         self.texcache=TexCache()
-        self.varray=[]
-        self.tarray=[]
+        self.varray=empty((0,3),float32)
+        self.tarray=empty((0,2),float32)
         self.valid=False
         self.dsfdirs=None	# [custom, global, default]
 
@@ -712,8 +711,8 @@ class VertexCache:
         # invalidate array indices
         self.currenttile=None
         self.meshcache=[]
-        self.varray=[]
-        self.tarray=[]
+        self.varray=empty((0,3),float32)
+        self.tarray=empty((0,2),float32)
         self.valid=False
         self.lasttri=None
 
@@ -740,17 +739,13 @@ class VertexCache:
                 glBindBufferARB(GL_ARRAY_BUFFER_ARB, self.vertexbuf)
                 glBufferDataARB(GL_ARRAY_BUFFER_ARB, hstack((array(self.tarray, float32), array(self.varray, float32))).flatten(), GL_STATIC_DRAW_ARB)
                 glInterleavedArrays(GL_T2F_V3F, 0, None)
-            elif self.varray:
-                #glInterleavedArrays(GL_T2F_V3F, 0, hstack((array(self.tarray, float32), array(self.varray, float32))).flatten())	# XXX requires numpy
-                glVertexPointerf(self.varray)
-                glTexCoordPointerf(self.tarray)
-                #b=array(map(lambda x,y: x+y, self.tarray, self.varray), float32)
-                #glInterleavedArrays(GL_T2F_V3F, 0, b.tostring())
+            elif len(self.varray):
+                #glVertexPointer(3, GL_FLOAT, 0, self.varray.flatten())
+                #glTexCoordPointer(2, GL_FLOAT, 0, self.tarray.flatten())
+                glInterleavedArrays(GL_T2F_V3F, 0, hstack((self.tarray, self.varray)).flatten())
             else:	# need something or get conversion error
                 if __debug__: print "Empty arrays!"
-                #glInterleavedArrays(GL_T2F_V3F, 0, [[0.0,0,0,0,0]])
-                glVertexPointerf([[0,0,0]])
-                glTexCoordPointerf([[0,0]])
+                glInterleavedArrays(GL_T2F_V3F, 0, array([0,0,0,0,0],float32))
             if __debug__:
                 print "%6.3f time to realize arrays" % (time.clock()-clock)
             self.valid=True
@@ -758,8 +753,8 @@ class VertexCache:
     def allocate(self, vdata, tdata):
         # allocate geometry data into cache, but don't update OpenGL arrays
         base=len(self.varray)
-        self.varray.extend(vdata)
-        self.tarray.extend(tdata)
+        self.varray=concatenate((self.varray,array(vdata,float32)))
+        self.tarray=concatenate((self.tarray,array(tdata,float32)))
         self.valid=False	# new geometry -> need to update OpenGL
         return base
 
@@ -810,14 +805,14 @@ class VertexCache:
             else:
                 tex=join('Resources','Sea01.png')
             self.mesh[key]=[(tex, 1,
-                             [[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
-                              [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2],
-                              [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2],
-                              [-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
-                              [ onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
-                              [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],
-                             [[0, 0], [100, 100], [0, 100],
-                              [0, 0], [100, 0], [100, 100]])]
+                             array([[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
+                                    [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2],
+                                    [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2],
+                                    [-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
+                                    [ onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
+                                    [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],float32),
+                             array([[0, 0], [100, 100], [0, 100],
+                                    [0, 0], [100, 0], [100, 100]],float32))]
             self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
             self.nets[(tile[0],tile[1],Prefs.NETWORK)]=[]
 
@@ -836,10 +831,11 @@ class VertexCache:
                 bytex[(texture,flags)]=(list(v), list(t))
         # add into array
         if __debug__: clock=time.clock()	# Processor time
+
         for (texture, flags), (v, t) in bytex.iteritems():
             base=len(self.varray)
-            self.varray.extend(v)
-            self.tarray.extend(t)
+            self.varray=concatenate((self.varray,array(v,float32)))
+            self.tarray=concatenate((self.tarray,array(t,float32)))
             texno=self.texcache.get(texture, flags&8, False, flags&1)
             self.meshcache.append((base, len(v), texno, flags&2))
         if __debug__: print "%6.3f time in getMesh" % (time.clock()-clock)

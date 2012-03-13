@@ -42,6 +42,7 @@
 
 
 from math import atan2, ceil, cos, floor, hypot, pi, radians, sin
+from numpy import array, float32, float64
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from sys import maxint
@@ -633,7 +634,7 @@ class Draped(Polygon):
                     else:
                         uv=((self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale,
                             (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale)
-                    gluTessVertex(tess, [self.points[i][j][0], 0, self.points[i][j][2]], (self.points[i][j], False, uv))
+                    gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), (self.points[i][j], False, uv))
                 gluTessEndContour(tess)
             gluTessEndPolygon(tess)
 
@@ -647,7 +648,9 @@ class Draped(Polygon):
                 return selectednode
         except:
             # Combine required -> not simple
-            if __debug__: print "Draped layout failed - non-simple"
+            if __debug__:
+                print "Draped layout failed:"
+                print_exc()
             self.nonsimple=True
             return selectednode
 
@@ -673,7 +676,7 @@ class Draped(Polygon):
                 else:
                     uv=((self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale,
                         (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale)
-                gluTessVertex(csgt, [self.points[i][j][0], 0, self.points[i][j][2]], (self.points[i][j], False, uv))
+                gluTessVertex(csgt, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), (self.points[i][j], False, uv))
             gluTessEndContour(csgt)
         abox=BBox(minx, maxx, minz, maxz)
 
@@ -724,7 +727,7 @@ class Draped(Polygon):
                     else:
                         # Provide something in case tessellation screws up
                         uv=(0,0)
-                    gluTessVertex(csgt, [x,0,z], (meshpt[m],True, uv))
+                    gluTessVertex(csgt, array([x,0,z],float64), (meshpt[m],True, uv))
                 gluTessEndContour(csgt)
 
         gluTessEndPolygon(csgt)
@@ -1175,7 +1178,7 @@ class Forest(Fitted):
             for i in range(len(self.nodes)):
                 gluTessBeginContour(tess)
                 for j in range(len(self.nodes[i])):
-                    gluTessVertex(tess, [self.points[i][j][0], 0, self.points[i][j][2]], (self.points[i][j], False, None))
+                    gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), (self.points[i][j], False, None))
                 gluTessEndContour(tess)
             gluTessEndPolygon(tess)
             if not tris:
@@ -1183,7 +1186,9 @@ class Forest(Fitted):
                 self.nonsimple=True
         except:
             # Combine required -> not simple
-            if __debug__: print "Forest layout failed"
+            if __debug__:
+                print "Forest layout failed:"
+                print_exc()
             self.nonsimple=True
 
 

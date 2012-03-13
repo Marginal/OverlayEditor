@@ -15,6 +15,7 @@ except:
     def glInitMultisampleARB(): return True    
 
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
+from numpy import array, array_equal, concatenate, empty, float32, float64
 from os.path import basename, join
 from struct import unpack
 from sys import exit, platform, version
@@ -1405,7 +1406,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                     for i in range(0,len(pavements),3):
                                         gluTessBeginContour(csgt)
                                         for j in range(i,i+3):
-                                            gluTessVertex(csgt, [pavements[j][0][0],0,pavements[j][0][2]], pavements[j])
+                                            gluTessVertex(csgt, array([pavements[j][0][0],0,pavements[j][0][2]],float64), pavements[j])
                                         gluTessEndContour(csgt)
                                     for meshtri in meshtris:
                                         (meshpt, coeffs)=meshtri
@@ -1413,7 +1414,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                         for m in range(3):
                                             x=meshpt[m][0]
                                             z=meshpt[m][2]
-                                            gluTessVertex(csgt, [x,0,z], (meshpt[m],True, lastcol))
+                                            gluTessVertex(csgt, array([x,0,z],float64), (meshpt[m],True, lastcol))
                                         gluTessEndContour(csgt)
                                     gluTessEndPolygon(csgt)
                                 lastcol=col
@@ -1443,7 +1444,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                         last=pt
                                         (x,z)=pt
                                         y=self.vertexcache.height(newtile,options,x,z,meshtris)
-                                        gluTessVertex(tess, [x,0,z], ([x,y,z], False, col))
+                                        gluTessVertex(tess, array([x,0,z],float64), ([x,y,z], False, col))
                                 gluTessEndContour(tess)
 
                         # tessellate last against terrain
@@ -1454,7 +1455,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                             for i in range(0,len(pavements),3):
                                 gluTessBeginContour(csgt)
                                 for j in range(i,i+3):
-                                    gluTessVertex(csgt, [pavements[j][0][0],0,pavements[j][0][2]], pavements[j])
+                                    gluTessVertex(csgt, array([pavements[j][0][0],0,pavements[j][0][2]],float64), pavements[j])
                                 gluTessEndContour(csgt)
                             for meshtri in meshtris:
                                 (meshpt, coeffs)=meshtri
@@ -1462,7 +1463,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 for m in range(3):
                                     x=meshpt[m][0]
                                     z=meshpt[m][2]
-                                    gluTessVertex(csgt, [x,0,z], (meshpt[m],True, lastcol))
+                                    gluTessVertex(csgt, array([x,0,z],float64), (meshpt[m],True, lastcol))
                                 gluTessEndContour(csgt)
                             gluTessEndPolygon(csgt)
 
@@ -1490,8 +1491,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.runwaysdata=(len(self.vertexcache.varray)+shoulderlen+taxiwaylen, runwaylen)
             else:
                 self.runwaysdata=None
-            self.vertexcache.varray.extend(varray)
-            self.vertexcache.tarray.extend(tarray)
+            if len(varray):
+                self.vertexcache.varray=concatenate((self.vertexcache.varray,array(varray,float32)))
+                self.vertexcache.tarray=concatenate((self.vertexcache.tarray,array(tarray,float32)))
 
             progress.Update(14, 'Navaids')
             objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
@@ -1770,7 +1772,7 @@ def csgtcombine(coords, vertex, weight):
         p2=vertex[1]
         p3=vertex[2]
     else:
-        assert weight[0] and weight[1] and weight[2] and weight[3]
+        #assert weight[0] and weight[1] and weight[2] and weight[3]	# not sure why we would assert this
         p1=vertex[2]
         p2=vertex[3]
         p3=vertex[0]

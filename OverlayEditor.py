@@ -30,10 +30,11 @@ try:
     import OpenGL
     if OpenGL.__version__ >= '3':
         # Not defined in PyOpenGL 2.x.
-	if False:#XXX __debug__:
-            OpenGL.ERROR_ON_COPY =True	# only applies to numpy arrays
+	if __debug__:
+            OpenGL.ERROR_ON_COPY =True	# force array conversion/flattenign to be explicit
         else:
             OpenGL.ERROR_CHECKING=False	# don't check OGL errors for speed
+            OpenGL.ERROR_LOGGING =False	# or log
         import OpenGL.arrays.numpymodule
         import OpenGL.arrays.ctypesarrays
 except:
