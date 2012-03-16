@@ -755,7 +755,7 @@ def writeDSF(dsfdir, key, placements, netfile):
                 elif len(p)==8:
                     h.write('%13.7f%13.7f%13.7f%13.7f%13.7f%13.7f' % (min(west+1, p[2]+minres/2), min(south+1, p[3]+minres/2), p[4], p[5], p[6], p[7]))
                 else:
-                    for n in range(3,len(p)):
+                    for n in range(2,len(p)):
                         h.write('%13.7f' % p[n])
                 h.write('\n')
             h.write('END_WINDING\n')
