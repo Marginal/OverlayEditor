@@ -1,9 +1,10 @@
 from sys import platform
 import wx
-
 from os.path import dirname, exists, join
+if __debug__:
+    from traceback import print_exc
 
-from clutterdef import ClutterDefFactory, ClutterDef, PolygonDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
+from clutterdef import ClutterDefFactory, ClutterDef, PolygonDef, DrapedDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
 from MessageBox import myMessageBox
 
 
@@ -64,7 +65,7 @@ class PaletteListBox(wx.VListBox):
                         for line in h:
                             line=line.strip()
                             if line.startswith('TEXTURE_NOWRAP') or line.startswith('TEXTURE_LIT_NOWRAP'):
-                                imgno=4
+                                imgno=5
                                 break
                             elif line.startswith('TEXTURE'):
                                 break
@@ -417,8 +418,19 @@ class Palette(wx.SplitterWindow):
                         definition=self.frame.canvas.defs[filename]
                     else:
                         self.frame.canvas.defs[filename]=definition=ClutterDefFactory(filename, self.frame.canvas.vertexcache)
+                        # Special handling to mark orthos
+                        if isinstance(definition, DrapedDef) and definition.ortho:
+                            for l in self.cb.lists:
+                                i=l.GetSelection()
+                                if i!=-1:
+                                    (imgno, name, realname)=l.choices[i]
+                                    if imgno!=5:
+                                        l.choices[i]=(5, name, realname)
+                                        self.Refresh()
+                                    break
                     self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)
                 except:
+                    if __debug__: print_exc()
                     self.cb.markbad()
 
         if self.previewimg:
