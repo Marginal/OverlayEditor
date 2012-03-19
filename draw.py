@@ -9,13 +9,8 @@ except NameError:
     from OpenGL import GLU
     gluTessVertex = GLU._gluTessVertex
 
-try:
-    from OpenGL.GL.ARB.multisample import *
-except:
-    def glInitMultisampleARB(): return True    
-
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
-from numpy import array, array_equal, concatenate, empty, float32, float64
+from numpy import array, concatenate, empty, hstack, float32, float64, int32
 from os.path import basename, join
 from struct import unpack
 from sys import exit, platform, version
@@ -28,7 +23,7 @@ if __debug__:
 
 from files import VertexCache, sortfolded, readApt
 from fixed8x13 import fixed8x13
-from clutter import PolygonFactory, Draped, Facade, Object, Polygon, Network, Exclude, resolution, round2res, latlondisp
+from clutter import PolygonFactory, Draped, Facade, Object, Polygon, Network, Exclude, resolution, round2res, latlondisp, COL_CURSOR, COL_SELECTED, COL_UNPAINTED
 from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef
 from MessageBox import myMessageBox
 from prefs import Prefs
@@ -72,6 +67,56 @@ class ClickModes:
     Scroll=5
     Move=6
     
+
+# OpenGL state
+class GLstate():
+    def __init__(self):
+        self.texture=None
+        self.color=COL_UNPAINTED
+        glColor3f(*COL_UNPAINTED)
+        self.cull=True
+        glEnable(GL_CULL_FACE)
+        self.depthtest=True
+        glEnable(GL_DEPTH_TEST)
+        self.poly=False
+        glPolygonOffset(-1, -1)
+        glDisable(GL_POLYGON_OFFSET_FILL)
+
+    def set_texture(self, id):
+        if self.texture!=id:
+            self.texture=id
+            glBindTexture(GL_TEXTURE_2D, id)
+
+    def set_color(self, color):
+        if self.color!=color:
+            self.color=color
+            glColor3f(*color)
+
+    def set_depthtest(self, depthtest):
+        if self.depthtest!=depthtest:
+            self.depthtest=depthtest
+            if depthtest:
+                glEnable(GL_DEPTH_TEST)
+            else:
+                glDisable(GL_DEPTH_TEST)
+
+    def set_cull(self, cull):
+        if self.cull!=cull:
+            self.cull=cull
+            if cull:
+                glEnable(GL_CULL_FACE)
+            else:
+                glDisable(GL_CULL_FACE)
+
+    def set_poly(self, poly):
+        if self.poly!=poly:
+            self.poly=poly
+            if poly:
+                glEnable(GL_POLYGON_OFFSET_FILL)
+                glDepthMask(GL_FALSE)	# offset mustn't update depth
+            else:
+                glDisable(GL_POLYGON_OFFSET_FILL)
+                glDepthMask(GL_TRUE)
 
 # OpenGL Window
 class MyGL(wx.glcanvas.GLCanvas):
@@ -149,6 +194,14 @@ class MyGL(wx.glcanvas.GLCanvas):
                          "Can't initialise OpenGL.",
                          wx.ICON_ERROR|wx.OK, self)
             exit(1)
+        try:
+            from OpenGL.arrays import vbo
+            if not vbo.get_implementation(): raise AssertionError
+        except:
+            myMessageBox('This application requires the use of OpenGL Vertex Buffer Objects (VBOs) which are not supported by your graphics card.\nTry updating the drivers for your graphics card.',
+                         "Can't initialise OpenGL.",
+                         wx.ICON_ERROR|wx.OK, self)
+            exit(1)
 
         # Can't use polygon offset in display list on OSX 10.3 or early
         # versions of 10.4. 10.4.8 (Darwin 8.8.1) onwards is OK?
@@ -164,7 +217,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.context = wx.glcanvas.GLContext(self)
 
         self.vertexcache=None
-        self.multisample=False
 
         wx.EVT_ERASE_BACKGROUND(self, self.OnEraseBackground)
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)
@@ -188,11 +240,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             self.SetCurrent()
         self.vertexcache=VertexCache()	# member so can free resources
-        try:
-            glInitMultisampleARB()
-            self.multisample=glIsEnabled(GL_MULTISAMPLE_ARB)
-        except:
-            self.multisample=False
+
         #glClearDepth(1.0)
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glEnable(GL_DEPTH_TEST)
@@ -349,7 +397,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glLoadIdentity()
                 gluPickMatrix(event.m_x,
                               size[1]-1-event.m_y, 5,5,
-                              (0, 0, size[0], size[1]))
+                              array([0.0, 0.0, size[0], size[1]],int32))
                 glOrtho(-self.d, self.d,
                         -self.d*size.y/size.x, self.d*size.y/size.x,
                         -self.d*self.cliprat, self.d*self.cliprat)
@@ -443,12 +491,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         glOrtho(-self.d, self.d,
                 -self.d*size.y/size.x, self.d*size.y/size.x,
                 -self.d*self.cliprat, self.d*self.cliprat)
-        
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
         glRotatef(self.e, 1.0,0.0,0.0)
         glRotatef(self.h, 0.0,1.0,0.0)
         glTranslatef(-self.x, -self.y, -self.z)
+
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
 
         # Ground terrain
 
@@ -478,20 +526,15 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Objects and Polygons
         if __debug__:
-            import time
             clock=time.clock()	# Processor time
+        glstate=GLstate()
         placements=self.placements[self.tile]
-        glEnable(GL_CULL_FACE)
-        glPolygonOffset(-1, -1)
-        glDisable(GL_POLYGON_OFFSET_FILL)
 
-        glColor3f(0.8, 0.8, 0.8)	# Unpainted
-        #glEnable(GL_DEPTH_TEST)
         for layer in range(ClutterDef.LAYERCOUNT):
             #print layer, placements[layer]
-            for placement in placements[layer]:
-                if self.clickmode==ClickModes.DragBox or not placement in self.selected:
-                    placement.draw(False, False)
+            for placement in placements[layer]:	# XXX Sort by texture / color?
+                if not placement in self.selected:
+                    placement.draw_dynamic(glstate, False, False)
             # pavements
             if layer in [ClutterDef.SHOULDERLAYER, ClutterDef.TAXIWAYLAYER,
                          ClutterDef.RUNWAYSLAYER]:
@@ -500,24 +543,40 @@ class MyGL(wx.glcanvas.GLCanvas):
                       ClutterDef.RUNWAYSLAYER: self.runwaysdata}[layer]
                 if data:
                     (base, length)=data
-                    glDepthMask(GL_FALSE)
-                    glEnable(GL_POLYGON_OFFSET_FILL)
-                    glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
+                    glstate.set_texture(self.vertexcache.texcache.get('Resources/surfaces.png'))
+                    glstate.set_color(COL_UNPAINTED)
+                    glstate.set_depthtest(True)
+                    glstate.set_poly(True)
+                    #glPolygonOffset(-10, -100)	# Stupid value cos not coplanar
                     if __debug__:
                         if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
-                    glBindTexture(GL_TEXTURE_2D, self.vertexcache.texcache.get('Resources/surfaces.png'))
                     glDrawArrays(GL_TRIANGLES, base, length)
-                    glDepthMask(GL_TRUE)
-                    glDisable(GL_POLYGON_OFFSET_FILL)
-                    glPolygonOffset(-1, -1)
+                    #glPolygonOffset(-1, -1)
                     if __debug__:
                         if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
+
+        # Selections - last so overwrites
+        if self.selected:
+            glstate.set_color(COL_SELECTED)
+            for placement in placements[layer]:	# XXX Sort by texture / color?
+                if placement in self.selected:
+                    placement.draw_dynamic(glstate, True, False)
+            if len(self.selected)==1:
+                self.selected[0].draw_nodes(glstate, self.selectednode)
+
+        # List of clutter with static geometry and sorted by texture (ignoring layers since they don't really matter for Objects)
+        objs=sorted(filter(lambda obj: isinstance(obj, Object), [obj for l in placements for obj in l]), key=lambda obj: obj.definition.texture)
+        glstate.set_poly(False)
+        glstate.set_depthtest(True)
+        for obj in objs: obj.draw_instance(glstate, obj in self.selected, False)
+        glLoadIdentity()	# Drawing Objects alters the matrix
+
         if __debug__:
             print "%6.3f time to draw" % (time.clock()-clock)
 
         # Overlays
-        glDisable(GL_POLYGON_OFFSET_FILL)
-        glDisable(GL_DEPTH_TEST)
+        glstate.set_poly(False)
+        glstate.set_depthtest(False)
         glDepthMask(GL_FALSE)
 
         # Background
@@ -544,7 +603,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     glEnd()
                     if self.frame.bkgd:
                         # Setting background image
-                        glColor3f(1.0, 0.5, 1.0)
+                        glColor3f(*COL_SELECTED)
                         glBindTexture(GL_TEXTURE_2D, 0)
                         glBegin(GL_LINE_LOOP)
                         glVertex3f(-width/2, 0, length/2)
@@ -561,7 +620,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glCallList(self.codeslist)
 
         # Position centre
-        glColor3f(1.0, 0.25, 0.25)	# Cursor
+        glColor3f(*COL_CURSOR)
         glLoadIdentity()
         glRotatef(self.e, 1.0,0.0,0.0)
         glRotatef(self.h, 0.0,1.0,0.0)
@@ -577,19 +636,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         glVertex3f(-0.125,0,-0.375)
         glEnd()
         glTranslatef(-self.x, -self.y, -self.z)	# set up for picking
-
-        # Selections
-        if self.selected:
-            glColor3f(1.0, 0.5, 1.0)
-            glEnable(GL_DEPTH_TEST)
-            glDepthMask(GL_TRUE)
-            glPolygonOffset(-2, -2)
-            glEnable(GL_POLYGON_OFFSET_FILL)
-            for placement in self.selected:
-                placement.draw(True, False)
-            if len(self.selected)==1:
-                placement.drawnodes(self.selectednode)
-            glDisable(GL_POLYGON_OFFSET_FILL)
 
 	# drag box
         if self.clickmode==ClickModes.DragBox:
@@ -637,7 +683,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                           size[1]-1-(self.clickpos[1]+self.mousenow[1])/2,
                           abs(self.clickpos[0]-self.mousenow[0]),
                           abs(self.clickpos[1]-self.mousenow[1]),
-                          (0, 0, size[0], size[1]))
+                          array([0.0, 0.0, size[0], size[1]],int32))
 
         placements=self.placements[self.tile]
 
@@ -645,7 +691,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         # XXX check the -1 alignment with mouse cursor on Windows
         glScissor(self.clickpos[0]-2, size[1]-2-self.clickpos[1], 5,5)
         glEnable(GL_SCISSOR_TEST)
-        if self.multisample: glDisable(GL_MULTISAMPLE_ARB)
         glDisable(GL_LINE_SMOOTH)
 	glDisable(GL_DITHER)
         glClearColor(0.0, 0.0, 1.0, 0.0)	# Impossible value
@@ -676,7 +721,6 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         glClear(GL_COLOR_BUFFER_BIT)
         #glEnable(GL_DEPTH_TEST)
-        if self.multisample: glEnable(GL_MULTISAMPLE_ARB)
         glEnable(GL_LINE_SMOOTH)
         glDisable(GL_SCISSOR_TEST)
         if __debug__: print "%6.3f time in select" %(time.clock()-clock)
@@ -699,33 +743,34 @@ class MyGL(wx.glcanvas.GLCanvas):
                           size[1]-1-(self.clickpos[1]+self.mousenow[1])/2,
                           abs(self.clickpos[0]-self.mousenow[0]),
                           abs(self.clickpos[1]-self.mousenow[1]),
-                          (0, 0, size[0], size[1]))
+                          array([0.0, 0.0, size[0], size[1]],int32))
         else:	# at point
             gluPickMatrix(self.clickpos[0],
                           size[1]-1-self.clickpos[1], 5,5,
-                          (0, 0, size[0], size[1]))
+                          array([0.0, 0.0, size[0], size[1]],int32))
         glOrtho(-self.d, self.d,
                 -self.d*size.y/size.x, self.d*size.y/size.x,
                 -self.d*self.cliprat, self.d*self.cliprat)
         glMatrixMode(GL_MODELVIEW)
 
+        glstate=GLstate()
         glSelectBuffer(self.selectmax)
         glRenderMode(GL_SELECT)
         glInitNames()
         glPushName(0)
-        glDisable(GL_TEXTURE_2D)
-        glDisable(GL_DEPTH_TEST)
-        glDisable(GL_CULL_FACE)
-        if self.multisample: glDisable(GL_MULTISAMPLE_ARB)
+        glstate.set_texture(0)
+        glstate.set_depthtest(False)
+        glstate.set_cull(False)
         glDisable(GL_LINE_SMOOTH)
         placements=self.placements[self.tile]
         for i in range(len(placements)-1,-1,-1):	# favour higher layers
             for j in range(len(placements[i])):
                 if not placements[i][j].definition.type & self.locked:
                     glLoadName((i<<24)+j)
-                    placements[i][j].draw(False, True)
-        glEnable(GL_DEPTH_TEST)
-        if self.multisample: glEnable(GL_MULTISAMPLE_ARB)
+                    glPushMatrix()
+                    placements[i][j].draw_instance(glstate, False, True)
+                    glPopMatrix()
+                    placements[i][j].draw_dynamic(glstate, False, True)
         glEnable(GL_LINE_SMOOTH)
 
         selections=[]
@@ -944,6 +989,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             deleted=[]
             placements=self.placements[self.tile]
             for placement in self.selected:
+                placement.clearlayout(self.vertexcache)	# no point taking up space in vbo
                 layer=placement.definition.layer
                 i=placements[layer].index(placement)
                 deleted.insert(0,(layer, i, placement))	# LIFO
@@ -970,8 +1016,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         placements=self.placements[undo.tile]
 
         if undo.kind==UndoEntry.ADD:
-            for (layer,i,placement) in undo.data:
-                placements[layer].pop(i)	# Only works if just one item
+            assert len(undo.data)==1	# Naieve pop only works if just one item
+            (layer,i,placement)=undo.data[0]
+            placement.clearlayout(self.vertexcache)
+            placements[layer].pop(i)
             avlat+=placement.lat
             avlon+=placement.lon
         elif undo.kind==UndoEntry.DEL:
@@ -986,6 +1034,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             for (layer, i, placement) in undo.data:
                 placement.load(self.lookup, self.defs, self.vertexcache, True)
                 placement.layout(undo.tile, self.options, self.vertexcache)
+                placements[layer][i].clearlayout(self.vertexcache)
                 placements[layer][i]=placement
                 avlat+=placement.lat
                 avlon+=placement.lon
@@ -1119,7 +1168,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.unsorted[key]=placements
                 # invalidate all heights
                 for placement in placements:
-                    placement.clearlayout()
+                    placement.clearlayout(self.vertexcache)
                     if isinstance(placement, Network):
                         if placement.index and placement.index<len(netdefs) and netdefs[placement.index]:
                             placement.name=netdefs[placement.index].name
@@ -1188,7 +1237,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     self.unsorted[key]=placements
                     # invalidate all heights
                     for placement in placements:
-                        placement.clearlayout()
+                        placement.clearlayout(self.vertexcache)
                 
             # load placements and assign to layers
             if not newtile in self.placements:
@@ -1235,7 +1284,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.options=options
 
             # Lay out runways
-            progress.Update(13, 'Runways')
+            progress.Update(13, 'Airports')
             surfaces={0:  [0.125, 0.125],	# unknown
                       1:  [0.375, 0.125],	# asphalt
                       2:  [0.625, 0.125],	# concrete
@@ -1480,20 +1529,19 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 (varray,tarray,shoulderlen,taxiwaylen,runwaylen)=self.runways[key]
             if shoulderlen:
-                self.shoulderdata=(len(self.vertexcache.varray), shoulderlen)
+                self.shoulderdata=(self.vertexcache.instance_count, shoulderlen)
             else:
                 self.shoulderdata=None
             if taxiwaylen:
-                self.taxiwaydata=(len(self.vertexcache.varray)+shoulderlen, taxiwaylen)
+                self.taxiwaydata=(self.vertexcache.instance_count+shoulderlen, taxiwaylen)
             else:
                 self.taxiwaydata=None
             if runwaylen:
-                self.runwaysdata=(len(self.vertexcache.varray)+shoulderlen+taxiwaylen, runwaylen)
+                self.runwaysdata=(self.vertexcache.instance_count+shoulderlen+taxiwaylen, runwaylen)
             else:
                 self.runwaysdata=None
             if len(varray):
-                self.vertexcache.varray=concatenate((self.vertexcache.varray,array(varray,float32)))
-                self.vertexcache.tarray=concatenate((self.vertexcache.tarray,array(tarray,float32)))
+                self.vertexcache.allocate_instance(hstack((array(varray,float32), array(tarray,float32))).flatten())
 
             progress.Update(14, 'Navaids')
             objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',

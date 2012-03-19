@@ -1,5 +1,6 @@
 import codecs
 from math import fabs
+from numpy import array, hstack, float32
 from os import listdir
 from os.path import basename, dirname, exists, join, normpath, sep, splitext
 from sys import maxint
@@ -411,7 +412,7 @@ class ObjectDef(ClutterDef):
 
     def allocate(self, vertexcache, defs=None):
         if self.base==None:
-            self.base=vertexcache.allocate(self.vdata, self.tdata)
+            self.base=vertexcache.allocate_instance(hstack((array(self.vdata,float32), array(self.tdata,float32))).flatten())
 
     def flush(self):
         self.base=None

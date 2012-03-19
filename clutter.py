@@ -66,6 +66,15 @@ minres=1.0/resolution
 maxres=1-minres
 minhdg=360.0/65535
 
+COL_UNPAINTED=(0.8, 0.8, 0.8)
+COL_POLYGON  =(0.25,0.25,0.25)
+COL_FOREST   =(0.25,0.75,0.25)
+COL_EXCLUDE  =(0.75,0.25,0.25)
+COL_NONSIMPLE=(1.0, 0.25,0.25)
+COL_SELECTED =(1.0, 0.5, 1.0)
+COL_SELNODE  =(1.0, 1.0, 1.0)
+COL_CURSOR   =(1.0, 0.25,0.25)
+
 
 def round2res(x):
     i=floor(x)
@@ -122,8 +131,8 @@ class Object(Clutter):
     def __init__(self, name, lat, lon, hdg, y=None):
         Clutter.__init__(self, name, lat, lon)
         self.hdg=hdg
-        self.x=self.z=None
         self.y=y
+        self.matrix=None
 
     def __str__(self):
         return '<Object "%s" %11.6f %10.6f %d %s>' % (
@@ -165,43 +174,62 @@ class Object(Clutter):
         else:
             return '%s  Hdg: %-5.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg)
 
-    def draw(self, selected, picking):
+    def draw_instance(self, glstate, selected, picking):
         obj=self.definition
-        glPushMatrix()
-        glTranslatef(self.x, self.y, self.z)
-        if self.hdg: glRotatef(-self.hdg, 0.0,1.0,0.0)
+        if obj.poly: return
+        glLoadMatrixf(self.matrix)
         if picking:
-            # cull face disabled
+            assert not glstate.cull
+            # glstate.poly doesn't affect selection
             glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
         else:
-            glBindTexture(GL_TEXTURE_2D, obj.texture)
-            if obj.poly and not selected:
-                #glDepthMask(GL_FALSE) - doesn't work with inwards facing faces
-                glEnable(GL_POLYGON_OFFSET_FILL)
+            glstate.set_texture(obj.texture)
+            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            assert not glstate.poly
+            assert glstate.depthtest
             if obj.culled:
-                glEnable(GL_CULL_FACE)
+                glstate.set_cull(True)
                 glDrawArrays(GL_TRIANGLES, obj.base, obj.culled)
             if obj.nocull:
-                glDisable(GL_CULL_FACE)
+                glstate.set_cull(False)
                 glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
-                glEnable(GL_CULL_FACE)
-            if obj.poly and not selected:
-                #glDepthMask(GL_TRUE)
-                glDisable(GL_POLYGON_OFFSET_FILL)
+
+    def draw_dynamic(self, glstate, selected, picking):
+        # XXX move poly and draped here
+        obj=self.definition
+        if not obj.poly: return
+        glPushMatrix()
+        glLoadMatrixf(self.matrix)
+        if picking:
+            assert not glstate.cull
+            glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
+        else:
+            glstate.set_texture(obj.texture)
+            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            glstate.set_poly(True)
+            glstate.set_depthtest(True)
+            if obj.culled:
+                glstate.set_cull(True)
+                glDrawArrays(GL_TRIANGLES, obj.base, obj.culled)
+            if obj.nocull:
+                glstate.set_cull(False)
+                glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
         glPopMatrix()
 
-    def drawnodes(self, selectednode):
+    def draw_nodes(self, glstate, selectednode):
         pass
 
-    def clearlayout(self):
-        self.x=self.y=self.z=None
+    def clearlayout(self, vertexcache):
+        self.matrix=None
 
     def islaidout(self):
-        return self.x!=None
+        return self.matrix is not None
 
     def layout(self, tile, options, vertexcache):
-        (self.x,self.z)=self.position(tile, self.lat, self.lon)
-        self.y=vertexcache.height(tile,options,self.x,self.z)
+        x,z=self.position(tile, self.lat, self.lon)
+        self.y=vertexcache.height(tile,options,x,z)
+        h=radians(self.hdg)
+        self.matrix=array([cos(h),0.0,sin(h),0.0, 0.0,1.0,0.0,0.0, -sin(h),0.0,cos(h),0.0, x,self.y,z,1.0],float32)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         self.lat=max(tile[0], min(tile[0]+maxres, self.lat+dlat))
@@ -278,45 +306,47 @@ class Polygon(Clutter):
         else:
             return '%s  Param: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, picking, col=(0.25, 0.25, 0.25)):
+    def draw_instance(self, glstate, selected, picking):
+        pass
+
+    def draw_dynamic(self, glstate, selected, picking, col=COL_POLYGON):
         # just draw outline
         if not picking:
-            glBindTexture(GL_TEXTURE_2D, 0)
-            if not selected:
-                if self.nonsimple:
-                    glColor3f(1.0,0.25,0.25)	# override colour if nonsimple
-                else:
-                    glColor3f(*col)
-        glDisable(GL_DEPTH_TEST)
+            glstate.set_texture(0)
+            if selected:
+                glstate.set_color(COL_SELECTED)
+            elif self.nonsimple:
+                glstate.set_color(COL_NONSIMPLE)
+            else:
+                glstate.set_color(col)
+        glstate.set_depthtest(False)
         for winding in self.points:
             glBegin(GL_LINE_LOOP)
             for p in winding:
                 glVertex3f(p[0],p[1],p[2])
             glEnd()
-        glEnable(GL_DEPTH_TEST)
-        if not selected and not picking:
-            glColor3f(0.8, 0.8, 0.8)	# restore
 
-    def drawnodes(self, selectednode):
-        Polygon.draw(self, True, False)	# draw lines
-        glBindTexture(GL_TEXTURE_2D, 0)
-        glDisable(GL_DEPTH_TEST)
+    def draw_nodes(self, glstate, selectednode):
+        print "Here"	# XXX
+        Polygon.draw_dynamic(self, glstate, True, False)	# draw lines
+        assert glstate.texture==0
+        assert glstate.depthtest==False
         glBegin(GL_POINTS)
         for i in range(len(self.points)):
             for j in range(len(self.points[i])):
                 if selectednode==(i,j):
-                    glColor3f(1.0, 1.0, 1.0)
+                    glstate.set_color(COL_SELNODE)
                 else:
-                    glColor3f(1.0, 0.5, 1.0)
+                    glstate.set_color(COL_SELECTED)
                 glVertex3f(*self.points[i][j])
         glEnd()
-        glEnable(GL_DEPTH_TEST)        
         
-    def clearlayout(self):
+    def clearlayout(self, vertexcache):
         self.points=[]
+        vertexcache.allocate_dynamic(self)
 
     def islaidout(self):
-        return self.points and True
+        return self.points and True or False
 
     def layout(self, tile, options, vertexcache, selectednode=None):
         global tess
@@ -347,6 +377,7 @@ class Polygon(Clutter):
         self.lat=self.lat/len(self.nodes[0])
         self.lon=self.lon/len(self.nodes[0])
 
+        vertexcache.allocate_dynamic(self)
         return selectednode
 
     def addnode(self, tile, options, vertexcache, selectednode, clockwise):
@@ -443,9 +474,12 @@ class Beach(Polygon):
         Polygon.load(self, lookup, defs, vertexcache, usefallback=True)
         self.definition.layer=ClutterDef.BEACHESLAYER
 
-    def draw(self, selected, picking):
+    def draw_instance(self, glstate, selected, picking):
+        pass
+
+    def draw_dynamic(self, glstate, selected, picking):
         # Don't draw selected so can't be picked
-        if not picking: Polygon.draw(self, selected, picking)
+        if not picking: Polygon.draw_dynamic(self, glstate, selected, picking)
 
 
 # Like Draped, but for lines
@@ -498,18 +532,22 @@ class Draped(Polygon):
         else:
             return '%s  Tex hdg: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, picking):
+    def draw_instance(self, glstate, selected, picking):
+        pass
+
+    def draw_dynamic(self, glstate, selected, picking):
         drp=self.definition
         if self.nonsimple:
-            Polygon.draw(self, selected, picking)
+            Polygon.draw_dynamic(self, glstate, selected, picking)
             return
         elif picking:
-            Polygon.draw(self, selected, picking)	# for outline
+            Polygon.draw_dynamic(self, glstate, selected, picking)	# for outline
         else:
-            glBindTexture(GL_TEXTURE_2D, drp.texture)
-        if not (selected or picking):
-            glDepthMask(GL_FALSE)	# offset mustn't update depth
-            glEnable(GL_POLYGON_OFFSET_FILL)
+            glstate.set_texture(drp.texture)
+            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            glstate.set_cull(True)
+            glstate.set_poly(True)
+            glstate.set_depthtest(True)
         glBegin(GL_TRIANGLES)
         if picking:
             for t in self.tris:
@@ -519,9 +557,6 @@ class Draped(Polygon):
                 glTexCoord2f(*t[2])
                 glVertex3f(*t[0])
         glEnd()
-        if not (selected or picking):
-            glDepthMask(GL_TRUE)
-            glDisable(GL_POLYGON_OFFSET_FILL)
         
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         if self.param==65535:
@@ -834,8 +869,11 @@ class Exclude(Fitted):
         # changed adjacent nodes, so do full layout immediately
         return self.layout(tile, options, vertexcache, node)
 
-    def draw(self, selected, picking):
-        Polygon.draw(self, selected, picking, (0.75, 0.25, 0.25))
+    def draw_instance(self, glstate, selected, picking):
+        pass
+
+    def draw_dynamic(self, glstate, selected, picking):
+        Polygon.draw_dynamic(self, glstate, selected, picking, COL_EXCLUDE)
 
 
 class Facade(Polygon):
@@ -882,17 +920,22 @@ class Facade(Polygon):
         else:
             return '%s  Height: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw(self, selected, picking):
+    def draw_instance(self, glstate, selected, picking):
+        pass
+
+    def draw_dynamic(self, glstate, selected, picking):
         fac=self.definition
         if self.nonsimple or (not self.quads and not self.roof):
-            Polygon.draw(self, selected, picking)
+            Polygon.draw_dynamic(self, glstate, selected, picking)
             return
         elif picking:
-            Polygon.draw(self, selected, picking)
+            Polygon.draw_dynamic(self, glstate, selected, picking)
         else:
-            glBindTexture(GL_TEXTURE_2D, fac.texture)
-            if fac.two_sided:
-                glDisable(GL_CULL_FACE)
+            glstate.set_texture(fac.texture)
+            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            glstate.set_cull(not fac.two_sided)
+            glstate.set_poly(False)
+            glstate.set_depthtest(True)
         if self.quads:
             glBegin(GL_QUADS)
             for p in self.quads:
@@ -905,8 +948,6 @@ class Facade(Polygon):
                 glTexCoord2f(p[3],p[4])
                 glVertex3f(p[0],p[1],p[2])
             glEnd()
-        if not picking and fac.two_sided:
-            glEnable(GL_CULL_FACE)
         
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam=max(dparam, 1-self.param)	# can't have height 0
@@ -1143,8 +1184,11 @@ class Forest(Fitted):
         else:
             return '%s  Density: %-4.1f%%  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
 
-    def draw(self, selected, picking):
-        Polygon.draw(self, selected, picking, (0.25,0.75,0.25))
+    def draw_instance(self, glstate, selected, picking):
+        pass
+
+    def draw_dynamic(self, glstate, selected, picking):
+        Polygon.draw_dynamic(self, glstate, selected, picking, COL_FOREST)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
@@ -1232,18 +1276,22 @@ class Line(Polygon):
                 oc='Open'
             return '%s  %s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
 
-    def draw(self, selected, picking):
-        drp=self.definition
+    def draw_instance(self, glstate, selected, picking):
+        pass
+
+    def draw_dynamic(self, glstate, selected, picking):
+        lin=self.definition
         if self.nonsimple:
-            Polygon.draw(self, selected, picking)
+            Polygon.draw_dynamic(self, glstate, selected, picking)
             return
         elif picking:
-            Polygon.draw(self, selected, picking)	# for outline
+            Polygon.draw_dynamic(self, glstate, selected, picking)	# for outline
         else:
-            glBindTexture(GL_TEXTURE_2D, drp.texture)
-        if not (selected or picking):
-            glDepthMask(GL_FALSE)	# offset mustn't update depth
-            glEnable(GL_POLYGON_OFFSET_FILL)
+            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            glstate.set_texture(lin.texture)
+            glstate.set_cull(True)
+            glstate.set_poly(True)
+            glstate.set_depthtest(True)
         glBegin(GL_TRIANGLES)
         if picking:
             for t in self.tris:
@@ -1253,9 +1301,6 @@ class Line(Polygon):
                 glTexCoord2f(*t[2])
                 glVertex3f(*t[0])
         glEnd()
-        if not (selected or picking):
-            glDepthMask(GL_TRUE)
-            glDisable(GL_POLYGON_OFFSET_FILL)
         
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam=min(dparam, 1-self.param)	# max 1
@@ -1331,42 +1376,45 @@ class Network(Fitted):
         else:
             return '%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes))
 
-    def draw(self, selected, picking):
+    def draw_instance(self, glstate, selected, picking):
+        pass
+
+    def draw_dynamic(self, glstate, selected, picking):
         # just draw outline
         if picking:
             # Can't pick if no elevation
             if not self.laidoutwithelevation: return
         else:
-            glBindTexture(GL_TEXTURE_2D, 0)
-            if not selected: glColor3f(*self.definition.color)
-        glDisable(GL_DEPTH_TEST)
+            glstate.set_texture(0)
+            if selected:
+                glstate.set_color(COL_SELECTED)
+            else:
+                glstate.set_color(self.definition.color)
+        glstate.set_depthtest(False)
         glBegin(GL_LINE_STRIP)
         for p in self.points[0]:
             glVertex3f(p[0],p[1],p[2])
         glEnd()
-        glEnable(GL_DEPTH_TEST)
-        if not (selected or picking):
-            glColor3f(0.8, 0.8, 0.8)	# restore
 
-    def drawnodes(self, selectednode):
-        glBindTexture(GL_TEXTURE_2D, 0)
-        glDisable(GL_DEPTH_TEST)
+    def draw_nodes(self, glstate, selectednode):
+        glstate.set_texture(0)
+        glstate.set_depthtest(False)
         glBegin(GL_POINTS)
         for j in range(len(self.points[0])):
             if selectednode==(0,j):
-                glColor3f(1.0, 1.0, 1.0)
+                glstate.set_color(COL_SELNODE)
             else:
-                glColor3f(1.0, 0.5, 1.0)
+                glstate.set_color(COL_SELECTED)
             glVertex3f(*self.points[0][j])
         glEnd()
-        glEnable(GL_DEPTH_TEST)        
 
-    def clearlayout(self):
+    def clearlayout(self, vertexcache):
         self.laidoutwithelevation=False
         self.points=[]
+        vertexcache.allocate_dynamic(self)
 
     def islaidout(self):
-        return self.points and True
+        return self.points and True or False
 
     def layout(self, tile, options, vertexcache, selectednode=None):
         # XXX handle new

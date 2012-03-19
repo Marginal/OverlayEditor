@@ -31,7 +31,7 @@ try:
     if OpenGL.__version__ >= '3':
         # Not defined in PyOpenGL 2.x.
 	if __debug__:
-            OpenGL.ERROR_ON_COPY =True	# force array conversion/flattenign to be explicit
+            OpenGL.ERROR_ON_COPY =True	# force array conversion/flattening to be explicit
         else:
             OpenGL.ERROR_CHECKING=False	# don't check OGL errors for speed
             OpenGL.ERROR_LOGGING =False	# or log
@@ -40,7 +40,7 @@ try:
 except:
     import Tkinter, tkMessageBox
     Tkinter.Tk().withdraw()
-    tkMessageBox.showerror("Error", "PyOpenGL is not installed.\nThis application\nrequires PyOpenGL 2.x.")
+    tkMessageBox.showerror("Error", "PyOpenGL is not installed.\nThis application\nrequires PyOpenGL 3.0.1 or later.")
     exit(1)
 
 if not 'startfile' in dir(os):

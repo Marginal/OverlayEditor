@@ -1,9 +1,11 @@
 import PIL.Image
 import PIL.PngImagePlugin, PIL.BmpImagePlugin, PIL.JpegImagePlugin 	# force for py2exe
 import OpenGL	# for __version__
+from OpenGL.arrays.vbo import VBO
 from OpenGL.GL import *
 from OpenGL.GL.EXT.bgra import glInitBgraEXT, GL_BGR_EXT, GL_BGRA_EXT
 from OpenGL.GL.ARB.texture_compression import glInitTextureCompressionARB, glCompressedTexImage2DARB, GL_COMPRESSED_RGB_ARB, GL_COMPRESSED_RGBA_ARB, GL_TEXTURE_COMPRESSION_HINT_ARB
+from OpenGL.GL.ARB.vertex_buffer_object import GL_STATIC_DRAW_ARB
 try:
     from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3tcEXT, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
 except:
@@ -18,15 +20,10 @@ try:
 except:	# not in 2.0.0.44
     def glInitTextureNonPowerOfTwoARB(): return False
 
-try:
-    from OpenGL.GL.ARB.vertex_buffer_object import glInitVertexBufferObjectARB, glGenBuffersARB, glBindBufferARB, glBufferDataARB, GL_ARRAY_BUFFER_ARB, GL_STATIC_DRAW_ARB
-except:
-    def glInitVertexBufferObjectARB(): return False
-
 import codecs
 from glob import glob
 from math import cos, log, pi, radians
-from numpy import array, concatenate, empty, hstack, float32, uint32
+from numpy import array, concatenate, empty, hstack, ndarray, float32, uint32
 from os import listdir, mkdir
 from os.path import basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
@@ -36,6 +33,7 @@ from traceback import print_exc
 import time
 import wx
 
+from clutter import Clutter
 from clutterdef import BBox, KnownDefs, SkipDefs, NetworkDef
 from DSFLib import readDSF
 from palette import PaletteEntry
@@ -48,8 +46,6 @@ cantreleasetexs=(platform.startswith('linux'))
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
-
-GL_CLAMP_TO_EDGE=0x812F	# Not defined in PyOpenGL 2.x
 
 # DDS surface flags
 DDSD_CAPS	= 0x00000001
@@ -692,13 +688,15 @@ class VertexCache:
         self.lasttri=None	# take advantage of locality of reference
 
         self.texcache=TexCache()
-        self.varray=empty((0,3),float32)
-        self.tarray=empty((0,2),float32)
+        self.instance_vbo=VBO(None, GL_STATIC_DRAW_ARB)
+        self.instance_data=empty((0,5),float32)	# Copy of vbo data
+        self.instance_pending=[]		# Clutter not yet allocated into vbo
+        self.instance_count=0			# Allocated and pending vertices
+        self.dynamic_vbo=None
+        self.dynamic_data=empty((0,8),float32)
+        self.dynamic_pending=[]
         self.valid=False
         self.dsfdirs=None	# [custom, global, default]
-
-        self.vbo=False # XXX (OpenGL.__version__ >= '3') and glInitVertexBufferObjectARB()
-        self.vertexbuf=0
 
     def reset(self, terrain, dsfdirs):
         # invalidate geometry and textures
@@ -711,8 +709,11 @@ class VertexCache:
         # invalidate array indices
         self.currenttile=None
         self.meshcache=[]
-        self.varray=empty((0,3),float32)
-        self.tarray=empty((0,2),float32)
+        self.instance_data=empty((0,5),float32)
+        self.instance_pending=[]
+        self.instance_count=0
+        self.dynamic_data=empty((0,8),float32)
+        self.dynamic_pending=[]
         self.valid=False
         self.lasttri=None
 
@@ -722,41 +723,30 @@ class VertexCache:
             if __debug__: clock=time.clock()	# Processor time
             if wx.VERSION >= (2,9):
                 canvas.SetCurrent(canvas.context)
-            if self.vbo:
-                # PyOpenGL 3b8 with numpy - broken
-                if not self.vertexbuf:
-                    from OpenGL.arrays import vbo
-                    assert vbo.get_implementation()
-                    self.vertexbuf=vbo.VBO(hstack((array(self.tarray, float32), array(self.varray, float32))).flatten())
-                    if __debug__: print "VBOs enabled! %s" % self.vertexbuf
-                self.vertexbuf.bind()
-                glInterleavedArrays(GL_T2F_V3F, 0, self.vertexbuf)
-            elif False:
-                # PyOpenGL 3b6 with numpy - also broken
-                if not self.vertexbuf:
-                    self.vertexbuf=long(glGenBuffersARB(1))
-                    if __debug__: print "VBOs enabled! %s" % self.vertexbuf
-                glBindBufferARB(GL_ARRAY_BUFFER_ARB, self.vertexbuf)
-                glBufferDataARB(GL_ARRAY_BUFFER_ARB, hstack((array(self.tarray, float32), array(self.varray, float32))).flatten(), GL_STATIC_DRAW_ARB)
-                glInterleavedArrays(GL_T2F_V3F, 0, None)
-            elif len(self.varray):
-                #glVertexPointer(3, GL_FLOAT, 0, self.varray.flatten())
-                #glTexCoordPointer(2, GL_FLOAT, 0, self.tarray.flatten())
-                glInterleavedArrays(GL_T2F_V3F, 0, hstack((self.tarray, self.varray)).flatten())
-            else:	# need something or get conversion error
-                if __debug__: print "Empty arrays!"
-                glInterleavedArrays(GL_T2F_V3F, 0, array([0,0,0,0,0],float32))
+            if self.instance_pending:
+                self.instance_data=concatenate(self.instance_pending)
+                self.instance_pending=[self.instance_data]	# so gets included in concatenate next time round
+                self.instance_vbo.set_array(self.instance_data)
+                self.instance_vbo.bind()
+                glVertexPointer(3, GL_FLOAT, 20, self.instance_vbo)
+                glTexCoordPointer(2, GL_FLOAT, 20, self.instance_vbo+12)
             if __debug__:
                 print "%6.3f time to realize arrays" % (time.clock()-clock)
             self.valid=True
 
-    def allocate(self, vdata, tdata):
-        # allocate geometry data into cache, but don't update OpenGL arrays
-        base=len(self.varray)
-        self.varray=concatenate((self.varray,array(vdata,float32)))
-        self.tarray=concatenate((self.tarray,array(tdata,float32)))
+    def allocate_instance(self, data):
+        # cache geometry data, but don't update OpenGL arrays yet
+        assert isinstance(data,ndarray)
+        base=self.instance_count
+        self.instance_count+=len(data)/5
+        self.instance_pending.append(data)
         self.valid=False	# new geometry -> need to update OpenGL
         return base
+
+    def allocate_dynamic(self, clutter):
+        # cache geometry data, but don't update OpenGL arrays yet
+        assert isinstance(clutter,Clutter)
+        self.valid=False	# new geometry -> need to update OpenGL
 
     def loadMesh(self, tile, options):
         key=(tile[0],tile[1],options&Prefs.TERRAIN)
@@ -833,9 +823,7 @@ class VertexCache:
         if __debug__: clock=time.clock()	# Processor time
 
         for (texture, flags), (v, t) in bytex.iteritems():
-            base=len(self.varray)
-            self.varray=concatenate((self.varray,array(v,float32)))
-            self.tarray=concatenate((self.tarray,array(t,float32)))
+            base=self.allocate_instance(hstack((array(v,float32), array(t,float32))).flatten())
             texno=self.texcache.get(texture, flags&8, False, flags&1)
             self.meshcache.append((base, len(v), texno, flags&2))
         if __debug__: print "%6.3f time in getMesh" % (time.clock()-clock)
