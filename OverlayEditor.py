@@ -15,7 +15,10 @@ if platform.lower().startswith('linux') and not getenv("DISPLAY"):
     print "Can't run: DISPLAY is not set"
     exit(1)
 elif platform=='darwin':
-    sys.path.insert(0, join(sys.path[0], version[:3]))
+    mypath=sys.path[0]
+    for f in listdir(mypath):
+        if f.endswith('-py%s.egg' % version[:3]): sys.path.insert(0, join(mypath,f))
+    sys.path.insert(0, join(mypath, version[:3]))
 
 try:
     import wx
