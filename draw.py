@@ -2,13 +2,17 @@ import OpenGL	# for __version__
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.arrays import vbo
+from OpenGL.extensions import alternate
 
 try:
-    # apparently older PyOpenGL version didn't define gluTessVertex
-    gluTessVertex
-except NameError:
-    from OpenGL import GLU
-    gluTessVertex = GLU._gluTessVertex
+    from OpenGL.GL.ARB.occlusion_query import *
+    glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
+    glDeleteQueries = alternate(glDeleteQueries, glDeleteQueriesARB)
+    glEndQuery = alternate(glEndQuery, glEndQueryARB)
+    glGenQueries = alternate(glGenQueries, glGenQueriesARB)
+    glGetQueryObjectuiv = alternate(glGetQueryObjectiv, glGetQueryObjectuivARB)
+except:
+    glGenQueries=False
 
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
 from numpy import array, array_equal, concatenate, empty, hstack, identity, float32, float64, int32
@@ -73,6 +77,8 @@ class ClickModes:
 class GLstate():
     def __init__(self):
         self.debug=__debug__ and False
+        self.use_occlusion_query=bool(glGenQueries)
+        self.queries=[]
         glEnableClientState(GL_VERTEX_ARRAY)
         self.texture=0
         glEnableClientState(GL_TEXTURE_COORD_ARRAY)
@@ -200,6 +206,14 @@ class GLstate():
         elif __debug__:
             if self.debug: print "set_dynamic already dynamic_vbo"
 
+    def alloc_queries(self, needed):
+        if len(self.queries)<needed:
+            if len(self.queries): glDeleteQueries(len(self.queries), self.queries)
+            needed=(needed/256+1)*256	# round up
+            self.queries=glGenQueries(needed)
+            if __debug__:
+                if self.debug: print "get_queries", self.queries
+
 
 # OpenGL Window
 class MyGL(wx.glcanvas.GLCanvas):
@@ -233,13 +247,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         
         self.mousenow=None	# Current position (used in timer and drag)
         self.locked=0		# locked object types
-        self.selected=[]	# list of selected placements
+        self.selected=set()	# selected placements
         self.clickmode=None
         self.clickpos=None	# Location of mouse down
         self.clickctrl=False	# Ctrl was held down
-        self.selectednode=None	# Selected node
-        self.selections=[]	# List of hits for cycling picking
-        self.selectsaved=[]	# Selection at start of ctrl drag box
+        self.selectednode=None	# Selected node. Only if len(self.selected)==1
+        self.selections=set()	# Hits for cycling picking
+        self.selectsaved=set()	# Selection at start of ctrl drag box
         self.selectmax=4096	# max 1024 names
         self.draginert=True
         self.dragx=wx.SystemSettings_GetMetric(wx.SYS_DRAG_X)
@@ -417,11 +431,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.HasCapture(): self.ReleaseMouse()
         self.timer.Stop()
         if self.clickmode==ClickModes.DragNode:
-            self.selectednode=self.selected[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
+            assert len(self.selected)==1
+            self.selectednode=list(self.selected)[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
             self.trashlists(True)	# recompute obj and pick lists
         elif self.clickmode==ClickModes.Drag:
-            for thing in self.selected:
-                thing.layout(self.tile, self.options, self.vertexcache)
+            for placement in self.selected:
+                placement.layout(self.tile, self.options, self.vertexcache)
             self.trashlists(True)	# recompute obj and pick lists
         elif self.clickmode==ClickModes.DragBox:
             self.trashlists()		# selection changed
@@ -445,7 +460,8 @@ class MyGL(wx.glcanvas.GLCanvas):
     def OnIdle(self, event):
         if self.valid:	# can get Idles during reload under X
             if self.clickmode==ClickModes.DragNode:
-                self.selectednode=self.selected[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
+                assert len(self.selected)==1
+                self.selectednode=list(self.selected)[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
                 assert self.selectednode
                 self.Refresh()
         event.Skip()
@@ -475,7 +491,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                 return
 
             # Change cursor if over a node
-            if len(self.selected)==1 and isinstance(self.selected[0], Polygon):
+            if len(self.selected)==1 and isinstance(list(self.selected)[0], Polygon):
+                poly=list(self.selected)[0]
+                glMatrixMode(GL_MODELVIEW)
+                glLoadIdentity()
                 glMatrixMode(GL_PROJECTION)
                 glPushMatrix()
                 glLoadIdentity()
@@ -485,17 +504,32 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glOrtho(-self.d, self.d,
                         -self.d*size.y/size.x, self.d*size.y/size.x,
                         -self.d*self.cliprat, self.d*self.cliprat)
-                glMatrixMode(GL_MODELVIEW)
-                glSelectBuffer(self.selectmax)
-                glRenderMode(GL_SELECT)
-                glInitNames()
-                glPushName(0)
-                self.selected[0].picknodes()
-                selections=glRenderMode(GL_RENDER)
-                # Restore state for unproject
-                glMatrixMode(GL_PROJECTION)
-                glPopMatrix()	
-                glMatrixMode(GL_MODELVIEW)
+                glRotatef(self.e, 1.0,0.0,0.0)
+                glRotatef(self.h, 0.0,1.0,0.0)
+                glTranslatef(-self.x, -self.y, -self.z)
+                self.glstate.set_texture(0)
+                self.glstate.set_color(COL_WHITE)	# Ensure colour indexing off
+                self.glstate.set_depthtest(False)	# Don't want to update depth buffer
+                self.glstate.set_poly(False)		# Not strictly necessary, but possibly will avoid any driver issues
+                if self.glstate.use_occlusion_query:
+                    self.glstate.alloc_queries(len([item for sublist in poly.points for item in sublist]))
+                    selections=False
+                    glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
+                    poly.pick_nodes(self.glstate)
+                    for queryidx in range(len([item for sublist in poly.points for item in sublist])):
+                        if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
+                            selections=True
+                            break
+                    glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
+                else:
+                    glSelectBuffer(self.selectmax)
+                    glRenderMode(GL_SELECT)
+                    glInitNames()
+                    glPushName(0)
+                    poly.pick_nodes(self.glstate)
+                    selections=glRenderMode(GL_RENDER)
+
+                glPopMatrix()	# Restore state for unproject
                 if selections:
                     self.SetCursor(self.dragcursor)	# hovering over node
                     return
@@ -523,7 +557,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.clickmode==ClickModes.DragNode:
             # Start/continue node drag
             self.SetCursor(self.dragcursor)
-            poly=self.selected[0]
+            poly=list(self.selected)[0]
             (lat,lon)=self.getworldloc(event.GetX(), event.GetY())
             lat=max(self.tile[0], min(self.tile[0]+1, lat))
             lon=max(self.tile[1], min(self.tile[1]+1, lon))
@@ -655,7 +689,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     if placement in self.selected:
                         placement.draw_dynamic(self.glstate, True, False)
             if len(self.selected)==1:
-                self.selected[0].draw_nodes(glstate, self.selectednode)
+                list(self.selected)[0].draw_nodes(self.glstate, self.selectednode)
 
         # List of clutter with static geometry and sorted by texture (ignoring layer ordering since it doesn't really matter so much for Objects)
         objs=sorted(filter(lambda obj: isinstance(obj, Object), [obj for l in placements for obj in l]), key=lambda obj: obj.definition.texture)
@@ -780,88 +814,163 @@ class MyGL(wx.glcanvas.GLCanvas):
                           size[1]-1-self.clickpos[1], 5,5,
                           array([0.0, 0.0, size[0], size[1]],int32))
         glOrtho(-self.d, self.d,
-                -self.d*size.y/size.x, self.d*size.y/size.x,
-                -self.d*self.cliprat, self.d*self.cliprat)
+                 -self.d*size.y/size.x, self.d*size.y/size.x,
+                 -self.d*self.cliprat, self.d*self.cliprat)
+        glRotatef(self.e, 1.0,0.0,0.0)
+        glRotatef(self.h, 0.0,1.0,0.0)
+        glTranslatef(-self.x, -self.y, -self.z)
         glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
 
-        glstate=GLstate()
-        glSelectBuffer(self.selectmax)
-        glRenderMode(GL_SELECT)
-        glInitNames()
-        glPushName(0)
-        glstate.set_texture(0)
-        glstate.set_depthtest(False)
-        glstate.set_cull(False)
-        glDisable(GL_LINE_SMOOTH)
+        self.glstate.set_texture(0)
+        self.glstate.set_color(COL_WHITE)		# Ensure colour indexing off
+        self.glstate.set_depthtest(False)		# Don't want to update depth buffer
+        self.glstate.set_poly(False)			# Not strictly necessary, but possibly will avoid any driver issues
+        self.glstate.set_cull(False)			# Enable selection of "invisible" faces
         placements=self.placements[self.tile]
-        for i in range(len(placements)-1,-1,-1):	# favour higher layers
-            for j in range(len(placements[i])):
-                if not placements[i][j].definition.type & self.locked:
-                    glLoadName((i<<24)+j)
-                    glPushMatrix()
-                    placements[i][j].draw_instance(glstate, False, True)
-                    glPopMatrix()
-                    placements[i][j].draw_dynamic(glstate, False, True)
-        glEnable(GL_LINE_SMOOTH)
+        checkpolynode=(self.clickmode==ClickModes.Undecided and len(self.selected)==1 and isinstance(list(self.selected)[0], Polygon)) and list(self.selected)[0]
 
-        selections=[]
-        try:
-            for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
-                selections.append(placements[int(name)>>24][int(name)&0xffffff])
-        except:	# overflow
-            if __debug__: print_exc()
+        if self.glstate.use_occlusion_query:
+            if checkpolynode:
+                queryidx=len([item for sublist in checkpolynode.points for item in sublist])
+            else:
+                queryidx=0
+            needed=queryidx + len([item for sublist in placements for item in sublist])*2	# Twice as many for two-phase drawing
+            self.glstate.alloc_queries(needed)
+            glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
 
         # Select poly node?
-        self.selectednode=None
-        if self.clickmode==ClickModes.Undecided:
-            if len(self.selected)==1 and isinstance(self.selected[0], Polygon) and self.selected[0] in selections:
-                trysel=self.selected[0]
-            elif len(selections)==1 and isinstance(selections[0], Polygon):
-                trysel=selections[0]
+        if checkpolynode:
+            #print "selnodes",
+            if self.glstate.use_occlusion_query:
+                checkpolynode.pick_nodes(self.glstate)
+                # We'll check on the status later
             else:
-                trysel=None
-            if trysel:
-                #print "selnodes",
-                # First look for nodes in same polygon
                 glSelectBuffer(self.selectmax)
                 glRenderMode(GL_SELECT)
                 glInitNames()
                 glPushName(0)
-                trysel.picknodes()
+                checkpolynode.pick_nodes(self.glstate)
                 selectnodes=[]
                 try:
                     for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
                         selectnodes.append((int(name)>>24, int(name)&0xffffff))
                 except:	# overflow
-                    pass
+                    if __debug__: print_exc()
                 if selectnodes:
+                    # No need to look further if user has clicked on a node within selected polygon
                     self.clickmode=ClickModes.DragNode
-                    self.selected=[trysel]
                     self.selectednode=selectnodes[0]
-            
+
+                    # Restore state for unproject
+                    glMatrixMode(GL_PROJECTION)
+                    glPopMatrix()
+
+                    self.trashlists()	# selection changes
+                    self.Refresh()
+                    self.frame.ShowSel()
+                    return
+                else:
+                    self.selectednode=None
+
+        # Select placements
+        if self.glstate.use_occlusion_query:
+            self.glstate.set_instance(self.vertexcache)
+            for i in range(len(placements)-1,-1,-1):	# favour higher layers
+                for j in range(len(placements[i])):
+                    if not placements[i][j].definition.type & self.locked:
+                        glBeginQuery(GL_SAMPLES_PASSED, self.glstate.queries[queryidx])
+                        placements[i][j].draw_instance(self.glstate, False, True)
+                        glEndQuery(GL_SAMPLES_PASSED)
+                        queryidx+=1
+            self.glstate.set_dynamic(self.vertexcache)
+            glLoadIdentity()
+            for i in range(len(placements)-1,-1,-1):	# favour higher layers
+                for j in range(len(placements[i])):
+                    if not placements[i][j].definition.type & self.locked:
+                        glBeginQuery(GL_SAMPLES_PASSED, self.glstate.queries[queryidx])
+                        placements[i][j].draw_dynamic(self.glstate, False, True)
+                        glEndQuery(GL_SAMPLES_PASSED)
+                        queryidx+=1
+
+            # First check poly node status
+            queryidx=0
+            if checkpolynode:
+                for i in range(len(checkpolynode.points)):
+                    for j in range(len(checkpolynode.points[i])):
+                        if not glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
+                            queryidx+=1
+                        else:
+                            # No need to look further if user has clicked on a node within selected polygon
+                            self.clickmode=ClickModes.DragNode
+                            self.selectednode=(i,j)
+
+                            # Restore state for unproject
+                            glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
+                            glMatrixMode(GL_PROJECTION)
+                            glPopMatrix()
+
+                            self.trashlists()	# selection changes
+                            self.Refresh()
+                            self.frame.ShowSel()
+                            return		# Just abandon remaining queries
+
+            # Now check for selections
+            self.selectednode=None
+            selections=set()
+            for k in range(2):
+                for i in range(len(placements)-1,-1,-1):
+                    for j in range(len(placements[i])):
+                        if not placements[i][j].definition.type & self.locked:
+                            if placements[i][j] not in selections and glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
+                                selections.add(placements[i][j])
+                            queryidx+=1                            
+            glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
+
+        else:	# not self.glstate.use_occlusion_query
+            glSelectBuffer(self.selectmax)
+            glRenderMode(GL_SELECT)
+            glInitNames()
+            glPushName(0)
+
+            self.glstate.set_instance(self.vertexcache)
+            for i in range(len(placements)-1,-1,-1):	# favour higher layers
+                for j in range(len(placements[i])):
+                    if not placements[i][j].definition.type & self.locked:
+                        glLoadName((i<<24)+j)
+                        placements[i][j].draw_instance(self.glstate, False, True)
+            self.glstate.set_dynamic(self.vertexcache)
+            glLoadIdentity()
+            for i in range(len(placements)-1,-1,-1):	# favour higher layers
+                for j in range(len(placements[i])):
+                    if not placements[i][j].definition.type & self.locked:
+                        glLoadName((i<<24)+j)
+                        placements[i][j].draw_dynamic(self.glstate, False, True)
+            # Now check for selections
+            selections=set()
+            try:
+                for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
+                    selections.add(placements[int(name)>>24][int(name)&0xffffff])
+            except:	# overflow
+                if __debug__: print_exc()
+
         # Restore state for unproject
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()	
-        glMatrixMode(GL_MODELVIEW)
 
-        if self.selectednode:
-            self.trashlists()	# selection changes
-            self.Refresh()
-            self.frame.ShowSel()
-            return
-
-        if self.clickmode==ClickModes.DragBox:	# drag - add or remove all
+        if self.clickmode==ClickModes.DragBox:		# drag box - add or remove all selections
             if self.clickctrl:
-                self.selected=list(self.selectsaved)	# reset each time
+                self.selected=self.selectsaved.copy()	# reset each time
                 for i in selections:
-                    if not i in self.selected:
-                        self.selected.append(i)
-                    else:
+                    if i in self.selected:
                         self.selected.remove(i)
+                    else:
+                        self.selected.add(i)
             else:
-                self.selected=list(selections)
+                self.selected=selections.copy()
         else:			# click - Add or remove one
             if not selections:
+                # Start drag box
                 self.clickmode=ClickModes.DragBox
                 self.selectsaved=self.selected
             else:
@@ -869,8 +978,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.trashlists()	# selection changes
             if self.clickctrl:
                 for i in selections:
-                    if not i in self.selected:
-                        self.selected.append(i)
+                    if i not in self.selected:
+                        self.selected.add(i)
                         break
                 else:	# all selected - remove one
                     for i in self.selected:
@@ -879,16 +988,18 @@ class MyGL(wx.glcanvas.GLCanvas):
                             break
             else:
                 if not selections:
-                    self.selected=[]
-                elif selections==self.selections and len(self.selected)==1 and self.selected[0] in self.selections:
-                    # cycle through selections
-                    self.selected=[selections[(selections.index(self.selected[0])+1)%len(selections)]]
+                    self.selected=set()
+                elif selections==self.selections and len(self.selected)==1 and list(self.selected)[0] in self.selections:
+                    # cycle through selections by improvising an ordering on the set
+                    ordered=list(selections)
+                    idx=ordered.index(list(self.selected)[0])
+                    self.selected=set([ordered[(idx+1)%len(ordered)]])
                 else:
-                    self.selected=[selections[0]]
+                    self.selected=set(list(selections)[:1])
         self.selections=selections
-        if __debug__:
-            for selection in self.selected:
-                print basename(selection.definition.filename), selection.definition.layer
+        #if __debug__:
+        #    for selection in self.selected:
+        #        print basename(selection.definition.filename), selection.definition.layer
         if __debug__: print "%6.3f time in select" %(time.clock()-clock)
 
         self.Refresh()

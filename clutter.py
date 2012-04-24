@@ -434,13 +434,24 @@ class Polygon(Clutter):
         self.points[i][j]=(x,y,z)
         return node
 
-    def picknodes(self):
-        for i in range(len(self.points)):
-            for j in range(len(self.points[i])):
-                glLoadName((i<<24)+j)
-                glBegin(GL_POINTS)
-                glVertex3f(*self.points[i][j])
-                glEnd()
+    def pick_nodes(self, glstate):
+        if glstate.use_occlusion_query:
+            queryidx=0
+            for i in range(len(self.points)):
+                for j in range(len(self.points[i])):
+                    glBeginQuery(GL_SAMPLES_PASSED, glstate.queries[queryidx])
+                    glBegin(GL_POINTS)
+                    glVertex3f(*self.points[i][j])
+                    glEnd()
+                    glEndQuery(GL_SAMPLES_PASSED)
+                    queryidx+=1
+        else:
+            for i in range(len(self.points)):
+                for j in range(len(self.points[i])):
+                    glLoadName((i<<24)+j)
+                    glBegin(GL_POINTS)
+                    glVertex3f(*self.points[i][j])
+                    glEnd()
 
 
 class Beach(Polygon):
