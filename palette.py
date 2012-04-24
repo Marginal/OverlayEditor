@@ -54,7 +54,7 @@ class PaletteListBox(wx.VListBox):
                 imgno=8
             elif ext in UnknownDefs:
                 imgno=6
-            elif name in parent.bad:
+            elif realname in parent.bad:
                 imgno=16
             elif ext==PolygonDef.DRAPED:
                 imgno=4
@@ -195,14 +195,9 @@ class PaletteChoicebook(wx.Choicebook):
         wx.EVT_KILL_FOCUS(l, self.OnKillFocus)	# Prevent wx 2.9 on win32 from displaying in unfocussed color
         wx.EVT_KEY_DOWN(l, self.OnKeyDown)
     
-    def add(self, name, bad):
-        if __debug__: print "cbadd", name, bad
+    def add(self, name):
+        if __debug__: print "cbadd", name
         # Add to objects tab - assumes that this is first tab
-        if bad:
-            if name in self.bad:
-                return	# already bad
-            self.bad[name]=True
-
         l=self.lists[0]
         lookup=self.frame.canvas.lookup
         objects=dict([(realname, lookup[realname]) for (imgno, foo, realname) in l.choices])
@@ -210,14 +205,13 @@ class PaletteChoicebook(wx.Choicebook):
         l.populate(self, 'Objects', 0, objects)
         self.Refresh()
 
-        if not bad:
-            # Select added name
-            self.set(name)
-            self.frame.canvas.clearsel()
-            self.frame.statusbar.SetStatusText("", 2)
-            self.frame.toolbar.EnableTool(wx.ID_DELETE, False)
-            if self.frame.menubar:
-                self.frame.menubar.Enable(wx.ID_DELETE, False)
+        # Select added name
+        self.set(name)
+        self.frame.canvas.clearsel()
+        self.frame.statusbar.SetStatusText("", 2)
+        self.frame.toolbar.EnableTool(wx.ID_DELETE, False)
+        if self.frame.menubar:
+            self.frame.menubar.Enable(wx.ID_DELETE, False)
 
     def get(self):
         for l in self.lists:
@@ -248,28 +242,34 @@ class PaletteChoicebook(wx.Choicebook):
             if self.frame.menubar: self.frame.menubar.Enable(wx.ID_ADD, False)
 
     def markbad(self, name=None):
-        # mark name as bad, or current selection if no name
-        if name:
-            assert name in self.lookup, "%s not in lookup" % name
-            if name not in self.lookup: return
+        # Mark name as bad, or current selection if no name. Adds name if not already present.
+        if not name:
+            for l in self.lists:
+                i=l.GetSelection()
+                if i!=-1:
+                    (imgno, name, realname)=l.choices[i]
+                    if realname in self.bad: return	# already bad
+                    self.bad[realname]=True
+                    l.choices[i]=(16, name, realname)
+                    self.Refresh()
+                    return
+
+        if name in self.bad: return	# already bad
+        self.bad[name]=True
+
+        if name not in self.lookup:
+            # Add to objects tab - assumes that this is first tab
+            l=self.lists[0]
+            lookup=self.frame.canvas.lookup
+            objects=dict([(realname, lookup[realname]) for (imgno, foo, realname) in l.choices])
+            objects[name]=lookup[name]
+            l.populate(self, 'Objects', 0, objects)
+            self.Refresh()
+        else:
             (ontab,ind)=self.lookup[name]
             (imgno, name, realname)=self.lists[ontab].choices[ind]
-            if realname in self.bad: return	# already bad
             self.bad[realname]=True
             self.lists[ontab].choices[ind]=(16, name, realname)
-            return
-        for l in self.lists:
-            i=l.GetSelection()
-            if i!=-1:
-                (imgno, name, realname)=l.choices[i]
-                if realname in self.bad:
-                    return	# already bad
-                self.bad[realname]=True
-                l.choices[i]=(16, name, realname)
-                self.Refresh()
-                break
-        else:
-            assert(0)	# not found - wtf!
             return
         
 
@@ -349,7 +349,7 @@ class Palette(wx.SplitterWindow):
         return self.cb.markbad(key)
 
     def OnPaint(self, event):
-        #print "preview", self.lastkey
+        if __debug__: print "preview", self.previewkey, self.lastkey
         dc = wx.PaintDC(self.preview)
         if wx.VERSION >= (2,9):
             self.frame.canvas.SetCurrent(self.frame.canvas.context)
