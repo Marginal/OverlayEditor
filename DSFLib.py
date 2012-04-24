@@ -117,7 +117,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     if not wantoverlay and overlay:
         # only interested in mesh data - bail early
         h.close()
-        raise IOError (0, "%s is an overlay." % basename(path))
+        return (south, west, placements, nets, mesh)
         
     h.seek(headend)
 

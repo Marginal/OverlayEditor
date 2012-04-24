@@ -1,11 +1,9 @@
 import PIL.Image
 import PIL.PngImagePlugin, PIL.BmpImagePlugin, PIL.JpegImagePlugin 	# force for py2exe
 import OpenGL	# for __version__
-from OpenGL.arrays.vbo import VBO
 from OpenGL.GL import *
 from OpenGL.GL.EXT.bgra import glInitBgraEXT, GL_BGR_EXT, GL_BGRA_EXT
 from OpenGL.GL.ARB.texture_compression import glInitTextureCompressionARB, glCompressedTexImage2DARB, GL_COMPRESSED_RGB_ARB, GL_COMPRESSED_RGBA_ARB, GL_TEXTURE_COMPRESSION_HINT_ARB
-from OpenGL.GL.ARB.vertex_buffer_object import GL_STATIC_DRAW_ARB
 try:
     from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3tcEXT, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
 except:
@@ -330,7 +328,7 @@ def readLib(filename, objects, terrain):
                         lib=lib[:lib.index('/')]
                 # allow single spaces
                 obj=' '.join(c[2:]).replace(':','/').replace('\\','/')
-                if obj=='blank.obj':
+                if obj.startswith('blank.'):
                     continue	# no point adding placeholders
                 obj=join(path, normpath(obj))
                 if not exists(obj):
@@ -688,14 +686,13 @@ class VertexCache:
         self.lasttri=None	# take advantage of locality of reference
 
         self.texcache=TexCache()
-        self.instance_vbo=VBO(None, GL_STATIC_DRAW_ARB)
         self.instance_data=empty((0,5),float32)	# Copy of vbo data
         self.instance_pending=[]		# Clutter not yet allocated into vbo
         self.instance_count=0			# Allocated and pending vertices
-        self.dynamic_vbo=None
-        self.dynamic_data=empty((0,8),float32)
-        self.dynamic_pending=[]
-        self.valid=False
+        self.instance_valid=False
+        self.dynamic_data=empty((0,6),float32)
+        self.dynamic_pending={}
+        self.dynamic_valid=False
         self.dsfdirs=None	# [custom, global, default]
 
     def reset(self, terrain, dsfdirs):
@@ -712,27 +709,10 @@ class VertexCache:
         self.instance_data=empty((0,5),float32)
         self.instance_pending=[]
         self.instance_count=0
-        self.dynamic_data=empty((0,8),float32)
-        self.dynamic_pending=[]
-        self.valid=False
+        self.dynamic_data=empty((0,6),float32)
+        self.dynamic_pending={}
+        self.dynamic_valid=False
         self.lasttri=None
-
-    def realize(self, canvas):
-        # need to call this before drawing
-        if not self.valid:
-            if __debug__: clock=time.clock()	# Processor time
-            if wx.VERSION >= (2,9):
-                canvas.SetCurrent(canvas.context)
-            if self.instance_pending:
-                self.instance_data=concatenate(self.instance_pending)
-                self.instance_pending=[self.instance_data]	# so gets included in concatenate next time round
-                self.instance_vbo.set_array(self.instance_data)
-                self.instance_vbo.bind()
-                glVertexPointer(3, GL_FLOAT, 20, self.instance_vbo)
-                glTexCoordPointer(2, GL_FLOAT, 20, self.instance_vbo+12)
-            if __debug__:
-                print "%6.3f time to realize arrays" % (time.clock()-clock)
-            self.valid=True
 
     def allocate_instance(self, data):
         # cache geometry data, but don't update OpenGL arrays yet
@@ -740,13 +720,53 @@ class VertexCache:
         base=self.instance_count
         self.instance_count+=len(data)/5
         self.instance_pending.append(data)
-        self.valid=False	# new geometry -> need to update OpenGL
+        self.instance_valid=False	# new geometry -> need to update OpenGL
         return base
 
-    def allocate_dynamic(self, clutter):
+    def realize_instance(self, instance_vbo):
+        # Allocate into VBO if required. Returns True if VBO updated.
+        if not self.instance_valid:
+            if __debug__: clock=time.clock()
+            self.instance_data=concatenate(self.instance_pending)
+            self.instance_pending=[self.instance_data]	# so gets included in concatenate next time round
+            self.instance_valid=True
+            instance_vbo.set_array(self.instance_data)
+            if __debug__: print "%6.3f time to realize instance VBO" % (time.clock()-clock)
+            return True
+        else:
+            return False
+
+    def allocate_dynamic(self, placement):
         # cache geometry data, but don't update OpenGL arrays yet
-        assert isinstance(clutter,Clutter)
-        self.valid=False	# new geometry -> need to update OpenGL
+        assert isinstance(placement,Clutter)
+        if placement.dynamic_data is None:
+            # Placement's layout is cleared (e.g. prior to deletion) remove from VBO on next rebuild
+            self.dynamic_pending.pop(placement,False)
+            placement.base=None
+        else:
+            self.dynamic_pending[placement]=True
+            self.dynamic_valid=False	# new geometry -> need to update OpenGL
+
+    def realize_dynamic(self, dynamic_vbo):
+        # Allocate into VBO if required. Returns True if VBO updated.
+        if not self.dynamic_valid:
+            if __debug__: clock=time.clock()
+            data=[]
+            dynamic_count=0
+            for placement in self.dynamic_pending:
+                placement.base=dynamic_count
+                dynamic_count+=len(placement.dynamic_data)/6
+                data.append(placement.dynamic_data)
+            if data:
+                self.dynamic_data=concatenate(data)
+            else:
+                self.dynamic_data=empty((0,6),float32)
+            self.dynamic_valid=True
+            dynamic_vbo.set_array(self.dynamic_data)
+            if __debug__: print "%6.3f time to realize dynamic VBO" % (time.clock()-clock)
+            return True
+        else:
+            return False
 
     def loadMesh(self, tile, options):
         key=(tile[0],tile[1],options&Prefs.TERRAIN)
@@ -827,7 +847,6 @@ class VertexCache:
             texno=self.texcache.get(texture, flags&8, False, flags&1)
             self.meshcache.append((base, len(v), texno, flags&2))
         if __debug__: print "%6.3f time in getMesh" % (time.clock()-clock)
-        self.valid=False	# new geometry -> need to update OpenGL
         self.currenttile=tile
         return self.meshcache
 
@@ -883,7 +902,7 @@ class VertexCache:
         if likely:
             h=self.heighttest(likely, x, z)
             if h!=None: return h
-        if self.lasttri and (self.lasttri not in likely):
+        if self.lasttri is not None and (self.lasttri not in likely):
             h=self.heighttest([self.lasttri], x, z)
             if h!=None: return h
 

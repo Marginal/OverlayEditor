@@ -42,7 +42,7 @@
 
 
 from math import atan2, ceil, cos, floor, hypot, pi, radians, sin
-from numpy import array, float32, float64
+from numpy import array, array_equal, concatenate, empty, float32, float64
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from sys import maxint
@@ -56,7 +56,8 @@ except NameError:
     from OpenGL import GLU
     gluTessVertex = GLU._gluTessVertex
 
-from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox
+from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELNODE
+
 from palette import PaletteEntry
 from prefs import Prefs
 
@@ -65,16 +66,6 @@ resolution=8*65535
 minres=1.0/resolution
 maxres=1-minres
 minhdg=360.0/65535
-
-COL_UNPAINTED=(0.8, 0.8, 0.8)
-COL_POLYGON  =(0.25,0.25,0.25)
-COL_FOREST   =(0.25,0.75,0.25)
-COL_EXCLUDE  =(0.75,0.25,0.25)
-COL_NONSIMPLE=(1.0, 0.25,0.25)
-COL_SELECTED =(1.0, 0.5, 1.0)
-COL_SELNODE  =(1.0, 1.0, 1.0)
-COL_CURSOR   =(1.0, 0.25,0.25)
-
 
 def round2res(x):
     i=floor(x)
@@ -176,7 +167,6 @@ class Object(Clutter):
 
     def draw_instance(self, glstate, selected, picking):
         obj=self.definition
-        if obj.poly: return
         glLoadMatrixf(self.matrix)
         if picking:
             assert not glstate.cull
@@ -187,34 +177,20 @@ class Object(Clutter):
             glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
             assert not glstate.poly
             assert glstate.depthtest
-            if obj.culled:
-                glstate.set_cull(True)
-                glDrawArrays(GL_TRIANGLES, obj.base, obj.culled)
-            if obj.nocull:
+            if selected:	# draw rear side of selected "invisible" faces
                 glstate.set_cull(False)
-                glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
+                glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
+            else:
+                if obj.culled:
+                    glstate.set_cull(True)
+                    glDrawArrays(GL_TRIANGLES, obj.base, obj.culled)
+                if obj.nocull:
+                    glstate.set_cull(False)
+                    glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
 
     def draw_dynamic(self, glstate, selected, picking):
         # XXX move poly and draped here
-        obj=self.definition
-        if not obj.poly: return
-        glPushMatrix()
-        glLoadMatrixf(self.matrix)
-        if picking:
-            assert not glstate.cull
-            glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
-        else:
-            glstate.set_texture(obj.texture)
-            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
-            glstate.set_poly(True)
-            glstate.set_depthtest(True)
-            if obj.culled:
-                glstate.set_cull(True)
-                glDrawArrays(GL_TRIANGLES, obj.base, obj.culled)
-            if obj.nocull:
-                glstate.set_cull(False)
-                glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
-        glPopMatrix()
+        pass
 
     def draw_nodes(self, glstate, selectednode):
         pass
@@ -253,10 +229,6 @@ class Polygon(Clutter):
         if lon==None:
             Clutter.__init__(self, name)
             self.nodes=nodes		# [[(lon,lat,...)]]
-            #if __debug__:
-            #    for w in nodes:
-            #        for n in w:
-            #            if len(n)<3: print nodes
         else:
             lat=nodes
             Clutter.__init__(self, name, lat, lon)
@@ -267,8 +239,11 @@ class Polygon(Clutter):
                 self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
                                       max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size)))))
         self.param=param
+        self.nonsimple=False	# True iff non-simple and the polygon type cares about it (i.e. not Facades)
+        self.col=COL_POLYGON	# Outline colour
         self.points=[]		# list of windings in world space (x,y,z)
-        self.nonsimple=False
+        self.dynamic_data=empty((0,6),float32)	# Above laid out as array for inclusion in VBO
+        self.base=None		# Offset in VBO
 
     def __str__(self):
         return '<"%s" %d %s>' % (self.name,self.param,self.points)
@@ -309,28 +284,27 @@ class Polygon(Clutter):
     def draw_instance(self, glstate, selected, picking):
         pass
 
-    def draw_dynamic(self, glstate, selected, picking, col=COL_POLYGON):
-        # just draw outline
+    def draw_dynamic(self, glstate, selected, picking):
         if not picking:
-            glstate.set_texture(0)
-            if selected:
-                glstate.set_color(COL_SELECTED)
-            elif self.nonsimple:
-                glstate.set_color(COL_NONSIMPLE)
-            else:
-                glstate.set_color(col)
+            glstate.set_texture(None)
+            glstate.set_color(selected and COL_SELECTED or None)
+            glstate.set_depthtest(False)	# Need line to appear over terrain
+        else:
+            assert not glstate.texture
+            assert glstate.color
+        for winding in self.points:
+            glDrawArrays(GL_LINE_LOOP, self.base, len(winding))
+
+    def draw_nodes(self, glstate, selectednode):
+        # Just do it in immediate mode
+        glstate.set_texture(0)
+        assert glstate.color==COL_SELECTED
         glstate.set_depthtest(False)
         for winding in self.points:
             glBegin(GL_LINE_LOOP)
             for p in winding:
                 glVertex3f(p[0],p[1],p[2])
             glEnd()
-
-    def draw_nodes(self, glstate, selectednode):
-        print "Here"	# XXX
-        Polygon.draw_dynamic(self, glstate, True, False)	# draw lines
-        assert glstate.texture==0
-        assert glstate.depthtest==False
         glBegin(GL_POINTS)
         for i in range(len(self.points)):
             for j in range(len(self.points[i])):
@@ -343,13 +317,13 @@ class Polygon(Clutter):
         
     def clearlayout(self, vertexcache):
         self.points=[]
+        self.dynamic_data=None	# Can be removed from VBO
         vertexcache.allocate_dynamic(self)
 
     def islaidout(self):
         return self.points and True or False
 
-    def layout(self, tile, options, vertexcache, selectednode=None):
-        global tess
+    def layout_nodes(self, tile, options, vertexcache, selectednode):
         self.lat=self.lon=0
         self.points=[]
         self.nonsimple=False
@@ -377,6 +351,12 @@ class Polygon(Clutter):
         self.lat=self.lat/len(self.nodes[0])
         self.lon=self.lon/len(self.nodes[0])
 
+        return selectednode
+
+    def layout(self, tile, options, vertexcache, selectednode=None):
+        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+        col=self.nonsimple and COL_NONSIMPLE or self.col
+        self.dynamic_data=concatenate([array(p+col,float32) for w in self.points for p in w])
         vertexcache.allocate_dynamic(self)
         return selectednode
 
@@ -474,11 +454,8 @@ class Beach(Polygon):
         Polygon.load(self, lookup, defs, vertexcache, usefallback=True)
         self.definition.layer=ClutterDef.BEACHESLAYER
 
-    def draw_instance(self, glstate, selected, picking):
-        pass
-
     def draw_dynamic(self, glstate, selected, picking):
-        # Don't draw selected so can't be picked
+        # Don't draw so can't be picked
         if not picking: Polygon.draw_dynamic(self, glstate, selected, picking)
 
 
@@ -489,8 +466,7 @@ class Fitted(Polygon):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
 
     def layout(self, tile, options, vertexcache, selectednode=None):
-        # insert intermediate nodes
-        #XXX
+        # insert intermediate nodes XXX
         return Polygon.layout(self, tile, options, vertexcache, selectednode)
 
 
@@ -498,7 +474,6 @@ class Draped(Polygon):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
-        self.tris=[]	# tesellated tris
 
     def clone(self):
         return Draped(self.name, self.param, [list(w) for w in self.nodes])
@@ -532,31 +507,19 @@ class Draped(Polygon):
         else:
             return '%s  Tex hdg: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw_instance(self, glstate, selected, picking):
-        pass
-
     def draw_dynamic(self, glstate, selected, picking):
-        drp=self.definition
         if self.nonsimple:
             Polygon.draw_dynamic(self, glstate, selected, picking)
             return
         elif picking:
-            Polygon.draw_dynamic(self, glstate, selected, picking)	# for outline
-        else:
-            glstate.set_texture(drp.texture)
-            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
-            glstate.set_cull(True)
-            glstate.set_poly(True)
-            glstate.set_depthtest(True)
-        glBegin(GL_TRIANGLES)
-        if picking:
-            for t in self.tris:
-                glVertex3f(*t[0])
-        else:
-            for t in self.tris:
-                glTexCoord2f(*t[2])
-                glVertex3f(*t[0])
-        glEnd()
+            glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+            return
+        glstate.set_texture(self.definition.texture)
+        glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+        glstate.set_cull(True)
+        glstate.set_poly(True)
+        glstate.set_depthtest(True)
+        glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
         
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         if self.param==65535:
@@ -648,8 +611,7 @@ class Draped(Polygon):
 
     def layout(self, tile, options, vertexcache, selectednode=None):
         global tess, csgt
-        self.nonsimple=False
-        selectednode=Polygon.layout(self, tile, options, vertexcache, selectednode)
+        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
         # tessellate. This is just to get UV data and check polygon is simple
         if self.param!=65535:
             drp=self.definition
@@ -673,27 +635,32 @@ class Draped(Polygon):
                 gluTessEndContour(tess)
             gluTessEndPolygon(tess)
 
-            if not tris:
-                if __debug__: print "Draped layout failed - no tris"
-                self.nonsimple=True
-                return selectednode
+            if __debug__:
+                if not tris: print "Draped layout failed - no tris"
 
-            if not options&Prefs.ELEVATION:
-                self.tris=tris
-                return selectednode
         except:
             # Combine required -> not simple
             if __debug__:
                 print "Draped layout failed:"
                 print_exc()
+                tris=[]
+
+        if not tris:
             self.nonsimple=True
+            self.dynamic_data=concatenate([array(p+COL_NONSIMPLE,float32) for w in self.points for p in w])
+            vertexcache.allocate_dynamic(self)
+            return selectednode
+
+        if not options&Prefs.ELEVATION:
+            self.dynamic_data=concatenate([array(v[0]+v[2]+(0,),float32) for v in tris])
+            vertexcache.allocate_dynamic(self)
             return selectednode
 
         # tessellate again, this time in CSG mode against terrain
         minx=minz=maxint
         maxx=maxz=-maxint
-        self.tris=[]
-        gluTessBeginPolygon(csgt, self.tris)
+        csgttris=[]
+        gluTessBeginPolygon(csgt, csgttris)
         for i in range(len(self.nodes)):
             n=len(self.nodes[i])
             gluTessBeginContour(csgt)
@@ -705,13 +672,13 @@ class Draped(Polygon):
                     maxz=max(maxz, self.points[i][j][2])
                 if self.param==65535:
                     if len(self.nodes[i][j])>=6:
-                        uv=self.nodes[i][j][4:6]
+                        uv=list(self.nodes[i][j][4:6])
                     else:
-                        uv=self.nodes[i][j][2:4]
+                        uv=list(self.nodes[i][j][2:4])
                 else:
-                    uv=((self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale,
-                        (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale)
-                gluTessVertex(csgt, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), (self.points[i][j], False, uv))
+                    uv=[(self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale,
+                        (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale]
+                gluTessVertex(csgt, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), (list(self.points[i][j]), False, uv))
             gluTessEndContour(csgt)
         abox=BBox(minx, maxx, minz, maxz)
 
@@ -756,16 +723,19 @@ class Draped(Polygon):
                             zp=z-z0
                             a=(xp*z2-x2*zp)/(x1*z2-x2*z1)
                             b=(xp*z1-x1*zp)/(x2*z1-x1*z2)
-                            uv=(tris[t][2][0]+a*(tris[t+1][2][0]-tris[t][2][0])+b*(tris[t+2][2][0]-tris[t][2][0]),
-                                tris[t][2][1]+a*(tris[t+1][2][1]-tris[t][2][1])+b*(tris[t+2][2][1]-tris[t][2][1]))
+                            uv=[tris[t][2][0]+a*(tris[t+1][2][0]-tris[t][2][0])+b*(tris[t+2][2][0]-tris[t][2][0]),
+                                tris[t][2][1]+a*(tris[t+1][2][1]-tris[t][2][1])+b*(tris[t+2][2][1]-tris[t][2][1])]
                             break
                     else:
                         # Provide something in case tessellation screws up
-                        uv=(0,0)
+                        uv=[0,0]
                     gluTessVertex(csgt, array([x,0,z],float64), (meshpt[m],True, uv))
                 gluTessEndContour(csgt)
 
         gluTessEndPolygon(csgt)
+
+        self.dynamic_data=concatenate([array(v[0]+v[2]+[0],float32) for v in csgttris])
+        vertexcache.allocate_dynamic(self)
         return selectednode
 
 
@@ -812,9 +782,10 @@ class Exclude(Fitted):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if lon==None:
-            self.nodes=nodes		# [[(lon,lat,...)]]
+            Fitted.__init__(self, name, param, nodes)
         else:
             lat=nodes
+            Fitted.__init__(self, name, param, lat, lon)
             self.nodes=[[]]
             size=0.000005*size
             for (lon,lat) in [(self.lon-size,self.lat-size),
@@ -823,7 +794,7 @@ class Exclude(Fitted):
                               (self.lon-size,self.lat+size)]:
                 self.nodes[0].append((max(floor(self.lon), min(floor(self.lon)+1, round2res(lon))),
                                       max(floor(self.lat), min(floor(self.lat)+1, round2res(lat)))))
-        Fitted.__init__(self, name, param, self.nodes)
+        self.col=COL_EXCLUDE
 
     def clone(self):
         return Exclude(self.name, self.param, [list(w) for w in self.nodes])
@@ -869,19 +840,11 @@ class Exclude(Fitted):
         # changed adjacent nodes, so do full layout immediately
         return self.layout(tile, options, vertexcache, node)
 
-    def draw_instance(self, glstate, selected, picking):
-        pass
-
-    def draw_dynamic(self, glstate, selected, picking):
-        Polygon.draw_dynamic(self, glstate, selected, picking, COL_EXCLUDE)
-
 
 class Facade(Polygon):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
-        self.quads=[]		# list of points (x,y,z,s,t)
-        self.roof=[]		# list of points (x,y,z,s,t)
 
     def clone(self):
         return Facade(self.name, self.param, [list(w) for w in self.nodes])
@@ -925,48 +888,23 @@ class Facade(Polygon):
 
     def draw_dynamic(self, glstate, selected, picking):
         fac=self.definition
-        if self.nonsimple or (not self.quads and not self.roof):
+        if self.nonsimple:
             Polygon.draw_dynamic(self, glstate, selected, picking)
             return
         elif picking:
-            Polygon.draw_dynamic(self, glstate, selected, picking)
-        else:
-            glstate.set_texture(fac.texture)
-            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
-            glstate.set_cull(not fac.two_sided)
-            glstate.set_poly(False)
-            glstate.set_depthtest(True)
-        if self.quads:
-            glBegin(GL_QUADS)
-            for p in self.quads:
-                glTexCoord2f(p[3],p[4])
-                glVertex3f(p[0],p[1],p[2])
-            glEnd()
-        if self.roof:
-            glBegin(GL_TRIANGLE_FAN)	# Better for concave
-            for p in self.roof+[self.roof[1]]:
-                glTexCoord2f(p[3],p[4])
-                glVertex3f(p[0],p[1],p[2])
-            glEnd()
+            Polygon.draw_dynamic(self, glstate, selected, picking)	# for outline
+            glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+            return
+        glstate.set_texture(fac.texture)
+        glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+        glstate.set_cull(not fac.two_sided)
+        glstate.set_poly(False)
+        glstate.set_depthtest(True)
+        glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
         
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam=max(dparam, 1-self.param)	# can't have height 0
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
-        
-    def layout(self, tile, options, vertexcache, selectednode=None):
-        selectednode=Polygon.layout(self, tile, options, vertexcache, selectednode)
-        self.quads=[]
-        self.roof=[]
-        try:
-            self.layoutquads(tile, options, vertexcache)
-        except:
-            # layout error
-            if __debug__:
-                print "Facade layout failed:"
-                print_exc()
-            self.quads=[]
-            self.roof=[]
-        return selectednode
         
     # Helper for layout
     def subdiv(self, size, scale, divs, ends, isvert):
@@ -1010,142 +948,169 @@ class Facade(Polygon):
         else:
             return (points,size/cumsize)
 
+    def layout(self, tile, options, vertexcache, selectednode=None):
+        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+        try:
+            fac=self.definition
+            points=self.points[0]
+            n=len(points)
+            (vert,vscale)=self.subdiv(self.param, fac.vscale, fac.vert,fac.vends, True)
+            roofheight=0
+            for i in range(len(vert)):
+                roofheight+=(fac.vert[vert[i]][1]-fac.vert[vert[i]][0])
+            roofheight*=fac.vscale	# not scaled to fit
 
-    # Helper for layout
-    def layoutquads(self, tile, options, vertexcache):
-        fac=self.definition
-        points=self.points[0]
-        n=len(points)
+            if fac.roof_slope:
+                roofpts=[]
+                dist=sin(radians(fac.roof_slope))*fac.vscale*(fac.vert[vert[-1]][1]-fac.vert[vert[-1]][0])
+                for i in range(n):
+                    if i==n-1 and not fac.ring:
+                        tonext=(points[i][0]-points[i-1][0],
+                                points[i][2]-points[i-1][2])
+                    else:
+                        tonext=(points[(i+1)%n][0]-points[i][0],
+                                points[(i+1)%n][2]-points[i][2])
+                    m=hypot(*tonext)
+                    tonext=(tonext[0]/m, tonext[1]/m)
+                    toprev=(points[(i-1)%n][0]-points[i][0],
+                            points[(i-1)%n][2]-points[i][2])
+                    m=hypot(*toprev)
+                    toprev=(toprev[0]/m, toprev[1]/m)
+                    d=toprev[0]*tonext[1]-toprev[1]*tonext[0]
+                    if n==2 or d==0 or (not fac.ring and (i==0 or i==n-1)):
+                        roofpts.append((points[i][0]+dist*tonext[1],
+                                        points[i][1]+roofheight,
+                                        points[i][2]-dist*tonext[0]))
+                    else:
+                        # http://astronomy.swin.edu.au/~pbourke/geometry/lineline2d
+                        u=(toprev[0]*(dist*tonext[0]+dist*toprev[0])+
+                           toprev[1]*(dist*tonext[1]+dist*toprev[1]))/d
+                        roofpts.append((points[i][0]+dist*tonext[1]+u*tonext[0],
+                                        points[i][1]+roofheight,
+                                        points[i][2]-dist*tonext[0]+u*tonext[1]))
+            else:
+                roofpts=[(points[i][0], points[i][1]+roofheight, points[i][2]) for i in range(n)]
 
-        (vert,vscale)=self.subdiv(self.param, fac.vscale, fac.vert,fac.vends, True)
-        roofheight=0
-        for i in range(len(vert)):
-            roofheight+=(fac.vert[vert[i]][1]-fac.vert[vert[i]][0])
-        roofheight*=fac.vscale	# not scaled to fit
-        
-        if fac.roof_slope:
-            roofpts=[]
-            dist=sin(radians(fac.roof_slope))*fac.vscale*(fac.vert[vert[-1]][1]-fac.vert[vert[-1]][0])
-            for i in range(n):
-                if i==n-1 and not fac.ring:
-                    tonext=(points[i][0]-points[i-1][0],
-                            points[i][2]-points[i-1][2])
-                else:
-                    tonext=(points[(i+1)%n][0]-points[i][0],
-                            points[(i+1)%n][2]-points[i][2])
-                m=hypot(*tonext)
-                tonext=(tonext[0]/m, tonext[1]/m)
-                toprev=(points[(i-1)%n][0]-points[i][0],
-                        points[(i-1)%n][2]-points[i][2])
-                m=hypot(*toprev)
-                toprev=(toprev[0]/m, toprev[1]/m)
-                d=toprev[0]*tonext[1]-toprev[1]*tonext[0]
-                if n==2 or d==0 or (not fac.ring and (i==0 or i==n-1)):
-                    roofpts.append((points[i][0]+dist*tonext[1],
-                                    points[i][1]+roofheight,
-                                    points[i][2]-dist*tonext[0]))
-                else:
-                    # http://astronomy.swin.edu.au/~pbourke/geometry/lineline2d
-                    u=(toprev[0]*(dist*tonext[0]+dist*toprev[0])+
-                       toprev[1]*(dist*tonext[1]+dist*toprev[1]))/d
-                    roofpts.append((points[i][0]+dist*tonext[1]+u*tonext[0],
-                                    points[i][1]+roofheight,
-                                    points[i][2]-dist*tonext[0]+u*tonext[1]))
-        else:
-            roofpts=[(points[i][0], points[i][1]+roofheight, points[i][2]) for i in range(n)]
-
-        for wall in range(n-1+fac.ring):
-            size=hypot(points[(wall+1)%n][0]-points[wall][0],
-                       points[(wall+1)%n][2]-points[wall][2])
-            if size==0: continue
-            h=((points[(wall+1)%n][0]-points[wall][0])/size,
-               (points[(wall+1)%n][1]-points[wall][1])/size,
-               (points[(wall+1)%n][2]-points[wall][2])/size)
-            r=((roofpts[(wall+1)%n][0]-roofpts[wall][0])/size,
-               (roofpts[(wall+1)%n][1]-roofpts[wall][1])/size,
-               (roofpts[(wall+1)%n][2]-roofpts[wall][2])/size)
-            (horiz,hscale)=self.subdiv(size, fac.hscale, fac.horiz, fac.hends,False)
-            cumheight=0
-            for i in range(len(vert)-1):
-                heightinc=fac.vscale*(fac.vert[vert[i]][1]-fac.vert[vert[i]][0])
+            data=[]
+            quads=[]
+            for wall in range(n-1+fac.ring):
+                size=hypot(points[(wall+1)%n][0]-points[wall][0],
+                           points[(wall+1)%n][2]-points[wall][2])
+                if size==0: continue
+                h=((points[(wall+1)%n][0]-points[wall][0])/size,
+                   (points[(wall+1)%n][1]-points[wall][1])/size,
+                   (points[(wall+1)%n][2]-points[wall][2])/size)
+                r=((roofpts[(wall+1)%n][0]-roofpts[wall][0])/size,
+                   (roofpts[(wall+1)%n][1]-roofpts[wall][1])/size,
+                   (roofpts[(wall+1)%n][2]-roofpts[wall][2])/size)
+                (horiz,hscale)=self.subdiv(size, fac.hscale, fac.horiz, fac.hends,False)
+                cumheight=0
+                for i in range(len(vert)-1):
+                    heightinc=fac.vscale*(fac.vert[vert[i]][1]-fac.vert[vert[i]][0])
+                    cumwidth=0
+                    for j in range(len(horiz)):
+                        widthinc=hscale*(fac.horiz[horiz[j]][1]-fac.horiz[horiz[j]][0])
+                        quads.append((points[wall][0]+h[0]*cumwidth,
+                                      points[wall][1]+h[1]*cumwidth+cumheight,
+                                      points[wall][2]+h[2]*cumwidth,
+                                      fac.horiz[horiz[j]][0],
+                                      fac.vert[vert[i]][0]))
+                        quads.append((points[wall][0]+h[0]*cumwidth,
+                                      points[wall][1]+h[1]*cumwidth+cumheight+heightinc,
+                                      points[wall][2]+h[2]*cumwidth,
+                                      fac.horiz[horiz[j]][0],
+                                      fac.vert[vert[i]][1]))
+                        quads.append((points[wall][0]+h[0]*(cumwidth+widthinc),
+                                      points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight+heightinc,
+                                      points[wall][2]+h[2]*(cumwidth+widthinc),
+                                      fac.horiz[horiz[j]][1],
+                                      fac.vert[vert[i]][1]))
+                        quads.append((points[wall][0]+h[0]*(cumwidth+widthinc),
+                                      points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight,
+                                      points[wall][2]+h[2]*(cumwidth+widthinc),
+                                      fac.horiz[horiz[j]][1],
+                                      fac.vert[vert[i]][0]))
+                        cumwidth+=widthinc
+                    cumheight+=heightinc
+                # penthouse
                 cumwidth=0
                 for j in range(len(horiz)):
+                    if not len(vert): continue
                     widthinc=hscale*(fac.horiz[horiz[j]][1]-fac.horiz[horiz[j]][0])
-                    self.quads.append((points[wall][0]+h[0]*cumwidth,
-                                       points[wall][1]+h[1]*cumwidth+cumheight,
-                                       points[wall][2]+h[2]*cumwidth,
-                                       fac.horiz[horiz[j]][0],
-                                       fac.vert[vert[i]][0]))
-                    self.quads.append((points[wall][0]+h[0]*cumwidth,
-                                       points[wall][1]+h[1]*cumwidth+cumheight+heightinc,
-                                       points[wall][2]+h[2]*cumwidth,
-                                       fac.horiz[horiz[j]][0],
-                                       fac.vert[vert[i]][1]))
-                    self.quads.append((points[wall][0]+h[0]*(cumwidth+widthinc),
-                                       points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight+heightinc,
-                                       points[wall][2]+h[2]*(cumwidth+widthinc),
-                                       fac.horiz[horiz[j]][1],
-                                       fac.vert[vert[i]][1]))
-                    self.quads.append((points[wall][0]+h[0]*(cumwidth+widthinc),
-                                       points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight,
-                                       points[wall][2]+h[2]*(cumwidth+widthinc),
-                                       fac.horiz[horiz[j]][1],
-                                       fac.vert[vert[i]][0]))
+                    quads.append((points[wall][0]+h[0]*cumwidth,
+                                  points[wall][1]+h[1]*cumwidth+cumheight,
+                                  points[wall][2]+h[2]*cumwidth,
+                                  fac.horiz[horiz[j]][0],
+                                  fac.vert[vert[-1]][0]))
+                    quads.append((roofpts[wall][0]+r[0]*cumwidth,
+                                  roofpts[wall][1]+r[1]*cumwidth,
+                                  roofpts[wall][2]+r[2]*cumwidth,
+                                  fac.horiz[horiz[j]][0],
+                                  fac.vert[vert[-1]][1]))
+                    quads.append((roofpts[wall][0]+r[0]*(cumwidth+widthinc),
+                                  roofpts[wall][1]+r[1]*(cumwidth+widthinc),
+                                  roofpts[wall][2]+r[2]*(cumwidth+widthinc),
+                                  fac.horiz[horiz[j]][1],
+                                  fac.vert[vert[-1]][1]))
+                    quads.append((points[wall][0]+h[0]*(cumwidth+widthinc),
+                                  points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight,
+                                  points[wall][2]+h[2]*(cumwidth+widthinc),
+                                  fac.horiz[horiz[j]][1],
+                                  fac.vert[vert[-1]][0]))
                     cumwidth+=widthinc
-                cumheight+=heightinc
-            # penthouse
-            cumwidth=0
-            for j in range(len(horiz)):
-                if not len(vert): continue
-                widthinc=hscale*(fac.horiz[horiz[j]][1]-fac.horiz[horiz[j]][0])
-                self.quads.append((points[wall][0]+h[0]*cumwidth,
-                                   points[wall][1]+h[1]*cumwidth+cumheight,
-                                   points[wall][2]+h[2]*cumwidth,
-                                   fac.horiz[horiz[j]][0],
-                                   fac.vert[vert[-1]][0]))
-                self.quads.append((roofpts[wall][0]+r[0]*cumwidth,
-                                   roofpts[wall][1]+r[1]*cumwidth,
-                                   roofpts[wall][2]+r[2]*cumwidth,
-                                   fac.horiz[horiz[j]][0],
-                                   fac.vert[vert[-1]][1]))
-                self.quads.append((roofpts[wall][0]+r[0]*(cumwidth+widthinc),
-                                   roofpts[wall][1]+r[1]*(cumwidth+widthinc),
-                                   roofpts[wall][2]+r[2]*(cumwidth+widthinc),
-                                   fac.horiz[horiz[j]][1],
-                                   fac.vert[vert[-1]][1]))
-                self.quads.append((points[wall][0]+h[0]*(cumwidth+widthinc),
-                                   points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight,
-                                   points[wall][2]+h[2]*(cumwidth+widthinc),
-                                   fac.horiz[horiz[j]][1],
-                                   fac.vert[vert[-1]][0]))
-                cumwidth+=widthinc
 
-        # roof
-        if n<=2 or not fac.ring or not fac.roof: return
-        minx=minz=maxint
-        maxx=maxz=-maxint
-        for i in roofpts:
-            minx=min(minx,i[0])
-            maxx=max(maxx,i[0])
-            minz=min(minz,i[2])
-            maxz=max(maxz,i[2])
-        xscale=(fac.roof[2][0]-fac.roof[0][0])/(maxx-minx)
-        zscale=(fac.roof[2][1]-fac.roof[0][1])/(maxz-minz)
-        (x,z)=self.position(tile, self.lat,self.lon)
-        y=vertexcache.height(tile,options,x,z)+roofheight
-        self.roof=[(x, y, z,
-                    fac.roof[0][0] + (x-minx)*xscale,
-                    fac.roof[0][1] + (z-minz)*zscale)]
-        if n<=4:
-            for i in range(len(roofpts)-1, -1, -1):
-                self.roof.append((roofpts[i][0], roofpts[i][1], roofpts[i][2],
-                                  fac.roof[3-i][0], fac.roof[3-i][1]))
-            return
-        for i in range(len(roofpts)-1, -1, -1):
-            self.roof.append((roofpts[i][0], roofpts[i][1], roofpts[i][2],
-                              fac.roof[0][0] + (roofpts[i][0]-minx)*xscale,
-                              fac.roof[0][1] + (roofpts[i][2]-minz)*zscale))
-        return
+            for i in range(0,len(quads),4):
+                data.extend([array(quads[i  ]+(0,),float32),
+                             array(quads[i+1]+(0,),float32),
+                             array(quads[i+2]+(0,),float32),
+                             array(quads[i  ]+(0,),float32),
+                             array(quads[i+2]+(0,),float32),
+                             array(quads[i+3]+(0,),float32)])
+            
+            # roof
+            root=[]
+            if n>2 and fac.ring and fac.roof:
+                minx=minz=maxint
+                maxx=maxz=-maxint
+                for i in roofpts:
+                    minx=min(minx,i[0])
+                    maxx=max(maxx,i[0])
+                    minz=min(minz,i[2])
+                    maxz=max(maxz,i[2])
+                xscale=(fac.roof[2][0]-fac.roof[0][0])/(maxx-minx)
+                zscale=(fac.roof[2][1]-fac.roof[0][1])/(maxz-minz)
+                (x,z)=self.position(tile, self.lat,self.lon)
+                y=vertexcache.height(tile,options,x,z)+roofheight
+                roof=[(x, y, z,
+                       fac.roof[0][0] + (x-minx)*xscale,
+                       fac.roof[0][1] + (z-minz)*zscale)]
+                if n<=4:
+                    for i in range(len(roofpts)-1, -1, -1):
+                        roof.append((roofpts[i][0], roofpts[i][1], roofpts[i][2],
+                                     fac.roof[3-i][0], fac.roof[3-i][1]))
+                else:
+                    for i in range(len(roofpts)-1, -1, -1):
+                        roof.append((roofpts[i][0], roofpts[i][1], roofpts[i][2],
+                                     fac.roof[0][0] + (roofpts[i][0]-minx)*xscale,
+                                     fac.roof[0][1] + (roofpts[i][2]-minz)*zscale))
+                for i in range(1,len(roofpts)-1):
+                    data.extend([array(roof[0  ]+(0,),float32),
+                                 array(roof[i]+(0,),float32),
+                                 array(roof[i+1]+(0,),float32)])
+
+            if not data: raise AssertionError	# wtf
+            self.dynamic_data=concatenate(data)
+
+        except:
+            # layout error
+            if __debug__:
+                print "Facade layout failed:"
+                print_exc()
+            self.nonsimple=True
+            self.dynamic_data=concatenate([array(p+COL_NONSIMPLE,float32) for w in self.points for p in w])
+
+        vertexcache.allocate_dynamic(self)
+        return selectednode
 
 
 class Forest(Fitted):
@@ -1153,6 +1118,7 @@ class Forest(Fitted):
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if param==None: param=127
         Fitted.__init__(self, name, param, nodes, lon, size, hdg)
+        self.col=COL_FOREST
 
     def clone(self):
         return Forest(self.name, self.param, [list(w) for w in self.nodes])
@@ -1187,9 +1153,6 @@ class Forest(Fitted):
     def draw_instance(self, glstate, selected, picking):
         pass
 
-    def draw_dynamic(self, glstate, selected, picking):
-        Polygon.draw_dynamic(self, glstate, selected, picking, COL_FOREST)
-
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
         if self.param>255: self.param=255
@@ -1213,7 +1176,7 @@ class Forest(Fitted):
         return self.layout(tile, options, vertexcache, (i-1,0))
 
     def layout(self, tile, options, vertexcache, selectednode=None):
-        selectednode=Polygon.layout(self, tile, options, vertexcache, selectednode)
+        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
 
         # tessellate. This is just to check polygon is simple
         try:
@@ -1234,6 +1197,11 @@ class Forest(Fitted):
                 print "Forest layout failed:"
                 print_exc()
             self.nonsimple=True
+
+        col=self.nonsimple and COL_NONSIMPLE or self.col
+        self.dynamic_data=concatenate([array(p+col,float32) for w in self.points for p in w])
+        vertexcache.allocate_dynamic(self)
+        return selectednode
 
 
 class Line(Polygon):
@@ -1385,7 +1353,7 @@ class Network(Fitted):
             # Can't pick if no elevation
             if not self.laidoutwithelevation: return
         else:
-            glstate.set_texture(0)
+            glstate.set_texture(None)
             if selected:
                 glstate.set_color(COL_SELECTED)
             else:
@@ -1411,6 +1379,7 @@ class Network(Fitted):
     def clearlayout(self, vertexcache):
         self.laidoutwithelevation=False
         self.points=[]
+        self.dynamic_data=None	# Can be removed from VBO
         vertexcache.allocate_dynamic(self)
 
     def islaidout(self):
@@ -1511,7 +1480,7 @@ def csgtcombine(coords, vertex, weight):
     #print vertex[3], weight[3]
 
     # check for just two adjacent mesh triangles
-    if vertex[0]==vertex[1]:
+    if array_equal(vertex[0][0],vertex[1][0]) and vertex[0][1]==vertex[1][1] and vertex[0][2]==vertex[1][2]:
         # common case, or non-simple
         #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
         #print vertex[0], " ->"
@@ -1553,8 +1522,8 @@ def csgtcombine(coords, vertex, weight):
             uv=p3[2]
         else:
             ratio=(hypot(coords[0]-p3[0][0], coords[2]-p3[0][2])/d)
-            uv=(p3[2][0]+ratio*(p4[2][0]-p3[2][0]),
-                p3[2][1]+ratio*(p4[2][1]-p3[2][1]))
+            uv=[p3[2][0]+ratio*(p4[2][0]-p3[2][0]),
+                p3[2][1]+ratio*(p4[2][1]-p3[2][1])]
 
     #print ([coords[0],y,coords[2]], True, uv), " ->"
     #assert(uv)	# only if draped

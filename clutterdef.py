@@ -12,6 +12,17 @@ if __debug__:
 
 from lock import Locked
 
+COL_WHITE    =(1.0, 1.0, 1.0)
+COL_UNPAINTED=(0.8, 0.8, 0.8)
+COL_POLYGON  =(0.25,0.25,0.25)
+COL_FOREST   =(0.25,0.75,0.25)
+COL_EXCLUDE  =(0.75,0.25,0.25)
+COL_NONSIMPLE=(1.0, 0.25,0.25)
+COL_SELECTED =(1.0, 0.5, 1.0)
+COL_DRAGBOX  =(0.75,0.325,0.75)
+COL_SELNODE  =(1.0, 1.0, 1.0)
+COL_CURSOR   =(1.0, 0.25,0.25)
+
 fallbacktexture='Resources/fallback.png'
 
 class BBox:
@@ -420,8 +431,7 @@ class ObjectDef(ClutterDef):
     def preview(self, canvas, vertexcache):
         if not self.canpreview: return None
         self.allocate(vertexcache, canvas.defs)
-        vertexcache.realize(canvas)
-        canvas.SetCurrent()
+        canvas.glstate.set_instance(vertexcache)
         xoff=canvas.GetClientSize()[0]-ClutterDef.PREVIEWSIZE
         glViewport(xoff, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
@@ -436,14 +446,13 @@ class ObjectDef(ClutterDef):
                     sizez*0.255 + sizex*0.44)	# depth at 30degrees / 2
         glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
         glMatrixMode(GL_MODELVIEW)
-        glPushMatrix()
         glLoadIdentity()
         glRotatef( 30, 1,0,0)
         glRotatef(120, 0,1,0)
         glTranslatef(sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz)
         if __debug__:
-            glColor3f(0.8, 0.8, 0.8)	# Unpainted
-            glBindTexture(GL_TEXTURE_2D, 0)
+            canvas.glstate.set_texture(0)
+            canvas.glstate.set_color(COL_UNPAINTED)
             for height in [0, self.height]:
                 glBegin(GL_LINE_LOOP)
                 glVertex3f(self.bbox.minx, height, self.bbox.minz)
@@ -451,27 +460,26 @@ class ObjectDef(ClutterDef):
                 glVertex3f(self.bbox.maxx, height, self.bbox.maxz)
                 glVertex3f(self.bbox.minx, height, self.bbox.maxz)
                 glEnd()
-        glColor3f(1.0, 0.25, 0.25)	# Cursor
+        canvas.glstate.set_color(COL_CURSOR)
         glBegin(GL_POINTS)
         glVertex3f(0, 0, 0)
         glEnd()
-        glColor3f(0.8, 0.8, 0.8)	# Unpainted
-        glEnable(GL_DEPTH_TEST)
-        glDepthMask(GL_TRUE)
-        glBindTexture(GL_TEXTURE_2D, self.texture)
+        canvas.glstate.set_texture(self.texture)
+        canvas.glstate.set_color(COL_UNPAINTED)
+        canvas.glstate.set_depthtest(True)
+        canvas.glstate.set_poly(False)
         if self.culled:
+            canvas.glstate.set_cull(True)
             glDrawArrays(GL_TRIANGLES, self.base, self.culled)
         if self.nocull:
-            glDisable(GL_CULL_FACE)
+            canvas.glstate.set_cull(False)
             glDrawArrays(GL_TRIANGLES, self.base+self.culled, self.nocull)
-            glEnable(GL_CULL_FACE)
         #glFinish()	# redundant
         data=glReadPixels(xoff,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
         
         # Restore state for unproject & selection
-        glPopMatrix()
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()	
         glMatrixMode(GL_MODELVIEW)
@@ -519,7 +527,6 @@ class PolygonDef(ClutterDef):
 
     def preview(self, canvas, vertexcache, l=0, b=0, r=1, t=1, hscale=1):
         if not self.texture or not self.canpreview: return None
-        canvas.SetCurrent()
         glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
@@ -527,10 +534,9 @@ class PolygonDef(ClutterDef):
         glPushMatrix()
         glLoadIdentity()
         glMatrixMode(GL_MODELVIEW)
-        glPushMatrix()
         glLoadIdentity()
-        glColor3f(1.0, 1.0, 1.0)
-        glBindTexture(GL_TEXTURE_2D, self.texture)
+        canvas.glstate.set_texture(self.texture)
+        canvas.glstate.set_color(COL_WHITE)
         glBegin(GL_QUADS)
         glTexCoord2f(l,b)
         glVertex3f(-hscale,  1, 0)
@@ -546,7 +552,6 @@ class PolygonDef(ClutterDef):
         img.SetData(data)
         
         # Restore state for unproject & selection
-        glPopMatrix()
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()	
         glMatrixMode(GL_MODELVIEW)
@@ -933,8 +938,7 @@ class NetworkDef(PolygonDef):
     def preview(self, canvas, vertexcache):
         print "Preview", self.name, self.width, self.length, self.height
         self.allocate(vertexcache, canvas.defs)
-        vertexcache.realize(canvas)
-        canvas.SetCurrent()
+        canvas.glstate.set_instance(veretxcache)
         glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
@@ -949,14 +953,13 @@ class NetworkDef(PolygonDef):
                     self.length*2+self.width/4)	# eg PrimaryDividedWithSidewalksBridge
         glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
         glMatrixMode(GL_MODELVIEW)
-        glPushMatrix()
         glLoadIdentity()
         glRotatef( 30, 1,0,0)
         glRotatef(120, 0,1,0)
         glTranslatef(0, height, -self.length*2)
-        glColor3f(0.8, 0.8, 0.8)	# Unpainted
-        glBindTexture(GL_TEXTURE_2D, self.texture)
-        glDisable(GL_CULL_FACE)
+        canvas.glstate.set_texture(self.texture)
+        canvas.glstate.set_color(COL_UNPAINTED)
+        canvas.glstate.set_cull(False)
         glBegin(GL_QUADS)
         for (lat1, vert1, s1, lat2, vert2, s2) in self.segments:
             print lat1, vert1, s1, lat2, vert2, s2
@@ -974,7 +977,7 @@ class NetworkDef(PolygonDef):
                 glVertex3f(lat1, vert1, length)
         glEnd()
         
-        glEnable(GL_CULL_FACE)
+        canvas.glstate.set_cull(True)
         for i in range(len(self.objs)):
             (filename, lateral, onground, freq, offset)=self.objs[i]
             print lateral, freq, offset, filename
@@ -990,8 +993,6 @@ class NetworkDef(PolygonDef):
                 glTranslatef(0, 0, freq)
                 dist+=freq
             glPopMatrix()
-        glEnable(GL_CULL_FACE)
-                
 
         #glFinish()	# redundant
         data=glReadPixels(0,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
@@ -999,7 +1000,6 @@ class NetworkDef(PolygonDef):
         img.SetData(data)
         
         # Restore state for unproject & selection
-        glPopMatrix()
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()	
         glMatrixMode(GL_MODELVIEW)
