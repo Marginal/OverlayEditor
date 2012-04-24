@@ -28,6 +28,9 @@ except:
     tkMessageBox.showerror("Error", "wxPython is not installed.\nThis application requires wxPython 2.5.3 or later.")
     exit(1)
 from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
+if not __debug__ and hasattr(wx,'wxPyDeprecationWarning'):
+    import warnings
+    warnings.simplefilter('ignore', wx.wxPyDeprecationWarning)
 
 try:
     import OpenGL
@@ -38,6 +41,9 @@ try:
         else:
             OpenGL.ERROR_CHECKING=False	# don't check OGL errors for speed
             OpenGL.ERROR_LOGGING =False	# or log
+        if platform=='win32':
+            # force for py2exe
+            from OpenGL.platform import win32
         import OpenGL.arrays.numpymodule
         import OpenGL.arrays.ctypesarrays
 except:
@@ -166,19 +172,19 @@ class myListBox(wx.VListBox):
 
     def OnKeyDown(self, event):
         # wxMac 2.5 doesn't handle cursor movement
-        if event.m_keyCode in [wx.WXK_UP, wx.WXK_NUMPAD_UP] and self.GetSelection()>0:
+        if event.GetKeyCode() in [wx.WXK_UP, wx.WXK_NUMPAD_UP] and self.GetSelection()>0:
             self.SetSelection(self.GetSelection()-1)
-        elif event.m_keyCode in [wx.WXK_DOWN, wx.WXK_NUMPAD_DOWN] and self.GetSelection()<len(self.choices)-1:
+        elif event.GetKeyCode() in [wx.WXK_DOWN, wx.WXK_NUMPAD_DOWN] and self.GetSelection()<len(self.choices)-1:
             self.SetSelection(self.GetSelection()+1)
-        elif event.m_keyCode in [wx.WXK_HOME, wx.WXK_NUMPAD_HOME]:
+        elif event.GetKeyCode() in [wx.WXK_HOME, wx.WXK_NUMPAD_HOME]:
             self.SetSelection(0)
-        elif event.m_keyCode in [wx.WXK_END, wx.WXK_NUMPAD_END]:
+        elif event.GetKeyCode() in [wx.WXK_END, wx.WXK_NUMPAD_END]:
             self.SetSelection(len(self.choices)-1)
-        elif event.m_keyCode in [wx.WXK_PAGEUP, wx.WXK_PRIOR, wx.WXK_NUMPAD_PAGEUP, wx.WXK_NUMPAD_PRIOR]:
+        elif event.GetKeyCode() in [wx.WXK_PAGEUP, wx.WXK_PRIOR, wx.WXK_NUMPAD_PAGEUP, wx.WXK_NUMPAD_PRIOR]:
             self.ScrollPages(-1)
             self.SetSelection(max(0,
                                   self.GetSelection()-self.GetClientSize().y/self.height))
-        elif event.m_keyCode in [wx.WXK_PAGEDOWN, wx.WXK_NEXT, wx.WXK_NUMPAD_PAGEDOWN, wx.WXK_NUMPAD_NEXT]:
+        elif event.GetKeyCode() in [wx.WXK_PAGEDOWN, wx.WXK_NEXT, wx.WXK_NUMPAD_PAGEDOWN, wx.WXK_NUMPAD_NEXT]:
             self.ScrollPages(1)
             self.SetSelection(min(len(self.choices)-1,
                                   self.GetSelection()+self.GetClientSize().y/self.height))
@@ -201,7 +207,7 @@ class myListBox(wx.VListBox):
     def OnChar(self, event):
         self.timer.Stop()
         
-        c=chr(event.m_keyCode).lower()
+        c=chr(event.GetKeyCode()).lower()
         self.sel+=c
         sel=self.GetSelection()
 
@@ -587,15 +593,15 @@ class BackgroundDialog(wx.Dialog):
             event.Skip(True)
             return
         cursors=[ord('W'), ord('D'), ord('S'), ord('A')]
-        if event.m_keyCode in cursors:
-            if event.m_controlDown:
+        if event.GetKeyCode() in cursors:
+            if event.ControlDown():
                 xinc=zinc=0.000001
             else:
                 zinc=self.parent.dist/10000000
                 if zinc<0.00001: zinc=0.00001
-                if event.m_shiftDown: zinc*=10
+                if event.ShiftDown(): zinc*=10
                 xinc=zinc/cos(radians(self.lat.GetValue()))
-            hr=radians((self.parent.hdg + [0,90,180,270][cursors.index(event.m_keyCode)])%360)
+            hr=radians((self.parent.hdg + [0,90,180,270][cursors.index(event.GetKeyCode())])%360)
             try:
                 self.lat.SetValue(self.lat.GetValue()+zinc*cos(hr))
             except:
@@ -604,23 +610,23 @@ class BackgroundDialog(wx.Dialog):
                 self.lon.SetValue(self.lon.GetValue()+xinc*sin(hr))
             except:
                 pass
-        elif event.m_keyCode==ord('Q'):
-            if event.m_shiftDown:
+        elif event.GetKeyCode()==ord('Q'):
+            if event.ShiftDown():
                 self.hdg.SetValue((self.hdg.GetValue()-10)%360)
             else:
                 self.hdg.SetValue((self.hdg.GetValue()-1)%360)
-        elif event.m_keyCode==ord('E'):
-            if event.m_shiftDown:
+        elif event.GetKeyCode()==ord('E'):
+            if event.ShiftDown():
                 self.hdg.SetValue((self.hdg.GetValue()+10)%360)
             else:
                 self.hdg.SetValue((self.hdg.GetValue()+1)%360)
-        elif event.m_keyCode==ord('C') or (platform=='darwin' and event.m_keyCode==ord('J') and event.m_metaDown):
+        elif event.GetKeyCode()==ord('C') or (platform=='darwin' and event.GetKeyCode()==ord('J') and event.CmdDown()):
             self.parent.loc=[self.lat.GetValue(),self.lon.GetValue()]
-            if event.m_shiftDown:
+            if event.ShiftDown():
                 self.parent.hdg=self.hdg.GetValue()
             self.parent.canvas.goto(self.parent.loc, self.parent.hdg, self.parent.elev, self.parent.dist)
         else:
-            if platform=='darwin' and (event.m_keyCode in range(ord('0'), ord('9')+1) or event.m_keyCode in [wx.WXK_BACK, wx.WXK_DELETE, ord('-')]):
+            if platform=='darwin' and (event.GetKeyCode() in range(ord('0'), ord('9')+1) or event.GetKeyCode() in [wx.WXK_BACK, wx.WXK_DELETE, ord('-')]):
                 # Hack!!! changing value doesn't cause event so manually queue
                 wx.FutureCall(10, self.OnUpdate, event)
             event.Skip(True)
@@ -1007,129 +1013,131 @@ class MainWindow(wx.Frame):
                  ord('W'), ord('D'), ord('S'), ord('A'),
                  wx.WXK_NUMPAD8, wx.WXK_NUMPAD6, wx.WXK_NUMPAD2, wx.WXK_NUMPAD4]
 
-        if platform=='darwin' and event.m_keyCode==ord('A') and event.m_metaDown:
+        if platform=='darwin' and event.GetKeyCode()==ord('A') and event.CmdDown():
             # Mac Cmd special
-            self.canvas.allsel(event.m_shiftDown)
-        elif event.m_keyCode in cursors:
-            if event.m_controlDown:
+            self.canvas.allsel(event.ShiftDown())
+        elif event.GetKeyCode() in cursors:
+            if event.ControlDown():
                 xinc=zinc=minres
             else:
                 zinc=self.dist/10000000
                 if zinc<minres: zinc=minres
-                if event.m_shiftDown: zinc*=10
+                if event.ShiftDown(): zinc*=10
                 xinc=zinc/cos(radians(self.loc[0]))
-            hr=radians((self.hdg + [0,90,180,270][cursors.index(event.m_keyCode)%4])%360)
-            if cursors.index(event.m_keyCode)<8:
+            hr=radians((self.hdg + [0,90,180,270][cursors.index(event.GetKeyCode())%4])%360)
+            if cursors.index(event.GetKeyCode())<8:
                 self.loc=(round2res(self.loc[0]+zinc*cos(hr)),
                           round2res(self.loc[1]+xinc*sin(hr)))
             else:
                 changed=self.canvas.movesel(round2res(zinc*cos(hr)),
                                             round2res(xinc*sin(hr)))
-        elif event.m_keyCode in [ord('Q'), wx.WXK_NUMPAD7]:
-            if event.m_controlDown:
+        elif event.GetKeyCode() in [ord('Q'), wx.WXK_NUMPAD7]:
+            if event.ControlDown():
                 changed=self.canvas.movesel(0, 0, -0.1, 0, self.loc)
-            elif event.m_shiftDown:
+            elif event.ShiftDown():
                 changed=self.canvas.movesel(0, 0, -5,   0, self.loc)
             else:
                 changed=self.canvas.movesel(0, 0, -1,   0, self.loc)
-        elif event.m_keyCode in [ord('E'), wx.WXK_NUMPAD1]:
-            if event.m_controlDown:
+        elif event.GetKeyCode() in [ord('E'), wx.WXK_NUMPAD1]:
+            if event.ControlDown():
                 changed=self.canvas.movesel(0, 0,  0.1, 0, self.loc)
-            elif event.m_shiftDown:
+            elif event.ShiftDown():
                 changed=self.canvas.movesel(0, 0,  5,   0, self.loc)
             else:
                 changed=self.canvas.movesel(0, 0,  1,   0, self.loc)
-        elif event.m_keyCode in [ord('R'), wx.WXK_MULTIPLY, wx.WXK_NUMPAD_MULTIPLY, wx.WXK_NUMPAD9]:
-            if event.m_shiftDown:
+        elif event.GetKeyCode() in [ord('R'), wx.WXK_MULTIPLY, wx.WXK_NUMPAD_MULTIPLY, wx.WXK_NUMPAD9]:
+            if event.ShiftDown():
                 changed=self.canvas.movesel(0, 0, 0, 5)
             else:
                 changed=self.canvas.movesel(0, 0, 0, 1)
-        elif event.m_keyCode in [ord('F'), wx.WXK_DIVIDE, wx.WXK_NUMPAD_DIVIDE, wx.WXK_NUMPAD3]:
-            if event.m_shiftDown:
+        elif event.GetKeyCode() in [ord('F'), wx.WXK_DIVIDE, wx.WXK_NUMPAD_DIVIDE, wx.WXK_NUMPAD3]:
+            if event.ShiftDown():
                 changed=self.canvas.movesel(0, 0, 0, -5)
             else:
                 changed=self.canvas.movesel(0, 0, 0, -1)
-        elif event.m_keyCode in [wx.WXK_HOME, wx.WXK_NUMPAD_HOME]:
-            if event.m_controlDown:
+        elif event.GetKeyCode() in [wx.WXK_HOME, wx.WXK_NUMPAD_HOME]:
+            if event.ControlDown():
                 self.hdg=(self.hdg+0.1)%360
-            elif event.m_shiftDown:
+            elif event.ShiftDown():
                 self.hdg=(self.hdg+5)%360
             else:
                 self.hdg=(self.hdg+1)%360
-        elif event.m_keyCode in [wx.WXK_END, wx.WXK_NUMPAD_END]:
-            if event.m_controlDown:
+        elif event.GetKeyCode() in [wx.WXK_END, wx.WXK_NUMPAD_END]:
+            if event.ControlDown():
                 self.hdg=(self.hdg-0.1)%360
-            elif event.m_shiftDown:
+            elif event.ShiftDown():
                 self.hdg=(self.hdg-5)%360
             else:
                 self.hdg=(self.hdg-1)%360
-        elif event.m_keyCode in [ord('+'), ord('='), wx.WXK_ADD, wx.WXK_NUMPAD_ADD]:
-            if event.m_shiftDown:
+        elif event.GetKeyCode() in [ord('+'), ord('='), wx.WXK_ADD, wx.WXK_NUMPAD_ADD]:
+            if event.ShiftDown():
                 self.dist/=zoom2
             else:
                 self.dist/=zoom
             if self.dist<1.0: self.dist=1.0
-        elif event.m_keyCode in [ord('-'), wx.WXK_NUMPAD_SUBTRACT]:
-            if event.m_shiftDown:
+        elif event.GetKeyCode() in [ord('-'), wx.WXK_NUMPAD_SUBTRACT]:
+            if event.ShiftDown():
                 self.dist*=zoom2
             else:
                 self.dist*=zoom
             if self.dist>maxzoom: self.dist=maxzoom
-        elif event.m_keyCode in [wx.WXK_PAGEUP, wx.WXK_PRIOR, wx.WXK_NUMPAD_PAGEUP, wx.WXK_NUMPAD_PRIOR]:
-            if event.m_shiftDown:
+        elif event.GetKeyCode() in [wx.WXK_PAGEUP, wx.WXK_PRIOR, wx.WXK_NUMPAD_PAGEUP, wx.WXK_NUMPAD_PRIOR]:
+            if event.ShiftDown():
                 self.elev+=5
             else:
                 self.elev+=1
             if self.elev>90: self.elev=90
-        elif event.m_keyCode in [wx.WXK_PAGEDOWN, wx.WXK_NEXT, wx.WXK_NUMPAD_PAGEDOWN, wx.WXK_NUMPAD_NEXT]:
-            if event.m_shiftDown:
+        elif event.GetKeyCode() in [wx.WXK_PAGEDOWN, wx.WXK_NEXT, wx.WXK_NUMPAD_PAGEDOWN, wx.WXK_NUMPAD_NEXT]:
+            if event.ShiftDown():
                 self.elev-=5
             else:
                 self.elev-=1
             if self.elev<2: self.elev=2	# not 1 cos clipping
-        elif event.m_keyCode in [wx.WXK_INSERT, wx.WXK_RETURN, wx.WXK_NUMPAD_INSERT, wx.WXK_NUMPAD_ENTER]:
+        elif event.GetKeyCode() in [wx.WXK_INSERT, wx.WXK_RETURN, wx.WXK_NUMPAD_INSERT, wx.WXK_NUMPAD_ENTER]:
             name=self.palette.get()
-            if name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg, self.dist, event.m_controlDown, event.m_shiftDown):
+            if name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg, self.dist, event.ControlDown(), event.ShiftDown()):
                 changed=True
-        elif event.m_keyCode in [wx.WXK_DELETE, wx.WXK_BACK, wx.WXK_NUMPAD_DELETE]: # wx.WXK_NUMPAD_DECIMAL]:
-            changed=self.canvas.delsel(event.m_controlDown, event.m_shiftDown)
-        elif event.m_keyCode==ord('Z') and event.CmdDown():
+        elif event.GetKeyCode() in [wx.WXK_DELETE, wx.WXK_BACK, wx.WXK_NUMPAD_DELETE]: # wx.WXK_NUMPAD_DECIMAL]:
+            changed=self.canvas.delsel(event.ControlDown(), event.ShiftDown())
+        elif event.GetKeyCode()==ord('Z') and event.CmdDown():
             self.OnUndo()
             return
-        #elif event.m_keyCode==ord('X') and event.CmdDown():
+        #elif event.GetKeyCode()==ord('X') and event.CmdDown():
         #    self.OnCut()
         #    return
-        #elif event.m_keyCode==ord('C') and event.CmdDown():
+        #elif event.GetKeyCode()==ord('C') and event.CmdDown():
         #    self.OnCopy()
         #    return
-        #elif event.m_keyCode==ord('V') and event.CmdDown():
+        #elif event.GetKeyCode()==ord('V') and event.CmdDown():
         #    self.OnPaste()
         #    return
-        elif event.m_keyCode==wx.WXK_SPACE:
+        elif event.GetKeyCode()==wx.WXK_SPACE:
             # not Cmd because Cmd-Space = Spotlight
-            self.canvas.allsel(event.m_controlDown)
-        elif event.m_keyCode==ord('N'):
+            self.canvas.allsel(event.ControlDown())
+        elif event.GetKeyCode()==ord('N'):
             name=self.palette.get()
             if name:
                 # not Cmd because Cmd-N = new
-                loc=self.canvas.nextsel(name, event.m_controlDown, event.m_shiftDown)
+                loc=self.canvas.nextsel(name, event.ControlDown(), event.ShiftDown())
                 if loc:
                     self.loc=loc
                     self.ShowSel()
-        elif event.m_keyCode in [ord('C'), wx.WXK_NUMPAD5]:
+        elif event.GetKeyCode() in [ord('C'), wx.WXK_NUMPAD5]:
             (names,string,lat,lon,hdg)=self.canvas.getsel(prefs.options&Prefs.DMS)
             if lat==None: return
             self.loc=(round2res(lat),round2res(lon))
-            if hdg!=None and event.m_shiftDown:
+            if hdg!=None and event.ShiftDown():
                 self.hdg=round(hdg,1)
-        elif event.m_keyCode==wx.WXK_F1 and platform!='darwin':
+        elif event.GetKeyCode()==wx.WXK_F1 and platform!='darwin':
             self.OnHelp(event)
             return
+        elif __debug__:
+            if event.GetKeyCode()==ord('P'):
+                from cProfile import runctx
+                runctx('self.canvas.OnPaint(None)', globals(), locals(), 'profile.dmp')
+            elif event.GetKeyCode()==ord('M'):
+                print '---', time.asctime(), '---'
         else:
-            if __debug__:
-                if event.m_keyCode==ord('P'):
-                    from cProfile import runctx
-                    runctx('self.canvas.OnPaint(None)', globals(), locals(), 'profile.dmp')
             event.Skip(True)
             return
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
@@ -1145,13 +1153,13 @@ class MainWindow(wx.Frame):
     
     def OnMouseWheel(self, event):
         if event.GetWheelRotation()>0:
-            if event.m_shiftDown:
+            if event.ShiftDown():
                 self.dist/=zoom2
             else:
                 self.dist/=zoom
             if self.dist<1.0: self.dist=1.0
         elif event.GetWheelRotation()<0:
-            if event.m_shiftDown:
+            if event.ShiftDown():
                 self.dist*=zoom2
             else:
                 self.dist*=zoom
@@ -1482,7 +1490,8 @@ class MainWindow(wx.Frame):
                         if name.lower().startswith('custom objects'):
                             name=name[15:]
                         #if not name in lookup:	# library takes precedence
-                        objects[name]=PaletteEntry(join(path,f))
+                        if not name.startswith('opensceneryx/placeholder.'):	# no point adding placeholders
+                            objects[name]=PaletteEntry(join(path,f))
                     elif f[-4:].lower()=='.net':
                         roadfile=join(path,f)
         self.palette.load('Objects', objects, pkgdir)
@@ -1511,10 +1520,11 @@ class MainWindow(wx.Frame):
                     roadfile=NetworkDef.DEFAULTFILE
             else:
                 roadfile=NetworkDef.DEFAULTFILE
-            names={}
-            for x in netdefs:                
-                if x and x.name: names[x.name]=lookup[x.name]=PaletteEntry(x.name)
-            self.palette.load(NetworkDef.TABNAME, names, None)
+            if False: # XXX disable networks
+                names={}
+                for x in netdefs:                
+                    if x and x.name: names[x.name]=lookup[x.name]=PaletteEntry(x.name)
+                self.palette.load(NetworkDef.TABNAME, names, None)
         else:
             netdefs=self.defnetdefs=[]
             
@@ -1667,9 +1677,9 @@ class MainWindow(wx.Frame):
         AboutBox(self)
 
     def OnClose(self, event):
-        # On wxMac Cmd-Q, LogOut & ShutDown are indistinguishable
-        if not self.SaveDialog((platform=='darwin') or event.CanVeto()):
-            if event.CanVeto(): event.Veto()
+        # On wxMac Cmd-Q, LogOut & ShutDown are indistinguishable CommandEvents
+        if not self.SaveDialog(isinstance(event, wx.CommandEvent) or event.CanVeto()):
+            if isinstance(event, wx.CloseEvent) and event.CanVeto(): event.Veto()
             return False
         prefs.write()
         if self.goto: self.goto.Close()

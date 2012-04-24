@@ -173,6 +173,10 @@ class PaletteChoicebook(wx.Choicebook):
         if self.frame.menubar: self.frame.menubar.Enable(wx.ID_DELETE, False)
         event.Skip()
 
+    def OnKillFocus(self, event):
+        # Prevent wx 2.9 on win32 from displaying in unfocussed color
+        pass
+
     def flush(self):
         if len(self.lists): self.SetSelection(0)	# reduce flicker
         for i in range(len(self.lists)-1,-1,-1):
@@ -188,6 +192,7 @@ class PaletteChoicebook(wx.Choicebook):
         self.lists.append(l)
         self.AddPage(l, tabname)
         wx.EVT_LISTBOX(self, l.GetId(), self.OnChoice)
+        wx.EVT_KILL_FOCUS(l, self.OnKillFocus)	# Prevent wx 2.9 on win32 from displaying in unfocussed color
         wx.EVT_KEY_DOWN(l, self.OnKeyDown)
     
     def add(self, name, bad):
@@ -346,6 +351,10 @@ class Palette(wx.SplitterWindow):
     def OnPaint(self, event):
         #print "preview", self.lastkey
         dc = wx.PaintDC(self.preview)
+        if wx.VERSION >= (2,9):
+            self.frame.canvas.SetCurrent(self.frame.canvas.context)
+        else:
+            self.frame.canvas.SetCurrent()
         if dc.GetSize().y<16 or not self.lastkey:
             if self.previewkey:
                 self.previewkey=None

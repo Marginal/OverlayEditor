@@ -311,14 +311,11 @@ class MyGL(wx.glcanvas.GLCanvas):
     def OnLeftDown(self, event):
         if self.clickmode==ClickModes.Move: return
         #event.Skip(False)	# don't change focus
-        self.mousenow=self.clickpos=[event.m_x,event.m_y]
-        if platform=='darwin':
-            self.clickctrl=event.m_metaDown	# Cmd
-        else:
-            self.clickctrl=event.m_controlDown
+        self.mousenow=self.clickpos=[event.GetX(),event.GetY()]
+        self.clickctrl=event.CmdDown()
         self.CaptureMouse()
         size = self.GetClientSize()
-        if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
+        if event.GetX()<sband or event.GetY()<sband or size.x-event.GetX()<sband or size.y-event.GetY()<sband:
             # mouse scroll
             self.clickmode=ClickModes.Scroll
             self.timer.Start(50)
@@ -348,7 +345,7 @@ class MyGL(wx.glcanvas.GLCanvas):
     def OnMiddleDown(self, event):
         if self.clickmode: return
         self.clickmode=ClickModes.Move
-        self.mousenow=self.clickpos=[event.m_x,event.m_y]
+        self.mousenow=self.clickpos=[event.GetX(),event.GetY()]
         self.CaptureMouse()
         self.SetCursor(self.movecursor)
         
@@ -379,14 +376,14 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if self.timer.IsRunning():
             # Continue mouse scroll
-            self.mousenow=[event.m_x,event.m_y]		# not known in timer
+            self.mousenow=[event.GetX(),event.GetY()]		# not known in timer
             return
 
         if not self.clickmode:
             size = self.GetClientSize()
             
             # Change cursor if over a window border
-            if event.m_x<sband or event.m_y<sband or size.x-event.m_x<sband or size.y-event.m_y<sband:
+            if event.GetX()<sband or event.GetY()<sband or size.x-event.GetX()<sband or size.y-event.GetY()<sband:
                 self.SetCursor(self.scrollcursor)
                 return
 
@@ -395,8 +392,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glMatrixMode(GL_PROJECTION)
                 glPushMatrix()
                 glLoadIdentity()
-                gluPickMatrix(event.m_x,
-                              size[1]-1-event.m_y, 5,5,
+                gluPickMatrix(event.GetX(),
+                              size[1]-1-event.GetY(), 5,5,
                               array([0.0, 0.0, size[0], size[1]],int32))
                 glOrtho(-self.d, self.d,
                         -self.d*size.y/size.x, self.d*size.y/size.x,
@@ -424,14 +421,14 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.clickmode==ClickModes.Move:
             if not self.valid: return
             (oldlat,oldlon)=self.getworldloc(*self.mousenow)
-            self.mousenow=[event.m_x,event.m_y]
+            self.mousenow=[event.GetX(),event.GetY()]
             (lat,lon)=self.getworldloc(*self.mousenow)
             self.frame.loc=(self.frame.loc[0]-lat+oldlat, self.frame.loc[1]-lon+oldlon)
             self.goto(self.frame.loc)
             self.frame.ShowLoc()
             return
 
-        if self.draginert and abs(event.m_x-self.clickpos[0])<self.dragx and abs(event.m_y-self.clickpos[1])<self.dragx:
+        if self.draginert and abs(event.GetX()-self.clickpos[0])<self.dragx and abs(event.GetY()-self.clickpos[1])<self.dragx:
             return
         else:
             self.draginert=False
@@ -440,7 +437,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             # Start/continue node drag
             self.SetCursor(self.dragcursor)
             poly=self.selected[0]
-            (lat,lon)=self.getworldloc(event.m_x, event.m_y)
+            (lat,lon)=self.getworldloc(event.GetX(), event.GetY())
             lat=max(self.tile[0], min(self.tile[0]+1, lat))
             lon=max(self.tile[1], min(self.tile[1]+1, lon))
             layer=poly.definition.layer
@@ -459,7 +456,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         elif self.clickmode==ClickModes.Drag:
             # Continue move drag
-            (lat,lon)=self.getworldloc(event.m_x, event.m_y)
+            (lat,lon)=self.getworldloc(event.GetX(), event.GetY())
             if (lat>self.tile[0] and lat<self.tile[0]+1 and
                 lon>self.tile[1] and lon<self.tile[1]+1):
                 (oldlat,oldlon)=self.getworldloc(*self.mousenow)
@@ -473,7 +470,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         elif self.clickmode==ClickModes.DragBox:
             self.select()
 
-        self.mousenow=[event.m_x,event.m_y]		# not known in paint
+        self.mousenow=[event.GetX(),event.GetY()]		# not known in paint
 
 
     def OnPaint(self, event):
@@ -481,8 +478,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         size = self.GetClientSize()
         #print "pt", size
         if size.width<=0: return	# may be junk on startup
-        self.SetCurrent()
+        if wx.VERSION >= (2,9):
+            self.SetCurrent(self.context)
+        else:
+            self.SetCurrent()
         self.SetFocus()			# required for GTK
+
+        if __debug__: print "OnPaint"
 
         glMatrixMode(GL_PROJECTION)
         glViewport(0, 0, *size)

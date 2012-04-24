@@ -60,12 +60,15 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\OverlayEditor.lnk"; old versions used current user
   SetShellVarContext all
   Delete "$SMPROGRAMS\OverlayEditor.lnk"
-  Delete "$INSTDIR\MSVCP71.dll"
-  Delete "$INSTDIR\MSVCR71.dll"
+  Delete "$INSTDIR\MSVCP71.dll"		; Old Python 2.5 runtime
+  Delete "$INSTDIR\MSVCR71.dll"		; Old Python 2.5 runtime
+  Delete "$INSTDIR\msvcr90.dll"
   Delete "$INSTDIR\OverlayEditor.exe"
   Delete "$INSTDIR\OverlayEditor.exe.log"
   Delete "$INSTDIR\OverlayEditor.html"
+  Delete "$INSTDIR\python27.dll"
   Delete "$INSTDIR\uninstall.exe"
+  RMDir /r "$INSTDIR\Microsoft.VC90.CRT"
   RMDir /r "$INSTDIR\Resources"
   RMDir /r "$INSTDIR\win32"
   RMDir "$INSTDIR"

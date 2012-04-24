@@ -32,6 +32,18 @@ manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
           '        />\n'+
           '    </dependentAssembly>\n'+
           '</dependency>\n'+
+          '<dependency>\n'+
+          '    <dependentAssembly>\n'+
+          '        <assemblyIdentity\n'+
+          '            type="win32"\n'+
+          '            name="Microsoft.VC90.CRT"\n'+
+          '            version="9.0.30729.1"\n'+
+          '            processorArchitecture="X86"\n'+
+          '            publicKeyToken="1fc8b3b9a1e18e3b"\n'+
+          '            language="*"\n'+
+          '        />\n'+
+          '    </dependentAssembly>\n'+
+          '</dependency>\n'+
           '</assembly>\n')
 
 if sys.platform=='win32':
@@ -40,9 +52,10 @@ if sys.platform=='win32':
     platdata=[('win32',
                ['win32/DSFTool.exe',
                 ]),
-              ('',
-                [r'C:\Program Files\Python25\lib\site-packages\wx-2.8-msw-unicode\wx\MSVCP71.dll',
-                 r'C:\WINDOWS\system32\msvcr71.dll',
+              ('Microsoft.VC90.CRT',
+               ['win32/Microsoft.VC90.CRT.manifest',
+                'win32/msvcp90.dll',
+                'win32/msvcr90.dll'
                 ]),
               ]
 
@@ -83,11 +96,22 @@ setup(name='OverlayEditor',
 
       options = {'py2exe': {'ascii':True,	# suppresss encodings?
                             'dll_excludes':['w9xpopen.exe'],
-                            'bundle_files':True,
+                            'bundle_files':2,	# don't bundle pythonX.dll - causes ctypes to fail
                             'compressed':True,
+                            'includes':['OpenGL.platform.win32',
+                                        'OpenGL.arrays',
+                                        'OpenGL.arrays.ctypesarrays',
+                                        'OpenGL.arrays.ctypesparameters',
+                                        'OpenGL.arrays.ctypespointers',
+                                        'OpenGL.arrays.lists',
+                                        'OpenGL.arrays.nones',
+                                        'OpenGL.arrays.numbers',
+                                        'OpenGL.arrays.numpymodule',
+                                        'OpenGL.arrays.strings',
+                                        'OpenGL.arrays.vbo'],
                             # http://www.py2exe.org/index.cgi/OptimizingSize
                             'excludes':['Carbon', 'tcl', 'Tkinter', 'mx','socket','urllib','webbrowser',
-                                        'curses', 'difflib', 'distutils', 'doctest', 'email', 'hotshot', 'inspect', 'pdb', 'setuptools', 'unittest', 'win32',	# Python2.5
+                                        'curses', 'distutils', 'doctest', 'email', 'hotshot', 'inspect', 'pdb', 'setuptools', 'win32',	# Python2.5
                                         'Numeric', 'dotblas', 'numarray', 'scipy', 'nose'],	# Old Numeric stuff
                             'packages':['encodings.ascii','encodings.mbcs','encodings.latin_1','encodings.utf_8','encodings.utf_16','encodings.cp437'],
                             'optimize':2,
