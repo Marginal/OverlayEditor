@@ -796,7 +796,8 @@ class Exclude(Fitted):
             Fitted.__init__(self, name, param, nodes)
         else:
             lat=nodes
-            Fitted.__init__(self, name, param, lat, lon)
+            Fitted.__init__(self, name, param, lat, lon, size, hdg)
+            # Override default node placement
             self.nodes=[[]]
             size=0.000005*size
             for (lon,lat) in [(self.lon-size,self.lat-size),
