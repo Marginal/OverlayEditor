@@ -15,7 +15,7 @@ except:
     glGenQueries=False
 
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
-from numpy import array, array_equal, concatenate, empty, hstack, identity, float32, float64, int32
+from numpy import array, array_equal, empty, identity, float32, float64, int32
 from os.path import basename, join
 from struct import unpack
 from sys import exit, platform, version
@@ -1441,11 +1441,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.runways[key]=[]
                 self.codes[newtile]=[]
                 svarray=[]
-                starray=[]
                 tvarray=[]
-                ttarray=[]
                 rvarray=[]
-                rtarray=[]
                 area=BBox(newtile[0]-0.05, newtile[0]+1.1,
                           newtile[1]-0.1, newtile[1]+1.2)
                 tile=BBox(newtile[0], newtile[0]+1,
@@ -1499,13 +1496,12 @@ class MyGL(wx.glcanvas.GLCanvas):
                                         col=surfaces[0]
                                     xinc=width/2*coshdg
                                     zinc=width/2*sinhdg
-                                    rvarray.extend([[p1[0]+xinc, self.vertexcache.height(newtile,options, p1[0]+xinc, p1[1]+zinc), p1[1]+zinc],
-                                                    [p1[0]-xinc, self.vertexcache.height(newtile,options, p1[0]-xinc, p1[1]-zinc), p1[1]-zinc],
-                                                    [p2[0]-xinc, self.vertexcache.height(newtile,options, p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
-                                                    [p1[0]+xinc, self.vertexcache.height(newtile,options, p1[0]+xinc, p1[1]+zinc), p1[1]+zinc],
-                                                    [p2[0]-xinc, self.vertexcache.height(newtile,options, p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
-                                                    [p2[0]+xinc, self.vertexcache.height(newtile,options, p2[0]+xinc, p2[1]+zinc), p2[1]+zinc]])
-                                    rtarray.extend([col,col,col,col,col,col])
+                                    rvarray.extend([[p1[0]+xinc, self.vertexcache.height(newtile,options, p1[0]+xinc, p1[1]+zinc), p1[1]+zinc] + col,
+                                                    [p1[0]-xinc, self.vertexcache.height(newtile,options, p1[0]-xinc, p1[1]-zinc), p1[1]-zinc] + col,
+                                                    [p2[0]-xinc, self.vertexcache.height(newtile,options, p2[0]-xinc, p2[1]-zinc), p2[1]-zinc] + col,
+                                                    [p1[0]+xinc, self.vertexcache.height(newtile,options, p1[0]+xinc, p1[1]+zinc), p1[1]+zinc] + col,
+                                                    [p2[0]-xinc, self.vertexcache.height(newtile,options, p2[0]-xinc, p2[1]-zinc), p2[1]-zinc] + col,
+                                                    [p2[0]+xinc, self.vertexcache.height(newtile,options, p2[0]+xinc, p2[1]+zinc), p2[1]+zinc] + col])
                                     continue
                             else:
                                 # new 850 style runway
@@ -1575,9 +1571,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                         continue	# airport is wholly outside this tile
                     #if __debug__: print len(meshtris),
 
-                    for (kind,varray,tarray) in [(shoulders, svarray, starray),
-                                                 (taxiways, tvarray, ttarray),
-                                                 (runways,  rvarray, rtarray)]:
+                    for (kind,varray) in [(shoulders, svarray),
+                                          (taxiways,  tvarray),
+                                          (runways,   rvarray)]:
                         lastcol=None
                         pavements=[]
                         for pave in kind:
@@ -1591,10 +1587,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                                     gluTessEndPolygon(tess)
                                 if pavements:
                                     # tessellate existing against terrain
-                                    gluTessBeginPolygon(csgt, (varray,tarray))
+                                    gluTessBeginPolygon(csgt, varray)
                                     for i in range(0,len(pavements),3):
                                         gluTessBeginContour(csgt)
                                         for j in range(i,i+3):
+                                            #assert len(pavements[j])==3 and len(pavements[j][0])==3 and type(pavements[j][1])==bool and len(pavements[j][2])==2, pavements[j]
                                             gluTessVertex(csgt, array([pavements[j][0][0],0,pavements[j][0][2]],float64), pavements[j])
                                         gluTessEndContour(csgt)
                                     for meshtri in meshtris:
@@ -1603,6 +1600,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                         for m in range(3):
                                             x=meshpt[m][0]
                                             z=meshpt[m][2]
+                                            #assert len(meshpt[m])==3, meshpt[m]
                                             gluTessVertex(csgt, array([x,0,z],float64), (meshpt[m],True, lastcol))
                                         gluTessEndContour(csgt)
                                     gluTessEndPolygon(csgt)
@@ -1640,10 +1638,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                         if lastcol:
                             gluTessEndPolygon(tess)
                         if pavements:	# may have no taxiways
-                            gluTessBeginPolygon(csgt, (varray,tarray))
+                            gluTessBeginPolygon(csgt, varray)
                             for i in range(0,len(pavements),3):
                                 gluTessBeginContour(csgt)
                                 for j in range(i,i+3):
+                                    #assert len(pavements[j])==3 and len(pavements[j][0])==3 and type(pavements[j][1])==bool and len(pavements[j][2])==2, pavements[j]
                                     gluTessVertex(csgt, array([pavements[j][0][0],0,pavements[j][0][2]],float64), pavements[j])
                                 gluTessEndContour(csgt)
                             for meshtri in meshtris:
@@ -1652,22 +1651,21 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 for m in range(3):
                                     x=meshpt[m][0]
                                     z=meshpt[m][2]
+                                    #assert len(meshpt[m])==3, meshpt[m]
                                     gluTessVertex(csgt, array([x,0,z],float64), (meshpt[m],True, lastcol))
                                 gluTessEndContour(csgt)
                             gluTessEndPolygon(csgt)
 
-                        assert(len(varray)==len(tarray))
                     #if __debug__: print ' '
 
                 varray=svarray+tvarray+rvarray
-                tarray=starray+ttarray+rtarray
                 shoulderlen=len(svarray)
                 taxiwaylen=len(tvarray)
                 runwaylen=len(rvarray)
-                self.runways[key]=(varray,tarray,shoulderlen,taxiwaylen,runwaylen)
+                self.runways[key]=(varray,shoulderlen,taxiwaylen,runwaylen)
                 if __debug__: print "%6.3f time in runways" % (time.clock()-clock)
             else:
-                (varray,tarray,shoulderlen,taxiwaylen,runwaylen)=self.runways[key]
+                (varray,shoulderlen,taxiwaylen,runwaylen)=self.runways[key]
             if shoulderlen:
                 self.shoulderdata=(self.vertexcache.instance_count, shoulderlen)
             else:
@@ -1681,7 +1679,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 self.runwaysdata=None
             if len(varray):
-                self.vertexcache.allocate_instance(hstack((array(varray,float32), array(tarray,float32))).flatten())
+                self.vertexcache.allocate_instance(array(varray,float32).flatten())
 
             progress.Update(14, 'Navaids')
             objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
@@ -1924,9 +1922,10 @@ gluTessCallback(tess, GLU_TESS_COMBINE,      tesscombine)
 gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
 
 
-def csgtvertex((vertex,ismesh,colour), (varray,tarray)):
-    varray.append(vertex)
-    tarray.append(colour)
+def csgtvertex((location,ismesh,uv), varray):
+    #assert len(location)==3, location
+    #assert len(uv)==2, uv
+    varray.append(location+uv)
 
 def csgtcombine(coords, vertex, weight):
     # vertex = [(location, ismesh, uv)]

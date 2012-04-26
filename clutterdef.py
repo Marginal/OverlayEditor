@@ -1,6 +1,6 @@
 import codecs
 from math import fabs
-from numpy import array, hstack, float32
+from numpy import array, concatenate, float32
 from os import listdir
 from os.path import basename, dirname, exists, join, normpath, sep, splitext
 from sys import maxint
@@ -150,7 +150,6 @@ class ObjectDef(ClutterDef):
     
     def __init__(self, filename, vertexcache):
         ClutterDef.__init__(self, filename, vertexcache)
-        self.layer=None
         self.canpreview=True
         self.type=Locked.OBJ
 
@@ -158,9 +157,6 @@ class ObjectDef(ClutterDef):
         culled=[]
         nocull=[]
         current=culled
-        tculled=[]
-        tnocull=[]
-        tcurrent=tculled
         texture=None
         if __debug__: clock=time.clock()	# Processor time
         self.poly=0
@@ -214,12 +210,9 @@ class ObjectDef(ClutterDef):
                         v.append([float(c[0]), float(c[1]), float(c[2])])
                         self.bbox.include(v[i][0], v[i][2])
                         self.height=max(self.height, v[i][1])
-                    current.append(v[0])
-                    tcurrent.append([uv[0],uv[3]])
-                    current.append(v[1])
-                    tcurrent.append([uv[1],uv[2]])
-                    current.append(v[2])
-                    tcurrent.append([uv[1],uv[3]])
+                    current.append(v[0]+[uv[0],uv[3]])
+                    current.append(v[1]+[uv[1],uv[2]])
+                    current.append(v[2]+[uv[1],uv[3]])
                 elif int(id) < 0:	# strip
                     count=-int(id)
                     seq=[]
@@ -229,17 +222,14 @@ class ObjectDef(ClutterDef):
                     t=[]
                     for i in range(count):
                         c=h.next().split()
-                        v.append([float(c[0]), float(c[1]), float(c[2])])
+                        v.append([float(c[0]), float(c[1]), float(c[2]), float(c[6]), float(c[8])])
                         self.bbox.include(v[-1][0], v[-1][2])
                         self.height=max(self.height, v[-1][1])
-                        v.append([float(c[3]), float(c[4]), float(c[5])])
+                        v.append([float(c[3]), float(c[4]), float(c[5]), float(c[7]), float(c[9])])
                         self.bbox.include(v[-1][0], v[-1][2])
                         self.height=max(self.height, v[-1][1])
-                        t.append([float(c[6]), float(c[8])])
-                        t.append([float(c[7]), float(c[9])])
                     for i in seq:
                         current.append(v[i])
-                        tcurrent.append(t[i])
                 else:	# quads: type 4, 5, 6, 7, 8
                     # sst, clockwise, start with right top
                     uv=[float(c[1]), float(c[2]), float(c[3]), float(c[4])]
@@ -249,18 +239,12 @@ class ObjectDef(ClutterDef):
                         v.append([float(c[0]), float(c[1]), float(c[2])])
                         self.bbox.include(v[i][0], v[i][2])
                         self.height=max(self.height, v[i][1])
-                    current.append(v[0])
-                    tcurrent.append([uv[1],uv[3]])
-                    current.append(v[1])
-                    tcurrent.append([uv[1],uv[2]])
-                    current.append(v[2])
-                    tcurrent.append([uv[0],uv[2]])
-                    current.append(v[0])
-                    tcurrent.append([uv[1],uv[3]])
-                    current.append(v[2])
-                    tcurrent.append([uv[0],uv[2]])
-                    current.append(v[3])
-                    tcurrent.append([uv[0],uv[3]])
+                    current.append(v[0]+[uv[1],uv[3]])
+                    current.append(v[1]+[uv[1],uv[2]])
+                    current.append(v[2]+[uv[0],uv[2]])
+                    current.append(v[0]+[uv[1],uv[3]])
+                    current.append(v[2]+[uv[0],uv[2]])
+                    current.append(v[3]+[uv[0],uv[3]])
 
         elif version=='700':
             for line in h:
@@ -298,35 +282,29 @@ class ObjectDef(ClutterDef):
                         count=4
                         seq=[0,1,2,0,2,3]
                     v=[]
-                    t=[]
                     i=0
                     while i<count:
                         c=h.next().split()
-                        v.append([float(c[0]), float(c[1]), float(c[2])])
+                        v.append([float(c[0]), float(c[1]), float(c[2]), float(c[3]), float(c[4])])
                         self.bbox.include(v[i][0], v[i][2])
                         self.height=max(self.height, v[i][1])
-                        t.append([float(c[3]), float(c[4])])
                         if len(c)>5:	# Two per line
-                            v.append([float(c[5]), float(c[6]), float(c[7])])
+                            v.append([float(c[5]), float(c[6]), float(c[7]), float(c[8]), float(c[9])])
                             self.bbox.include(v[i+1][0], v[i+1][2])
                             self.height=max(self.height, v[i+1][1])
-                            t.append([float(c[8]), float(c[9])])
                             i+=2
                         else:
                             i+=1
                     for i in seq:
                         current.append(v[i])
-                        tcurrent.append(t[i])
                 elif id=='ATTR_LOD':
                     if float(c[1])!=0: break
                 elif id=='ATTR_poly_os':
                     self.poly=max(self.poly,int(float(c[1])))
                 elif id=='ATTR_cull':
                     current=culled
-                    tcurrent=tculled
                 elif id=='ATTR_no_cull':
                     current=nocull
-                    tcurrent=tnocull
                 elif id=='ATTR_layer_group':
                     self.setlayer(c[1], int(c[2]))
                 elif id=='end':
@@ -334,7 +312,6 @@ class ObjectDef(ClutterDef):
 
         elif version=='800':
             vt=[]
-            vtt=[]
             idx=[]
             anim=[]
             for line in h:
@@ -347,8 +324,7 @@ class ObjectDef(ClutterDef):
                     z=float(c[3])
                     self.bbox.include(x,z)	# ~10% of load time
                     self.height=max(self.height, y)
-                    vt.append([x,y,z])
-                    vtt.append([float(c[7]), float(c[8])])
+                    vt.append([x,y,z, float(c[7]),float(c[8])])
                 elif id=='IDX10':
                     #idx.extend([int(c[i]) for i in range(1,11)])
                     idx.extend(map(int,c[1:11])) # slightly faster under 2.3
@@ -370,10 +346,8 @@ class ObjectDef(ClutterDef):
                     self.poly=max(self.poly,int(float(c[1])))
                 elif id=='ATTR_cull':
                     current=culled
-                    tcurrent=tculled
                 elif id=='ATTR_no_cull':
                     current=nocull
-                    tcurrent=tnocull
                 elif id=='ATTR_layer_group':
                     self.setlayer(c[1], int(c[2]))
                 elif id=='ANIM_begin':
@@ -389,28 +363,20 @@ class ObjectDef(ClutterDef):
                     start=int(c[1])
                     new=int(c[2])
                     if anim:
-                        current.extend([[vt[idx[i]][j]+anim[-1][j] for j in range (3)] for i in range(start, start+new)])
+                        current.extend([[vt[idx[i]][j]+anim[-1][j] for j in range (3)] + [vt[idx[i]][3],vt[idx[i]][4]] for i in range(start, start+new)])
                     else:
                         current.extend([vt[idx[i]] for i in range(start, start+new)])
-                    tcurrent.extend([vtt[idx[i]] for i in range(start, start+new)])
         h.close()
         if __debug__:
             if self.filename: print "%6.3f" % (time.clock()-clock), basename(self.filename)
 
-        if self.layer==None:
-            if self.poly:
-                self.layer=ClutterDef.DEFAULTLAYER-1	# implicit
-            else:
-                self.layer=ClutterDef.DEFAULTLAYER
-
         if not (len(culled)+len(nocull)):
             # show empty objects as placeholders otherwise can't edit
             fb=ObjectFallback(filename, vertexcache)
-            (self.vdata, self.tdata, self.culled, self.nocull, self.poly, self.bbox, self.height, self.base, self.canpreview)=(fb.vdata, fb.tdata, fb.culled, fb.nocull, fb.poly, fb.bbox, fb.height, fb.base, fb.canpreview)	# skip texture
+            (self.vdata, self.culled, self.nocull, self.poly, self.bbox, self.height, self.base, self.canpreview)=(fb.vdata, fb.culled, fb.nocull, fb.poly, fb.bbox, fb.height, fb.base, fb.canpreview)	# skip texture
             # re-use above allocation
         else:
-            self.vdata=culled+nocull
-            self.tdata=tculled+tnocull
+            self.vdata=array(culled+nocull, float32).flatten()
             self.culled=len(culled)
             self.nocull=len(nocull)
             self.base=None
@@ -423,7 +389,7 @@ class ObjectDef(ClutterDef):
 
     def allocate(self, vertexcache, defs=None):
         if self.base==None:
-            self.base=vertexcache.allocate_instance(hstack((array(self.vdata,float32), array(self.tdata,float32))).flatten())
+            self.base=vertexcache.allocate_instance(self.vdata)
 
     def flush(self):
         self.base=None
@@ -460,6 +426,7 @@ class ObjectDef(ClutterDef):
                 glVertex3f(self.bbox.maxx, height, self.bbox.maxz)
                 glVertex3f(self.bbox.minx, height, self.bbox.maxz)
                 glEnd()
+        canvas.glstate.set_texture(0)
         canvas.glstate.set_color(COL_CURSOR)
         glBegin(GL_POINTS)
         glVertex3f(0, 0, 0)
@@ -495,8 +462,24 @@ class ObjectFallback(ObjectDef):
         ClutterDef.__init__(self, filename, vertexcache)
         self.layer=ClutterDef.DEFAULTLAYER
         self.type=Locked.OBJ
-        self.vdata=[[0.5,1.0,-0.5], [-0.5,1.0,0.5], [-0.5,1.0,-0.5], [0.5,1.0,0.5], [-0.5,1.0,0.5], [0.5,1.0,-0.5], [0.0,0.0,0.0], [-0.5,1.0,0.5], [0.5,1.0,0.5], [0.0,0.0,0.0], [-0.5,1.0,-0.5], [-0.5,1.0,0.5], [0.0,0.0,0.0], [0.5,1.0,-0.5], [-0.5,1.0,-0.5], [0.5,1.0,-0.5], [0.0,0.0,0.0], [0.5,1.0,0.5]]
-        self.tdata=[[1.0,1.0], [0.0,0.0], [0.0,1.0], [1.0,0.0], [0.0,0.0], [1.0,1.0], [0.5,0.0], [0.0,0.0], [1.0,0.0], [0.0,0.5], [0.0,1.0], [0.0,0.0], [0.5,1.0], [1.0,1.0], [0.0,1.0], [1.0,1.0], [1.0,0.5], [1.0,0.0]]
+        self.vdata=array([0.5,1.0,-0.5, 1.0,1.0,
+                          -0.5,1.0,0.5, 0.0,0.0,
+                          -0.5,1.0,-0.5, 0.0,1.0,
+                          0.5,1.0,0.5, 1.0,0.0,
+                          -0.5,1.0,0.5, 0.0,0.0,
+                          0.5,1.0,-0.5, 1.0,1.0,
+                          0.0,0.0,0.0, 0.5,0.0,
+                          -0.5,1.0,0.5, 0.0,0.0,
+                          0.5,1.0,0.5, 1.0,0.0,
+                          0.0,0.0,0.0, 0.0,0.5,
+                          -0.5,1.0,-0.5, 0.0,1.0,
+                          -0.5,1.0,0.5, 0.0,0.0,
+                          0.0,0.0,0.0, 0.5,1.0,
+                          0.5,1.0,-0.5, 1.0,1.0,
+                          -0.5,1.0,-0.5, 0.0,1.0,
+                          0.5,1.0,-0.5, 1.0,1.0,
+                          0.0,0.0,0.0, 1.0,0.5,
+                          0.5,1.0,0.5, 1.0,0.0],float32)
         self.culled=len(self.vdata)
         self.nocull=0
         self.poly=0

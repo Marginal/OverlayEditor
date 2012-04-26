@@ -1748,7 +1748,7 @@ class MainWindow(wx.Frame):
             
         
 # main
-app=wx.App()
+app=wx.App(redirect=not __debug__)
 if platform=='win32':
     if app.GetComCtl32Version()>=600 and wx.DisplayDepth()>=32:
         wx.SystemOptions.SetOptionInt('msw.remap', 2)

@@ -21,7 +21,7 @@ except:	# not in 2.0.0.44
 import codecs
 from glob import glob
 from math import cos, log, pi, radians
-from numpy import array, concatenate, empty, hstack, ndarray, float32, uint32
+from numpy import array, concatenate, empty, ndarray, float32, uint32
 from os import listdir, mkdir
 from os.path import basename, curdir, dirname, exists, isdir, join, normpath, pardir, sep, splitext
 from shutil import copyfile
@@ -151,7 +151,7 @@ def readApt(filename, offset=None):
     pavement=[]
     for line in h:
         c=line.split()
-        if not c: continue
+        if not c or c[0].startswith('#'): continue
         id=int(c[0])
         if pavement and id not in range(111,120):
             run.append(pavement[:-1])
@@ -716,7 +716,7 @@ class VertexCache:
 
     def allocate_instance(self, data):
         # cache geometry data, but don't update OpenGL arrays yet
-        assert isinstance(data,ndarray)
+        assert isinstance(data,ndarray), data
         base=self.instance_count
         self.instance_count+=len(data)/5
         self.instance_pending.append(data)
@@ -815,14 +815,12 @@ class VertexCache:
             else:
                 tex=join('Resources','Sea01.png')
             self.mesh[key]=[(tex, 1,
-                             array([[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
-                                    [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2],
-                                    [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2],
-                                    [-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
-                                    [ onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
-                                    [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],float32),
-                             array([[0, 0], [100, 100], [0, 100],
-                                    [0, 0], [100, 0], [100, 100]],float32))]
+                             [[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
+                              [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100],
+                              [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2,   0, 100],
+                              [-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
+                              [ onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2, 100,   0],
+                              [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100]])]
             self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
             self.nets[(tile[0],tile[1],Prefs.NETWORK)]=[]
 
@@ -832,18 +830,16 @@ class VertexCache:
             return self.meshcache
         # merge patches that use same texture
         bytex={}
-        for texture, flags, v, t in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
+        for texture, flags, v in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
             if (texture,flags) in bytex:
-                (v2,t2)=bytex[(texture,flags)]
-                v2.extend(v)
-                t2.extend(t)
+                bytex[(texture,flags)].extend(v)
             else:
-                bytex[(texture,flags)]=(list(v), list(t))
+                bytex[(texture,flags)]=list(v)
         # add into array
         if __debug__: clock=time.clock()	# Processor time
 
-        for (texture, flags), (v, t) in bytex.iteritems():
-            base=self.allocate_instance(hstack((array(v,float32), array(t,float32))).flatten())
+        for (texture, flags), v in bytex.iteritems():
+            base=self.allocate_instance(array(v, float32).flatten())
             texno=self.texcache.get(texture, flags&8, False, flags&1)
             self.meshcache.append((base, len(v), texno, flags&2))
         if __debug__: print "%6.3f time in getMesh" % (time.clock()-clock)
@@ -875,7 +871,7 @@ class VertexCache:
         meshdata=[]
         tot=0
         if __debug__: clock=time.clock()	# Processor time
-        for (texture, flags, v, t) in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
+        for texture, flags, v in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
             if not flags&1: continue	# not interested in overlays
             minx=minz=maxint
             maxx=maxz=-maxint
@@ -885,7 +881,7 @@ class VertexCache:
                 maxx=max(maxx, v[i][0], v[i+1][0], v[i+2][0])
                 minz=min(minz, v[i][2], v[i+1][2], v[i+2][2])
                 maxz=max(maxz, v[i][2], v[i+1][2], v[i+2][2])
-                tris.append(([v[i], v[i+1], v[i+2]], [0,0,0,0]))
+                tris.append(([v[i][:3], v[i+1][:3], v[i+2][:3]], [0,0,0,0]))
             meshdata.append((BBox(minx, maxx, minz, maxz), tris))
             tot+=len(tris)
         if __debug__: print "%6.3f time in getMeshdata" % (time.clock()-clock)

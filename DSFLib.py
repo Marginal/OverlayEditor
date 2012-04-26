@@ -636,7 +636,6 @@ def makemesh(flags,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,
     centrelat=south+0.5
     centrelon=west+0.5
     v=[]
-    t=[]
     if flags&1 and (len(patch[0])<7 or xscale):	# hard and no st coords
         for p in patch:
             x=(p[0]-centrelon)*onedeg*cos(radians(p[1]))
@@ -645,17 +644,16 @@ def makemesh(flags,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,
                 y=p[2]
             else:	# elevation from raster data
                 y=elevation(p[1],p[0],south,west,elev,elevwidth,elevheight)
-            v.append([x, y, z])
             if not angle:
-                t.append([x*xscale, -z*zscale])
+                v.append([x, y, z, x*xscale, -z*zscale])
             elif angle==90:
-                t.append([z*zscale, x*xscale])
+                v.append([x, y, z, z*zscale, x*xscale])
             elif angle==180:
-                t.append([-x*xscale, z*zscale])
+                v.append([x, y, z, -x*xscale, z*zscale])
             elif angle==270:
-                t.append([-z*zscale, -x*xscale])
+                v.append([x, y, z, -z*zscale, -x*xscale])
             else: # not square - ignore rotation
-                t.append([x*xscale, -z*zscale])
+                v.append([x, y, z, x*xscale, -z*zscale])
     elif not (len(patch[0])<7 or xscale):	# st coords but not projected
         for p in patch:
             if p[2]!=-32768:
@@ -663,12 +661,11 @@ def makemesh(flags,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,
             else:	# elevation from raster data
                 y=elevation(p[1],p[0],south,west,elev,elevwidth,elevheight)
             v.append([(p[0]-centrelon)*onedeg*cos(radians(p[1])),
-                      y, (centrelat-p[1])*onedeg])
-            t.append([p[5],p[6]])
+                      y, (centrelat-p[1])*onedeg, p[5],p[6]])
     else:
         # skip not hard and no st coords - complicated blending required
         return None
-    return (texture,flags|texflags,v,t)
+    return (texture,flags|texflags,v)
 
 
 def writeDSF(dsfdir, key, placements, netfile):
