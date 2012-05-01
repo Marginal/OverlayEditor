@@ -1,6 +1,7 @@
 import codecs
 from math import fabs
 from numpy import array, concatenate, float32
+import operator
 from os import listdir
 from os.path import basename, dirname, exists, join, normpath, sep, splitext
 from sys import maxint
@@ -152,12 +153,16 @@ class ObjectDef(ClutterDef):
         ClutterDef.__init__(self, filename, vertexcache)
         self.canpreview=True
         self.type=Locked.OBJ
+        self.draped=[]
+        self.texture_draped=0
 
         h=None
         culled=[]
         nocull=[]
-        current=culled
+        draped=[]
+        last=current=culled
         texture=None
+        texture_draped=None
         if __debug__: clock=time.clock()	# Processor time
         self.poly=0
         self.bbox=BBox()
@@ -299,6 +304,7 @@ class ObjectDef(ClutterDef):
                         current.append(v[i])
                 elif id=='ATTR_LOD':
                     if float(c[1])!=0: break
+                    current=last=culled	# State is reset per LOD
                 elif id=='ATTR_poly_os':
                     self.poly=max(self.poly,int(float(c[1])))
                 elif id=='ATTR_cull':
@@ -330,24 +336,48 @@ class ObjectDef(ClutterDef):
                     idx.extend(map(int,c[1:11])) # slightly faster under 2.3
                 elif id=='IDX':
                     idx.append(int(c[1]))
-                elif id=='TEXTURE':
+                elif id in ['TEXTURE', 'TEXTURE_DRAPED']:
                     if len(c)>1:
-                        (tex,e)=splitext(line[7:].split('#')[0].split('//')[0].strip().replace(':', sep).replace('/', sep).decode('latin1'))
-                        for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                        (tex,e)=splitext(line[len(id):].split('#')[0].split('//')[0].strip().replace(':', sep).replace('/', sep).decode('latin1'))
+                        for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
                             if exists(normpath(join(self.texpath, tex+ext))):
-                                texture=tex+ext
+                                if id=='TEXTURE':
+                                    texture=tex+ext
+                                else:
+                                    texture_draped=tex+ext
                                 break
                         else:
                             if tex.lower()!='none':
-                                texture=tex
+                                if id=='TEXTURE':
+                                    texture=tex
+                                else:
+                                    texture_draped=tex
                 elif id=='ATTR_LOD':
                     if float(c[1])!=0: break
+                    current=last=culled	# State is reset per LOD
                 elif id=='ATTR_poly_os':
-                    self.poly=max(self.poly,int(float(c[1])))
+                    if not texture_draped:	# Ignore ATTR_poly_os if obj uses ATTR_draped
+                        self.poly=max(self.poly,int(float(c[1])))
+                        if float(c[1]):
+                            last=current
+                            current=draped
+                        else:
+                            current=last
                 elif id=='ATTR_cull':
-                    current=culled
+                    if current==draped:
+                        last=culled
+                    else:
+                        current=culled
                 elif id=='ATTR_no_cull':
-                    current=nocull
+                    if current==draped:
+                        last=nocull
+                    else:
+                        current=nocull
+                elif id=='ATTR_draped':
+                    last=current
+                    current=draped
+                elif id=='ATTR_no_draped':
+                    current=last
                 elif id=='ATTR_layer_group':
                     self.setlayer(c[1], int(c[2]))
                 elif id=='ANIM_begin':
@@ -365,12 +395,12 @@ class ObjectDef(ClutterDef):
                     if anim:
                         current.extend([[vt[idx[i]][j]+anim[-1][j] for j in range (3)] + [vt[idx[i]][3],vt[idx[i]][4]] for i in range(start, start+new)])
                     else:
-                        current.extend([vt[idx[i]] for i in range(start, start+new)])
+                        current.extend(operator.itemgetter(*idx[start:start+new])(vt))	#current.extend([vt[idx[i]] for i in range(start, start+new)])
         h.close()
         if __debug__:
             if self.filename: print "%6.3f" % (time.clock()-clock), basename(self.filename)
 
-        if not (len(culled)+len(nocull)):
+        if not (len(culled)+len(nocull)+len(draped)):
             # show empty objects as placeholders otherwise can't edit
             fb=ObjectFallback(filename, vertexcache)
             (self.vdata, self.culled, self.nocull, self.poly, self.bbox, self.height, self.base, self.canpreview)=(fb.vdata, fb.culled, fb.nocull, fb.poly, fb.bbox, fb.height, fb.base, fb.canpreview)	# skip texture
@@ -380,15 +410,23 @@ class ObjectDef(ClutterDef):
             self.culled=len(culled)
             self.nocull=len(nocull)
             self.base=None
+            if texture_draped:	# can be none
+                try:
+                    self.texture_draped=vertexcache.texcache.get(normpath(join(self.texpath, texture_draped)))
+                except IOError, e:
+                    self.texerr=IOError(0,e.strerror,texture_draped)
             if texture:	# can be none
                 try:
                     self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
                 except IOError, e:
                     self.texerr=IOError(0,e.strerror,texture)
+                if self.poly:
+                    self.texture_draped=self.texture
             self.allocate(vertexcache)
+            self.draped=draped
 
     def allocate(self, vertexcache, defs=None):
-        if self.base==None:
+        if self.base==None and self.vdata is not None:
             self.base=vertexcache.allocate_instance(self.vdata)
 
     def flush(self):
@@ -431,17 +469,26 @@ class ObjectDef(ClutterDef):
         glBegin(GL_POINTS)
         glVertex3f(0, 0, 0)
         glEnd()
-        canvas.glstate.set_texture(self.texture)
         canvas.glstate.set_color(COL_UNPAINTED)
         canvas.glstate.set_depthtest(True)
         canvas.glstate.set_poly(False)
-        if self.culled:
-            canvas.glstate.set_cull(True)
-            glDrawArrays(GL_TRIANGLES, self.base, self.culled)
-        if self.nocull:
-            canvas.glstate.set_cull(False)
-            glDrawArrays(GL_TRIANGLES, self.base+self.culled, self.nocull)
-        #glFinish()	# redundant
+        canvas.glstate.set_cull(True)
+        if self.draped:
+            canvas.glstate.set_texture(self.texture_draped)
+            glBegin(GL_TRIANGLES)
+            for i in range(0,len(self.draped),3):
+                for j in range(3):
+                    v=self.draped[i+j]
+                    glTexCoord2f(v[3],v[4])
+                    glVertex3f(v[0],v[1],v[2])
+            glEnd()
+        if self.vdata is not None:
+            canvas.glstate.set_texture(self.texture)
+            if self.culled:
+                glDrawArrays(GL_TRIANGLES, self.base, self.culled)
+            if self.nocull:
+                canvas.glstate.set_cull(False)
+                glDrawArrays(GL_TRIANGLES, self.base+self.culled, self.nocull)
         data=glReadPixels(xoff,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
@@ -487,6 +534,8 @@ class ObjectFallback(ObjectDef):
         self.height=1.0
         self.base=None
         self.allocate(vertexcache)
+        self.draped=[]
+        self.texture_draped=0
 
 
 class AutoGenPointDef(ObjectDef):
@@ -710,7 +759,7 @@ class FacadeFallback(FacadeDef):
     def __init__(self, filename, vertexcache):
         PolygonDef.__init__(self, filename, None)
         self.type=Locked.FAC
-        self.ring=1
+        self.ring=0
         self.two_sided=True
         self.roof=[]
         self.roof_slope=0

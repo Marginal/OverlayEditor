@@ -10,37 +10,6 @@
 # movenode -> move - no layout
 # updatenode -> move node - no layout
 
-#
-# 3 draw modes: normal, selected, picking:
-#
-# normal:
-#   GL_TEXTURE_2D enabled
-#   CULL_FACE enabled
-#   GL_POLYGON_OFFSET_FILL disabled
-#   can use PolygonOffset -1
-#   GL_DEPTH_TEST: enabled
-#   glDepthMask enabled
-#   glColor3f(unpainted colour)
-#
-# selected / drawnodes:
-#   GL_TEXTURE_2D enabled
-#   CULL_FACE enabled
-#   GL_POLYGON_OFFSET_FILL enabled
-#   PolygonOffset -2 (so overwrites in drag select)
-#   GL_DEPTH_TEST: enabled
-#   glDepthMask enabled
-#   glColor3f(selected colour)
-#
-# picking:
-#   GL_TEXTURE_2D disabled
-#   CULL_FACE disabled (so can select reverse)
-#   GL_POLYGON_OFFSET_FILL disabled
-#   don't use PolygonOffset
-#   GL_DEPTH_TEST: enabled
-#   glDepthMask enabled
-#
-
-
 from math import atan2, ceil, cos, floor, hypot, pi, radians, sin
 from numpy import array, array_equal, concatenate, empty, float32, float64
 from OpenGL.GL import *
@@ -48,13 +17,6 @@ from OpenGL.GLU import *
 from sys import maxint
 if __debug__:
     from traceback import print_exc
-
-try:
-    # apparently older PyOpenGL version didn't define gluTessVertex
-    gluTessVertex
-except NameError:
-    from OpenGL import GLU
-    gluTessVertex = GLU._gluTessVertex
 
 from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELNODE
 
@@ -124,6 +86,8 @@ class Object(Clutter):
         self.hdg=hdg
         self.y=y
         self.matrix=None
+        self.dynamic_data=None	# Above laid out as array for inclusion in VBO
+        self.base=None		# Offset in VBO
 
     def __str__(self):
         return '<Object "%s" %11.6f %10.6f %d %s>' % (
@@ -167,6 +131,7 @@ class Object(Clutter):
 
     def draw_instance(self, glstate, selected, picking):
         obj=self.definition
+        if obj.vdata is None: return
         glLoadMatrixf(self.matrix)
         if picking:
             assert not glstate.cull
@@ -189,14 +154,23 @@ class Object(Clutter):
                     glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
 
     def draw_dynamic(self, glstate, selected, picking):
-        # XXX move poly and draped here
-        pass
+        if self.dynamic_data is None:
+            return
+        elif not picking:
+            glstate.set_texture(self.definition.texture_draped)
+            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            glstate.set_cull(True)
+            glstate.set_poly(True)
+            glstate.set_depthtest(True)
+        glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
 
     def draw_nodes(self, glstate, selectednode):
         pass
 
     def clearlayout(self, vertexcache):
         self.matrix=None
+        self.dynamic_data=None	# Can be removed from VBO
+        vertexcache.allocate_dynamic(self)
 
     def islaidout(self):
         return self.matrix is not None
@@ -206,6 +180,21 @@ class Object(Clutter):
         self.y=vertexcache.height(tile,options,x,z)
         h=radians(self.hdg)
         self.matrix=array([cos(h),0.0,sin(h),0.0, 0.0,1.0,0.0,0.0, -sin(h),0.0,cos(h),0.0, x,self.y,z,1.0],float32)
+        # draped & poly_os
+        if not self.definition.draped: return
+        coshdg=cos(h)
+        sinhdg=sin(h)
+        if self.definition.poly or not options&Prefs.ELEVATION:	# poly_os
+            self.dynamic_data=array([[x+v[0]*coshdg-v[2]*sinhdg,self.y+v[1],z+v[0]*sinhdg+v[2]*coshdg,v[3],v[4],0] for v in self.definition.draped], float32).flatten()
+        else:	# draped
+            tris=[]
+            for v in self.definition.draped:
+                vx=x+v[0]*coshdg-v[2]*sinhdg
+                vz=z+v[0]*sinhdg+v[2]*coshdg
+                vy=vertexcache.height(tile,options,vx,vz)
+                tris.append([vx,vy,vz,v[3],v[4],0])
+            self.dynamic_data=array(drape(tris, tile, options, vertexcache), float32).flatten()
+        vertexcache.allocate_dynamic(self)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         self.lat=max(tile[0], min(tile[0]+maxres, self.lat+dlat))
@@ -242,7 +231,7 @@ class Polygon(Clutter):
         self.nonsimple=False	# True iff non-simple and the polygon type cares about it (i.e. not Facades)
         self.col=COL_POLYGON	# Outline colour
         self.points=[]		# list of windings in world space (x,y,z)
-        self.dynamic_data=empty((0,6),float32)	# Above laid out as array for inclusion in VBO
+        self.dynamic_data=None	# Above laid out as array for inclusion in VBO
         self.base=None		# Offset in VBO
 
     def __str__(self):
@@ -483,6 +472,18 @@ class Fitted(Polygon):
 
 class Draped(Polygon):
 
+    def tessvertex(vertex, data):
+        data.append(vertex)
+
+    def tessedge(flag):
+        pass	# dummy
+
+    tess=gluNewTess()
+    gluTessNormal(tess, 0, -1, 0)
+    gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
+    gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
+    gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
+
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
 
@@ -522,14 +523,12 @@ class Draped(Polygon):
         if self.nonsimple:
             Polygon.draw_dynamic(self, glstate, selected, picking)
             return
-        elif picking:
-            glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
-            return
-        glstate.set_texture(self.definition.texture)
-        glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
-        glstate.set_cull(True)
-        glstate.set_poly(True)
-        glstate.set_depthtest(True)
+        elif not picking:
+            glstate.set_texture(self.definition.texture)
+            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            glstate.set_cull(True)
+            glstate.set_poly(True)
+            glstate.set_depthtest(True)
         glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
         
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
@@ -621,30 +620,27 @@ class Draped(Polygon):
             return Polygon.updatenode(self, node, lat, lon, tile, options, vertexcache)
 
     def layout(self, tile, options, vertexcache, selectednode=None):
-        global tess, csgt
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
-        # tessellate. This is just to get UV data and check polygon is simple
+        # Tessellate to generate tri vertices with UV data, and check polygon is simple
         if self.param!=65535:
             drp=self.definition
             ch=cos(radians(self.param))
             sh=sin(radians(self.param))
         try:
             tris=[]
-            gluTessBeginPolygon(tess, tris)
+            gluTessBeginPolygon(Draped.tess, tris)
             for i in range(len(self.nodes)):
-                gluTessBeginContour(tess)
+                gluTessBeginContour(Draped.tess)
                 for j in range(len(self.nodes[i])):
                     if self.param==65535:
                         if len(self.nodes[i][j])>=6:
-                            uv=self.nodes[i][j][4:6]
+                            gluTessVertex(Draped.tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [self.nodes[i][j][4], self.nodes[i][j][5], 0])
                         else:
-                            uv=self.nodes[i][j][2:4]
-                    else:
-                        uv=((self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale,
-                            (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale)
-                    gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), (self.points[i][j], False, uv))
-                gluTessEndContour(tess)
-            gluTessEndPolygon(tess)
+                            gluTessVertex(Draped.tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [self.nodes[i][j][2], self.nodes[i][j][3], 0])
+                    else:	# projected
+                        gluTessVertex(Draped.tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [(self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale, (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale, 0])
+                gluTessEndContour(Draped.tess)
+            gluTessEndPolygon(Draped.tess)
 
             if __debug__:
                 if not tris: print "Draped layout failed - no tris"
@@ -659,93 +655,10 @@ class Draped(Polygon):
         if not tris:
             self.nonsimple=True
             self.dynamic_data=concatenate([array(p+COL_NONSIMPLE,float32) for w in self.points for p in w])
-            vertexcache.allocate_dynamic(self)
-            return selectednode
-
-        if not options&Prefs.ELEVATION:
-            self.dynamic_data=concatenate([array(v[0]+v[2]+(0,),float32) for v in tris])
-            vertexcache.allocate_dynamic(self)
-            return selectednode
-
-        # tessellate again, this time in CSG mode against terrain
-        minx=minz=maxint
-        maxx=maxz=-maxint
-        csgttris=[]
-        gluTessBeginPolygon(csgt, csgttris)
-        for i in range(len(self.nodes)):
-            n=len(self.nodes[i])
-            gluTessBeginContour(csgt)
-            for j in range(n-1,-1,-1): # why not n?
-                if not i:
-                    minx=min(minx, self.points[i][j][0])
-                    maxx=max(maxx, self.points[i][j][0])
-                    minz=min(minz, self.points[i][j][2])
-                    maxz=max(maxz, self.points[i][j][2])
-                if self.param==65535:
-                    if len(self.nodes[i][j])>=6:
-                        uv=list(self.nodes[i][j][4:6])
-                    else:
-                        uv=list(self.nodes[i][j][2:4])
-                else:
-                    uv=[(self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale,
-                        (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale]
-                gluTessVertex(csgt, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), (list(self.points[i][j]), False, uv))
-            gluTessEndContour(csgt)
-        abox=BBox(minx, maxx, minz, maxz)
-
-        for (bbox, meshtris) in vertexcache.getMeshdata(tile,options):
-            if not abox.intersects(bbox): continue
-            for meshtri in meshtris:
-                (meshpt, coeffs)=meshtri
-                # tesselator is expensive - minimise mesh triangles
-                tbox=BBox()
-                for m in range(3):
-                    tbox.include(meshpt[m][0], meshpt[m][2])
-                if not abox.intersects(tbox):
-                    continue
-                gluTessBeginContour(csgt)
-                for m in range(3):
-                    x=meshpt[m][0]
-                    z=meshpt[m][2]
-                    # check if mesh point is inside a polygon triangle
-                    # in which case calculate a uv position
-                    # http://astronomy.swin.edu.au/~pbourke/geometry/insidepoly
-                    for t in range(0,len(tris),3):
-                        inside=False
-                        ptj=tris[t+2][0]
-                        for i in range(t,t+3):
-                            pti=tris[i][0]
-                            if z==pti[2]==ptj[2] and x <= max(pti[0],ptj[0]) and x >= min(pti[0],ptj[0]):
-                                inside = True	# on the line
-                                break
-                            elif (((pti[2] <= z and z < ptj[2]) or
-                                   (ptj[2] <= z and z < pti[2])) and
-                                  (x < (ptj[0]-pti[0]) * (z - pti[2]) / (ptj[2] - pti[2]) + pti[0])):
-                                inside = not inside
-                            ptj=pti
-                        if inside:	# inside polygon triange tris[t:t+3]
-                            x0=tris[t][0][0]
-                            z0=tris[t][0][2]
-                            x1=tris[t+1][0][0]-x0
-                            z1=tris[t+1][0][2]-z0
-                            x2=tris[t+2][0][0]-x0
-                            z2=tris[t+2][0][2]-z0
-                            xp=x-x0
-                            zp=z-z0
-                            a=(xp*z2-x2*zp)/(x1*z2-x2*z1)
-                            b=(xp*z1-x1*zp)/(x2*z1-x1*z2)
-                            uv=[tris[t][2][0]+a*(tris[t+1][2][0]-tris[t][2][0])+b*(tris[t+2][2][0]-tris[t][2][0]),
-                                tris[t][2][1]+a*(tris[t+1][2][1]-tris[t][2][1])+b*(tris[t+2][2][1]-tris[t][2][1])]
-                            break
-                    else:
-                        # Provide something in case tessellation screws up
-                        uv=[0,0]
-                    gluTessVertex(csgt, array([x,0,z],float64), (meshpt[m],True, uv))
-                gluTessEndContour(csgt)
-
-        gluTessEndPolygon(csgt)
-
-        self.dynamic_data=concatenate([array(v[0]+v[2]+[0],float32) for v in csgttris])
+        elif not options&Prefs.ELEVATION:
+            self.dynamic_data=array(tris, float32).flatten()
+        else:
+            self.dynamic_data=array(drape(tris, tile, options, vertexcache), float32).flatten()
         vertexcache.allocate_dynamic(self)
         return selectednode
 
@@ -1127,6 +1040,18 @@ class Facade(Polygon):
 
 class Forest(Fitted):
 
+    def tessvertex(vertex, data):
+        data.append(vertex)
+
+    def tessedge(flag):
+        pass	# dummy
+
+    tess=gluNewTess()
+    gluTessNormal(tess, 0, -1, 0)
+    gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
+    gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
+    gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
+
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if param==None: param=127
         Fitted.__init__(self, name, param, nodes, lon, size, hdg)
@@ -1193,13 +1118,13 @@ class Forest(Fitted):
         # tessellate. This is just to check polygon is simple
         try:
             tris=[]
-            gluTessBeginPolygon(tess, tris)
+            gluTessBeginPolygon(Forest.tess, tris)
             for i in range(len(self.nodes)):
-                gluTessBeginContour(tess)
+                gluTessBeginContour(Forest.tess)
                 for j in range(len(self.nodes[i])):
-                    gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), (self.points[i][j], False, None))
-                gluTessEndContour(tess)
-            gluTessEndPolygon(tess)
+                    gluTessVertex(Forest.tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), self.points[i][j])
+                gluTessEndContour(Forest.tess)
+            gluTessEndPolygon(Forest.tess)
             if not tris:
                 if __debug__: print "Forest layout failed"
                 self.nonsimple=True
@@ -1452,22 +1377,6 @@ def latlondisp(dms, lat, lon):
 
 def tessvertex(vertex, data):
     data.append(vertex)
-
-def tesscombine(coords, vertex, weight):
-    # Linearly interp height & uv from vertices (location, ismesh, uv)
-    # Will only be called if polygon is not simple (and therefore illegal)
-    p1=vertex[0]
-    p2=vertex[1]
-    d=hypot(p2[0][0]-p1[0][0], p2[0][2]-p1[0][2])
-    if not d:
-        return p1	# p1 and p2 are colocated
-    else:
-        ratio=hypot(coords[0]-p1[0][0], coords[2]-p1[0][2])/d
-        y=p1[0][1]+ratio*(p2[0][1]-p1[0][1])
-        if p1[2]:
-            return ([coords[0],y,coords[2]], False, (p1[2][0]+ratio*(p2[2][0]-p1[2][0]), (p1[2][1]+ratio*(p2[2][1]-p1[2][1]))))
-        else:
-            return ([coords[0],y,coords[2]], False, None)	# forest
     
 def tessedge(flag):
     pass	# dummy
@@ -1480,11 +1389,16 @@ gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
 
 
 def csgtvertex(vertex, data):
-    #assert(vertex[2])
-    data.append(vertex)
+    data.append(vertex[0])
+
+def csgtcombined(coords, vertex, weight):
+    try:
+        return csgtcombine(coords, vertex, weight)
+    except:
+        print_exc()
 
 def csgtcombine(coords, vertex, weight):
-    # interp height & UV at coords from vertices (location, ismesh, uv)
+    # interp height & UV at coords from vertices ([x,y,z,u,v,w], ismesh)
     #print
     #print vertex[0], weight[0]
     #print vertex[1], weight[1]
@@ -1492,10 +1406,8 @@ def csgtcombine(coords, vertex, weight):
     #print vertex[3], weight[3]
 
     # check for just two adjacent mesh triangles
-    if array_equal(vertex[0][0],vertex[1][0]) and vertex[0][1]==vertex[1][1] and vertex[0][2]==vertex[1][2]:
-        # common case, or non-simple
-        #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
-        #print vertex[0], " ->"
+    if vertex[0]==vertex[1]:
+        # common case
         return vertex[0]
     elif vertex[0][0][0]==vertex[1][0][0] and vertex[0][0][2]==vertex[1][0][2] and vertex[0][1]:
         # Height discontinuity in terrain mesh - eg LIEE - wtf!
@@ -1505,41 +1417,40 @@ def csgtcombine(coords, vertex, weight):
 
     # intersection of two lines - use terrain mesh line for height
     elif vertex[0][1]:
-        #assert weight[0] and weight[1] and weight[2] and weight[3] and vertex[1][1]
-        p1=vertex[0]
-        p2=vertex[1]
-        p3=vertex[2]
-        p4=vertex[3]
+        # p1 and p2 have mesh height, p3 and p4 have uv
+        assert weight[0] and weight[1] and weight[2] and weight[3] and vertex[1][1]
+        p1=vertex[0][0]
+        p2=vertex[1][0]
+        p3=vertex[2][0]
+        p4=vertex[3][0]
     else:
-        #assert weight[0] and weight[1] and weight[2] and weight[3]
-        p1=vertex[2]
-        p2=vertex[3]
-        p3=vertex[0]
-        p4=vertex[1]
+        # p1 and p2 have mesh height, p3 and p4 have uv
+        assert weight[0] and weight[1] and weight[2] and weight[3] and vertex[2][1] and vertex[3][1]
+        p1=vertex[2][0]
+        p2=vertex[3][0]
+        p3=vertex[0][0]
+        p4=vertex[1][0]
 
     # height
-    d=hypot(p2[0][0]-p1[0][0], p2[0][2]-p1[0][2])
+    d=hypot(p2[0]-p1[0], p2[2]-p1[2])
     if not d:
-        y=p1[0][1]
+        y=p1[1]
     else:
-        ratio=(hypot(coords[0]-p1[0][0], coords[2]-p1[0][2])/d)
-        y=p1[0][1]+ratio*(p2[0][1]-p1[0][1])
+        ratio=(hypot(coords[0]-p1[0], coords[2]-p1[2])/d)
+        y=p1[1]+ratio*(p2[1]-p1[1])
 
     # UV
-    if not (p3 and p3[2] and p4 and p4[2]):
-        uv=None
+    d=hypot(p4[0]-p3[0], p4[2]-p3[2])
+    if not d:
+        uv=p3[3:]
     else:
-        d=hypot(p4[0][0]-p3[0][0], p4[0][2]-p3[0][2])
-        if not d:
-            uv=p3[2]
-        else:
-            ratio=(hypot(coords[0]-p3[0][0], coords[2]-p3[0][2])/d)
-            uv=[p3[2][0]+ratio*(p4[2][0]-p3[2][0]),
-                p3[2][1]+ratio*(p4[2][1]-p3[2][1])]
+        ratio=(hypot(coords[0]-p3[0], coords[2]-p3[2])/d)
+        uv=[p3[3]+ratio*(p4[3]-p3[3]),
+            p3[4]+ratio*(p4[4]-p3[4]),
+            p3[5]+ratio*(p4[5]-p3[5])]
 
     #print ([coords[0],y,coords[2]], True, uv), " ->"
-    #assert(uv)	# only if draped
-    return ([coords[0],y,coords[2]], True, uv)
+    return ([coords[0],y,coords[2]]+uv, True)
 
 def csgtedge(flag):
     pass	# dummy
@@ -1548,5 +1459,79 @@ csgt=gluNewTess()
 gluTessNormal(csgt, 0, -1, 0)
 gluTessProperty(csgt, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
 gluTessCallback(csgt, GLU_TESS_VERTEX_DATA,  csgtvertex)
-gluTessCallback(csgt, GLU_TESS_COMBINE,      csgtcombine)
+if __debug__:
+    gluTessCallback(csgt, GLU_TESS_COMBINE,  csgtcombined)
+else:
+    gluTessCallback(csgt, GLU_TESS_COMBINE,  csgtcombine)
 gluTessCallback(csgt, GLU_TESS_EDGE_FLAG,    csgtedge)	# no strips
+
+# Helper to drape polygons across terrain
+# Input - list of tri vertices [x,y,z,u,v,w]
+# Output - list of tri vertices draped across terrain - [x,y,z,u,v,w]
+def drape(tris, tile, options, vertexcache):
+    global csgt
+
+    csgttris=[]
+    for i in range(0,len(tris),3):
+        gluTessBeginPolygon(csgt, csgttris)
+        gluTessBeginContour(csgt)
+        for j in range(i,i+3):
+            gluTessVertex(csgt, array([tris[j][0],0,tris[j][2]],float64), (tris[j],False))
+        gluTessEndContour(csgt)
+        minx=min(tris[i][0], tris[i+1][0], tris[i+2][0])
+        maxx=max(tris[i][0], tris[i+1][0], tris[i+2][0])
+        minz=min(tris[i][2], tris[i+1][2], tris[i+2][2])
+        maxz=max(tris[i][2], tris[i+1][2], tris[i+2][2])
+        abox=BBox(minx, maxx, minz, maxz)
+
+        for (bbox, meshtris) in vertexcache.getMeshdata(tile,options):
+            if not abox.intersects(bbox): continue
+            for meshtri in meshtris:
+                (meshpt, coeffs)=meshtri
+                # tesselator is expensive - minimise mesh triangles
+                tbox=BBox()
+                for m in range(3):
+                    tbox.include(meshpt[m][0], meshpt[m][2])
+                if not abox.intersects(tbox):
+                    continue
+                gluTessBeginContour(csgt)
+                for m in range(3):
+                    x=meshpt[m][0]
+                    z=meshpt[m][2]
+                    # check if mesh point is inside a polygon triangle
+                    # in which case calculate a uv position
+                    # http://astronomy.swin.edu.au/~pbourke/geometry/insidepoly
+                    inside=False
+                    ptj=tris[i+2]
+                    for j in range(i,i+3):
+                        pti=tris[j]
+                        if z==pti[2]==ptj[2] and x <= max(pti[0],ptj[0]) and x >= min(pti[0],ptj[0]):
+                            inside = True	# on the line
+                            break
+                        elif (((pti[2] <= z and z < ptj[2]) or
+                               (ptj[2] <= z and z < pti[2])) and
+                              (x < (ptj[0]-pti[0]) * (z - pti[2]) / (ptj[2] - pti[2]) + pti[0])):
+                            inside = not inside
+                        ptj=pti
+                    if inside:	# inside polygon triange tris[i:i+3]
+                        x0=tris[i][0]
+                        z0=tris[i][2]
+                        x1=tris[i+1][0]-x0
+                        z1=tris[i+1][2]-z0
+                        x2=tris[i+2][0]-x0
+                        z2=tris[i+2][2]-z0
+                        xp=x-x0
+                        zp=z-z0
+                        a=(xp*z2-x2*zp)/(x1*z2-x2*z1)
+                        b=(xp*z1-x1*zp)/(x2*z1-x1*z2)
+                        uv=[tris[i][3]+a*(tris[i+1][3]-tris[i][3])+b*(tris[i+2][3]-tris[i][3]),
+                            tris[i][4]+a*(tris[i+1][4]-tris[i][4])+b*(tris[i+2][4]-tris[i][4]),
+                            tris[i][5]+a*(tris[i+1][5]-tris[i][5])+b*(tris[i+2][5]-tris[i][5])]
+                    else:
+                        # Provide something in case tessellation screws up
+                        uv=[0,0,0]
+                    gluTessVertex(csgt, array([x,0,z],float64), (meshpt[m]+uv,True))
+                gluTessEndContour(csgt)
+        gluTessEndPolygon(csgt)
+
+    return csgttris
