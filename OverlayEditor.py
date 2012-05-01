@@ -1100,7 +1100,7 @@ class MainWindow(wx.Frame):
         elif event.GetKeyCode() in [wx.WXK_DELETE, wx.WXK_BACK, wx.WXK_NUMPAD_DELETE]: # wx.WXK_NUMPAD_DECIMAL]:
             changed=self.canvas.delsel(event.ControlDown(), event.ShiftDown())
         elif event.GetKeyCode()==ord('Z') and event.CmdDown():
-            self.OnUndo()
+            self.OnUndo(event)
             return
         #elif event.GetKeyCode()==ord('X') and event.CmdDown():
         #    self.OnCut()
