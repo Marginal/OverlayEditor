@@ -16,6 +16,7 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from sys import maxint
 if __debug__:
+    import time
     from traceback import print_exc
 
 from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELNODE
@@ -1544,6 +1545,30 @@ gluTessCallback(csgt, GLU_TESS_EDGE_FLAG,    csgtedge)	# no strips
 def drape(tris, tile, options, vertexcache):
     global csgt
 
+    # tesselator is expensive - minimise mesh triangles
+    #if __debug__: clock=time.clock()
+    abox=BBox()
+    meshpts=[]
+    for tri in tris:
+        abox.include(tri[0],tri[2])
+    for (bbox, meshtris) in vertexcache.getMeshdata(tile,options):
+        if not abox.intersects(bbox): continue
+        # This loop dominates exexution time for the typical case of a small area
+        for meshtri in meshtris:
+            (meshpt, coeffs)=meshtri
+            # following code is unwrapped below for speed
+            #tbox=BBox()
+            #for m in meshpt:
+            #    tbox.include(m[0],m[2])
+            (m0,m1,m2)=meshpt
+            minx=min(m0[0], m1[0], m2[0])
+            maxx=max(m0[0], m1[0], m2[0])
+            minz=min(m0[2], m1[2], m2[2])
+            maxz=max(m0[2], m1[2], m2[2])
+            if abox.intersects(BBox(minx, maxx, minz, maxz)):
+                meshpts.append(meshpt)
+    #if __debug__: clock2=time.clock()-clock
+
     csgttris=[]
     for i in range(0,len(tris),3):
         gluTessBeginPolygon(csgt, csgttris)
@@ -1551,60 +1576,32 @@ def drape(tris, tile, options, vertexcache):
         for j in range(i,i+3):
             gluTessVertex(csgt, array([tris[j][0],0,tris[j][2]],float64), (tris[j],False))
         gluTessEndContour(csgt)
-        minx=min(tris[i][0], tris[i+1][0], tris[i+2][0])
-        maxx=max(tris[i][0], tris[i+1][0], tris[i+2][0])
-        minz=min(tris[i][2], tris[i+1][2], tris[i+2][2])
-        maxz=max(tris[i][2], tris[i+1][2], tris[i+2][2])
-        abox=BBox(minx, maxx, minz, maxz)
 
-        for (bbox, meshtris) in vertexcache.getMeshdata(tile,options):
-            if not abox.intersects(bbox): continue
-            for meshtri in meshtris:
-                (meshpt, coeffs)=meshtri
-                # tesselator is expensive - minimise mesh triangles
-                tbox=BBox()
-                for m in range(3):
-                    tbox.include(meshpt[m][0], meshpt[m][2])
-                if not abox.intersects(tbox):
-                    continue
-                gluTessBeginContour(csgt)
-                for m in range(3):
-                    x=meshpt[m][0]
-                    z=meshpt[m][2]
-                    # check if mesh point is inside a polygon triangle
-                    # in which case calculate a uv position
-                    # http://astronomy.swin.edu.au/~pbourke/geometry/insidepoly
-                    inside=False
-                    ptj=tris[i+2]
-                    for j in range(i,i+3):
-                        pti=tris[j]
-                        if z==pti[2]==ptj[2] and x <= max(pti[0],ptj[0]) and x >= min(pti[0],ptj[0]):
-                            inside = True	# on the line
-                            break
-                        elif (((pti[2] <= z and z < ptj[2]) or
-                               (ptj[2] <= z and z < pti[2])) and
-                              (x < (ptj[0]-pti[0]) * (z - pti[2]) / (ptj[2] - pti[2]) + pti[0])):
-                            inside = not inside
-                        ptj=pti
-                    if inside:	# inside polygon triange tris[i:i+3]
-                        x0=tris[i][0]
-                        z0=tris[i][2]
-                        x1=tris[i+1][0]-x0
-                        z1=tris[i+1][2]-z0
-                        x2=tris[i+2][0]-x0
-                        z2=tris[i+2][2]-z0
-                        xp=x-x0
-                        zp=z-z0
-                        a=(xp*z2-x2*zp)/(x1*z2-x2*z1)
-                        b=(xp*z1-x1*zp)/(x2*z1-x1*z2)
-                        uv=[tris[i][3]+a*(tris[i+1][3]-tris[i][3])+b*(tris[i+2][3]-tris[i][3]),
-                            tris[i][4]+a*(tris[i+1][4]-tris[i][4])+b*(tris[i+2][4]-tris[i][4]),
-                            tris[i][5]+a*(tris[i+1][5]-tris[i][5])+b*(tris[i+2][5]-tris[i][5])]
-                    else:
-                        # Provide something in case tessellation screws up
-                        uv=[0,0,0]
-                    gluTessVertex(csgt, array([x,0,z],float64), (meshpt[m]+uv,True))
-                gluTessEndContour(csgt)
+        for meshpt in meshpts:
+            gluTessBeginContour(csgt)
+            for m in meshpt:
+                x=m[0]
+                z=m[2]
+                # calculate a uv position
+                (tri0,tri1,tri2)=tris[i:i+3]
+                x0=tri0[0]
+                z0=tri0[2]
+                x1=tri1[0]-x0
+                z1=tri1[2]-z0
+                x2=tri2[0]-x0
+                z2=tri2[2]-z0
+                xp=x-x0
+                zp=z-z0
+                ah=x1*z2-x2*z1
+                bh=x2*z1-x1*z2
+                a=ah and (xp*z2-x2*zp)/ah
+                b=bh and (xp*z1-x1*zp)/bh
+                gluTessVertex(csgt, array([x,0,z],float64),
+                              (m+[tri0[3]+a*(tri1[3]-tri0[3])+b*(tri2[3]-tri0[3]),
+                                  tri0[4]+a*(tri1[4]-tri0[4])+b*(tri2[4]-tri0[4]),
+                                  tri0[5]+a*(tri1[5]-tri0[5])+b*(tri2[5]-tri0[5])], True))
+            gluTessEndContour(csgt)
         gluTessEndPolygon(csgt)
 
+    #if __debug__: print "%6.3f time to drape %d tris against %d meshpts\n%6.3f of that in BBox" % (time.clock()-clock, len(tris)/3, len(meshpts), clock2)
     return csgttris
