@@ -426,7 +426,7 @@ class Palette(wx.SplitterWindow):
                     if filename in self.frame.canvas.defs:
                         definition=self.frame.canvas.defs[filename]
                     else:
-                        self.frame.canvas.defs[filename]=definition=ClutterDefFactory(filename, self.frame.canvas.vertexcache)
+                        self.frame.canvas.defs[filename]=definition=ClutterDefFactory(filename, self.frame.canvas.vertexcache, self.frame.canvas.lookup, self.frame.canvas.defs)
                         # Special handling to mark orthos
                         if isinstance(definition, DrapedDef) and definition.ortho:
                             for l in self.cb.lists:

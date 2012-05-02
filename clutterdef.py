@@ -14,7 +14,7 @@ if __debug__:
 from lock import Locked
 
 COL_WHITE    =(1.0, 1.0, 1.0)
-COL_UNPAINTED=(0.8, 0.8, 0.8)
+COL_UNPAINTED=(1.0, 1.0, 1.0)
 COL_POLYGON  =(0.25,0.25,0.25)
 COL_FOREST   =(0.25,0.75,0.25)
 COL_EXCLUDE  =(0.75,0.25,0.25)
@@ -63,14 +63,16 @@ class BBox:
 # flush -> discard vertexcache
 #
 
-def ClutterDefFactory(filename, vertexcache):
+def ClutterDefFactory(filename, vertexcache, lookup, defs):
     "creates and initialises appropriate PolgonDef subclass based on file extension"
     # would like to have made this a 'static' method of PolygonDef
     if filename.startswith(PolygonDef.EXCLUDE):
         return ExcludeDef(filename, vertexcache)        
     ext=filename.lower()[-4:]
-    if ext==ObjectDef.OBJECT or ext==AutoGenPointDef.AGP:
+    if ext==ObjectDef.OBJECT:
         return ObjectDef(filename, vertexcache)
+    elif ext==AutoGenPointDef.AGP:
+        return AutoGenPointDef(filename, vertexcache, lookup, defs)
     elif ext==PolygonDef.DRAPED:
         return DrapedDef(filename, vertexcache)
     elif ext==PolygonDef.FACADE:
@@ -153,6 +155,10 @@ class ObjectDef(ClutterDef):
         ClutterDef.__init__(self, filename, vertexcache)
         self.canpreview=True
         self.type=Locked.OBJ
+        self.poly=0
+        self.bbox=BBox()
+        self.height=0.5	# musn't be 0
+        self.base=None
         self.draped=[]
         self.texture_draped=0
 
@@ -164,9 +170,6 @@ class ObjectDef(ClutterDef):
         texture=None
         texture_draped=None
         if __debug__: clock=time.clock()	# Processor time
-        self.poly=0
-        self.bbox=BBox()
-        self.height=0.5	# musn't be 0
         h=open(self.filename, 'rU')
         if filename[0]=='*': self.filename=None
         if not h.readline().strip()[0] in ['I','A']:
@@ -184,7 +187,7 @@ class ObjectDef(ClutterDef):
                 if tex:
                     (tex,e)=splitext(tex.split('//')[0].strip().replace(':', sep).replace('/', sep).decode('latin1'))
                     break
-            for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+            for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
                 if exists(normpath(join(self.texpath, tex+ext))):
                     texture=tex+ext
                     break
@@ -409,7 +412,6 @@ class ObjectDef(ClutterDef):
             self.vdata=array(culled+nocull, float32).flatten()
             self.culled=len(culled)
             self.nocull=len(nocull)
-            self.base=None
             if texture_draped:	# can be none
                 try:
                     self.texture_draped=vertexcache.texcache.get(normpath(join(self.texpath, texture_draped)))
@@ -434,7 +436,13 @@ class ObjectDef(ClutterDef):
 
     def preview(self, canvas, vertexcache):
         if not self.canpreview: return None
+        if isinstance(self,AutoGenPointDef):
+            children=self.children
+        else:
+            children=[]
         self.allocate(vertexcache, canvas.defs)
+        for p in children:
+            p[1].allocate(vertexcache, canvas.defs)
         canvas.glstate.set_instance(vertexcache)
         xoff=canvas.GetClientSize()[0]-ClutterDef.PREVIEWSIZE
         glViewport(xoff, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
@@ -454,7 +462,7 @@ class ObjectDef(ClutterDef):
         glRotatef( 30, 1,0,0)
         glRotatef(120, 0,1,0)
         glTranslatef(sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz)
-        if __debug__:
+        if __debug__ and False:
             canvas.glstate.set_texture(0)
             canvas.glstate.set_color(COL_UNPAINTED)
             for height in [0, self.height]:
@@ -471,7 +479,7 @@ class ObjectDef(ClutterDef):
         glEnd()
         canvas.glstate.set_color(COL_UNPAINTED)
         canvas.glstate.set_depthtest(True)
-        canvas.glstate.set_poly(False)
+        canvas.glstate.set_poly(True)
         canvas.glstate.set_cull(True)
         if self.draped:
             canvas.glstate.set_texture(self.texture_draped)
@@ -482,6 +490,23 @@ class ObjectDef(ClutterDef):
                     glTexCoord2f(v[3],v[4])
                     glVertex3f(v[0],v[1],v[2])
             glEnd()
+        for p in children:
+            child=p[1]
+            if child.draped:
+                canvas.glstate.set_texture(child.texture_draped)
+                glPushMatrix()
+                glTranslatef(p[2],0,p[3])
+                glRotatef(p[4], 0,1,0)
+                glBegin(GL_TRIANGLES)
+                for i in range(0,len(child.draped),3):
+                    for j in range(3):
+                        v=child.draped[i+j]
+                        glTexCoord2f(v[3],v[4])
+                        glVertex3f(v[0],v[1],v[2])
+                glEnd()
+                glPopMatrix()
+
+        canvas.glstate.set_poly(False)
         if self.vdata is not None:
             canvas.glstate.set_texture(self.texture)
             if self.culled:
@@ -489,6 +514,20 @@ class ObjectDef(ClutterDef):
             if self.nocull:
                 canvas.glstate.set_cull(False)
                 glDrawArrays(GL_TRIANGLES, self.base+self.culled, self.nocull)
+        for p in children:
+            child=p[1]
+            if child.vdata is not None:
+                canvas.glstate.set_texture(child.texture)
+                glPushMatrix()
+                glTranslatef(p[2],0,p[3])
+                glRotatef(p[4], 0,1,0)
+                if child.culled:
+                    canvas.glstate.set_cull(True)
+                    glDrawArrays(GL_TRIANGLES, child.base, child.culled)
+                if child.nocull:
+                    canvas.glstate.set_cull(False)
+                    glDrawArrays(GL_TRIANGLES, child.base+child.culled, child.nocull)
+                glPopMatrix()
         data=glReadPixels(xoff,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
@@ -541,6 +580,95 @@ class ObjectFallback(ObjectDef):
 class AutoGenPointDef(ObjectDef):
 
     AGP='.agp'
+
+    def __init__(self, filename, vertexcache, lookup, defs):
+        ClutterDef.__init__(self, filename, vertexcache)
+        self.canpreview=True
+        self.type=Locked.OBJ
+        self.vdata=None
+        self.poly=0
+        self.bbox=BBox()
+        self.height=0.5	# musn't be 0
+        self.base=None
+        self.draped=[]
+        self.texture_draped=0
+        self.children=[]	# [name, ObjectDef, xdelta, zdelta, heading]
+
+        hscale=vscale=width=hanchor=vanchor=crop=texture_draped=None
+        objects=[]
+        placements=[]
+        h=open(self.filename, 'rU')
+        if not h.readline().strip()[0] in ['I','A']:
+            raise IOError
+        if not h.readline().split('#')[0].strip() in ['1000']:
+            raise IOError
+        if not h.readline().strip() in ['AG_POINT']:
+            raise IOError
+        for line in h:
+            c=line.split()
+            if not c: continue
+            id=c[0]
+            if id=='TEXTURE':
+                (tex,e)=splitext(line[len(c[0]):].strip().replace(':', sep).replace('/', sep).decode('latin1'))
+                for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
+                    if exists(normpath(join(self.texpath, tex+ext))):
+                        texture_draped=tex+ext
+                        break
+                    else:
+                        texture_draped=tex
+            elif c[0]=='TEXTURE_SCALE':
+                hscale=float(c[1])
+                vscale=float(c[2])
+            elif c[0]=='TEXTURE_WIDTH':
+                width=float(c[1])
+            elif c[0]=='CROP_POLY':
+                if crop: raise IOError	# We don't support multiple draped textures
+                if len(c)!=9: raise IOError	# We only support rectangles
+                crop=[(float(c[1]),float(c[2])), (float(c[3]),float(c[4])), (float(c[5]),float(c[6])), (float(c[7]),float(c[8]))]
+            elif c[0]=='OBJECT':
+                objects.append(c[1][:-4].replace(':', '/').replace('\\','/')+c[1][-4:].lower())
+            elif c[0]=='OBJ_DRAPED':
+                placements.append((float(c[1]),float(c[2]),float(c[3]),int(c[4])))
+            elif c[0]=='TILE':
+                if hanchor is None:
+                    hanchor=(float(c[1])+float(c[3]))/2
+                    vanchor=(float(c[2])+float(c[4]))/2
+            elif c[0]=='ANCHOR_PT':
+                hanchor=float(c[1])
+                vanchor=float(c[2])
+        h.close()
+        if not (hscale and vscale and width and hanchor and vanchor): raise IOError	# Don't know defaults
+        scale=width/hscale
+        if crop:
+            if texture_draped:	# texture can be none?
+                try:
+                    self.texture_draped=vertexcache.texcache.get(normpath(join(self.texpath, texture_draped)))
+                except IOError, e:
+                    self.texerr=IOError(0,e.strerror,texture_draped)
+            assert len(crop)==4, crop
+            # rescale
+            vt=[[(crop[i][0]-hanchor)*scale, 0, (vanchor-crop[i][1])*scale,
+                 crop[i][0]/hscale, crop[i][1]/vscale] for i in range(len(crop))]
+            for v in vt:
+                self.bbox.include(v[0], v[2])
+            self.draped=[vt[0],vt[3],vt[2],vt[2],vt[1],vt[0]]	# assumes crop specified *anti*-clockwise
+        for p in placements:
+            childname=objects[p[3]]
+            if childname in lookup:
+                childfilename=lookup[childname].file
+            else:
+                childfilename=join(dirname(filename),childname)	# names are relative to this .agp so may not be in global lookup
+            if childfilename in defs:
+                definition=defs[childfilename]
+            else:
+                try:
+                    defs[childfilename]=definition=ClutterDefFactory(childfilename, vertexcache, lookup, defs)
+                except:
+                    if __debug__:
+                        print_exc()
+                    defs[childfilename]=definition=ObjectFallback(childfilename, vertexcache)
+            self.children.append([childname, definition, (p[0]-hanchor)*scale, (vanchor-p[1])*scale, p[2]])
+            self.height=max(self.height,definition.height)
 
 
 class PolygonDef(ClutterDef):
@@ -623,7 +751,7 @@ class DrapedDef(PolygonDef):
                     self.ortho=True
                     self.type=Locked.ORTHO
                 (tex,e)=splitext(line[len(c[0]):].strip().replace(':', sep).replace('/', sep).decode('latin1'))
-                for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
                     if exists(normpath(join(self.texpath, tex+ext))):
                         texture=tex+ext
                         break
@@ -694,7 +822,7 @@ class FacadeDef(PolygonDef):
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
                 (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep).decode('latin1'))
-                for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
                     if exists(normpath(join(self.texpath, tex+ext))):
                         texture=tex+ext
                         break
@@ -796,7 +924,7 @@ class ForestDef(PolygonDef):
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
                 (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep).decode('latin1'))
-                for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
                     if exists(normpath(join(self.texpath, tex+ext))):
                         texture=tex+ext
                         break
@@ -858,7 +986,7 @@ class LineDef(PolygonDef):
             if not c: continue
             if c[0]=='TEXTURE' and len(c)>1:
                 (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep).decode('latin1'))
-                for ext in [e, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
                     if exists(normpath(join(self.texpath, tex+ext))):
                         texture=tex+ext
                         break

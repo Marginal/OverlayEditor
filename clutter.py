@@ -107,6 +107,8 @@ class Object(Clutter):
             return True
         except:
             # virtual name not found or can't load physical file
+            if __debug__:
+                print_exc()
             if usefallback:
                 if self.name in lookup:
                     filename=lookup[self.name].file
@@ -175,8 +177,9 @@ class Object(Clutter):
     def islaidout(self):
         return self.matrix is not None
 
-    def layout(self, tile, options, vertexcache):
-        x,z=self.position(tile, self.lat, self.lon)
+    def layout(self, tile, options, vertexcache, x=None, z=None):
+        if not (x and z):
+            x,z=self.position(tile, self.lat, self.lon)
         self.y=vertexcache.height(tile,options,x,z)
         h=radians(self.hdg)
         self.matrix=array([cos(h),0.0,sin(h),0.0, 0.0,1.0,0.0,0.0, -sin(h),0.0,cos(h),0.0, x,self.y,z,1.0],float32)
@@ -209,7 +212,77 @@ class Object(Clutter):
         
 
 class AutoGenPoint(Object):
-    pass
+
+    def __init__(self, name, lat, lon, hdg, y=None):
+        Object.__init__(self, name, lat, lon, hdg, y)
+        self.placements=[]	# [Object, xdelta, zdelta, heading]
+
+    def clone(self):
+        return AutoGenPoint(self.name, self.lat, self.lon, self.hdg, self.y)
+
+    def load(self, lookup, defs, vertexcache, usefallback=False):
+        try:
+            filename=lookup[self.name].file
+            if filename in defs:
+                self.definition=defs[filename]
+                self.definition.allocate(vertexcache, defs)	# ensure allocated
+            else:
+                defs[filename]=self.definition=AutoGenPointDef(filename, vertexcache, lookup, defs)
+        except:
+            # virtual name not found or can't load physical file
+            if __debug__:
+                print_exc()
+            if usefallback:
+                if self.name in lookup:
+                    filename=lookup[self.name].file
+                else:
+                    filename=self.name
+                    lookup[self.name]=PaletteEntry(self.name)
+                if filename in defs:
+                    self.definition=defs[filename]
+                    self.definition.allocate(vertexcache, defs)	# ensure allocated
+                else:
+                    defs[filename]=self.definition=ObjectFallback(filename, vertexcache)
+            return False
+
+        # load children
+        mylookup=dict(lookup)
+        for child in self.definition.children:
+            assert child[1].filename in defs	# Child Def should have been created when AutoGenPointDef was loaded
+            mylookup[child[0]]=PaletteEntry(child[1].filename)	# names are relative to this .agp
+            placement=Object(child[0], self.lat, self.lon, self.hdg)
+            placement.load(mylookup, defs, vertexcache)
+            self.placements.append([placement, child[2], child[3], child[4]])
+        return True
+
+    def draw_instance(self, glstate, selected, picking):
+        Object.draw_instance(self, glstate, selected, picking)
+        for p in self.placements:
+            p[0].draw_instance(glstate, selected, picking)
+
+    def draw_dynamic(self, glstate, selected, picking):
+        Object.draw_dynamic(self, glstate, selected, picking)
+        for p in self.placements:
+            p[0].draw_dynamic(glstate, selected, picking)
+
+    def clearlayout(self, vertexcache):
+        Object.clearlayout(self, vertexcache)
+        for p in self.placements:
+            p[0].clearlayout(vertexcache)
+
+    def layout(self, tile, options, vertexcache):
+        x,z=self.position(tile, self.lat, self.lon)
+        Object.layout(self, tile, options, vertexcache, x, z)
+        h=radians(self.hdg)
+        coshdg=cos(h)
+        sinhdg=sin(h)
+        for p in self.placements:
+            child=p[0]
+            childx=x+p[1]*coshdg-p[2]*sinhdg
+            childz=z+p[1]*sinhdg+p[2]*coshdg
+            child.hdg=self.hdg+p[3]
+            child.layout(tile, options, vertexcache, childx, childz)
+
 
 class Polygon(Clutter):
 

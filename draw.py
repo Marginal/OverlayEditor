@@ -1405,7 +1405,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 break
 
                     if not placement.load(self.lookup, self.defs, self.vertexcache, True) and placement.name not in errobjs:
-                        if __debug__: print "Bad", placement.name, placement.name in self.lookup and self.lookup[placement.name]
+                        if __debug__: print "Bad", placement.name
                         errobjs.append(placement.name)
                         self.frame.palette.markbad(placement.name)
 
