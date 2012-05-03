@@ -328,11 +328,10 @@ class Palette(wx.SplitterWindow):
     def load(self, tabname, objects, pkgdir):
         self.cb.load(tabname, objects, pkgdir)
     
-    def add(self, name, bad=False):
+    def add(self, name):
         #print "add", name
         # Add to objects tab - assumes that this is first tab
-        if not bad: self.lastkey=name
-        self.cb.add(name, bad)
+        self.cb.add(name)
         self.preview.Refresh()
 
     def get(self):

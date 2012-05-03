@@ -1003,7 +1003,7 @@ def importObj(pkgpath, path):
     line=h.readline().strip()
     header+=line+'\n'
     c=line.split()
-    if not c or not c[0] in ['2', '700', '800', '850']:
+    if not c or not c[0] in ['2', '700', '800', '850', '1000']:
         raise IOError, badobj
     version=c[0]
     if version!='2':
@@ -1011,8 +1011,9 @@ def importObj(pkgpath, path):
         header+=line+'\n'
         c=line.split()
         if not c or not (c[0]=='OBJ' or
-                         (version=='800' and c[0] in ['FACADE', 'FOREST']) or
-                         (version=='850' and c[0]=='DRAPED_POLYGON')):
+                         (c[0]=='FOREST' and version=='800') or
+                         (c[0]=='FACADE' and version in ['800','1000']) or
+                         (c[0]=='DRAPED_POLYGON' and version=='850')):
             raise IOError, badobj
     if version in ['2','700']:
         while True:
@@ -1032,7 +1033,7 @@ def importObj(pkgpath, path):
                 tex=tex.replace('/', sep)
                 (tex, ext)=splitext(tex)
                 header+=newtexprefix+basename(tex)+rest
-                for e in [ext, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                for e in [ext, '.dds', '.DDS', '.png', '.PNG']:
                     if exists(join(oldtexpath, tex+e)):
                         if not isdir(newtexpath): mkdir(newtexpath)
                         if not exists(join(newtexpath, basename(tex)+e)):
@@ -1054,12 +1055,13 @@ def importObj(pkgpath, path):
     else: # v8.x
         while True:
             line=h.readline()
-            if not line: raise IOError, badobj
+            if not line: break
             line=line.strip()
             if not line or line[0]=='#':
                 header+=line+'\n'
-            elif line.split()[0] in ['TEXTURE', 'TEXTURE_LIT', 'TEXTURE_NOWRAP', 'TEXTURE_LIT_NOWRAP']:
-                c=line.split()
+                continue
+            c=line.split()
+            if c[0] in ['TEXTURE', 'TEXTURE_LIT', 'TEXTURE_NORMAL', 'TEXTURE_NOWRAP', 'TEXTURE_LIT_NOWRAP', 'TEXTURE_DRAPED', 'TEXTURE_DRAPED_NORMAL', 'TEXTURE_NORMAL_NOWRAP']:
                 if len(c)==1:
                     header+=c[0]+'\t\n'
                 else:
@@ -1067,7 +1069,7 @@ def importObj(pkgpath, path):
                     tex=tex.replace(':', sep)
                     tex=tex.replace('/', sep)
                     (tex, ext)=splitext(tex)
-                    for e in [ext, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
+                    for e in [ext, '.dds', '.DDS', '.png', '.PNG']:
                         if exists(join(oldtexpath, tex+e)):
                             if not isdir(newtexpath): mkdir(newtexpath)
                             if not exists(join(newtexpath, basename(tex)+e)):
@@ -1079,7 +1081,7 @@ def importObj(pkgpath, path):
                         header+=c[0]+'\t'+newtexprefix+basename(tex)+ext+'\n'
             else:
                 header+=line+'\n'
-                break	# Stop at first non-texture statement
+                if c[0]=='VT': break	# Stop at first vertex
 
     # Write new OBJ
     newfile=join(newpath,basename(path)[:-4]+path[-4:].lower())
