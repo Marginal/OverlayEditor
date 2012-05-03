@@ -897,16 +897,16 @@ class VertexCache:
         # first test candidates
         if likely:
             h=self.heighttest(likely, x, z)
-            if h!=None: return h
-        if self.lasttri is not None and (self.lasttri not in likely):
+            if h is not None: return h
+        if self.lasttri:
             h=self.heighttest([self.lasttri], x, z)
-            if h!=None: return h
+            if h is not None: return h
 
         # test all patches then
         for (bbox, tris) in self.getMeshdata(tile,options):
             if not bbox.inside(x,z): continue
             h=self.heighttest(tris, x, z)
-            if h!=None: return h
+            if h is not None: return h
         
         # dunno
         return 0

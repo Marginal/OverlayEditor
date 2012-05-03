@@ -747,7 +747,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glCallList(self.codeslist)
 
         # Position centre
-        if __debug__: print "cursor"
+        #if __debug__: print "cursor"
         self.glstate.set_texture(0)
         self.glstate.set_color(COL_CURSOR)
         glTranslatef(self.x, self.y, self.z)
@@ -1404,6 +1404,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 placement.name=existing
                                 break
 
+                    #if __debug__: print placement.name
                     if not placement.load(self.lookup, self.defs, self.vertexcache, True) and placement.name not in errobjs:
                         if __debug__: print "Bad", placement.name
                         errobjs.append(placement.name)

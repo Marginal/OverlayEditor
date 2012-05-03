@@ -178,10 +178,10 @@ class Object(Clutter):
     def islaidout(self):
         return self.matrix is not None
 
-    def layout(self, tile, options, vertexcache, x=None, z=None):
+    def layout(self, tile, options, vertexcache, x=None, z=None, meshtris=None):
         if not (x and z):
             x,z=self.position(tile, self.lat, self.lon)
-        self.y=vertexcache.height(tile,options,x,z)
+        self.y=vertexcache.height(tile,options,x,z,meshtris)
         h=radians(self.hdg)
         self.matrix=array([cos(h),0.0,sin(h),0.0, 0.0,1.0,0.0,0.0, -sin(h),0.0,cos(h),0.0, x,self.y,z,1.0],float32)
         # draped & poly_os
@@ -195,9 +195,9 @@ class Object(Clutter):
             for v in self.definition.draped:
                 vx=x+v[0]*coshdg-v[2]*sinhdg
                 vz=z+v[0]*sinhdg+v[2]*coshdg
-                vy=vertexcache.height(tile,options,vx,vz)
+                vy=vertexcache.height(tile,options, vx, vz, meshtris)
                 tris.append([vx,vy,vz,v[3],v[4],0])
-            self.dynamic_data=array(drape(tris, tile, options, vertexcache), float32).flatten()
+            self.dynamic_data=array(drape(tris, tile, options, vertexcache, meshtris), float32).flatten()
         vertexcache.allocate_dynamic(self)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
@@ -271,9 +271,38 @@ class AutoGenPoint(Object):
         for p in self.placements:
             p[0].clearlayout(vertexcache)
 
+    if __debug__:
+        def layoutp(self, tile, options, vertexcache):
+            try:
+                from cProfile import runctx
+                runctx('self.layout2(tile, options, vertexcache)', globals(), locals(), 'profile.dmp')
+            except:
+                print_exc()
+
     def layout(self, tile, options, vertexcache):
+        # We're likely to be doing a lot of height testing and draping, so pre-compute relevant mesh
+        # triangles on the assumption that all children are contained in .agp's "floorplan"
         x,z=self.position(tile, self.lat, self.lon)
-        Object.layout(self, tile, options, vertexcache, x, z)
+        abox=BBox()
+        mymeshtris=[]
+        h=radians(self.hdg)
+        coshdg=cos(h)
+        sinhdg=sin(h)
+        for v in self.definition.draped:
+            abox.include(x+v[0]*coshdg-v[2]*sinhdg, z+v[0]*sinhdg+v[2]*coshdg)
+        for (bbox, meshtris) in vertexcache.getMeshdata(tile,options):
+            if not abox.intersects(bbox): continue
+            for meshtri in meshtris:
+                (meshpt, coeffs)=meshtri
+                (m0,m1,m2)=meshpt
+                minx=min(m0[0], m1[0], m2[0])
+                maxx=max(m0[0], m1[0], m2[0])
+                minz=min(m0[2], m1[2], m2[2])
+                maxz=max(m0[2], m1[2], m2[2])
+                if abox.intersects(BBox(minx, maxx, minz, maxz)):
+                    mymeshtris.append(meshtri)
+
+        Object.layout(self, tile, options, vertexcache, x, z, mymeshtris)
         h=radians(self.hdg)
         coshdg=cos(h)
         sinhdg=sin(h)
@@ -282,7 +311,7 @@ class AutoGenPoint(Object):
             childx=x+p[1]*coshdg-p[2]*sinhdg
             childz=z+p[1]*sinhdg+p[2]*coshdg
             child.hdg=self.hdg+p[3]
-            child.layout(tile, options, vertexcache, childx, childz)
+            child.layout(tile, options, vertexcache, childx, childz, mymeshtris)
 
 
 class Polygon(Clutter):
@@ -696,6 +725,7 @@ class Draped(Polygon):
     def layout(self, tile, options, vertexcache, selectednode=None):
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
         # Tessellate to generate tri vertices with UV data, and check polygon is simple
+        if __debug__: clock=time.clock()
         if self.param!=65535:
             drp=self.definition
             ch=cos(radians(self.param))
@@ -725,6 +755,7 @@ class Draped(Polygon):
                 print "Draped layout failed:"
                 print_exc()
                 tris=[]
+        if __debug__: print "%6.3f time to tessellate" % (time.clock()-clock)
 
         if not tris:
             self.nonsimple=True
@@ -1542,43 +1573,54 @@ gluTessCallback(csgt, GLU_TESS_EDGE_FLAG,    csgtedge)	# no strips
 # Helper to drape polygons across terrain
 # Input - list of tri vertices [x,y,z,u,v,w]
 # Output - list of tri vertices draped across terrain - [x,y,z,u,v,w]
-def drape(tris, tile, options, vertexcache):
+def drape(tris, tile, options, vertexcache, meshtris=None):
     global csgt
 
-    # tesselator is expensive - minimise mesh triangles
     #if __debug__: clock=time.clock()
-    abox=BBox()
-    meshpts=[]
-    for tri in tris:
-        abox.include(tri[0],tri[2])
-    for (bbox, meshtris) in vertexcache.getMeshdata(tile,options):
-        if not abox.intersects(bbox): continue
-        # This loop dominates exexution time for the typical case of a small area
-        for meshtri in meshtris:
-            (meshpt, coeffs)=meshtri
-            # following code is unwrapped below for speed
-            #tbox=BBox()
-            #for m in meshpt:
-            #    tbox.include(m[0],m[2])
-            (m0,m1,m2)=meshpt
-            minx=min(m0[0], m1[0], m2[0])
-            maxx=max(m0[0], m1[0], m2[0])
-            minz=min(m0[2], m1[2], m2[2])
-            maxz=max(m0[2], m1[2], m2[2])
-            if abox.intersects(BBox(minx, maxx, minz, maxz)):
-                meshpts.append(meshpt)
+    # tesselator is expensive - minimise mesh triangles
+    if not meshtris:
+        abox=BBox()
+        meshtris=[]
+        for tri in tris:
+            abox.include(tri[0],tri[2])
+        for (bbox, bmeshtris) in vertexcache.getMeshdata(tile,options):
+            if not abox.intersects(bbox): continue
+            # This loop dominates execution time for the typical case of a small area
+            for meshtri in bmeshtris:
+                (meshpt, coeffs)=meshtri
+                (m0,m1,m2)=meshpt
+                # following code is unwrapped below for speed
+                #tbox=BBox()
+                #for m in meshpt:
+                #    tbox.include(m[0],m[2])
+                minx=min(m0[0], m1[0], m2[0])
+                maxx=max(m0[0], m1[0], m2[0])
+                minz=min(m0[2], m1[2], m2[2])
+                maxz=max(m0[2], m1[2], m2[2])
+                if abox.intersects(BBox(minx, maxx, minz, maxz)):
+                    meshtris.append(meshtri)
     #if __debug__: clock2=time.clock()-clock
 
     csgttris=[]
     for i in range(0,len(tris),3):
         gluTessBeginPolygon(csgt, csgttris)
         gluTessBeginContour(csgt)
-        for j in range(i,i+3):
-            gluTessVertex(csgt, array([tris[j][0],0,tris[j][2]],float64), (tris[j],False))
+        tbox=BBox()
+        for tri in tris[i:i+3]:
+            tbox.include(tri[0],tri[2])
+            gluTessVertex(csgt, array([tri[0],0,tri[2]],float64), (tri,False))
         gluTessEndContour(csgt)
 
-        for meshpt in meshpts:
+        for meshtri in meshtris:
             gluTessBeginContour(csgt)
+            (meshpt, coeffs)=meshtri
+            (m0,m1,m2)=meshpt
+            minx=min(m0[0], m1[0], m2[0])
+            maxx=max(m0[0], m1[0], m2[0])
+            minz=min(m0[2], m1[2], m2[2])
+            maxz=max(m0[2], m1[2], m2[2])
+            if not tbox.intersects(BBox(minx, maxx, minz, maxz)):
+                continue
             for m in meshpt:
                 x=m[0]
                 z=m[2]
@@ -1603,5 +1645,5 @@ def drape(tris, tile, options, vertexcache):
             gluTessEndContour(csgt)
         gluTessEndPolygon(csgt)
 
-    #if __debug__: print "%6.3f time to drape %d tris against %d meshpts\n%6.3f of that in BBox" % (time.clock()-clock, len(tris)/3, len(meshpts), clock2)
+    #if __debug__: print "%6.3f time to drape %d tris against %d meshtris\n%6.3f of that in BBox" % (time.clock()-clock, len(tris)/3, len(meshtris), clock2)
     return csgttris
