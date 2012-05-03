@@ -427,16 +427,16 @@ class Palette(wx.SplitterWindow):
                         definition=self.frame.canvas.defs[filename]
                     else:
                         self.frame.canvas.defs[filename]=definition=ClutterDefFactory(filename, self.frame.canvas.vertexcache, self.frame.canvas.lookup, self.frame.canvas.defs)
-                        # Special handling to mark orthos
-                        if isinstance(definition, DrapedDef) and definition.ortho:
-                            for l in self.cb.lists:
-                                i=l.GetSelection()
-                                if i!=-1:
-                                    (imgno, name, realname)=l.choices[i]
-                                    if imgno!=5:
-                                        l.choices[i]=(5, name, realname)
-                                        self.Refresh()
-                                    break
+                    # Special handling to mark orthos
+                    if isinstance(definition, DrapedDef) and definition.ortho:
+                        for l in self.cb.lists:
+                            i=l.GetSelection()
+                            if i!=-1:
+                                (imgno, name, realname)=l.choices[i]
+                                if imgno!=5:
+                                    l.choices[i]=(5, name, realname)
+                                    self.Refresh()
+                                break
                     self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)
                 except:
                     if __debug__: print_exc()
