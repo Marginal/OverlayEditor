@@ -384,8 +384,10 @@ class Polygon(Clutter):
         else:
             assert not glstate.texture
             assert glstate.color
+        base=self.base
         for winding in self.points:
-            glDrawArrays(GL_LINE_LOOP, self.base, len(winding))
+            glDrawArrays(GL_LINE_LOOP, base, len(winding))
+            base+=len(winding)
 
     def draw_nodes(self, glstate, selectednode):
         # Just do it in immediate mode
@@ -913,9 +915,6 @@ class Facade(Polygon):
         else:
             return '%s  Height: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw_instance(self, glstate, selected, picking):
-        pass
-
     def draw_dynamic(self, glstate, selected, picking):
         fac=self.definition
         if self.nonsimple:
@@ -1191,9 +1190,6 @@ class Forest(Fitted):
             return Polygon.locationstr(self, dms, node)
         else:
             return '%s  Density: %-4.1f%%  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
-
-    def draw_instance(self, glstate, selected, picking):
-        pass
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
