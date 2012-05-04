@@ -55,6 +55,8 @@ def PolygonFactory(name, param, nodes, lon=None, size=None, hdg=None):
         return Facade(name, param, nodes, lon, size, hdg)
     elif ext==PolygonDef.FOREST:
         return Forest(name, param, nodes, lon, size, hdg)
+    elif ext==PolygonDef.LINE:
+        return Line(name, param, nodes, lon, size, hdg)
     elif ext==PolygonDef.BEACH:
         return Beach(name, param, nodes, lon, size, hdg)
     elif ext==ObjectDef.OBJECT:
@@ -1282,32 +1284,6 @@ class Line(Polygon):
                 oc='Open'
             return '%s  %s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
 
-    def draw_instance(self, glstate, selected, picking):
-        pass
-
-    def draw_dynamic(self, glstate, selected, picking):
-        lin=self.definition
-        if self.nonsimple:
-            Polygon.draw_dynamic(self, glstate, selected, picking)
-            return
-        elif picking:
-            Polygon.draw_dynamic(self, glstate, selected, picking)	# for outline
-        else:
-            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
-            glstate.set_texture(lin.texture)
-            glstate.set_cull(True)
-            glstate.set_poly(True)
-            glstate.set_depthtest(True)
-        glBegin(GL_TRIANGLES)
-        if picking:
-            for t in self.tris:
-                glVertex3f(*t[0])
-        else:
-            for t in self.tris:
-                glTexCoord2f(*t[2])
-                glVertex3f(*t[0])
-        glEnd()
-        
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam=min(dparam, 1-self.param)	# max 1
         if dhdg:

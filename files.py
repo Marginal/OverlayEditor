@@ -1013,6 +1013,7 @@ def importObj(pkgpath, path):
         if not c or not (c[0]=='OBJ' or
                          (c[0]=='FOREST' and version=='800') or
                          (c[0]=='FACADE' and version in ['800','1000']) or
+                         (c[0]=='LINE_PAINT' and version=='850') or
                          (c[0]=='DRAPED_POLYGON' and version=='850')):
             raise IOError, badobj
     if version in ['2','700']:

@@ -15,7 +15,7 @@ from lock import Locked
 
 COL_WHITE    =(1.0, 1.0, 1.0)
 COL_UNPAINTED=(1.0, 1.0, 1.0)
-COL_POLYGON  =(0.25,0.25,0.25)
+COL_POLYGON  =(0.75,0.75,0.75)
 COL_FOREST   =(0.25,0.75,0.25)
 COL_EXCLUDE  =(0.75,0.25,0.25)
 COL_NONSIMPLE=(1.0, 0.25,0.25)
@@ -79,8 +79,8 @@ def ClutterDefFactory(filename, vertexcache, lookup, defs):
         return FacadeDef(filename, vertexcache)
     elif ext==PolygonDef.FOREST:
         return ForestDef(filename, vertexcache)
-    #elif ext==PolygonDef.LINE:
-    #    return LineDef(filename, vertexcache)
+    elif ext==PolygonDef.LINE:
+        return LineDef(filename, vertexcache)
     elif ext in SkipDefs:
         raise IOError		# what's this doing here?
     else:	# unknown polygon type
@@ -967,7 +967,7 @@ class LineDef(PolygonDef):
         PolygonDef.__init__(self, filename, vertexcache)
         self.layer=ClutterDef.MARKINGLAYER
         self.canpreview=True
-        self.type=Locked.LIN
+        self.type=Locked.UNKNOWN
         self.offsets=[]
         self.hscale=self.vscale=1
         width=1
@@ -1003,6 +1003,8 @@ class LineDef(PolygonDef):
                 width=float(c[1])
             elif c[0]=='S_OFFSET':
                 offsets=[float(c[2]), float(c[3]), float(c[4])]
+            elif c[0]=='LAYER_GROUP':
+                self.setlayer(c[1], int(c[2]))
         h.close()
         self.offsets=[offsets[0]/width, offsets[1]/width, offsets[2]/width]
                 
