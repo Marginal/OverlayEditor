@@ -887,7 +887,7 @@ class FacadeFallback(FacadeDef):
     def __init__(self, filename, vertexcache):
         PolygonDef.__init__(self, filename, None)
         self.type=Locked.FAC
-        self.ring=0
+        self.ring=1
         self.two_sided=True
         self.roof=[]
         self.roof_slope=0

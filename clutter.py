@@ -334,6 +334,7 @@ class Polygon(Clutter):
                                       max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size)))))
         self.param=param
         self.nonsimple=False	# True iff non-simple and the polygon type cares about it (i.e. not Facades)
+        self.closed=True	# Open or closed
         self.col=COL_POLYGON	# Outline colour
         self.points=[]		# list of windings in world space (x,y,z)
         self.dynamic_data=None	# Above laid out as array for inclusion in VBO
@@ -387,9 +388,14 @@ class Polygon(Clutter):
             assert not glstate.texture
             assert glstate.color
         base=self.base
-        for winding in self.points:
-            glDrawArrays(GL_LINE_LOOP, base, len(winding))
-            base+=len(winding)
+        if self.closed:
+            for winding in self.points:
+                glDrawArrays(GL_LINE_LOOP, base, len(winding))
+                base+=len(winding)
+        else:
+            for winding in self.points:
+                glDrawArrays(GL_LINE_STRIP, base, len(winding))
+                base+=len(winding)
 
     def draw_nodes(self, glstate, selectednode):
         # Just do it in immediate mode
@@ -397,7 +403,10 @@ class Polygon(Clutter):
         assert glstate.color==COL_SELECTED
         glstate.set_depthtest(False)
         for winding in self.points:
-            glBegin(GL_LINE_LOOP)
+            if self.closed:
+                glBegin(GL_LINE_LOOP)
+            else:
+                glBegin(GL_LINE_STRIP)
             for p in winding:
                 glVertex3f(p[0],p[1],p[2])
             glEnd()
@@ -895,10 +904,12 @@ class Facade(Polygon):
                 for (a,b) in self.definition.horiz:
                     self.param=min(self.param, int(ceil(self.definition.hscale * (b-a))))
                 self.param=max(self.param,1)
+            self.closed=(self.definition.ring and True)
             return True
         except:
             if not self.param:
                 self.param=1
+            self.closed=True
             if usefallback:
                 if self.name in lookup:
                     filename=lookup[self.name].file
@@ -1278,20 +1289,16 @@ class Line(Polygon):
         if node:
             return Polygon.locationstr(self, dms, node)
         else:
-            if self.param:
-                oc='Closed'
-            else:
-                oc='Open'
+            oc=self.closed and 'Closed' or 'Open'
             return '%s  %s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
+
+    def layout(self, tile, options, vertexcache, selectednode=None):
+        self.closed=(self.param and True)
+        return Polygon.layout(self, tile, options, vertexcache, selectednode)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam=min(dparam, 1-self.param)	# max 1
-        if dhdg:
-            self.nodes[0].reverse()		# flip direction ccw?
-        if dlat or dlon or dparam:
-            Polygon.move(self, dlat, dlon, 0, dparam, loc, tile, options, vertexcache)
-        elif dhdg:
-            self.layout(tile, options, vertexcache)
+        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
 
 
 class Network(Fitted):
