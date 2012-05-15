@@ -771,7 +771,9 @@ class MainWindow(wx.Frame):
             #wx.EVT_MENU(self, wx.ID_PASTE, self.OnPaste)
             editmenu.Append(wx.ID_ADD, u'Add\tEnter')
             wx.EVT_MENU(self, wx.ID_ADD, self.OnAdd)
-            editmenu.Append(wx.ID_DELETE, u'Delete')
+            editmenu.Append(wx.ID_EDIT, u'Add Node/Hole\tCtrl-Enter')
+            wx.EVT_MENU(self, wx.ID_EDIT, self.OnAddNode)
+            editmenu.Append(wx.ID_DELETE, u'Delete\tDelete')
             wx.EVT_MENU(self, wx.ID_DELETE, self.OnDelete)
             # ID_PREFERENCES moved to application menu
             editmenu.Append(wx.ID_PREFERENCES, u'Preferences\tCtrl-,')
@@ -785,6 +787,8 @@ class MainWindow(wx.Frame):
             wx.EVT_MENU(self, wx.ID_REFRESH, self.OnReload)
             viewmenu.Append(wx.ID_FORWARD, u'Go To\u2026')
             wx.EVT_MENU(self, wx.ID_FORWARD, self.OnGoto)
+            viewmenu.Append(wx.ID_APPLY, u'Lock\u2026')
+            wx.EVT_MENU(self, wx.ID_APPLY, self.OnLock)
             self.menubar.Append(viewmenu, u'View')
 
             helpmenu = wx.Menu()
@@ -830,6 +834,11 @@ class MainWindow(wx.Frame):
                                   wx.NullBitmap, 0,
                                   'Add new object')
         wx.EVT_TOOL(self.toolbar, wx.ID_ADD, self.OnAdd)
+        self.toolbar.AddLabelTool(wx.ID_EDIT, 'Add',
+                                  self.icon([], 'addnode.png'),
+                                  wx.NullBitmap, 0,
+                                  'Add new polygon/network node or hole')
+        wx.EVT_TOOL(self.toolbar, wx.ID_EDIT, self.OnAddNode)
         self.toolbar.AddLabelTool(wx.ID_DELETE, 'Delete',
                                   self.icon(['edit-delete', 'delete', 'editdelete'], 'delete.png'),
                                   wx.NullBitmap, 0,
@@ -856,18 +865,17 @@ class MainWindow(wx.Frame):
                                   wx.NullBitmap, 0,
                                   'Go to airport')
         wx.EVT_TOOL(self.toolbar, wx.ID_FORWARD, self.OnGoto)
-        self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_APPLY, 'Lock object types',
                                   self.icon(['stock_lock', 'security-medium'], 'padlock.png'),
                                   wx.NullBitmap, 0,
                                   'Lock object types')
         wx.EVT_TOOL(self.toolbar, wx.ID_APPLY, self.OnLock)
+        self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_PREFERENCES, 'Preferences',
                                   self.icon(['preferences-desktop', 'preferences-system', 'package-settings'], 'prefs.png'),
                                   wx.NullBitmap, 0,
                                   'Preferences')
         wx.EVT_TOOL(self.toolbar, wx.ID_PREFERENCES, self.OnPrefs)
-        self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_HELP, 'Help',
                                   self.icon(['help-browser', 'system-help', 'khelpcenter'], 'help.png'),
                                   wx.NullBitmap, 0,
@@ -877,6 +885,7 @@ class MainWindow(wx.Frame):
         self.toolbar.Realize()
         self.toolbar.EnableTool(wx.ID_DOWN,   False)
         self.toolbar.EnableTool(wx.ID_ADD,    False)
+        self.toolbar.EnableTool(wx.ID_EDIT,   False)
         self.toolbar.EnableTool(wx.ID_DELETE, False)
         self.toolbar.EnableTool(wx.ID_UNDO,   False)
         self.toolbar.EnableTool(wx.ID_REFRESH,False)
@@ -886,6 +895,7 @@ class MainWindow(wx.Frame):
             #self.menubar.Enable(wx.ID_COPY,   False)
             #self.menubar.Enable(wx.ID_PASTE,  False)
             self.menubar.Enable(wx.ID_ADD,    False)
+            self.menubar.Enable(wx.ID_EDIT,   False)
             self.menubar.Enable(wx.ID_DELETE, False)
             self.menubar.Enable(wx.ID_UNDO,   False)
             self.menubar.Enable(wx.ID_REFRESH,False)
@@ -984,10 +994,17 @@ class MainWindow(wx.Frame):
                 self.palette.set(names[0])
             self.toolbar.EnableTool(wx.ID_DELETE, True)
             if self.menubar: self.menubar.Enable(wx.ID_DELETE, True)
+            if len(names)==1 and hdg is None:	# Hacky way to tell we have a single polygon
+                self.toolbar.EnableTool(wx.ID_EDIT,   True)
+                if self.menubar:
+                    self.menubar.Enable(wx.ID_EDIT,   True)
         else:
             self.palette.set(None)
+            self.toolbar.EnableTool(wx.ID_EDIT,   False)
             self.toolbar.EnableTool(wx.ID_DELETE, False)
-            if self.menubar: self.menubar.Enable(wx.ID_DELETE, False)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_EDIT,   False)
+                self.menubar.Enable(wx.ID_DELETE, False)
         self.statusbar.SetStatusText(string, 2)
 
     def OnSize(self, event):
@@ -1094,11 +1111,12 @@ class MainWindow(wx.Frame):
                 self.elev-=1
             if self.elev<2: self.elev=2	# not 1 cos clipping
         elif event.GetKeyCode() in [wx.WXK_INSERT, wx.WXK_RETURN, wx.WXK_NUMPAD_INSERT, wx.WXK_NUMPAD_ENTER]:
-            name=self.palette.get()
-            if name and self.canvas.add(name, self.loc[0], self.loc[1], self.hdg, self.dist, event.ControlDown(), event.ShiftDown()):
-                changed=True
+            if event.CmdDown():
+                changed=self.canvas.addnode(self.palette.get(), self.loc[0], self.loc[1], self.hdg, self.dist)
+            else:
+                changed=self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg, self.dist)
         elif event.GetKeyCode() in [wx.WXK_DELETE, wx.WXK_BACK, wx.WXK_NUMPAD_DELETE]: # wx.WXK_NUMPAD_DECIMAL]:
-            changed=self.canvas.delsel(event.ControlDown(), event.ShiftDown())
+            changed=self.canvas.delsel(event.ShiftDown())
         elif event.GetKeyCode()==ord('Z') and event.CmdDown():
             self.OnUndo(event)
             return
@@ -1180,6 +1198,7 @@ class MainWindow(wx.Frame):
             self.OnReload(False, package)
             self.toolbar.EnableTool(wx.ID_SAVE, False)
             self.toolbar.EnableTool(wx.ID_ADD,  False)
+            self.toolbar.EnableTool(wx.ID_EDIT, False)
             self.toolbar.EnableTool(wx.ID_UNDO, False)
             self.toolbar.EnableTool(wx.ID_DOWN, True)
             self.toolbar.EnableTool(wx.ID_REFRESH, True)
@@ -1190,6 +1209,7 @@ class MainWindow(wx.Frame):
                 #self.menubar.Enable(wx.ID_COPY,  False)
                 #self.menubar.Enable(wx.ID_PASTE, False)
                 self.menubar.Enable(wx.ID_ADD,   False)
+                self.menubar.Enable(wx.ID_EDIT,  False)
                 self.menubar.Enable(wx.ID_DOWN,  True)
                 self.menubar.Enable(wx.ID_REFRESH, True)
         
@@ -1225,12 +1245,14 @@ class MainWindow(wx.Frame):
             if prefs.package:
                 self.toolbar.EnableTool(wx.ID_SAVE, False)
                 self.toolbar.EnableTool(wx.ID_ADD,  False)
+                self.toolbar.EnableTool(wx.ID_EDIT, False)
                 self.toolbar.EnableTool(wx.ID_UNDO, False)
                 self.toolbar.EnableTool(wx.ID_DOWN, True)
                 self.toolbar.EnableTool(wx.ID_REFRESH, True)
                 if self.menubar:
                     self.menubar.Enable(wx.ID_SAVE, False)
                     self.menubar.Enable(wx.ID_ADD,  False)
+                    self.menubar.Enable(wx.ID_EDIT, False)
                     self.menubar.Enable(wx.ID_UNDO, False)
                     #self.menubar.Enable(wx.ID_CUT,   False)
                     #self.menubar.Enable(wx.ID_COPY,  False)
@@ -1291,9 +1313,16 @@ class MainWindow(wx.Frame):
         return True
         
     def OnAdd(self, event):
+        if self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg, self.dist):
+            self.toolbar.EnableTool(wx.ID_SAVE, True)
+            self.toolbar.EnableTool(wx.ID_UNDO, True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_SAVE, True)
+                self.menubar.Enable(wx.ID_UNDO, True)
+
+    def OnAddNode(self, event):
         # Assumes that only one object selected
-        # Ctrl doesn't wotk on wxMac, Shift doesn't work on wxMac 2.5
-        if self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg, self.dist, wx.GetKeyState(wx.WXK_CONTROL), wx.GetKeyState(wx.WXK_SHIFT)):
+        if self.canvas.addnode(self.palette.get(), self.loc[0], self.loc[1], self.hdg, self.dist):
             self.toolbar.EnableTool(wx.ID_SAVE, True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:
@@ -1301,7 +1330,7 @@ class MainWindow(wx.Frame):
                 self.menubar.Enable(wx.ID_UNDO, True)
 
     def OnDelete(self, event):
-        if self.canvas.delsel(wx.GetKeyState(wx.WXK_CONTROL), wx.GetKeyState(wx.WXK_SHIFT)):
+        if self.canvas.delsel(wx.GetKeyState(wx.WXK_SHIFT)):
             self.toolbar.EnableTool(wx.ID_SAVE, True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:
@@ -1642,6 +1671,7 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_SAVE,   True)
             self.toolbar.EnableTool(wx.ID_DOWN,   False)
             self.toolbar.EnableTool(wx.ID_ADD,    False)
+            self.toolbar.EnableTool(wx.ID_EDIT,   False)
             self.toolbar.EnableTool(wx.ID_DELETE, False)
             self.toolbar.EnableTool(wx.ID_UNDO,   False)
             self.toolbar.EnableTool(wx.ID_REFRESH,False)
@@ -1652,6 +1682,7 @@ class MainWindow(wx.Frame):
                 #self.menubar.Enable(wx.ID_COPY,   False)
                 #self.menubar.Enable(wx.ID_PASTE,  False)
                 self.menubar.Enable(wx.ID_ADD,    False)
+                self.menubar.Enable(wx.ID_EDIT,   False)
                 self.menubar.Enable(wx.ID_DELETE, False)
                 self.menubar.Enable(wx.ID_UNDO,   False)
                 self.menubar.Enable(wx.ID_REFRESH,False)

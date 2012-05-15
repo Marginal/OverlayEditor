@@ -89,13 +89,18 @@ objects.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Add" src="Resources/add.png"></td>
-      <td>Add the object that is highlighted in the
-<a href="#objectlist">list of objects</a> to the scenery.<br>
+      <td>Add the object that is highlighted in the <a href="#objectlist">list of objects</a> to the scenery.<br>
 The object is added at the current cursor location and with the current heading.</td>
     </tr>
     <tr>
+      <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Add" src="Resources/addnode.png"></td>
+      <td>
+If you have a forest or draped polygon selected - Add a hole in it.<br>
+If you have a polygon/network <u>node</u> selected - Add new polygon/network node next to it.</td>
+    </tr>
+    <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Delete" src="Resources/delete.png"></td>
-      <td>Delete the selected object(s).</td>
+      <td>Delete the selected object(s) or selected node.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Undo" src="Resources/undo.png"></td>
@@ -121,7 +126,7 @@ to appear in the <a href="#objectlist">list of objects</a>.
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><a name="lock"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Lock" src="Resources/padlock.png"></a></td>
       <td>Lock object types. Locked objects can't be selected or modified.<br>
-Use this to avoid accidentally editing certain kinds of objects.</td>
+Use this to avoid accidentally selecting or editing certain kinds of objects.</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><a name="preferences"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Preferences" src="Resources/prefs.png"></a></td>
@@ -187,7 +192,7 @@ To select objects:</p>
       <td>Select objects</td>
     </tr>
     <tr>
-      <td style="width: 33%;"><samp>Ctrl</samp>/<samp>Cmd</samp> and click or drag</td>
+      <td style="width: 33%;"><samp>Ctrl/Cmd</samp> and click or drag</td>
       <td>Toggle selected objects</td>
     </tr>
     <tr>
@@ -245,32 +250,24 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
       <td>Select all uses in this 1&deg;&times;1&deg; region of the highlighted object.</td>
     </tr>
     <tr>
-      <td style="width: 33%; vertical-align: top;"><samp>Insert</samp>/<samp>Enter</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
-      <td>Add new object or polygon/network node.</td>
+      <td style="width: 33%; vertical-align: top;"><samp>Enter</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>
+      <td>Add new object.</td>
     </tr>
     <tr>
-      <td style="width: 33%; vertical-align: top;"><samp>Ctrl-Insert</samp>/<samp>Enter</samp></td>
-      <td>Add new polygon node (going clockwise) or new network node.</td>
-    </tr>
-    <tr>
-      <td style="width: 33%; vertical-align: top;"><samp>Shift-Insert</samp>/<samp>Enter</samp></td>
-      <td>Add a hole in selected forest or draped polygon.</td>
+      <td style="width: 33%; vertical-align: top;"><samp>Ctrl/Cmd-Enter</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Add" src="Resources/addnode.png"></td>
+      <td>Add new polygon/network node next to the currently selected node, or add hole in the selected forest or draped polygon.</td>
     </tr>
     <tr>
       <td style="width: 33%; vertical-align: top;"><samp>Delete</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Delete" src="Resources/delete.png"></td>
       <td>Delete selected object(s) or polygon/network node.</td>
     </tr>
     <tr>
-      <td style="width: 33%; vertical-align: top;"><samp>Shift-Delete</samp></td>
-      <td>Delete selected hole in a polygon.</td>
-    </tr>
-    <tr>
-      <td style="width: 33%; vertical-align: top;"><samp>Ctrl</samp>/<samp>Cmd-Z</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
+      <td style="width: 33%; vertical-align: top;"><samp>Ctrl/Cmd-Z</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Undo" src="Resources/undo.png"></td>
       <td>Undo the last edit.</td>
     </tr>
 <!--
     <tr>
-      <td style="width: 33%; vertical-align: top;"><samp>Ctrl</samp>/<samp>Cmd-X</samp> / <samp>C</samp> / <samp>V</samp></td>
+      <td style="width: 33%; vertical-align: top;"><samp>Ctrl/Cmd-X</samp> / <samp>C</samp> / <samp>V</samp></td>
       <td>Cut / Copy / Paste.</td>
     </tr>
 -->
@@ -292,8 +289,8 @@ The type of object is indicated by a symbol:</p>
   <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="obj" src="Resources/obj.png"> - 3D object (<code>.obj</code>)</dd>
   <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="fac" src="Resources/fac.png"> - Facade polygon (<code>.fac</code>)</dd>
   <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="for" src="Resources/for.png"> - Forest polygon (<code>.for</code>)</dd>
-  <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="pol" src="Resources/pol.png"> - Draped polygon (<code>.pol</code>) with a <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later)</dd>
-  <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="ortho" src="Resources/ortho.png"> - Draped polygon (<code>.pol</code>) for use as an <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later)</dd>
+  <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="pol" src="Resources/pol.png"> - Draped polygon (<code>.pol</code>) with a <a target="_blank" href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later)</dd>
+  <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="ortho" src="Resources/ortho.png"> - Draped polygon (<code>.pol</code>) for use as an <a target="_blank" href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later)</dd>
   <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="unknown" src="Resources/unknown.png"> - Other polygon</dd>
   <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="net" src="Resources/net.png"> - Road, Railway or Powerline network (requires X-Plane 9.00 or later)</dd>
   <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="exc" src="Resources/exc.png"> - Exclusion region</dd>
@@ -343,8 +340,8 @@ file inside of your scenery package
 v9 <small>(DSF overlay files that contain network segments can cause X-Plane v8 to crash)</small>,
 and if the OverlayEditor preferences are set to display terrain and elevation.</li>
   <li>When you create a new network segment in OverlayEditor it has two nodes.
-You can extend the segment by selecting an end node and pressing <samp>Insert</samp>/<samp>Enter</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>.</li>
-  <li>You can add additional intermediate nodes by selecting a node and pressing <samp>Ctrl Insert</samp>/<samp>Enter</samp>.</li>
+You can extend the segment by selecting an end node and pressing <samp>Enter</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Add" src="Resources/add.png"></td>.</li>
+  <li>You can add additional intermediate nodes by selecting a node and pressing <samp>Ctrl/Cmd-Enter</samp>.</li>
   <li>You can join the node at each end of a segment to another segment of the
 same or of a different type -
 drag the node so that it snaps to the end of the other segment.
@@ -551,7 +548,7 @@ Rename one or both of the packages to change their relative priority.</dd>
 
 <h3>Limitations</h3>
 <ul>
-  <li>Does not understand X-Plane 10 <code>.agp</code> and enhanced facade objects.</li>
+  <li>Does not understand X-Plane 10 enhanced facade objects.</li>
   <li>Does not display roads, railway or powerline networks.</li>
   <li>Does not display autogen scenery.</li>
   <li>Does not display lights or lines in 3D objects.</li>

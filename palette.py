@@ -233,13 +233,19 @@ class PaletteChoicebook(wx.Choicebook):
             if self.GetSelection()!=ontab: self.SetSelection(ontab)
             l=self.lists[ontab]
             l.SetSelection(ind)
-            self.frame.toolbar.EnableTool(wx.ID_ADD, True)
-            if self.frame.menubar: self.frame.menubar.Enable(wx.ID_ADD, True)
+            self.frame.toolbar.EnableTool(wx.ID_ADD,  True)
+            self.frame.toolbar.EnableTool(wx.ID_EDIT, False)
+            if self.frame.menubar:
+                self.frame.menubar.Enable(wx.ID_ADD,  True)
+                self.frame.menubar.Enable(wx.ID_EDIT, False)
         else:
             # no key, or listed in DSF but not present - eg unrecognised poly
             self.lists[self.GetSelection()].SetSelection(-1)
-            self.frame.toolbar.EnableTool(wx.ID_ADD, False)
-            if self.frame.menubar: self.frame.menubar.Enable(wx.ID_ADD, False)
+            self.frame.toolbar.EnableTool(wx.ID_ADD,  False)
+            self.frame.toolbar.EnableTool(wx.ID_EDIT, False)
+            if self.frame.menubar:
+                self.frame.menubar.Enable(wx.ID_ADD, False)
+                self.frame.menubar.Enable(wx.ID_EDIT, False)
 
     def markbad(self, name=None):
         # Mark name as bad, or current selection if no name. Adds name if not already present.

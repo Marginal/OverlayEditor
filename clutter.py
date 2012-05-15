@@ -446,7 +446,7 @@ class Polygon(Clutter):
                     self.lon+=nodes[j][0]
                     self.lat+=nodes[j][1]
                 a+=nodes[j][0]*nodes[(j+1)%n][1]-nodes[(j+1)%n][0]*nodes[j][1]
-            if (i==0 and a<0) or (i and a>0):
+            if self.closed and ((i==0 and a<0) or (i and a>0)):
                 # Outer should be CCW, inner CW
                 nodes.reverse()
                 points.reverse()
@@ -465,25 +465,32 @@ class Polygon(Clutter):
         vertexcache.allocate_dynamic(self)
         return selectednode
 
-    def addnode(self, tile, options, vertexcache, selectednode, clockwise):
+    def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
         (i,j)=selectednode
         n=len(self.nodes[i])
-        if (i and clockwise) or (not i and not clockwise):
-            newnode=nextnode=(j+1)%n
+        if (not self.closed) and (j==0 or j==n-1):
+            # Special handling for ends of open lines and facades - add new node at cursor
+            if j:
+                newnode=nextnode=j+1
+            else:
+                newnode=nextnode=0
+            self.nodes[i].insert(newnode, (lon, lat))
         else:
-            newnode=j
-            nextnode=(j-1)%n
-        selectednode=(i,newnode)
-        self.nodes[i].insert(newnode,
-                             (round2res((self.nodes[i][j][0]+self.nodes[i][nextnode][0])/2),
-                              round2res((self.nodes[i][j][1]+self.nodes[i][nextnode][1])/2)))
-        self.layout(tile, options, vertexcache, selectednode)
-        return selectednode
+            if (i and clockwise) or (not i and not clockwise):
+                newnode=j+1
+                nextnode=(j+1)%n
+            else:
+                newnode=j
+                nextnode=(j-1)%n
+            self.nodes[i].insert(newnode,
+                                 (round2res((self.nodes[i][j][0]+self.nodes[i][nextnode][0])/2),
+                                  round2res((self.nodes[i][j][1]+self.nodes[i][nextnode][1])/2)))
+        return self.layout(tile, options, vertexcache, (i,newnode))
 
-    def delnode(self, tile, options, vertexcache, selectednode, clockwise):
+    def delnode(self, tile, options, vertexcache, selectednode, clockwise=False):
         (i,j)=selectednode
-        if len(self.nodes[i])<4:
-            return False
+        if len(self.nodes[i])<=(self.closed and 3 or 2):	# Open lines and facades can have just two nodes
+            return self.delwinding(tile, options, vertexcache, selectednode)
         self.nodes[i].pop(j)
         if (i and clockwise) or (not i and not clockwise):
             selectednode=(i,(j-1)%len(self.nodes[i]))
@@ -781,12 +788,12 @@ class Draped(Polygon):
         return selectednode
 
 
-    def addnode(self, tile, options, vertexcache, selectednode, clockwise):
+    def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
         if self.param==65535:
             return False	# we don't support new nodes in orthos
-        return Polygon.addnode(self, tile, options, vertexcache, selectednode, clockwise)
+        return Polygon.addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise)
 
-    def delnode(self, tile, options, vertexcache, selectednode, clockwise):
+    def delnode(self, tile, options, vertexcache, selectednode, clockwise=False):
         if self.param==65535:
             return False	# we don't support new nodes in orthos
         return Polygon.delnode(self, tile, options, vertexcache, selectednode, clockwise)
@@ -854,10 +861,10 @@ class Exclude(Fitted):
         else:
             return '%s' % (latlondisp(dms, self.lat, self.lon))
 
-    def addnode(self, tile, options, vertexcache, selectednode, clockwise):
+    def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
         return False
 
-    def delnode(self, tile, options, vertexcache, selectednode, clockwise):
+    def delnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
         return False
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
@@ -1258,8 +1265,18 @@ class Forest(Fitted):
 class Line(Polygon):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
-        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
-        self.lines=[]	# tesellated lines
+        if lon==None:
+            Polygon.__init__(self, name, param, nodes)
+        else:
+            lat=nodes
+            Polygon.__init__(self, name, param, nodes, lon, size, hdg)
+            # Override default node placement
+            h=radians(hdg)
+            self.nodes=[[]]
+            size=0.000005*size
+            for i in [h-pi/2, h+pi/2]:
+                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
+                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size)))))
 
     def clone(self):
         return Line(self.name, self.param, [list(w) for w in self.nodes])

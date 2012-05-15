@@ -1028,50 +1028,35 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.Refresh()
 
 
-    def add(self, name, lat, lon, hdg, size, ctrl, shift):
+    def add(self, name, lat, lon, hdg, size):
+        # Add new clutter
+        if not name:
+            return False
         texerr=None
-        if self.selectednode or (shift and len(self.selected)==1 and isinstance(list(self.selected)[0], Polygon)):
-            # Add new node/winding
-            placement=list(self.selected)[0]
-            layer=placement.definition.layer
-            newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
-            if shift:
-                newnode=placement.addwinding(self.tile, self.options, self.vertexcache, size, hdg)
-            else:
-                newnode=placement.addnode(self.tile, self.options, self.vertexcache, self.selectednode, ctrl)
-            if newnode:
-                self.undostack.append(newundo)
-                if not self.selectednode:
-                    self.selected=[placement]
-                self.selectednode=newnode
-            else:
-                return False
+        if name.lower()[-4:] in [ObjectDef.OBJECT, AutoGenPointDef.AGP]:
+            placement=Object(name, lat, lon, hdg)
         else:
-            # Add new clutter
-            if name.lower()[-4:] in [ObjectDef.OBJECT, AutoGenPointDef.AGP]:
-                placement=Object(name, lat, lon, hdg)
-            else:
-                placement=PolygonFactory(name, None, lat, lon, size, hdg)
-            if __debug__: print "add", placement
+            placement=PolygonFactory(name, None, lat, lon, size, hdg)
+        if __debug__: print "add", placement
             
-            if not placement.load(self.lookup, self.defs, self.vertexcache):
-                myMessageBox("Can't read " + name, 'Cannot add this object.',
-                             wx.ICON_ERROR|wx.OK, self.frame)
-                return False
-            texerr=placement.definition.texerr
-            placement.definition.texerr=None	# Don't report again
+        if not placement.load(self.lookup, self.defs, self.vertexcache):
+            myMessageBox("Can't read " + name, 'Cannot add this object.', wx.ICON_ERROR|wx.OK, self.frame)
+            return False
+        texerr=placement.definition.texerr
+        placement.definition.texerr=None	# Don't report again
 
-            if isinstance(placement, Draped) and placement.definition.ortho:
-                placement.param=65535
-                for i in range(4):
-                    placement.nodes[0][i]+=((i+1)/2%2,i/2)
+        if isinstance(placement, Draped) and placement.definition.ortho:
+            placement.param=65535
+            for i in range(4):
+                placement.nodes[0][i]+=((i+1)/2%2,i/2)
                 
-            placement.layout(self.tile, self.options, self.vertexcache)
-            layer=placement.definition.layer
-            placements=self.placements[self.tile][layer]
-            self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD, [(layer, len(placements), placement)]))
-            placements.append(placement)
-            self.selected=set([placement])
+        placement.layout(self.tile, self.options, self.vertexcache)
+        layer=placement.definition.layer
+        placements=self.placements[self.tile][layer]
+        self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD, [(layer, len(placements), placement)]))
+        placements.append(placement)
+        self.selected=set([placement])
+        self.selectednode=None
 
         self.trashlists(True)	# selection changes
         self.Refresh()
@@ -1080,6 +1065,30 @@ class MyGL(wx.glcanvas.GLCanvas):
         if texerr:
             myMessageBox(texerr.strerror.decode('utf-8'), "Can't read texture " + texerr.filename, wx.ICON_INFORMATION|wx.OK, self.frame)
 
+        return True
+
+
+    def addnode(self, name, lat, lon, hdg, size):
+        # Add new node/winding
+        if len(self.selected)!=1 or not isinstance(list(self.selected)[0], Polygon):
+            return False
+        placement=list(self.selected)[0]
+        layer=placement.definition.layer
+        newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
+        if self.selectednode:
+            newnode=placement.addnode(self.tile, self.options, self.vertexcache, self.selectednode, lat, lon)
+        else:
+            newnode=placement.addwinding(self.tile, self.options, self.vertexcache, size, hdg)
+        if not newnode:
+            return False
+
+        self.undostack.append(newundo)
+        if not self.selectednode:
+            self.selected=[placement]
+        self.selectednode=newnode
+
+        self.Refresh()
+        self.frame.ShowSel()
         return True
 
 
@@ -1110,7 +1119,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         return True
 
 
-    def delsel(self, ctrl, shift):
+    def delsel(self, shift):
         # returns True if deleted something
         if not self.selected:
             return False
@@ -1122,7 +1131,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if shift:
                 newnode=placement.delwinding(self.tile, self.options, self.vertexcache, self.selectednode)
             else:
-                newnode=placement.delnode(self.tile, self.options, self.vertexcache, self.selectednode, ctrl)
+                newnode=placement.delnode(self.tile, self.options, self.vertexcache, self.selectednode)
             if newnode:
                 self.undostack.append(newundo)
                 self.selectednode=newnode
@@ -1243,7 +1252,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         return (placement.lat, placement.lon)
 
     def getsel(self, dms):
-        # return current selection, or average
+        # return current selection, or average: ([names], location_string, lat, lon, object_hdg)
         if not self.selected: return ([], '', None, None, None)
 
         if self.selectednode:
