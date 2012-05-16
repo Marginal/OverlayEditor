@@ -374,7 +374,7 @@ class Polygon(Clutter):
             else:
                 return '%s  %sNode %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), hole, j)
         else:
-            return '%s  Param: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+            return u'%s  Param\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
     def draw_instance(self, glstate, selected, picking):
         pass
@@ -640,7 +640,7 @@ class Draped(Polygon):
         elif self.param==65535:
             return '%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
         else:
-            return '%s  Tex hdg: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+            return u'%s  Tex hdg\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
     def draw_dynamic(self, glstate, selected, picking):
         if self.nonsimple:
@@ -933,7 +933,7 @@ class Facade(Polygon):
         if node:
             return Polygon.locationstr(self, dms, node)
         else:
-            return '%s  Height: %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+            return u'%s  Height\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
     def draw_dynamic(self, glstate, selected, picking):
         fac=self.definition
@@ -1209,7 +1209,7 @@ class Forest(Fitted):
         if node:
             return Polygon.locationstr(self, dms, node)
         else:
-            return '%s  Density: %-4.1f%%  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
+            return u'%s  Density\u2195 %-4.1f%%  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
@@ -1307,7 +1307,7 @@ class Line(Polygon):
             return Polygon.locationstr(self, dms, node)
         else:
             oc=self.closed and 'Closed' or 'Open'
-            return '%s  %s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
+            return u'%s  %s\u2195  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
 
     def layout(self, tile, options, vertexcache, selectednode=None):
         self.closed=(self.param and True)
