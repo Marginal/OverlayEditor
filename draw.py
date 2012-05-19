@@ -3,16 +3,12 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.arrays import vbo
 from OpenGL.extensions import alternate
-
-try:
-    from OpenGL.GL.ARB.occlusion_query import *
-    glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
-    glDeleteQueries = alternate(glDeleteQueries, glDeleteQueriesARB)
-    glEndQuery = alternate(glEndQuery, glEndQueryARB)
-    glGenQueries = alternate(glGenQueries, glGenQueriesARB)
-    glGetQueryObjectuiv = alternate(glGetQueryObjectiv, glGetQueryObjectuivARB)
-except:
-    glGenQueries=False
+from OpenGL.GL.ARB.occlusion_query import *
+glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
+glDeleteQueries = alternate(glDeleteQueries, glDeleteQueriesARB)
+glEndQuery = alternate(glEndQuery, glEndQueryARB)
+glGenQueries = alternate(glGenQueries, glGenQueriesARB)
+glGetQueryObjectuiv = alternate(glGetQueryObjectiv, glGetQueryObjectuivARB)
 
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
 from numpy import array, array_equal, empty, identity, float32, float64, int32

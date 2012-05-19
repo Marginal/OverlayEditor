@@ -12,12 +12,17 @@
 
 from math import atan2, ceil, cos, floor, hypot, pi, radians, sin
 from numpy import array, array_equal, concatenate, empty, float32, float64
-from OpenGL.GL import *
-from OpenGL.GLU import *
 from sys import maxint
 if __debug__:
     import time
     from traceback import print_exc
+
+from OpenGL.GL import *
+from OpenGL.GLU import *
+from OpenGL.extensions import alternate
+from OpenGL.GL.ARB.occlusion_query import *
+glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
+glEndQuery = alternate(glEndQuery, glEndQueryARB)
 
 from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELNODE
 

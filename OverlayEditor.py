@@ -23,6 +23,7 @@ elif platform=='darwin':
 try:
     import wx
 except:
+    if __debug__: print_exc()
     import Tkinter, tkMessageBox
     Tkinter.Tk().withdraw()
     tkMessageBox.showerror("Error", "wxPython is not installed.\nThis application requires wxPython 2.5.3 or later.")
@@ -47,6 +48,7 @@ try:
         import OpenGL.arrays.numpymodule
         import OpenGL.arrays.ctypesarrays
 except:
+    if __debug__: print_exc()
     import Tkinter, tkMessageBox
     Tkinter.Tk().withdraw()
     tkMessageBox.showerror("Error", "PyOpenGL is not installed.\nThis application\nrequires PyOpenGL 3.0.1 or later.")
