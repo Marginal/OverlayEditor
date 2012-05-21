@@ -39,9 +39,6 @@ from prefs import Prefs
 from version import appname, appversion
 
 
-# memory leak? causing SegFault on Linux - Ubuntu seems OK for some reason
-cantreleasetexs=(platform.startswith('linux'))
-
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
@@ -439,17 +436,13 @@ class TexCache:
             self.clampmode=GL_CLAMP
 
     def reset(self):
-        if cantreleasetexs:
-            # Hack round suspected memory leak causing SegFault on SUSE
-            pass
-        else:
-            a=[]
-            for name in self.texs.keys():
-                if self.texs[name] not in self.terraintexs:
-                    a.append(self.texs[name])
-                    self.texs.pop(name)
-            if a:
-                glDeleteTextures(array(a,uint32))
+        a=[]
+        for name in self.texs.keys():
+            if self.texs[name] not in self.terraintexs:
+                a.append(self.texs[name])
+                self.texs.pop(name)
+        if a:
+            glDeleteTextures(array(a,uint32))
 
     def get(self, path, wrap=True, alpha=True, downsample=False, fixsize=False):
         if not path: return self.blank
@@ -629,7 +622,7 @@ class TexCache:
             # variables used: data, format, iformat, width, height
             if not alpha:	# Discard alpha
                 iformat=GL_RGB
-            if self.compress:
+            if self.compress and (width>64 or height>64):	# Don't compress small textures, including built-ins
                 if iformat==GL_RGB:
                     iformat=GL_COMPRESSED_RGB_ARB
                 elif iformat==GL_RGBA:
