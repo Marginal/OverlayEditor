@@ -3,13 +3,14 @@ from math import fabs
 from numpy import array, concatenate, float32
 import operator
 from os import listdir
-from os.path import basename, dirname, exists, join, normpath, sep, splitext
+from os.path import basename, dirname, exists, join, normpath, sep
 from sys import maxint
 
 from OpenGL.GL import *
 import wx
 if __debug__:
     import time
+    from traceback import print_exc
 
 from lock import Locked
 
@@ -147,6 +148,12 @@ class ClutterDef:
     def flush(self):
         pass
 
+    # Normalise path, replacing : / and \ with os-specific separator, eliminating .. etc
+    def cleanpath(self, path):
+        # relies on normpath on win replacing '/' with '\\'
+        return normpath(join(self.texpath, path.decode('latin1').replace(':', sep).replace('\\', sep)))
+
+
 class ObjectDef(ClutterDef):
 
     OBJECT='.obj'
@@ -183,17 +190,10 @@ class ObjectDef(ClutterDef):
             while True:
                 line=h.readline()
                 if not line: raise IOError
-                tex=line.strip()
-                if tex:
-                    (tex,e)=splitext(tex.split('//')[0].strip().replace(':', sep).replace('/', sep).decode('latin1'))
+                tex=line.split('//')[0].strip()
+                if tex and tex.lower()!='none':
+                    texture=self.cleanpath(tex)
                     break
-            for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
-                if exists(normpath(join(self.texpath, tex+ext))):
-                    texture=tex+ext
-                    break
-            else:
-                if tex.lower()!='none':
-                    texture=tex
 
         if version=='2':
             for line in h:
@@ -339,22 +339,12 @@ class ObjectDef(ClutterDef):
                     idx.extend(map(int,c[1:11])) # slightly faster under 2.3
                 elif id=='IDX':
                     idx.append(int(c[1]))
-                elif id in ['TEXTURE', 'TEXTURE_DRAPED']:
-                    if len(c)>1:
-                        (tex,e)=splitext(line[len(id):].split('#')[0].split('//')[0].strip().replace(':', sep).replace('/', sep).decode('latin1'))
-                        for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
-                            if exists(normpath(join(self.texpath, tex+ext))):
-                                if id=='TEXTURE':
-                                    texture=tex+ext
-                                else:
-                                    texture_draped=tex+ext
-                                break
-                        else:
-                            if tex.lower()!='none':
-                                if id=='TEXTURE':
-                                    texture=tex
-                                else:
-                                    texture_draped=tex
+                elif id=='TEXTURE':
+                    if len(c)>1 and c[1].lower()!='none':
+                        texture=self.cleanpath(c[1])
+                elif id=='TEXTURE_DRAPED':
+                    if len(c)>1 and c[1].lower()!='none':
+                        texture_draped=self.cleanpath(c[1])
                 elif id=='ATTR_LOD':
                     if float(c[1])!=0: break
                     current=last=culled	# State is reset per LOD
@@ -412,14 +402,14 @@ class ObjectDef(ClutterDef):
             self.vdata=array(culled+nocull, float32).flatten()
             self.culled=len(culled)
             self.nocull=len(nocull)
-            if texture_draped:	# can be none
+            if texture_draped:	# can be None
                 try:
-                    self.texture_draped=vertexcache.texcache.get(normpath(join(self.texpath, texture_draped)))
+                    self.texture_draped=vertexcache.texcache.get(texture_draped)
                 except IOError, e:
                     self.texerr=IOError(0,e.strerror,texture_draped)
-            if texture:	# can be none
+            if texture:	# can be None
                 try:
-                    self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
+                    self.texture=vertexcache.texcache.get(texture)
                 except IOError, e:
                     self.texerr=IOError(0,e.strerror,texture)
                 if self.poly:
@@ -609,31 +599,25 @@ class AutoGenPointDef(ObjectDef):
             if not c: continue
             id=c[0]
             if id=='TEXTURE':
-                (tex,e)=splitext(line[len(c[0]):].strip().replace(':', sep).replace('/', sep).decode('latin1'))
-                for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
-                    if exists(normpath(join(self.texpath, tex+ext))):
-                        texture_draped=tex+ext
-                        break
-                    else:
-                        texture_draped=tex
-            elif c[0]=='TEXTURE_SCALE':
+                texture_draped=self.cleanpath(c[1])
+            elif id=='TEXTURE_SCALE':
                 hscale=float(c[1])
                 vscale=float(c[2])
-            elif c[0]=='TEXTURE_WIDTH':
+            elif id=='TEXTURE_WIDTH':
                 width=float(c[1])
-            elif c[0]=='CROP_POLY':
+            elif id=='CROP_POLY':
                 if crop: raise IOError	# We don't support multiple draped textures
                 if len(c)!=9: raise IOError	# We only support rectangles
                 crop=[(float(c[1]),float(c[2])), (float(c[3]),float(c[4])), (float(c[5]),float(c[6])), (float(c[7]),float(c[8]))]
-            elif c[0]=='OBJECT':
+            elif id=='OBJECT':
                 objects.append(c[1][:-4].replace(':', '/').replace('\\','/')+c[1][-4:].lower())
-            elif c[0]=='OBJ_DRAPED':
+            elif id=='OBJ_DRAPED':
                 placements.append((float(c[1]),float(c[2]),float(c[3]),int(c[4])))
-            elif c[0]=='TILE':
+            elif id=='TILE':
                 if hanchor is None:
                     hanchor=(float(c[1])+float(c[3]))/2
                     vanchor=(float(c[2])+float(c[4]))/2
-            elif c[0]=='ANCHOR_PT':
+            elif id=='ANCHOR_PT':
                 hanchor=float(c[1])
                 vanchor=float(c[2])
         h.close()
@@ -642,7 +626,7 @@ class AutoGenPointDef(ObjectDef):
         if crop:
             if texture_draped:	# texture can be none?
                 try:
-                    self.texture_draped=vertexcache.texcache.get(normpath(join(self.texpath, texture_draped)))
+                    self.texture_draped=vertexcache.texcache.get(texture_draped)
                 except IOError, e:
                     self.texerr=IOError(0,e.strerror,texture_draped)
             assert len(crop)==4, crop
@@ -741,32 +725,25 @@ class DrapedDef(PolygonDef):
             raise IOError
         if not h.readline().strip() in ['DRAPED_POLYGON']:
             raise IOError
-        while True:
-            line=h.readline()
-            if not line: break
-            c=line.split('#')[0].split()
+        for line in h:
+            c=line.split()
             if not c: continue
-            if c[0] in ['TEXTURE', 'TEXTURE_NOWRAP']:
-                if c[0]=='TEXTURE_NOWRAP':
+            id=c[0]
+            if id in ['TEXTURE', 'TEXTURE_NOWRAP']:
+                if id=='TEXTURE_NOWRAP':
                     self.ortho=True
                     self.type=Locked.ORTHO
-                (tex,e)=splitext(line[len(c[0]):].strip().replace(':', sep).replace('/', sep).decode('latin1'))
-                for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
-                    if exists(normpath(join(self.texpath, tex+ext))):
-                        texture=tex+ext
-                        break
-                    else:
-                        texture=tex
-            elif c[0]=='SCALE':
+                texture=self.cleanpath(c[1])
+            elif id=='SCALE':
                 self.hscale=float(c[1]) or 1
                 self.vscale=float(c[2]) or 1
-            elif c[0]=='LAYER_GROUP':
+            elif id=='LAYER_GROUP':
                 self.setlayer(c[1], int(c[2]))
-            elif c[0]=='NO_ALPHA':
+            elif id=='NO_ALPHA':
                 alpha=False
         h.close()
         try:
-            self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)), not self.ortho, alpha)
+            self.texture=vertexcache.texcache.get(texture, not self.ortho, alpha)
         except IOError, e:
             self.texerr=IOError(0,e.strerror,texture)
 
@@ -811,61 +788,63 @@ class FacadeDef(PolygonDef):
         h=open(self.filename, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
-        if not h.readline().split('#')[0].strip() in ['800']:
+        version=h.readline().split('#')[0].strip()
+        if not version in ['800', '1000']:
             raise IOError
+        self.version=int(version)
         if not h.readline().strip() in ['FACADE']:
             raise IOError
         while True:
             line=h.readline()
             if not line: break
-            c=line.split('#')[0].split()
+            c=line.split()
             if not c: continue
-            if c[0]=='TEXTURE' and len(c)>1:
-                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep).decode('latin1'))
-                for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
-                    if exists(normpath(join(self.texpath, tex+ext))):
-                        texture=tex+ext
-                        break
-                    else:
-                        texture=tex
+            id=c[0]
+            if id=='TEXTURE':
+                texture=self.cleanpath(c[1])
                 try:
-                    self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
+                    self.texture=vertexcache.texcache.get(texture)
                 except IOError, e:
                     self.texerr=IOError(0,e.strerror,texture)
-            elif c[0]=='RING':
+            elif id=='RING':
                 self.ring=int(c[1])
-            elif c[0]=='TWO_SIDED': self.two_sided=(int(c[1])!=0)
-            elif c[0]=='LOD':
+            elif id=='TWO_SIDED':
+                self.two_sided=(int(c[1])!=0)
+            elif id=='LOD':
                 # LOD
                 roof=[]
                 while True:
                     line=h.readline()
                     if not line: break
-                    c=line.split('#')[0].split()
+                    c=line.split()
                     if not c: continue
-                    if c[0]=='LOD': break	# stop after first LOD
-                    elif c[0] in ['ROOF','HARD_ROOF']:
+                    id=c[0]
+                    if id=='LOD':
+                        break	# stop after first LOD
+                    elif id in ['ROOF','HARD_ROOF']:
                         roof.append((float(c[1]), float(c[2])))
-                    elif c[0] in ['WALL','HARD_WALL']:
+                    elif id in ['WALL','HARD_WALL']:
                         while True:
                             line=h.readline()
                             if not line: break
-                            c=line.split('#')[0].split()
+                            c=line.split()
                             if not c: continue
-                            if c[0] in ['LOD', 'WALL']: break
-                            elif c[0]=='SCALE':
+                            id=c[0]
+                            if id in ['LOD', 'WALL']:
+                                break
+                            elif id=='SCALE':
                                 self.hscale=float(c[1])
                                 self.vscale=float(c[2])
-                            elif c[0]=='ROOF_SLOPE':
+                            elif id=='ROOF_SLOPE':
                                 self.roof_slope=float(c[1])
-                            elif c[0] in ['LEFT', 'CENTER', 'RIGHT']:
+                            elif id in ['LEFT', 'CENTER', 'RIGHT']:
                                 self.horiz.append((float(c[1]),float(c[2])))
-                                if c[0]=='LEFT': self.hends[0]+=1
-                                elif c[0]=='RIGHT': self.hends[1]+=1
-                            elif c[0] in ['BOTTOM', 'MIDDLE', 'TOP']:
+                                if id=='LEFT': self.hends[0]+=1
+                                elif id=='RIGHT': self.hends[1]+=1
+                            elif id in ['BOTTOM', 'MIDDLE', 'TOP']:
                                 self.vert.append((float(c[1]),float(c[2])))
-                                if c[0]=='BOTTOM': self.vends[0]+=1
-                                elif c[0]=='TOP': self.vends[1]+=1
+                                if id=='BOTTOM': self.vends[0]+=1
+                                elif id=='TOP': self.vends[1]+=1
                         break # stop after first WALL
                 if len(roof) in [0,4]:
                     self.roof=roof
@@ -917,28 +896,21 @@ class ForestDef(PolygonDef):
             raise IOError
         if not h.readline().strip() in ['FOREST']:
             raise IOError
-        while True:
-            line=h.readline()
-            if not line: break
-            c=line.split('#')[0].split()
+        for line in h:
+            c=line.split()
             if not c: continue
-            if c[0]=='TEXTURE' and len(c)>1:
-                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep).decode('latin1'))
-                for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
-                    if exists(normpath(join(self.texpath, tex+ext))):
-                        texture=tex+ext
-                        break
-                    else:
-                        texture=tex
+            id=c[0]
+            if id=='TEXTURE':
+                texture=self.cleanpath(c[1])
                 try:
-                    self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)))
+                    self.texture=vertexcache.texcache.get(texture)
                 except IOError, e:
                     self.texerr=IOError(0,e.strerror,texture)
-            elif c[0]=='SCALE_X':
+            elif id=='SCALE_X':
                 scalex=float(c[1])
-            elif c[0]=='SCALE_Y':
+            elif id=='SCALE_Y':
                 scaley=float(c[1])
-            elif c[0]=='TREE':
+            elif id=='TREE':
                 if len(c)>10 and float(c[6])>best and float(c[3])/scalex>.02 and float(c[4])/scaley>.02:
                     # choose most popular, unless it's tiny (placeholder)
                     best=float(c[6])
@@ -979,31 +951,24 @@ class LineDef(PolygonDef):
             raise IOError
         if not h.readline().strip() in ['LINE_PAINT']:
             raise IOError
-        while True:
-            line=h.readline()
-            if not line: break
-            c=line.split('#')[0].split()
+        for line in h:
+            c=line.split()
             if not c: continue
-            if c[0]=='TEXTURE' and len(c)>1:
-                (tex,e)=splitext(line[7:].strip().replace(':', sep).replace('/', sep).decode('latin1'))
-                for ext in [e, '.dds', '.DDS', '.png', '.PNG']:
-                    if exists(normpath(join(self.texpath, tex+ext))):
-                        texture=tex+ext
-                        break
-                    else:
-                        texture=tex
+            id=c[0]
+            if id=='TEXTURE':
+                texture=self.cleanpath(c[1])
                 try:
-                    self.texture=vertexcache.texcache.get(normpath(join(self.texpath, texture)), 'vertically')
+                    self.texture=vertexcache.texcache.get(texture)
                 except IOError, e:
                     self.texerr=IOError(0,e.strerror,texture)
-            elif c[0]=='SCALE':
+            elif id=='SCALE':
                 self.hscale=float(c[1])
                 self.vscale=float(c[2])
-            elif c[0]=='TEX_WIDTH':
+            elif id=='TEX_WIDTH':
                 width=float(c[1])
-            elif c[0]=='S_OFFSET':
+            elif id=='S_OFFSET':
                 offsets=[float(c[2]), float(c[3]), float(c[4])]
-            elif c[0]=='LAYER_GROUP':
+            elif id=='LAYER_GROUP':
                 self.setlayer(c[1], int(c[2]))
         h.close()
         self.offsets=[offsets[0]/width, offsets[1]/width, offsets[2]/width]

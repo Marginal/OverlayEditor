@@ -627,6 +627,8 @@ class Draped(Polygon):
                 defs[filename]=self.definition=DrapedDef(filename, vertexcache)
             return True
         except:
+            if __debug__:
+                print_exc()
             if usefallback:
                 if self.name in lookup:
                     filename=lookup[self.name].file
@@ -919,6 +921,8 @@ class Facade(Polygon):
             self.closed=(self.definition.ring and True)
             return True
         except:
+            if __debug__:
+                print_exc()
             if not self.param:
                 self.param=1
             self.closed=True
@@ -1198,6 +1202,8 @@ class Forest(Fitted):
                 defs[filename]=self.definition=ForestDef(filename, vertexcache)
             return True
         except:
+            if __debug__:
+                print_exc()
             if usefallback:
                 if self.name in lookup:
                     filename=lookup[self.name].file
@@ -1295,6 +1301,8 @@ class Line(Polygon):
                 defs[filename]=self.definition=LineDef(filename, vertexcache)
             return True
         except:
+            if __debug__:
+                print_exc()
             if usefallback:
                 if self.name in lookup:
                     filename=lookup[self.name].file

@@ -456,13 +456,11 @@ class TexCache:
         # We will prefer dds if the texture is to be downsampled (terrain), otherwise png (objects).
         (base,oldext)=splitext(path)
         if downsample:
-            for ext in ['.dds', '.DDS', '.png', '.PNG']:
+            for ext in ['.dds', '.DDS', '.png', '.PNG', oldext]:
                 if exists(base+ext): break
-                else: ext=oldext
         else:
-            for ext in ['.png', '.PNG', '.dds', '.DDS']:
+            for ext in ['.png', '.PNG', '.dds', '.DDS', oldext]:
                 if exists(base+ext): break
-                else: ext=oldext
 
         try:
             if ext.lower()=='.dds':
