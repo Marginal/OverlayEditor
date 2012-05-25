@@ -1368,7 +1368,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.selections=set()
             self.trashlists(True, True)
 
-            progress=wx.ProgressDialog('Loading', 'Terrain', 17, self.frame, wx.PD_APP_MODAL)
+            progress=wx.ProgressDialog('Loading', 'Terrain', 16, self.frame)
+            progress.SetSize
             self.vertexcache.loadMesh(newtile, options)
 
             progress.Update(1, 'Terrain textures')
@@ -1724,7 +1725,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     if __debug__: print_exc()
                 
             # Prepare static stuff: mesh, networks, navaids
-            progress.Update(15, 'Done')
+            progress.Update(15, 'Layout')
             self.glstate.set_instance(self.vertexcache)
             self.glstate.set_texture(0)
             self.glstate.set_color(COL_UNPAINTED)
@@ -1826,6 +1827,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
             # Done
             self.setbackground(self.background)
+            progress.Update(16, 'Done')
             progress.Destroy()
             self.valid=True
 

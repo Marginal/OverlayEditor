@@ -1371,7 +1371,7 @@ class MainWindow(wx.Frame):
         
     # Load or reload current package
     def OnReload(self, reload, package=None):
-        progress=wx.ProgressDialog('Loading', '', 4, self, wx.PD_APP_MODAL)
+        progress=wx.ProgressDialog('Loading', '', 5, self)
         self.palette.flush()
         if reload:
             package=prefs.package
@@ -1383,7 +1383,7 @@ class MainWindow(wx.Frame):
         else:
             pkgdir=None
 
-        progress.Update(0, 'Global airports')
+        progress.Update(1, 'Global airports')
         if not glob(join(prefs.xplane, gmain9aptdat)) and not glob(join(prefs.xplane, gmain8aptdat)):
             self.nav=[]
             myMessageBox("Can't find the X-Plane global apt.dat file.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
@@ -1419,7 +1419,7 @@ class MainWindow(wx.Frame):
 
         if not reload:
             # Load, not reload
-            progress.Update(0, 'Overlay DSFs')
+            progress.Update(2, 'Overlay DSFs')
             self.elev=45
             self.dist=2048*zoom
             placements={}
@@ -1458,7 +1458,7 @@ class MainWindow(wx.Frame):
         self.toolbar.EnableTool(wx.ID_UNDO, False)
         if self.menubar:
             self.menubar.Enable(wx.ID_UNDO, False)
-        progress.Update(1, 'Airports')
+        progress.Update(3, 'Airports')
         pkgapts={}
         nav=list(self.nav)
         pkgloc=None
@@ -1493,7 +1493,7 @@ class MainWindow(wx.Frame):
         self.goto=GotoDialog(self, airports)	# build only
         # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
         # search order is: custom libraries, default libraries, scenery package
-        progress.Update(2, 'Libraries')
+        progress.Update(4, 'Libraries')
         lookupbylib={}	# {name: paletteentry} by libname
         lookup={}	# {name: paletteentry}
         terrain={}	# {name: path}
@@ -1529,7 +1529,7 @@ class MainWindow(wx.Frame):
         lookup.update(objects)
         for lib in libs: self.palette.load(lib, lookupbylib[lib], None)
 
-        if xpver>=9:
+        if False: # xpver>=9: XXX disable networks
             defroadfile=lookupbylib['g8'].pop(NetworkDef.DEFAULTFILE,None)
             if defroadfile: defroadfile=defroadfile.file
             if not self.defnetdefs:
@@ -1596,6 +1596,7 @@ class MainWindow(wx.Frame):
                 else:	# Fallback / Untitled
                     pass	# keep existing
         self.loc=(round2res(self.loc[0]),round2res(self.loc[1]))
+        progress.Update(5, 'Done')
         progress.Destroy()
         
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
