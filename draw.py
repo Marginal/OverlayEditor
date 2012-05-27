@@ -24,7 +24,7 @@ if __debug__:
 
 from files import VertexCache, sortfolded, readApt, glInitTextureCompressionS3tcEXT
 from fixed8x13 import fixed8x13
-from clutter import PolygonFactory, Draped, Facade, Object, Polygon, Network, Exclude, resolution, round2res, latlondisp
+from clutter import ObjectFactory, PolygonFactory, Draped, Facade, Object, Polygon, Network, Exclude, resolution, round2res, latlondisp
 from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE
 from MessageBox import myMessageBox
 from prefs import Prefs
@@ -1030,7 +1030,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             return False
         texerr=None
         if name.lower()[-4:] in [ObjectDef.OBJECT, AutoGenPointDef.AGP]:
-            placement=Object(name, lat, lon, hdg)
+            placement=ObjectFactory(name, lat, lon, hdg)
         else:
             placement=PolygonFactory(name, None, lat, lon, size, hdg)
         if __debug__: print "add", placement
