@@ -223,6 +223,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.valid=False	# do we have valid data for a redraw?
         self.needclear=False	# pending clear
+        self.needrefesh=False	# pending refresh
         self.options=0		# display options
         self.tile=(0,999)	# [lat,lon] of SW
         self.centre=None	# [lat,lon] of centre
@@ -371,6 +372,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def OnEraseBackground(self, event):
         # Prevent flicker when resizing / painting on MSW
+        if __debug__: print "OnEraseBackground"
         self.needclear=True	# ATI drivers require clear afer resize
 
     def OnKeyDown(self, event):
@@ -460,7 +462,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.selectednode=list(self.selected)[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
                 assert self.selectednode
                 self.Refresh()
-        event.Skip()
+            elif self.needrefresh:
+                # Mouse motion with a selected polygon draws to the back buffer, which Mac uses as backing store. So refresh.
+                self.Refresh()
 
     def OnMouseMotion(self, event):
         # Capture unreliable on Mac, so may have missed Up events. See
@@ -526,6 +530,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     selections=glRenderMode(GL_RENDER)
 
                 glPopMatrix()	# Restore state for unproject
+                self.needrefresh=True
                 if selections:
                     self.SetCursor(self.dragcursor)	# hovering over node
                     return
@@ -592,6 +597,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def OnPaint(self, event):
         if event: wx.PaintDC(self)	# Tell the window system that we're on the case
+        self.needrefresh=False
         size = self.GetClientSize()
         #print "pt", size
         if size.width<=0: return	# may be junk on startup
