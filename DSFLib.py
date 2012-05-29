@@ -761,11 +761,13 @@ def writeDSF(dsfdir, key, placements, netfile):
                 h.write('POLYGON_POINT\t%12.7f%13.7f' % (min(west+1, p[0]+minres/2), min(south+1, p[1]+minres/2)))
                 if len(p)==4 and poly.param!=65535: # bezier
                     h.write('%13.7f%13.7f' % (min(west+1, p[2]+minres/2), min(south+1, p[3]+minres/2)))
+                elif len(p)==3:	# Facade with wall type, or AGL beach with subtype
+                      h.write('%4d' % p[2])
                 elif len(p)==5:	# Facade with wall type and bezier
-                      h.write('%13.7f%13.7f%13.7f' % (p[2], min(west+1, p[3]+minres/2), min(south+1, p[4]+minres/2)))
+                      h.write('%4d%13.7f%13.7f' % (p[2], min(west+1, p[3]+minres/2), min(south+1, p[4]+minres/2)))
                 elif len(p)==8:	# Draped/Ortho with bezier and UV
                     h.write('%13.7f%13.7f%13.7f%13.7f%13.7f%13.7f' % (min(west+1, p[2]+minres/2), min(south+1, p[3]+minres/2), p[4], p[5], p[6], p[7]))
-                else:
+                else:		# draped with UV, or dunno
                     for n in range(2,len(p)):
                         h.write('%13.7f' % p[n])
                 h.write('\n')

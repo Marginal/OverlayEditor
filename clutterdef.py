@@ -1,7 +1,7 @@
 import codecs
 from math import fabs
 from numpy import array, concatenate, float32
-import operator
+from operator import itemgetter, attrgetter
 from os import listdir
 from os.path import basename, dirname, exists, join, normpath, sep
 from sys import maxint
@@ -388,7 +388,7 @@ class ObjectDef(ClutterDef):
                     if anim:
                         current.extend([[vt[idx[i]][j]+anim[-1][j] for j in range (3)] + [vt[idx[i]][3],vt[idx[i]][4]] for i in range(start, start+new)])
                     else:
-                        current.extend(operator.itemgetter(*idx[start:start+new])(vt))	#current.extend([vt[idx[i]] for i in range(start, start+new)])
+                        current.extend(itemgetter(*idx[start:start+new])(vt))	#current.extend([vt[idx[i]] for i in range(start, start+new)])
         h.close()
         if __debug__:
             if self.filename: print "%6.3f" % (time.clock()-clock), basename(self.filename)
@@ -667,9 +667,9 @@ class PolygonDef(ClutterDef):
     DRAPED='.pol'
     BEACH='.bch'
 
-        self.fittomesh=False	# automatically insert intermediate nodes
     def __init__(self, filename, vertexcache, lookup, defs):
         ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
+        self.fittomesh=True	# nodes laid out at mesh elevation
         self.type=Locked.UNKNOWN
 
     def preview(self, canvas, vertexcache, l=0, b=0, r=1, t=1, hscale=1):
@@ -770,16 +770,48 @@ class ExcludeDef(PolygonDef):
 
 
 class FacadeDef(PolygonDef):
+
+    class Floor:
+        def __init__(self, name):
+            self.name=name
+            self.height=0
+            self.roofs=[]
+            self.walls=[]
+
+    class Wall:
+        def __init__(self, name):
+            self.name=name
+            self.spellings=[]
+
+    class Spelling:
+        def __init__(self, segments, idx):
+            self.width=0
+            self.segments=[]
+            for i in idx:
+                self.width+=segments[i].width
+                self.segments.append(segments[i])
+
+    class Segment:
+        def __init__(self):
+            self.width=0
+            self.mesh=[]
+            self.children=[]	# [name, definition, is_draped, xdelta, ydelta, zdelta, hdelta]
+
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.canpreview=True
         self.type=Locked.FAC
 
         # Only reads first wall in first LOD
-        self.ring=0
+        self.ring=1
         self.two_sided=False
         self.roof=[]
-        # per-wall
+        self.roofscale=1
+        self.texture_roof=0
+        self.floors=[]
+        self.version=800
+
+        # v8 per-wall
         self.roof_slope=0
         self.hscale=100
         self.vscale=100
@@ -787,7 +819,13 @@ class FacadeDef(PolygonDef):
         self.vert=[]
         self.hends=[0,0]
         self.vends=[0,0]
-    
+
+        currentfloor=currentsegment=currentwall=None
+        rooftex=False
+        objects=[]
+        placements=[]
+        segments=[]
+        vt=[]
         h=open(self.filename, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
             raise IOError
@@ -806,7 +844,10 @@ class FacadeDef(PolygonDef):
             if id=='TEXTURE':
                 texture=self.cleanpath(c[1])
                 try:
-                    self.texture=vertexcache.texcache.get(texture)
+                    if rooftex:
+                        self.texture_roof=vertexcache.texcache.get(texture)
+                    else:
+                        self.texture=vertexcache.texcache.get(texture)
                 except IOError, e:
                     self.texerr=IOError(0,e.strerror,texture)
             elif id=='RING':
@@ -853,16 +894,157 @@ class FacadeDef(PolygonDef):
                     self.roof=roof
                 else:
                     self.roof=[roof[0], roof[0], roof[0], roof[0]]
-                self.fittomesh=(not roof)
+                self.fittomesh=(not roof)	# is this true
+                if not self.horiz or not self.vert:
+                    raise IOError
                 break	# stop after first LOD
+            # v10
+            elif id=='GRADED':
+                self.fittomesh=False
+            elif id in ['SHADER_WALL','SHADER_ROOF']:
+                rooftex=(id=='SHADER_ROOF')
+            elif id=='ROOF_SCALE':
+                self.roofscale=float(c[1])
+            elif id=='OBJ':
+                childname=c[1][:-4].replace(':', '/').replace('\\','/')+c[1][-4:].lower()
+                if childname in lookup:
+                    childfilename=lookup[childname].file
+                else:
+                    childfilename=join(dirname(filename),childname)	# names are relative to this .fac so may not be in global lookup
+                if childfilename in defs:
+                    definition=defs[childfilename]
+                else:
+                    try:
+                        defs[childfilename]=definition=ObjectDef(childfilename, vertexcache, lookup, defs, make_editable=False)
+                    except:
+                        if __debug__:
+                            print_exc()
+                        defs[childfilename]=definition=ObjectFallback(childfilename, vertexcache, lookup, defs)
+                objects.append((childname,definition))
+
+            elif id=='FLOOR':
+                currentfloor=FacadeDef.Floor(c[1])
+                segments=[]
+                currentsegment=None
+                currentwall=None
+                self.floors.append(currentfloor)
+            elif id=='ROOF_HEIGHT':
+                currentfloor.roofs.append(float(c[1]))
+                currentfloor.height=max(currentfloor.height, float(c[1]))
+
+            elif id=='SEGMENT':
+                assert len(segments)==int(c[1])	# Assume segements are in order
+                currentsegment=FacadeDef.Segment()
+                segments.append(currentsegment)
+                currentswall=None
+            elif id=='SEGMENT_CURVED':
+                currentsegment=None	# just skip it
+            elif id=='MESH':		# priority? LOD_far? curved points? #vt #idx
+                vt=[]			# note can have multiple meshes see lib/airport/Modern_Airports/Facades/modern1.fac:145
+            elif id=='VERTEX' and currentsegment:
+                x=float(c[1])
+                y=float(c[2])
+                z=float(c[3])
+                currentsegment.width=max(currentsegment.width,-z)
+                vt.append([x,y,z, float(c[7]),float(c[8])])
+            elif id=='IDX' and currentsegment:
+                currentsegment.mesh.extend(itemgetter(*map(int,c[1:7]))(vt))
+            elif id in ['ATTACH_DRAPED', 'ATTACH_GRADED'] and currentsegment:
+                (childname, definition)=objects[int(c[1])]
+                if not isinstance(definition, ObjectFallback):	# skip fallbacks
+                    currentsegment.children.append([childname, definition, id=='ATTACH_DRAPED', float(c[2]), float(c[3]), float(c[4]), float(c[5])])
+
+            elif id=='WALL':		# LOD_near? LOD_far? ??? ??? name
+                currentsegment=None
+                currentwall=FacadeDef.Wall(c[5])
+                currentfloor.walls.append(currentwall)
+
+            elif id=='SPELLING':	# LOD_near? LOD_far? ??? ??? name
+                currentwall.spellings.append(FacadeDef.Spelling(segments, map(int,c[1:])))
+
+        if self.version>=1000:
+            if not self.floors: raise IOError
+            self.floors.sort(key=attrgetter('height'))		# layout code assumes floors are in ascending height
+            for floor in self.floors:
+                floor.roofs.sort(reverse=True)			# drawing marginally faster if we draw the top roof first
+                if not floor.walls: raise IOError
+                for wall in floor.walls:
+                    if not wall.spellings: raise IOError
+                    wall.spellings.sort(key=attrgetter('width'), reverse=True)	# layout code assumes spellings are in descending width
+                    for spelling in wall.spellings:
+                        if not spelling.width: raise IOError	# Can't handle zero-width segments
+
         h.close()
-        if not self.horiz or not self.vert:
-            raise IOError
 
     def preview(self, canvas, vertexcache):
-        return PolygonDef.preview(self, canvas, vertexcache,
-                                  self.horiz[0][0], self.vert[0][0],
-                                  self.horiz[-1][1], self.vert[-1][1])
+        if self.version<1000:
+            return PolygonDef.preview(self, canvas, vertexcache,
+                                      self.horiz[0][0], self.vert[0][0],
+                                      self.horiz[-1][1], self.vert[-1][1])
+        floor=self.floors[-1]		# highest floor
+        wall=floor.walls[0]		# default wall
+        maxsize=floor.height*1.5 or 4	# 4 chosen to make standard fence and jet blast shield look OK
+        spelling=wall.spellings[0]	# longest spelling
+        for s in wall.spellings:	# find smallest spelling that is larger than height
+            if s.width>=maxsize: spelling=s
+        maxsize=max(spelling.width, maxsize)
+        pad=(maxsize-spelling.width)/2
+        canvas.glstate.set_instance(vertexcache)
+        xoff=canvas.GetClientSize()[0]-ClutterDef.PREVIEWSIZE
+        glViewport(xoff, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
+        glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glOrtho(-pad, maxsize-pad, 0, maxsize, -maxsize, maxsize)
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
+        glRotatef(-90, 0,1,0)
+        #glTranslatef(sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz)
+        canvas.glstate.set_color(COL_UNPAINTED)
+        canvas.glstate.set_depthtest(True)
+        canvas.glstate.set_poly(False)
+        canvas.glstate.set_cull(True)
+        canvas.glstate.set_texture(self.texture)
+        glBegin(GL_TRIANGLES)
+        hoffset=0
+        for segment in spelling.segments:
+            for v in segment.mesh:
+                glTexCoord2f(v[3],v[4])
+                glVertex3f(v[0],v[1],hoffset+v[2])
+            hoffset-=segment.width
+        glEnd()
+        hoffset=0
+        for segment in spelling.segments:
+            for child in segment.children:
+                (childname, definition, is_draped, xdelta, ydelta, zdelta, hdelta)=child
+                if definition.vdata is not None:
+                    canvas.glstate.set_texture(definition.texture)
+                    glPushMatrix()
+                    glTranslatef(xdelta,ydelta,hoffset+zdelta)
+                    glRotatef(hdelta, 0,1,0)
+                    if definition.culled:
+                        canvas.glstate.set_cull(True)
+                        glDrawArrays(GL_TRIANGLES, definition.base, definition.culled)
+                    if definition.nocull:
+                        canvas.glstate.set_cull(False)
+                        glDrawArrays(GL_TRIANGLES, definition.base+definition.culled, definition.nocull)
+                    glPopMatrix()
+            hoffset-=segment.width
+        data=glReadPixels(xoff,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
+        img.SetData(data)
+
+        # Restore state for unproject & selection
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
+
+        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        canvas.Refresh()	# Mac draws from the back buffer w/out paint event
+        return img.Mirror(False)
 
 
 class FacadeFallback(FacadeDef):
@@ -870,6 +1052,7 @@ class FacadeFallback(FacadeDef):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.type=Locked.FAC
         self.ring=1
+        self.version=800
         self.two_sided=True
         self.roof=[]
         self.roof_slope=0

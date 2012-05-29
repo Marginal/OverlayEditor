@@ -708,7 +708,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 list(self.selected)[0].draw_nodes(self.glstate, self.selectednode)
 
         # List of clutter with static geometry and sorted by texture (ignoring layer ordering since it doesn't really matter so much for Objects)
-        objs=sorted(filter(lambda obj: isinstance(obj, Object), [obj for l in placements for obj in l]), key=lambda obj: obj.definition.texture)
+        objs=sorted([obj for l in placements for obj in l], key=lambda obj: obj.definition.texture)
         self.glstate.set_instance(self.vertexcache)
         self.glstate.set_poly(False)
         self.glstate.set_depthtest(True)
@@ -1117,7 +1117,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
             if not (self.undostack and self.undostack[-1].equals(newundo)):
                 self.undostack.append(newundo)
-            self.selectednode=placement.movenode(self.selectednode, dlat, dlon, self.tile, self.options, self.vertexcache, False)
+            self.selectednode=placement.movenode(self.selectednode, dlat, dlon, dparam, self.tile, self.options, self.vertexcache, False)
             assert self.selectednode
         else:
             moved=[]

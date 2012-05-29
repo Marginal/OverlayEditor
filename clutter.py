@@ -10,7 +10,7 @@
 # movenode -> move - no layout
 # updatenode -> move node - no layout
 
-from math import atan2, ceil, cos, floor, hypot, pi, radians, sin
+from math import atan2, ceil, cos, degrees, floor, hypot, pi, radians, sin, tan
 from numpy import array, array_equal, concatenate, empty, float32, float64
 from sys import maxint
 if __debug__:
@@ -29,6 +29,8 @@ from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, Exclud
 from palette import PaletteEntry
 from prefs import Prefs
 
+twopi=pi*2
+piby2=pi/2
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 resolution=8*65535
 minres=1.0/resolution
@@ -441,6 +443,18 @@ class Polygon(Clutter):
         self.lat=self.lon=0
         self.points=[]
         self.nonsimple=False
+        fittomesh=self.definition.fittomesh
+
+        if not fittomesh:
+            # elevation determined by mid-point of nodes 0 and 1
+            if len(self.nodes[0])>1:
+                self.lon=(self.nodes[0][0][0]+self.nodes[0][1][0])/2
+                self.lat=(self.nodes[0][0][1]+self.nodes[0][1][1])/2
+            else:	# shouldn't happen
+                self.lon=self.nodes[0][0][0]
+                self.lat=self.nodes[0][0][1]
+            (x,z)=self.position(tile, self.lat, self.lon)
+            y=vertexcache.height(tile,options,x,z)
 
         for i in range(len(self.nodes)):
             nodes=self.nodes[i]
@@ -449,11 +463,12 @@ class Polygon(Clutter):
             a=0
             for j in range(n):
                 (x,z)=self.position(tile, nodes[j][1], nodes[j][0])
-                y=vertexcache.height(tile,options,x,z)
+                if fittomesh:
+                    y=vertexcache.height(tile,options,x,z)
+                    if i==0:
+                        self.lon+=nodes[j][0]
+                        self.lat+=nodes[j][1]
                 points.append((x,y,z))
-                if i==0:
-                    self.lon+=nodes[j][0]
-                    self.lat+=nodes[j][1]
                 a+=nodes[j][0]*nodes[(j+1)%n][1]-nodes[(j+1)%n][0]*nodes[j][1]
             if self.closed and ((i==0 and a<0) or (i and a>0)):
                 # Outer should be CCW, inner CW
@@ -462,8 +477,9 @@ class Polygon(Clutter):
                 if selectednode and selectednode[0]==i: selectednode=(i,n-1-selectednode[1])
             self.points.append(points)
 
-        self.lat=self.lat/len(self.nodes[0])
-        self.lon=self.lon/len(self.nodes[0])
+        if fittomesh:
+            self.lat=self.lat/len(self.nodes[0])
+            self.lon=self.lon/len(self.nodes[0])
 
         return selectednode
 
@@ -518,7 +534,7 @@ class Polygon(Clutter):
         # do layout if changed
         for i in range(len(self.nodes)):
             for j in range(len(self.nodes[i])):
-                self.movenode((i,j), dlat, dlon, tile, options, vertexcache)
+                self.movenode((i,j), dlat, dlon, 0, tile, options, vertexcache)
         if dhdg:
             for i in range(len(self.nodes)):
                 for j in range(len(self.nodes[i])):
@@ -534,8 +550,8 @@ class Polygon(Clutter):
             elif self.param>65535: self.param=65535	# uint16
         if dlat or dlon or dhdg or dparam:
             self.layout(tile, options, vertexcache)
-        
-    def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=True):
+
+    def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
         # defer layout
         # Most polygons don't have co-ordinate arguments other than lat/lon & beziers, so darg ignored.
         if len(self.nodes[0][0])!=2:
@@ -563,7 +579,10 @@ class Polygon(Clutter):
         (i,j)=node
         self.nodes[i][j]=(lon,lat)	# trashes other parameters
         (x,z)=self.position(tile, lat, lon)
-        y=vertexcache.height(tile,options,x,z)
+        if self.definition.fittomesh:
+            y=vertexcache.height(tile,options,x,z)
+        else:
+            y=self.points[i][j][1]	# assumes elevation already correct
         self.points[i][j]=(x,y,z)
         return node
 
@@ -728,7 +747,7 @@ class Draped(Polygon):
         elif dhdg or dparam:
             self.layout(tile, options, vertexcache)
 
-    def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=True):
+    def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
         # defer layout
         if self.param==65535:
             # Preserve node texture co-ords
@@ -745,7 +764,7 @@ class Draped(Polygon):
             else:
                 return self.layout(tile, options, vertexcache, node)
         else:
-            return Polygon.movenode(self, node, dlat, dlon, tile, options, vertexcache, defer)
+            return Polygon.movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer)
 
     def updatenode(self, node, lat, lon, tile, options, vertexcache):
         # update node height but defer full layout. Assumes lat,lon is valid
@@ -759,7 +778,10 @@ class Draped(Polygon):
                         self.nodes[i][j]=self.nodes[i][j][:2]+self.nodes[i][j][4:6]
             self.nodes[i][j]=(lon,lat)+self.nodes[i][j][2:4]
             (x,z)=self.position(tile, lat, lon)
-            y=vertexcache.height(tile,options,x,z)
+            if self.definition.fittomesh:
+                y=vertexcache.height(tile,options,x,z)
+            else:
+                y=self.points[i][j][1]	# assumes elevation already correct
             self.points[i][j]=(x,y,z)
             return node
         else:
@@ -894,7 +916,7 @@ class Exclude(Fitted):
         # no rotation
         Polygon.move(self, dlat, dlon, 0, 0, loc, tile, options, vertexcache)
 
-    def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=False):
+    def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=False):
         # changes adjacent nodes, so always do full layout immediately
         (i,j)=node
         lon=max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon))
@@ -916,8 +938,27 @@ class Exclude(Fitted):
 
 class Facade(Polygon):
 
+    def tessvertex(vertex, data):
+        data.append(vertex)
+
+    def tessedge(flag):
+        pass	# dummy
+
+    tess=gluNewTess()
+    gluTessNormal(tess, 0, -1, 0)
+    gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
+    gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
+    gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
+
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
+        if param==None:	# New placement - add wall type
+            for j in range(len(self.nodes[0])):
+                self.nodes[0][j]+=(0,)
+        self.floorno=0		# for v10 - must keep in sync with self.param
+        self.placements=[]	# child object placements
+        self.datalen=0
+        self.rooflen=0
 
     def clone(self):
         return Facade(self.name, self.param, [list(w) for w in self.nodes])
@@ -928,8 +969,19 @@ class Facade(Polygon):
             if filename in defs:
                 self.definition=defs[filename]
             else:
-            if not self.param:
                 defs[filename]=self.definition=FacadeDef(filename, vertexcache, lookup, defs)
+            if self.definition.version>=1000:
+                floors=self.definition.floors
+                if self.param:
+                    bestdelta=maxint
+                    for i in range(len(floors)):
+                        thisdelta=abs(floors[i].height-self.param)
+                        if thisdelta<bestdelta:
+                            bestdelta=thisdelta
+                            self.floorno=i
+                else:
+                    self.param=min(65535, max(1, int(round(floors[self.floorno].height))))
+            elif not self.param:	# old-style
                 self.param=maxint
                 for (a,b) in self.definition.horiz:
                     self.param=min(self.param, int(ceil(self.definition.hscale * (b-a))))
@@ -955,31 +1007,186 @@ class Facade(Polygon):
             return False
 
     def locationstr(self, dms, node=None):
-        if node:
-            return Polygon.locationstr(self, dms, node)
-        else:
-            return u'%s  Height\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+        if self.definition.version>=1000:
+            floor=self.definition.floors[self.floorno]
+            if node:
+                (i,j)=node
+                if len(floor.walls)>1 and (self.closed or j<len(self.nodes[i])-1):
+                    wallno=len(self.nodes[i][j]) not in [3,5] and -1 or int(self.nodes[i][j][2])
+                    return Polygon.locationstr(self, dms, node) + u'  Wall\u2195 ' + (0<=wallno<len(floor.walls) and floor.walls[wallno].name or 'undefined')
+                else:	# Can't change wall type if only one wall, or if final node
+                    return Polygon.locationstr(self, dms, node)
+            elif len(self.definition.floors)>1:
+                return u'%s  Height\u2195 %s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), floor.name, len(self.nodes[0]))
+            else:	# Can't change height if only one floor
+                return u'%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
+
+        else:	# old-style
+            if node:
+                return Polygon.locationstr(self, dms, node)
+            else:
+                return u'%s  Height\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+
+    def draw_instance(self, glstate, selected, picking):
+        for p in self.placements:
+            p.draw_instance(glstate, selected, picking)
 
     def draw_dynamic(self, glstate, selected, picking):
         fac=self.definition
         if self.nonsimple:
             Polygon.draw_dynamic(self, glstate, selected, picking)
-            return
         elif picking:
             Polygon.draw_dynamic(self, glstate, selected, picking)	# for outline
             glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
-            return
-        glstate.set_texture(fac.texture)
-        glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
-        glstate.set_cull(not fac.two_sided)
-        glstate.set_poly(False)
-        glstate.set_depthtest(True)
-        glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+            if self.rooflen:
+                glDrawArrays(GL_TRIANGLES, self.base+self.datalen, self.rooflen)
+        else:
+            glstate.set_texture(fac.texture)
+            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            glstate.set_cull(not fac.two_sided)
+            glstate.set_poly(False)
+            glstate.set_depthtest(True)
+            glDrawArrays(GL_TRIANGLES, self.base, self.datalen)
+            if self.rooflen:
+                glstate.set_texture(fac.texture_roof)
+                glDrawArrays(GL_TRIANGLES, self.base+self.datalen, self.rooflen)
+        for p in self.placements:
+            p.draw_dynamic(glstate, selected, picking)
+        
+    def draw_nodes(self, glstate, selectednode):
+        # Draws wall baseline in white if wall type is editable
+        Polygon.draw_nodes(self, glstate, selectednode)
+        if self.definition.version>=1000 and selectednode:
+            floor=self.definition.floors[self.floorno]
+            (i,j)=selectednode
+            if len(floor.walls)>1 and (self.closed or j<len(self.nodes[i])-1):
+                glstate.set_color(COL_SELNODE)
+                glBegin(GL_LINES)
+                glVertex3f(*self.points[i][j])
+                glVertex3f(*self.points[i][(j+1)%len(self.nodes[i])])
+                glEnd()
         
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        dparam=max(dparam, 1-self.param)	# can't have height 0
-        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
-        
+        if self.definition.version<1000:
+            dparam=max(dparam, 1-self.param)	# can't have height 0
+            Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
+        else:
+            if dhdg:
+                # preserve wall type
+                for i in range(len(self.nodes)):
+                    for j in range(len(self.nodes[i])):
+                        h=atan2(self.nodes[i][j][0]-loc[1],
+                                self.nodes[i][j][1]-loc[0])+radians(dhdg)
+                        l=hypot(self.nodes[i][j][0]-loc[1],
+                                self.nodes[i][j][1]-loc[0])
+                        self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
+                                          max(tile[0], min(tile[0]+1, round2res(loc[0]+cos(h)*l))),
+                                          len(self.nodes[i][j]) in [3,5] and int(self.nodes[i][j][2]) or 0)
+            if dparam:
+                if dparam>0:
+                    self.floorno=min(self.floorno+1, len(self.definition.floors)-1)
+                else:
+                    self.floorno=max(self.floorno-1, 0)
+                self.param=min(65535, max(1, int(round(self.definition.floors[self.floorno].height))))
+            if dlat or dlon:
+                Polygon.move(self, dlat,dlon, 0,0, loc, tile, options, vertexcache)
+            elif dhdg or dparam:
+                self.layout(tile, options, vertexcache)
+
+    def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
+        # defer layout
+        if self.definition.version<1000:
+            return Polygon.movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer)
+        else:
+            if len(self.nodes[0][0])==5:
+                # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
+                for i in range(len(self.nodes)):
+                    for j in range(len(self.nodes[i])):
+                        self.nodes[i][j]=self.nodes[i][j][:3]
+            elif len(self.nodes[0][0])!=3:
+                # Number of coordinates must be the same for all nodes in the polygon. Add a wall type
+                for i in range(len(self.nodes)):
+                    for j in range(len(self.nodes[i])):
+                        self.nodes[i][j]=self.nodes[i][j][:2]+(0,)
+            # preserve/set wall type
+            (i,j)=node
+            floor=self.definition.floors[self.floorno]
+            wallno=int(self.nodes[i][j][2])
+            if darg>0:
+                wallno=min(len(floor.walls)-1, max(0, wallno+1))
+            elif darg<0:
+                wallno=min(len(floor.walls)-1, max(0, wallno-1))
+            self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
+                              max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)),
+                              wallno)
+            if defer:
+                return node
+            else:
+                return self.layout(tile, options, vertexcache, node)
+
+    def updatenode(self, node, lat, lon, tile, options, vertexcache):
+        # update node height but defer full layout. Assumes lat,lon is valid
+        if self.definition.version<1000:
+            return Polygon.updatenode(self, node, lat, lon, tile, options, vertexcache)
+        else:
+            if len(self.nodes[0][0])==5:
+                # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
+                for i in range(len(self.nodes)):
+                    for j in range(len(self.nodes[i])):
+                        self.nodes[i][j]=self.nodes[i][j][:3]
+            elif len(self.nodes[0][0])!=3:
+                # Number of coordinates must be the same for all nodes in the polygon. Add a wall type
+                for i in range(len(self.nodes)):
+                    for j in range(len(self.nodes[i])):
+                        self.nodes[i][j]=self.nodes[i][j][:2]+(0,)
+            # preserve wall type
+            (i,j)=node
+            self.nodes[i][j]=(lon,lat,self.nodes[i][j][2])
+            (x,z)=self.position(tile, lat, lon)
+            if self.definition.fittomesh:
+                y=vertexcache.height(tile,options,x,z)
+            else:
+                y=self.points[i][j][1]	# assumes elevation already correct
+            self.points[i][j]=(x,y,z)
+            return node
+
+    def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
+        if self.definition.version<1000:
+            return Polygon.addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise)
+        else:
+            if len(self.nodes[0][0])==5:
+                # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
+                for i in range(len(self.nodes)):
+                    for j in range(len(self.nodes[i])):
+                        self.nodes[i][j]=self.nodes[i][j][:3]
+            elif len(self.nodes[0][0])!=3:
+                # Number of coordinates must be the same for all nodes in the polygon. Add a wall type
+                for i in range(len(self.nodes)):
+                    for j in range(len(self.nodes[i])):
+                        self.nodes[i][j]=self.nodes[i][j][:2]+(0,)
+            # preserve/set wall type
+            (i,j)=selectednode
+            n=len(self.nodes[i])
+            if (not self.closed) and (j==0 or j==n-1):
+                # Special handling for ends of open lines and facades - add new node at cursor
+                if j:
+                    newnode=nextnode=j+1
+                else:
+                    newnode=nextnode=0
+                self.nodes[i].insert(newnode, (lon, lat, self.nodes[i][j][2]))	# inherit wall type
+            else:
+                if (i and clockwise) or (not i and not clockwise):
+                    newnode=j+1
+                    nextnode=(j+1)%n
+                else:
+                    newnode=j
+                    nextnode=(j-1)%n
+                self.nodes[i].insert(newnode,
+                                     (round2res((self.nodes[i][j][0]+self.nodes[i][nextnode][0])/2),
+                                      round2res((self.nodes[i][j][1]+self.nodes[i][nextnode][1])/2),
+                                      self.nodes[i][j][2]))	# inherit wall type
+        return self.layout(tile, options, vertexcache, (i,newnode))
+
     # Helper for layout
     def subdiv(self, size, scale, divs, ends, isvert):
         trgsize=size/scale
@@ -1022,8 +1229,20 @@ class Facade(Polygon):
         else:
             return (points,size/cumsize)
 
+    def clearlayout(self, vertexcache):
+        Polygon.clearlayout(self, vertexcache)
+        self.datalen=self.rooflen=0
+        for p in self.placements:
+            p.clearlayout(vertexcache)
+
     def layout(self, tile, options, vertexcache, selectednode=None):
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+        if self.definition.version>=1000:
+            return self.layout10(tile, options, vertexcache, selectednode)
+        else:
+            return self.layout8(tile, options, vertexcache, selectednode)
+
+    def layout8(self, tile, options, vertexcache, selectednode):
         try:
             fac=self.definition
             points=self.points[0]
@@ -1183,6 +1402,153 @@ class Facade(Polygon):
             self.nonsimple=True
             self.dynamic_data=concatenate([array(p+COL_NONSIMPLE,float32) for w in self.points for p in w])
 
+        self.datalen=len(self.dynamic_data)/6
+        vertexcache.allocate_dynamic(self)
+        return selectednode
+
+    def layout10(self, tile, options, vertexcache, selectednode):
+        for p in self.placements:
+            p.clearlayout(vertexcache)	# clear any dynamic allocation of children
+        self.placements=[]
+        tris=[]
+        floor=self.definition.floors[self.floorno]
+        points=self.points[0]
+        n=len(points)
+        for node in range(self.closed and n or n-1):
+            (x,y,z)=points[node]
+            (tox,toy,toz)=points[(node+1)%n]
+            size=hypot(tox-x, z-toz)	# target wall length
+            if size<=0: continue
+            h=atan2(tox-x, z-toz) % twopi
+            hdg=degrees(h)
+            wallno=len(self.nodes[0][node]) in [3,5] and int(self.nodes[0][node][2]) or 0
+            wall=floor.walls[0<=wallno<len(floor.walls) and wallno or 0]
+
+            # Work out minimum number of segments (actually spellings) needed to fill the wall.
+            # This is like the Knapsack problem, where value~spelling.width, except that overfilling is OK.
+            # But we're just using a simple greedy algorithm; this is only optimal where spelling widths are in geometric progression.
+            segments=[]
+            width=0
+            left=False	# alternate adding to left and right
+            fillsize=size+wall.spellings[-1].width/2	# can overfill up to half the smallest spelling
+            while True:
+                for spelling in wall.spellings:		# assumed to be in order of descending width
+                    if width+spelling.width < fillsize:
+                        width+=spelling.width
+                        if left:
+                            segments=spelling.segments+segments
+                        else:
+                            segments=segments+spelling.segments
+                        left=not left
+                        break	# start from the top again
+                else:
+                    break	# nothing fitted
+            if not segments:	# if nothing fits, just cram in smallest spelling
+                segments=wall.spellings[-1].segments
+                width=wall.spellings[-1].width
+
+            hscale=size/width
+            vscale=(y-toy)/size
+
+            # layout
+            hoffset=0
+            coshdg=cos(h)
+            sinhdg=sin(h)
+            s=len(segments)
+            for segno in range(s):
+                segment=segments[segno]
+                if segno==0 and (self.closed or node!=0):
+                    # miter joint between first segment and previous wall
+                    (prvx,prvy,prvz)=points[(node-1)%n]
+                    sm=tan((atan2(prvx-x, z-prvz)%twopi + h)/2 - h+piby2)	# miter angle
+                    for v in segment.mesh:
+                        sz=hoffset+v[2]*hscale+v[0]*sm*(1+v[2]/segment.width)
+                        vx=x+v[0]*coshdg-sz*sinhdg
+                        vy=y+v[1]+sz*vscale
+                        vz=z+v[0]*sinhdg+sz*coshdg
+                        tris.append([vx,vy,vz,v[3],v[4],0])
+                elif segno==s-1 and (self.closed or node!=n-2):
+                    # miter joint between last segment and next wall
+                    (nxtx,nxty,nxtz)=points[(node+2)%n]
+                    sm=tan((atan2(nxtx-tox, toz-nxtz)%twopi + h-pi)/2 - h+piby2)	# miter angle
+                    for v in segment.mesh:
+                        sz=hoffset+v[2]*hscale-v[0]*sm*(v[2]/segment.width)
+                        vx=x+v[0]*coshdg-sz*sinhdg
+                        vy=y+v[1]+sz*vscale
+                        vz=z+v[0]*sinhdg+sz*coshdg
+                        tris.append([vx,vy,vz,v[3],v[4],0])
+                    sm=0
+                else:
+                    for v in segment.mesh:
+                        sz=hoffset+v[2]*hscale	# scale z to fit
+                        vx=x+v[0]*coshdg-sz*sinhdg
+                        vy=y+v[1]+sz*vscale
+                        vz=z+v[0]*sinhdg+sz*coshdg
+                        tris.append([vx,vy,vz,v[3],v[4],0])
+                    sm=0
+
+                for child in segment.children:
+                    (childname, definition, is_draped, xdelta, ydelta, zdelta, hdelta)=child
+                    placement=Object(childname, self.lat, self.lon, hdg+hdelta)
+                    placement.definition=definition		# Child Def should have been created when FacadeDef was loaded
+                    placement.definition.allocate(vertexcache)	# ensure allocated
+                    sz=hoffset+zdelta*hscale+xdelta*sm*(1+zdelta/segment.width)		# scale z, allowing for miter if 1st segment 
+                    childx=x+xdelta*coshdg-sz*sinhdg
+                    childz=z+xdelta*sinhdg+sz*coshdg
+                    if is_draped:
+                        childy=None
+                    else:
+                        childy=y+ydelta
+                    placement.layout(tile, options, vertexcache, childx, childy, childz)
+                    self.placements.append(placement)
+
+            	hoffset-=segment.width*hscale
+
+        self.dynamic_data=array(tris, float32).flatten()
+        self.datalen=len(self.dynamic_data)/6
+
+        if floor.roofs:
+            # Tessellate to generate tri vertices with UV data, and check polygon is simple
+            try:
+                tris=[]
+                (x,y,z)=points[0]
+                (tox,toy,toz)=points[1]
+                h=atan2(tox-x, z-toz) + piby2	# texture heading determined by nodes 0->1
+                coshdg=cos(h)
+                sinhdg=sin(h)
+                s=self.definition.roofscale
+                maxu=-maxint
+                minv=maxint
+                for j in range(n):
+                    maxu=max(maxu, (points[j][0]*coshdg+points[j][2]*sinhdg)/s)
+                    minv=min(minv, (points[j][0]*sinhdg-points[j][2]*coshdg)/s)
+                gluTessBeginPolygon(Facade.tess, tris)
+                for i in range(len(self.nodes)):
+                    gluTessBeginContour(Facade.tess)
+                    for j in range(len(self.nodes[i])):
+                        gluTessVertex(Facade.tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [(self.points[i][j][0]*coshdg+self.points[i][j][2]*sinhdg)/s-maxu, (self.points[i][j][0]*sinhdg-self.points[i][j][2]*coshdg)/s-minv, 0])
+                    gluTessEndContour(Facade.tess)
+                gluTessEndPolygon(Facade.tess)
+                if __debug__:
+                    if not tris: print "Facade roof layout failed - no tris"
+            except:
+                # Combine required -> not simple
+                if __debug__:
+                    print "Facade roof layout failed:"
+                    print_exc()
+                    tris=[]
+
+            if not tris:
+                self.rooflen=0
+            else:
+                rooftris=[]
+                for roof in floor.roofs:
+                    for tri in tris:
+                        rooftris.append([tri[0],roof+tri[1]]+tri[2:6])
+                roofdata=array(rooftris, float32).flatten()
+                self.rooflen=len(roofdata)/6
+                self.dynamic_data=concatenate((self.dynamic_data, roofdata))
+
         vertexcache.allocate_dynamic(self)
         return selectednode
 
@@ -1301,7 +1667,7 @@ class Line(Polygon):
             h=radians(hdg)
             self.nodes=[[]]
             size=0.000005*size
-            for i in [h-pi/2, h+pi/2]:
+            for i in [h-piby2, h+piby2]:
                 self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
                                       max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size)))))
 
