@@ -533,10 +533,17 @@ class Polygon(Clutter):
         
     def movenode(self, node, dlat, dlon, tile, options, vertexcache, defer=True):
         # defer layout
+        # Most polygons don't have co-ordinate arguments other than lat/lon & beziers, so darg ignored.
+        if len(self.nodes[0][0])!=2:
+            # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
+            for i in range(len(self.nodes)):
+                for j in range(len(self.nodes[i])):
+                    self.nodes[i][j]=self.nodes[i][j][:2]
+        self.trimnodes()
         (i,j)=node
         # points can be on upper boundary of tile
         self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
-                          max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))	# trashes other parameters
+                          max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))
         if defer:
             return node
         else:
@@ -544,6 +551,11 @@ class Polygon(Clutter):
         
     def updatenode(self, node, lat, lon, tile, options, vertexcache):
         # update node height but defer full layout. Assumes lat,lon is valid
+        if len(self.nodes[0][0])!=2:
+            # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
+            for i in range(len(self.nodes)):
+                for j in range(len(self.nodes[i])):
+                    self.nodes[i][j]=self.nodes[i][j][:2]
         (i,j)=node
         self.nodes[i][j]=(lon,lat)	# trashes other parameters
         (x,z)=self.position(tile, lat, lon)
@@ -716,14 +728,14 @@ class Draped(Polygon):
         # defer layout
         if self.param==65535:
             # Preserve node texture co-ords
+            if len(self.nodes[0][0])!=4:
+                # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
+                for i in range(len(self.nodes)):
+                    for j in range(len(self.nodes[i])):
+                        self.nodes[i][j]=self.nodes[i][j][:2]+self.nodes[i][j][4:6]
             (i,j)=node
-            if len(self.nodes[i][j])>=6:
-                # Ben says: a bezier polygon has 8 coords (lon lat of point, lon lat of control, ST of point, ST of control)
-                uv=self.nodes[i][j][4:6]
-            else:
-                uv=self.nodes[i][j][2:4]
             self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
-                              max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))+uv
+                              max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))+self.nodes[i][j][2:4]
             if defer:
                 return node
             else:
@@ -736,12 +748,12 @@ class Draped(Polygon):
         if self.param==65535:
             # Preserve node texture co-ords
             (i,j)=node
-            if len(self.nodes[i][j])>=6:
-                # Ben says: a bezier polygon has 8 coords (lon lat of point, lon lat of control, ST of point, ST of control)
-                uv=self.nodes[i][j][4:6]
-            else:
-                uv=self.nodes[i][j][2:4]
-            self.nodes[i][j]=(lon,lat)+uv
+            if len(self.nodes[0][0])!=4:
+                # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
+                for i in range(len(self.nodes)):
+                    for j in range(len(self.nodes[i])):
+                        self.nodes[i][j]=self.nodes[i][j][:2]+self.nodes[i][j][4:6]
+            self.nodes[i][j]=(lon,lat)+self.nodes[i][j][2:4]
             (x,z)=self.position(tile, lat, lon)
             y=vertexcache.height(tile,options,x,z)
             self.points[i][j]=(x,y,z)
