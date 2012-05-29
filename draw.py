@@ -1433,7 +1433,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 for placements in self.placements[newtile]:
                     for placement in placements:
-                        placement.definition.allocate(self.vertexcache, self.defs)
+                        placement.definition.allocate(self.vertexcache)
             self.options=options
 
             # Lay out runways
@@ -1723,9 +1723,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                     else:
                         filename=self.lookup[name].file
                     if filename in self.defs:
-                        self.defs[filename].allocate(self.vertexcache, self.defs)
+                        self.defs[filename].allocate(self.vertexcache)
                     else:
-                        self.defs[filename]=ObjectDef(filename, self.vertexcache)
+                        self.defs[filename]=ObjectDef(filename, self.vertexcache, self.lookup, self.defs)
                 except:
                     # Older versions of X-Plane don't have eg beacon_seaport
                     if __debug__: print_exc()

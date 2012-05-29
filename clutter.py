@@ -109,9 +109,9 @@ class Object(Clutter):
             filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
-                self.definition.allocate(vertexcache, defs)	# ensure allocated
+                self.definition.allocate(vertexcache)	# ensure allocated
             else:
-                defs[filename]=self.definition=ObjectDef(filename, vertexcache)
+                defs[filename]=self.definition=ObjectDef(filename, vertexcache, lookup, defs)
             return True
         except:
             # virtual name not found or can't load physical file
@@ -125,9 +125,9 @@ class Object(Clutter):
                     lookup[self.name]=PaletteEntry(self.name)
                 if filename in defs:
                     self.definition=defs[filename]
-                    self.definition.allocate(vertexcache, defs)	# ensure allocated
+                    self.definition.allocate(vertexcache)	# ensure allocated
                 else:
-                    defs[filename]=self.definition=ObjectFallback(filename, vertexcache)
+                    defs[filename]=self.definition=ObjectFallback(filename, vertexcache, lookup, defs)
             return False
         
     def location(self):
@@ -185,10 +185,15 @@ class Object(Clutter):
     def islaidout(self):
         return self.matrix is not None
 
-    def layout(self, tile, options, vertexcache, x=None, z=None, meshtris=None):
+    def layout(self, tile, options, vertexcache, x=None, y=None, z=None, hdg=None, meshtris=None):
         if not (x and z):
             x,z=self.position(tile, self.lat, self.lon)
-        self.y=vertexcache.height(tile,options,x,z,meshtris)
+        if y is not None:
+            self.y=y
+        else:
+            self.y=vertexcache.height(tile,options,x,z,meshtris)
+        if hdg is not None:
+            self.hdg=hdg
         h=radians(self.hdg)
         self.matrix=array([cos(h),0.0,sin(h),0.0, 0.0,1.0,0.0,0.0, -sin(h),0.0,cos(h),0.0, x,self.y,z,1.0],float32)
         # draped & poly_os
@@ -223,7 +228,7 @@ class AutoGenPoint(Object):
 
     def __init__(self, name, lat, lon, hdg, y=None):
         Object.__init__(self, name, lat, lon, hdg, y)
-        self.placements=[]	# [Object, xdelta, zdelta, heading]
+        self.placements=[]	# [Object, xdelta, zdelta, hdelta]
 
     def clone(self):
         return AutoGenPoint(self.name, self.lat, self.lon, self.hdg, self.y)
@@ -233,7 +238,7 @@ class AutoGenPoint(Object):
             filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
-                self.definition.allocate(vertexcache, defs)	# ensure allocated
+                self.definition.allocate(vertexcache)	# ensure allocated
             else:
                 defs[filename]=self.definition=AutoGenPointDef(filename, vertexcache, lookup, defs)
         except:
@@ -248,19 +253,19 @@ class AutoGenPoint(Object):
                     lookup[self.name]=PaletteEntry(self.name)
                 if filename in defs:
                     self.definition=defs[filename]
-                    self.definition.allocate(vertexcache, defs)	# ensure allocated
+                    self.definition.allocate(vertexcache)	# ensure allocated
                 else:
-                    defs[filename]=self.definition=ObjectFallback(filename, vertexcache)
+                    defs[filename]=self.definition=ObjectFallback(filename, vertexcache, lookup, defs)
             return False
 
         # load children
-        mylookup=dict(lookup)
         for child in self.definition.children:
-            assert child[1].filename in defs	# Child Def should have been created when AutoGenPointDef was loaded
-            mylookup[child[0]]=PaletteEntry(child[1].filename)	# names are relative to this .agp
-            placement=Object(child[0], self.lat, self.lon, self.hdg)
-            placement.load(mylookup, defs, vertexcache)
-            self.placements.append([placement, child[2], child[3], child[4]])
+            (childname, definition, xdelta, zdelta, hdelta)=child
+            assert definition.filename in defs	# Child Def should have been created when AutoGenPointDef was loaded
+            placement=Object(childname, self.lat, self.lon, self.hdg)
+            placement.definition=definition
+            placement.definition.allocate(vertexcache)	# ensure allocated
+            self.placements.append([placement, xdelta, zdelta, hdelta])
         return True
 
     def draw_instance(self, glstate, selected, picking):
@@ -309,16 +314,15 @@ class AutoGenPoint(Object):
                 if abox.intersects(BBox(minx, maxx, minz, maxz)):
                     mymeshtris.append(meshtri)
 
-        Object.layout(self, tile, options, vertexcache, x, z, mymeshtris)
+        Object.layout(self, tile, options, vertexcache, x, None, z, self.hdg, mymeshtris)
         h=radians(self.hdg)
         coshdg=cos(h)
         sinhdg=sin(h)
         for p in self.placements:
-            child=p[0]
-            childx=x+p[1]*coshdg-p[2]*sinhdg
-            childz=z+p[1]*sinhdg+p[2]*coshdg
-            child.hdg=self.hdg+p[3]
-            child.layout(tile, options, vertexcache, childx, childz, mymeshtris)
+            (child, xdelta, zdelta, hdelta)=p
+            childx=x+xdelta*coshdg-zdelta*sinhdg
+            childz=z+xdelta*sinhdg+zdelta*coshdg
+            child.layout(tile, options, vertexcache, childx, None, childz, self.hdg+hdelta, mymeshtris)
 
 
 class Polygon(Clutter):
@@ -356,7 +360,7 @@ class Polygon(Clutter):
             filename=lookup[self.name].file
         else:
             filename=None
-        self.definition=PolygonDef(filename, vertexcache)
+        self.definition=PolygonDef(filename, vertexcache, lookup, defs)
         return True
         
     def location(self):
@@ -636,7 +640,7 @@ class Draped(Polygon):
             if filename in defs:
                 self.definition=defs[filename]
             else:
-                defs[filename]=self.definition=DrapedDef(filename, vertexcache)
+                defs[filename]=self.definition=DrapedDef(filename, vertexcache, lookup, defs)
             return True
         except:
             if __debug__:
@@ -650,7 +654,7 @@ class Draped(Polygon):
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
-                    defs[filename]=self.definition=DrapedFallback(filename, vertexcache)
+                    defs[filename]=self.definition=DrapedFallback(filename, vertexcache, lookup, defs)
             return False
 
     def locationstr(self, dms, node=None):
@@ -869,7 +873,7 @@ class Exclude(Fitted):
         return Exclude(self.name, self.param, [list(w) for w in self.nodes])
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
-        self.definition=ExcludeDef(self.name, vertexcache)
+        self.definition=ExcludeDef(self.name, vertexcache, lookup, defs)
         return True
 
     def locationstr(self, dms, node=None):
@@ -924,8 +928,8 @@ class Facade(Polygon):
             if filename in defs:
                 self.definition=defs[filename]
             else:
-                defs[filename]=self.definition=FacadeDef(filename, vertexcache)
             if not self.param:
+                defs[filename]=self.definition=FacadeDef(filename, vertexcache, lookup, defs)
                 self.param=maxint
                 for (a,b) in self.definition.horiz:
                     self.param=min(self.param, int(ceil(self.definition.hscale * (b-a))))
@@ -947,7 +951,7 @@ class Facade(Polygon):
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
-                    defs[filename]=self.definition=FacadeFallback(filename, vertexcache)
+                    defs[filename]=self.definition=FacadeFallback(filename, vertexcache, lookup, defs)
             return False
 
     def locationstr(self, dms, node=None):
@@ -1211,7 +1215,7 @@ class Forest(Fitted):
             if filename in defs:
                 self.definition=defs[filename]
             else:
-                defs[filename]=self.definition=ForestDef(filename, vertexcache)
+                defs[filename]=self.definition=ForestDef(filename, vertexcache, lookup, defs)
             return True
         except:
             if __debug__:
@@ -1225,7 +1229,7 @@ class Forest(Fitted):
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
-                    defs[filename]=self.definition=ForestFallback(filename, vertexcache)
+                    defs[filename]=self.definition=ForestFallback(filename, vertexcache, lookup, defs)
             return False
 
     def locationstr(self, dms, node=None):
@@ -1310,7 +1314,7 @@ class Line(Polygon):
             if filename in defs:
                 self.definition=defs[filename]
             else:
-                defs[filename]=self.definition=LineDef(filename, vertexcache)
+                defs[filename]=self.definition=LineDef(filename, vertexcache, lookup, defs)
             return True
         except:
             if __debug__:
@@ -1324,7 +1328,7 @@ class Line(Polygon):
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
-                    defs[filename]=self.definition=LineFallback(filename, vertexcache)
+                    defs[filename]=self.definition=LineFallback(filename, vertexcache, lookup, defs)
             return False
 
     def locationstr(self, dms, node=None):
@@ -1370,14 +1374,14 @@ class Network(Fitted):
         try:
             if not self.name: raise IOError	# not in roads.net
             self.definition=defs[self.name]
-            self.definition.allocate(vertexcache, defs)	# ensure allocated
+            self.definition.allocate(vertexcache)	# ensure allocated
             notfallback=True
         except:
             if __debug__:
                 print_exc()
             if usefallback:
                 self.definition=NetworkFallback('None', None, self.index)
-                self.definition.allocate(vertexcache, defs)	# ensure allocated
+                self.definition.allocate(vertexcache)	# ensure allocated
             notfallback=False
 
         if False:#XXXself.definition.height==None:

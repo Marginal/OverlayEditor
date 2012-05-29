@@ -68,24 +68,24 @@ def ClutterDefFactory(filename, vertexcache, lookup, defs):
     "creates and initialises appropriate PolgonDef subclass based on file extension"
     # would like to have made this a 'static' method of PolygonDef
     if filename.startswith(PolygonDef.EXCLUDE):
-        return ExcludeDef(filename, vertexcache)        
+        return ExcludeDef(filename, vertexcache, lookup, defs)
     ext=filename.lower()[-4:]
     if ext==ObjectDef.OBJECT:
-        return ObjectDef(filename, vertexcache)
+        return ObjectDef(filename, vertexcache, lookup, defs)
     elif ext==AutoGenPointDef.AGP:
         return AutoGenPointDef(filename, vertexcache, lookup, defs)
     elif ext==PolygonDef.DRAPED:
-        return DrapedDef(filename, vertexcache)
+        return DrapedDef(filename, vertexcache, lookup, defs)
     elif ext==PolygonDef.FACADE:
-        return FacadeDef(filename, vertexcache)
+        return FacadeDef(filename, vertexcache, lookup, defs)
     elif ext==PolygonDef.FOREST:
-        return ForestDef(filename, vertexcache)
+        return ForestDef(filename, vertexcache, lookup, defs)
     elif ext==PolygonDef.LINE:
-        return LineDef(filename, vertexcache)
+        return LineDef(filename, vertexcache, lookup, defs)
     elif ext in SkipDefs:
         raise IOError		# what's this doing here?
     else:	# unknown polygon type
-        return PolygonDef(filename, vertexcache)
+        return PolygonDef(filename, vertexcache, lookup, defs)
 
 
 class ClutterDef:
@@ -102,7 +102,7 @@ class ClutterDef:
     DEFAULTLAYER=LAYERNAMES.index('objects')*11+5
     PREVIEWSIZE=400	# size of image in preview window
 
-    def __init__(self, filename, vertexcache):
+    def __init__(self, filename, vertexcache, lookup, defs):
         self.filename=filename
         if filename and vertexcache:
             if filename[0]=='*':	# this application's resource
@@ -142,7 +142,7 @@ class ClutterDef:
         return "%s %+d" % (ClutterDef.LAYERNAMES[self.layer/11],
                            (self.layer%11)-5)
 
-    def allocate(self, vertexcache, defs=None):
+    def allocate(self, vertexcache):
         pass
 
     def flush(self):
@@ -158,8 +158,8 @@ class ObjectDef(ClutterDef):
 
     OBJECT='.obj'
     
-    def __init__(self, filename, vertexcache):
-        ClutterDef.__init__(self, filename, vertexcache)
+    def __init__(self, filename, vertexcache, lookup, defs, make_editable=True):
+        ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
         self.canpreview=True
         self.type=Locked.OBJ
         self.poly=0
@@ -395,7 +395,8 @@ class ObjectDef(ClutterDef):
 
         if not (len(culled)+len(nocull)+len(draped)):
             # show empty objects as placeholders otherwise can't edit
-            fb=ObjectFallback(filename, vertexcache)
+            if not make_editable: raise IOError
+            fb=ObjectFallback(filename, vertexcache, lookup, defs)
             (self.vdata, self.culled, self.nocull, self.poly, self.bbox, self.height, self.base, self.canpreview)=(fb.vdata, fb.culled, fb.nocull, fb.poly, fb.bbox, fb.height, fb.base, fb.canpreview)	# skip texture
             # re-use above allocation
         else:
@@ -417,7 +418,7 @@ class ObjectDef(ClutterDef):
             self.allocate(vertexcache)
             self.draped=draped
 
-    def allocate(self, vertexcache, defs=None):
+    def allocate(self, vertexcache):
         if self.base==None and self.vdata is not None:
             self.base=vertexcache.allocate_instance(self.vdata)
 
@@ -430,9 +431,9 @@ class ObjectDef(ClutterDef):
             children=self.children
         else:
             children=[]
-        self.allocate(vertexcache, canvas.defs)
+        self.allocate(vertexcache)
         for p in children:
-            p[1].allocate(vertexcache, canvas.defs)
+            p[1].allocate(vertexcache)
         canvas.glstate.set_instance(vertexcache)
         xoff=canvas.GetClientSize()[0]-ClutterDef.PREVIEWSIZE
         glViewport(xoff, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
@@ -534,8 +535,8 @@ class ObjectDef(ClutterDef):
         
 
 class ObjectFallback(ObjectDef):
-    def __init__(self, filename, vertexcache):
-        ClutterDef.__init__(self, filename, vertexcache)
+    def __init__(self, filename, vertexcache, lookup, defs):
+        ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.DEFAULTLAYER
         self.type=Locked.OBJ
         self.vdata=array([0.5,1.0,-0.5, 1.0,1.0,
@@ -572,7 +573,7 @@ class AutoGenPointDef(ObjectDef):
     AGP='.agp'
 
     def __init__(self, filename, vertexcache, lookup, defs):
-        ClutterDef.__init__(self, filename, vertexcache)
+        ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
         self.canpreview=True
         self.type=Locked.OBJ
         self.vdata=None
@@ -582,7 +583,7 @@ class AutoGenPointDef(ObjectDef):
         self.base=None
         self.draped=[]
         self.texture_draped=0
-        self.children=[]	# [name, ObjectDef, xdelta, zdelta, heading]
+        self.children=[]	# [name, ObjectDef, xdelta, zdelta, hdelta]
 
         hscale=vscale=width=hanchor=vanchor=crop=texture_draped=None
         objects=[]
@@ -646,11 +647,13 @@ class AutoGenPointDef(ObjectDef):
                 definition=defs[childfilename]
             else:
                 try:
-                    defs[childfilename]=definition=ClutterDefFactory(childfilename, vertexcache, lookup, defs)
+                    defs[childfilename]=definition=ObjectDef(childfilename, vertexcache, lookup, defs, make_editable=False)
                 except:
                     if __debug__:
                         print_exc()
-                    defs[childfilename]=definition=ObjectFallback(childfilename, vertexcache)
+                    defs[childfilename]=definition=ObjectFallback(childfilename, vertexcache, lookup, defs)
+            if isinstance(definition, ObjectFallback):	# skip fallbacks
+                continue
             self.children.append([childname, definition, (p[0]-hanchor)*scale, (vanchor-p[1])*scale, p[2]])
             self.height=max(self.height,definition.height)
 
@@ -664,9 +667,9 @@ class PolygonDef(ClutterDef):
     DRAPED='.pol'
     BEACH='.bch'
 
-    def __init__(self, filename, texcache):
-        ClutterDef.__init__(self, filename, texcache)
         self.fittomesh=False	# automatically insert intermediate nodes
+    def __init__(self, filename, vertexcache, lookup, defs):
+        ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
         self.type=Locked.UNKNOWN
 
     def preview(self, canvas, vertexcache, l=0, b=0, r=1, t=1, hscale=1):
@@ -708,8 +711,8 @@ class PolygonDef(ClutterDef):
 
 class DrapedDef(PolygonDef):
 
-    def __init__(self, filename, vertexcache):
-        PolygonDef.__init__(self, filename, vertexcache)
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.canpreview=True
         self.type=Locked.POL
         self.ortho=False
@@ -749,8 +752,8 @@ class DrapedDef(PolygonDef):
 
 
 class DrapedFallback(DrapedDef):
-    def __init__(self, filename, vertexcache):
-        PolygonDef.__init__(self, filename, None)
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.type=Locked.POL
         self.ortho=False
         self.hscale=10
@@ -760,15 +763,15 @@ class DrapedFallback(DrapedDef):
 class ExcludeDef(PolygonDef):
     TABNAME='Exclusions'
 
-    def __init__(self, filename, vertexcache):
-        PolygonDef.__init__(self, filename, None)
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.OUTLINELAYER
         self.type=Locked.EXCLUSION
 
 
 class FacadeDef(PolygonDef):
-    def __init__(self, filename, vertexcache):
-        PolygonDef.__init__(self, filename, vertexcache)
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.canpreview=True
         self.type=Locked.FAC
 
@@ -863,8 +866,8 @@ class FacadeDef(PolygonDef):
 
 
 class FacadeFallback(FacadeDef):
-    def __init__(self, filename, vertexcache):
-        PolygonDef.__init__(self, filename, None)
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.type=Locked.FAC
         self.ring=1
         self.two_sided=True
@@ -880,8 +883,8 @@ class FacadeFallback(FacadeDef):
 
 class ForestDef(PolygonDef):
 
-    def __init__(self, filename, vertexcache):
-        PolygonDef.__init__(self, filename, vertexcache)
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.OUTLINELAYER
         self.canpreview=True
         self.type=Locked.FOR
@@ -926,8 +929,8 @@ class ForestDef(PolygonDef):
 
 
 class ForestFallback(ForestDef):
-    def __init__(self, filename, vertexcache):
-        PolygonDef.__init__(self, filename, None)
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.OUTLINELAYER
         self.type=Locked.FOR
         self.tree=None
@@ -935,8 +938,8 @@ class ForestFallback(ForestDef):
 
 class LineDef(PolygonDef):
 
-    def __init__(self, filename, vertexcache):
-        PolygonDef.__init__(self, filename, vertexcache)
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.MARKINGLAYER
         self.canpreview=True
         self.type=Locked.UNKNOWN
@@ -980,8 +983,8 @@ class LineDef(PolygonDef):
         
 
 class LineFallback(LineDef):
-    def __init__(self, filename, vertexcache):
-        PolygonDef.__init__(self, filename, None)
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.MARKINGLAYER
         self.type=Locked.LIN
 
@@ -1011,7 +1014,7 @@ class NetworkDef(PolygonDef):
     def __str__(self):
         return '<%s %s>' % (self.filename, self.name)
 
-    def allocate(self, vertexcache, defs):
+    def allocate(self, vertexcache):
         # load texture and objects
         if not self.texture:
             try:
@@ -1020,16 +1023,16 @@ class NetworkDef(PolygonDef):
                 self.texerr=IOError(0,e.strerror,basename(self.texname))
         if self.objdefs:
             for o in self.objdefs:
-                o.allocate(vertexcache, defs)
+                o.allocate(vertexcache)
         else:
             height=0
             for i in range(len(self.objs)):
                 (filename, lateral, onground, freq, offset)=self.objs[i]
                 if filename in defs:
                     defn=defs[filename]
-                    defn.allocate(vertexcache, defs)
+                    defn.allocate(vertexcache)
                 else:
-                    defs[filename]=defn=ObjectDef(filename, vertexcache)
+                    defs[filename]=defn=ObjectDef(filename, vertexcache, lookup, defs)
                 self.objdefs.append(defn)
                 # Calculate height from objects
                 if self.height:
@@ -1064,7 +1067,7 @@ class NetworkDef(PolygonDef):
         
     def preview(self, canvas, vertexcache):
         print "Preview", self.name, self.width, self.length, self.height
-        self.allocate(vertexcache, canvas.defs)
+        self.allocate(vertexcache)
         canvas.glstate.set_instance(veretxcache)
         glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
