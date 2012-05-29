@@ -648,10 +648,24 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Static stuff: mesh, networks, navaids
         self.glstate.set_instance(self.vertexcache)
-        self.glstate.set_texture(0)
         self.glstate.set_color(COL_UNPAINTED)
         self.glstate.set_cull(True)
         self.glstate.set_depthtest(True)
+
+        # Mesh
+        if not self.options&Prefs.ELEVATION:
+            glPushMatrix()
+            glScalef(1,0,1)		# Defeat elevation data
+        for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
+            self.glstate.set_poly(bool(poly))
+            self.glstate.set_texture(texno)
+            glDrawArrays(GL_TRIANGLES, base, number)
+        if not self.options&Prefs.ELEVATION:
+            glPopMatrix()
+        if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
+
+        # Navaids etc
+        self.glstate.set_texture(0)
         self.glstate.set_poly(False)
         glCallList(self.meshlist)
 
@@ -1742,47 +1756,20 @@ class MyGL(wx.glcanvas.GLCanvas):
             # Display list assumes instance_vbo is bound
             self.meshlist=glGenLists(1)
             glNewList(self.meshlist, GL_COMPILE)
-            glColor3f(*COL_UNPAINTED)
-            polystate=0
-            if __debug__:
-                if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
-            if not self.options&Prefs.ELEVATION:
-                glPushMatrix()
-                glScalef(1,0,1)		# Defeat elevation data
-            for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
-                if poly:		# eg overlaid photoscenery
-                    # Can't use polygon offset in display list on OSX<10.4.8?
-                    # or ATI drivers>7.11? on Windows.
-                    if polystate!=poly:
-                        glDisable(GL_DEPTH_TEST)
-                        polystate=poly
-                else:
-                    if polystate:
-                        glEnable(GL_DEPTH_TEST)
-                        polystate=0
-                glBindTexture(GL_TEXTURE_2D, texno)
-                glDrawArrays(GL_TRIANGLES, base, number)
-            if not self.options&Prefs.ELEVATION:
-                glPopMatrix()
-            if __debug__:
-                if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
-
             # networks
-            glBindTexture(GL_TEXTURE_2D, 0)
-            glDisable(GL_DEPTH_TEST)
-            for (roadtype, points) in self.vertexcache.getNets(self.tile,self.options):
-                if roadtype<=len(self.defnetdefs) and self.defnetdefs[roadtype].color:
-                    glColor3f(*self.defnetdefs[roadtype].color)
-                else:
-                    glColor3f(0.5,0.5,0.5)
-                glBegin(GL_LINE_STRIP)
-                for (x,y,z) in points:
-                    glVertex3f(x,y,z)
-                glEnd()
+            #glBindTexture(GL_TEXTURE_2D, 0)
+            #glDisable(GL_DEPTH_TEST)
+            #for (roadtype, points) in self.vertexcache.getNets(self.tile,self.options):
+            #    if roadtype<=len(self.defnetdefs) and self.defnetdefs[roadtype].color:
+            #        glColor3f(*self.defnetdefs[roadtype].color)
+            #    else:
+            #        glColor3f(0.5,0.5,0.5)
+            #    glBegin(GL_LINE_STRIP)
+            #    for (x,y,z) in points:
+            #        glVertex3f(x,y,z)
+            #    glEnd()
 
             # navaids
-            glColor3f(*COL_UNPAINTED)
-            glEnable(GL_DEPTH_TEST)
             for (i, lat, lon, hdg) in self.navaids:
                 if (int(floor(lat)),int(floor(lon)))==self.tile and i in objs:
                     if objs[i][0]=='*':
@@ -1889,11 +1876,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         size = self.GetClientSize()
         mx=max(0, min(size[0]-1, mx))
         my=max(0, min(size[1]-1, size[1]-1-my))
+        self.glstate.set_texture(0)
         self.glstate.set_depthtest(True)
         self.glstate.set_poly(False)	# DepthMask=True
         glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)
-        glCallList(self.meshlist)	# Terrain only
-        #glFinish()	# redundant
+        for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
+            if not poly:
+                glDrawArrays(GL_TRIANGLES, base, number)
         dz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
         if dz==0.0 or dz==1.0:
             mz=0.5	# treat off the tile edge as sea level
