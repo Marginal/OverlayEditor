@@ -559,7 +559,6 @@ class Polygon(Clutter):
             for i in range(len(self.nodes)):
                 for j in range(len(self.nodes[i])):
                     self.nodes[i][j]=self.nodes[i][j][:2]
-        self.trimnodes()
         (i,j)=node
         # points can be on upper boundary of tile
         self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
