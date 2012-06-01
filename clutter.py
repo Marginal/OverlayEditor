@@ -586,15 +586,15 @@ class Polygon(Clutter):
         return node
 
     def pick_nodes(self, glstate):
-        if glstate.use_occlusion_query:
+        if glstate.occlusion_query:
             queryidx=0
             for i in range(len(self.points)):
                 for j in range(len(self.points[i])):
-                    glBeginQuery(GL_SAMPLES_PASSED, glstate.queries[queryidx])
+                    glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
                     glBegin(GL_POINTS)
                     glVertex3f(*self.points[i][j])
                     glEnd()
-                    glEndQuery(GL_SAMPLES_PASSED)
+                    glEndQuery(glstate.occlusion_query)
                     queryidx+=1
         else:
             for i in range(len(self.points)):

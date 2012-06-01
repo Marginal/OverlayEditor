@@ -2,13 +2,14 @@ import OpenGL	# for __version__
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.arrays import vbo
-from OpenGL.extensions import alternate
+from OpenGL.extensions import alternate, hasGLExtension
 from OpenGL.GL.ARB.occlusion_query import *
 glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
 glDeleteQueries = alternate(glDeleteQueries, glDeleteQueriesARB)
 glEndQuery = alternate(glEndQuery, glEndQueryARB)
 glGenQueries = alternate(glGenQueries, glGenQueriesARB)
 glGetQueryObjectuiv = alternate(glGetQueryObjectiv, glGetQueryObjectuivARB)
+GL_ANY_SAMPLES_PASSED=0x8C2F	# not in 3.0.1
 
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
 from numpy import array, array_equal, empty, identity, float32, float64, int32
@@ -73,7 +74,10 @@ class ClickModes:
 class GLstate():
     def __init__(self):
         self.debug=__debug__ and False
-        self.use_occlusion_query=bool(glGenQueries)
+        if bool(glGenQueries):
+            self.occlusion_query=hasGLExtension('GL_ARB_occlusion_query2') and GL_ANY_SAMPLES_PASSED or GL_SAMPLES_PASSED
+        else:
+            self.occlusion_query=False
         self.queries=[]
         glEnableClientState(GL_VERTEX_ARRAY)
         self.texture=0
@@ -511,7 +515,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.glstate.set_color(COL_WHITE)	# Ensure colour indexing off
                 self.glstate.set_depthtest(False)	# Don't want to update depth buffer
                 self.glstate.set_poly(False)		# Not strictly necessary, but possibly will avoid any driver issues
-                if self.glstate.use_occlusion_query:
+                if self.glstate.occlusion_query:
                     self.glstate.alloc_queries(len([item for sublist in poly.points for item in sublist]))
                     selections=False
                     glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
@@ -846,7 +850,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         placements=self.placements[self.tile]
         checkpolynode=(self.clickmode==ClickModes.Undecided and len(self.selected)==1 and isinstance(list(self.selected)[0], Polygon)) and list(self.selected)[0]
 
-        if self.glstate.use_occlusion_query:
+        if self.glstate.occlusion_query:
             if checkpolynode:
                 queryidx=len([item for sublist in checkpolynode.points for item in sublist])
             else:
@@ -858,7 +862,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Select poly node?
         if checkpolynode:
             #print "selnodes",
-            if self.glstate.use_occlusion_query:
+            if self.glstate.occlusion_query:
                 checkpolynode.pick_nodes(self.glstate)
                 # We'll check on the status later
             else:
@@ -890,23 +894,23 @@ class MyGL(wx.glcanvas.GLCanvas):
                     self.selectednode=None
 
         # Select placements
-        if self.glstate.use_occlusion_query:
+        if self.glstate.occlusion_query:
             self.glstate.set_instance(self.vertexcache)
             for i in range(len(placements)-1,-1,-1):	# favour higher layers
                 for j in range(len(placements[i])):
                     if not placements[i][j].definition.type & self.locked:
-                        glBeginQuery(GL_SAMPLES_PASSED, self.glstate.queries[queryidx])
+                        glBeginQuery(self.glstate.occlusion_query, self.glstate.queries[queryidx])
                         placements[i][j].draw_instance(self.glstate, False, True)
-                        glEndQuery(GL_SAMPLES_PASSED)
+                        glEndQuery(self.glstate.occlusion_query)
                         queryidx+=1
             self.glstate.set_dynamic(self.vertexcache)
             glLoadIdentity()
             for i in range(len(placements)-1,-1,-1):	# favour higher layers
                 for j in range(len(placements[i])):
                     if not placements[i][j].definition.type & self.locked:
-                        glBeginQuery(GL_SAMPLES_PASSED, self.glstate.queries[queryidx])
+                        glBeginQuery(self.glstate.occlusion_query, self.glstate.queries[queryidx])
                         placements[i][j].draw_dynamic(self.glstate, False, True)
-                        glEndQuery(GL_SAMPLES_PASSED)
+                        glEndQuery(self.glstate.occlusion_query)
                         queryidx+=1
 
             # First check poly node status
@@ -943,7 +947,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                             queryidx+=1                            
             glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
 
-        else:	# not self.glstate.use_occlusion_query
+        else:	# not self.glstate.occlusion_query
             glSelectBuffer(self.selectmax)
             glRenderMode(GL_SELECT)
             glInitNames()
