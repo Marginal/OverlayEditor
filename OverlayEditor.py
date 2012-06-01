@@ -926,13 +926,21 @@ class MainWindow(wx.Frame):
 
         self.Show(True)
 
+        self.setmodifiedfn=None
         if platform=='darwin':
-            # Hack! Change name on application menu. wxMac always uses id 1.
-            try:
-                from Carbon import Menu
-                Menu.GetMenuHandle(1).SetMenuTitleWithCFString(appname)
+            # Change name on application menu & set up function to change "dirty" indicator on close button. Can't do either in wx.
+            try:	# Carbon
+                from Carbon import Menu, Win
+                Menu.GetMenuHandle(1).SetMenuTitleWithCFString(appname)            # wxMac always uses id 1.
+                self.setmodifiedfn=Win.WhichWindow(self.MacGetTopLevelWindowRef()).SetWindowModified
             except:
-                pass
+                try:	# Cocoa
+                    import AppKit
+                    # doesn't work: AppKit.NSApp.mainMenu().itemAtIndex_(0).submenu().setTitle_(appname)	 http://www.mail-archive.com/cocoa-dev@lists.apple.com/msg43196.html
+                    AppKit.NSBundle.mainBundle().infoDictionary()['CFBundleName']=appname
+                    self.setmodifiedfn=AppKit.NSApp.mainWindow().setDocumentEdited_
+                except:
+                    if __debug__: print_exc()
 
         self.splitter.SetSashPosition(self.canvas.GetClientSize()[1], True)
         self.canvas.glInit()	# Must be after show
@@ -1008,6 +1016,13 @@ class MainWindow(wx.Frame):
                 self.menubar.Enable(wx.ID_EDIT,   False)
                 self.menubar.Enable(wx.ID_DELETE, False)
         self.statusbar.SetStatusText(string, 2)
+
+    def SetModified(self, modified):
+        if self.setmodifiedfn is not None:
+            self.setmodifiedfn(modified)
+        self.toolbar.EnableTool(wx.ID_SAVE, modified)
+        if self.menubar:
+            self.menubar.Enable(wx.ID_SAVE, modified)
 
     def OnSize(self, event):
         # emulate sash gravity = 1.0
@@ -1164,10 +1179,9 @@ class MainWindow(wx.Frame):
         self.Update()		# Let window draw first
         self.ShowLoc()
         if changed:
-            self.toolbar.EnableTool(wx.ID_SAVE, True)
+            self.SetModified(True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:
-                self.menubar.Enable(wx.ID_SAVE, True)
                 self.menubar.Enable(wx.ID_UNDO, True)
         event.Skip(True)
     
@@ -1198,14 +1212,13 @@ class MainWindow(wx.Frame):
         package=self.NewDialog(True)
         if package:
             self.OnReload(False, package)
-            self.toolbar.EnableTool(wx.ID_SAVE, False)
+            self.SetModified(False)
             self.toolbar.EnableTool(wx.ID_ADD,  False)
             self.toolbar.EnableTool(wx.ID_EDIT, False)
             self.toolbar.EnableTool(wx.ID_UNDO, False)
             self.toolbar.EnableTool(wx.ID_DOWN, True)
             self.toolbar.EnableTool(wx.ID_REFRESH, True)
             if self.menubar:
-                self.menubar.Enable(wx.ID_SAVE,  False)
                 self.menubar.Enable(wx.ID_UNDO,  False)
                 #self.menubar.Enable(wx.ID_CUT,   False)
                 #self.menubar.Enable(wx.ID_COPY,  False)
@@ -1245,14 +1258,13 @@ class MainWindow(wx.Frame):
             dlg.Destroy()
             self.OnReload(False, package)
             if prefs.package:
-                self.toolbar.EnableTool(wx.ID_SAVE, False)
+                self.SetModified(False)
                 self.toolbar.EnableTool(wx.ID_ADD,  False)
                 self.toolbar.EnableTool(wx.ID_EDIT, False)
                 self.toolbar.EnableTool(wx.ID_UNDO, False)
                 self.toolbar.EnableTool(wx.ID_DOWN, True)
                 self.toolbar.EnableTool(wx.ID_REFRESH, True)
                 if self.menubar:
-                    self.menubar.Enable(wx.ID_SAVE, False)
                     self.menubar.Enable(wx.ID_ADD,  False)
                     self.menubar.Enable(wx.ID_EDIT, False)
                     self.menubar.Enable(wx.ID_UNDO, False)
@@ -1304,11 +1316,10 @@ class MainWindow(wx.Frame):
                              "Can't save %+03d%+04d.dsf." % (key[0], key[1]),
                              wx.ICON_ERROR|wx.OK, None)
                 return False
-        self.toolbar.EnableTool(wx.ID_SAVE, False)
+        self.SetModified(False)
         self.toolbar.EnableTool(wx.ID_DOWN, True)
         self.toolbar.EnableTool(wx.ID_REFRESH, True)
         if self.menubar:
-            self.menubar.Enable(wx.ID_SAVE, False)
             self.menubar.Enable(wx.ID_DOWN, True)
             self.menubar.Enable(wx.ID_REFRESH, True)
 
@@ -1316,27 +1327,24 @@ class MainWindow(wx.Frame):
         
     def OnAdd(self, event):
         if self.canvas.add(self.palette.get(), self.loc[0], self.loc[1], self.hdg, self.dist):
-            self.toolbar.EnableTool(wx.ID_SAVE, True)
+            self.SetModified(True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:
-                self.menubar.Enable(wx.ID_SAVE, True)
                 self.menubar.Enable(wx.ID_UNDO, True)
 
     def OnAddNode(self, event):
         # Assumes that only one object selected
         if self.canvas.addnode(self.palette.get(), self.loc[0], self.loc[1], self.hdg, self.dist):
-            self.toolbar.EnableTool(wx.ID_SAVE, True)
+            self.SetModified(True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:
-                self.menubar.Enable(wx.ID_SAVE, True)
                 self.menubar.Enable(wx.ID_UNDO, True)
 
     def OnDelete(self, event):
         if self.canvas.delsel(wx.GetKeyState(wx.WXK_SHIFT)):
-            self.toolbar.EnableTool(wx.ID_SAVE, True)
+            self.SetModified(True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:
-                self.menubar.Enable(wx.ID_SAVE, True)
                 self.menubar.Enable(wx.ID_UNDO, True)
 
     def OnUndo(self, event):
@@ -1668,9 +1676,10 @@ class MainWindow(wx.Frame):
         if dlg.latlon.GetSelection():
             prefs.options|=Prefs.DMS
         if dlg.path.GetValue()!=prefs.xplane:
-            # Make untitled
+            # Make untitled. Has ID_SAVE enabled so can Save As.
             prefs.xplane=dlg.path.GetValue()
             prefs.package=None
+            self.SetModified(False)
             self.toolbar.EnableTool(wx.ID_SAVE,   True)
             self.toolbar.EnableTool(wx.ID_DOWN,   False)
             self.toolbar.EnableTool(wx.ID_ADD,    False)
@@ -1783,6 +1792,7 @@ class MainWindow(wx.Frame):
         
 # main
 app=wx.App(redirect=not __debug__)
+app.SetAppName(appname)
 if platform=='win32':
     if app.GetComCtl32Version()>=600 and wx.DisplayDepth()>=32:
         wx.SystemOptions.SetOptionInt('msw.remap', 2)
