@@ -97,8 +97,9 @@ class ClutterDef:
     TAXIWAYLAYER=LAYERNAMES.index('taxiways')*11+5
     RUNWAYSLAYER=LAYERNAMES.index('runways')*11+5
     MARKINGLAYER=LAYERNAMES.index('markings')*11+5
-    NETWORKLAYER=LAYERNAMES.index('roads')*11+5	# for draped & exclusions
-    OUTLINELAYER=LAYERNAMES.index('roads')*11+5	# for draped & exclusions
+    NETWORKLAYER=LAYERNAMES.index('roads')*11+5
+    OUTLINELAYER=LAYERNAMES.index('roads')*11+5	# for polygons
+    DRAPEDLAYER=LAYERNAMES.index('objects')*11	# for draped geometry
     DEFAULTLAYER=LAYERNAMES.index('objects')*11+5
     PREVIEWSIZE=400	# size of image in preview window
 
@@ -345,6 +346,8 @@ class ObjectDef(ClutterDef):
                 elif id=='TEXTURE_DRAPED':
                     if len(c)>1 and c[1].lower()!='none':
                         texture_draped=self.cleanpath(c[1])
+                        # FIXME: Should have different layers for static and dynamic content
+                        self.layer=ClutterDef.DRAPEDLAYER
                 elif id=='ATTR_LOD':
                     if float(c[1])!=0: break
                     current=last=culled	# State is reset per LOD
@@ -371,7 +374,8 @@ class ObjectDef(ClutterDef):
                     current=draped
                 elif id=='ATTR_no_draped':
                     current=last
-                elif id=='ATTR_layer_group':
+                elif id in ['ATTR_layer_group', 'ATTR_layer_group_draped']:
+                    # FIXME: Should have different layers for static and dynamic content
                     self.setlayer(c[1], int(c[2]))
                 elif id=='ANIM_begin':
                     if anim:
@@ -574,6 +578,7 @@ class AutoGenPointDef(ObjectDef):
 
     def __init__(self, filename, vertexcache, lookup, defs):
         ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
+        self.layer=ClutterDef.DRAPEDLAYER	# For the draped texture
         self.canpreview=True
         self.type=Locked.OBJ
         self.vdata=None
