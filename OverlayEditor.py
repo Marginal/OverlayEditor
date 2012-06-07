@@ -29,9 +29,6 @@ except:
     tkMessageBox.showerror("Error", "wxPython is not installed.\nThis application requires wxPython 2.5.3 or later.")
     exit(1)
 from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
-if not __debug__ and hasattr(wx,'wxPyDeprecationWarning'):
-    import warnings
-    warnings.simplefilter('ignore', wx.wxPyDeprecationWarning)
 
 try:
     import OpenGL
@@ -53,6 +50,12 @@ except:
     Tkinter.Tk().withdraw()
     tkMessageBox.showerror("Error", "PyOpenGL is not installed.\nThis application\nrequires PyOpenGL 3.0.1 or later.")
     exit(1)
+
+if not __debug__:
+    import warnings
+    warnings.simplefilter('ignore', DeprecationWarning)
+    if hasattr(wx,'wxPyDeprecationWarning'):
+        warnings.simplefilter('ignore', wx.wxPyDeprecationWarning)
 
 if not 'startfile' in dir(os):
     import types

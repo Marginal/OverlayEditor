@@ -57,7 +57,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
         else:
             h.close()
             cmds=exists('/usr/bin/7zr') and '/usr/bin/7zr' or '/usr/bin/7za'
-            cmds='%s e "%s" -o"%s" "%s"' % (cmds, path, gettempdir(), basename(path))
+            cmds='%s e "%s" -o"%s" -y' % (cmds, path, gettempdir())
             (i,o,e)=popen3(cmds)
             i.close()
             err=o.read()
