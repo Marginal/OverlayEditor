@@ -77,7 +77,7 @@ def scanApt(filename):
         c=h.readline().split()
         if c: break
     ver=c[0]
-    if not ver in ['600','703','715','810','850']:
+    if not ver in ['600','703','715','810','850','1000']:
         raise IOError
     ver=int(ver)
     code=name=loc=None
