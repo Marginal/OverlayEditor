@@ -437,7 +437,7 @@ class Polygon(Clutter):
         vertexcache.allocate_dynamic(self)
 
     def islaidout(self):
-        return self.points and True or False
+        return self.dynamic_data is not None
 
     def layout_nodes(self, tile, options, vertexcache, selectednode):
         self.lat=self.lon=0
@@ -786,29 +786,29 @@ class Draped(Polygon):
         else:
             return Polygon.updatenode(self, node, lat, lon, tile, options, vertexcache)
 
-    def layout(self, tile, options, vertexcache, selectednode=None):
+    def layout(self, tile, options, vertexcache, selectednode=None, tls=None):
+        tess=tls and tls.tess or Draped.tess
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
         # Tessellate to generate tri vertices with UV data, and check polygon is simple
-        if __debug__: clock=time.clock()
         if self.param!=65535:
             drp=self.definition
             ch=cos(radians(self.param))
             sh=sin(radians(self.param))
         try:
             tris=[]
-            gluTessBeginPolygon(Draped.tess, tris)
+            gluTessBeginPolygon(tess, tris)
             for i in range(len(self.nodes)):
-                gluTessBeginContour(Draped.tess)
+                gluTessBeginContour(tess)
                 for j in range(len(self.nodes[i])):
                     if self.param==65535:
                         if len(self.nodes[i][j])>=6:
-                            gluTessVertex(Draped.tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [self.nodes[i][j][4], self.nodes[i][j][5], 0])
+                            gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [self.nodes[i][j][4], self.nodes[i][j][5], 0])
                         else:
-                            gluTessVertex(Draped.tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [self.nodes[i][j][2], self.nodes[i][j][3], 0])
+                            gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [self.nodes[i][j][2], self.nodes[i][j][3], 0])
                     else:	# projected
-                        gluTessVertex(Draped.tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [(self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale, (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale, 0])
-                gluTessEndContour(Draped.tess)
-            gluTessEndPolygon(Draped.tess)
+                        gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [(self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale, (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale, 0])
+                gluTessEndContour(tess)
+            gluTessEndPolygon(tess)
 
             if __debug__:
                 if not tris: print "Draped layout failed - no tris"
@@ -827,8 +827,9 @@ class Draped(Polygon):
         elif not options&Prefs.ELEVATION:
             self.dynamic_data=array(tris, float32).flatten()
         else:
-            self.dynamic_data=array(drape(tris, tile, options, vertexcache), float32).flatten()
-        vertexcache.allocate_dynamic(self)
+            self.dynamic_data=array(drape(tris, tile, options, vertexcache, csgt=tls and tls.csgt), float32).flatten()
+        if not tls:	# defer allocation if called in thread context
+            vertexcache.allocate_dynamic(self)
         return selectednode
 
 
@@ -861,6 +862,19 @@ class Draped(Polygon):
         if not i: return False	# don't delete outer winding
         self.nodes.pop(i)
         return self.layout(tile, options, vertexcache, (i-1,0))
+
+
+# For draping a map image directly. name is the basename of image filename.
+class DrapedImage(Draped):
+
+    def load(self, lookup, defs, vertexcache, usefallback=True):
+        self.definition=DrapedFallback(self.name, vertexcache, lookup, defs)
+        self.definition.texture=0
+        self.definition.type=0	# override - we don't want this locked
+
+    def islaidout(self):
+        # DrapedImage texture is assigned *after* layout
+        return self.dynamic_data is not None and self.definition.texture
 
 
 class Exclude(Fitted):
@@ -1815,7 +1829,7 @@ class Network(Fitted):
         vertexcache.allocate_dynamic(self)
 
     def islaidout(self):
-        return self.points and True or False
+        return self.dynamic_data is not None
 
     def layout(self, tile, options, vertexcache, selectednode=None):
         # XXX handle new
@@ -1872,16 +1886,9 @@ def latlondisp(dms, lat, lon):
 
 def tessvertex(vertex, data):
     data.append(vertex)
-    
+
 def tessedge(flag):
     pass	# dummy
-
-tess=gluNewTess()
-gluTessNormal(tess, 0, -1, 0)
-gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
-gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
-gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
-
 
 def csgtvertex(vertex, data):
     data.append(vertex[0])
@@ -1950,22 +1957,11 @@ def csgtcombine(coords, vertex, weight):
 def csgtedge(flag):
     pass	# dummy
 
-csgt=gluNewTess()
-gluTessNormal(csgt, 0, -1, 0)
-gluTessProperty(csgt, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
-gluTessCallback(csgt, GLU_TESS_VERTEX_DATA,  csgtvertex)
-if __debug__:
-    gluTessCallback(csgt, GLU_TESS_COMBINE,  csgtcombined)
-else:
-    gluTessCallback(csgt, GLU_TESS_COMBINE,  csgtcombine)
-gluTessCallback(csgt, GLU_TESS_EDGE_FLAG,    csgtedge)	# no strips
-
 # Helper to drape polygons across terrain
 # Input - list of tri vertices [x,y,z,u,v,w]
 # Output - list of tri vertices draped across terrain - [x,y,z,u,v,w]
-def drape(tris, tile, options, vertexcache, meshtris=None):
-    global csgt
-
+def drape(tris, tile, options, vertexcache, meshtris=None, csgt=None):
+    if not csgt: csgt=drape.csgt
     #if __debug__: clock=time.clock()
     # tesselator is expensive - minimise mesh triangles
     if not meshtris:
@@ -2037,3 +2033,13 @@ def drape(tris, tile, options, vertexcache, meshtris=None):
 
     #if __debug__: print "%6.3f time to drape %d tris against %d meshtris\n%6.3f of that in BBox" % (time.clock()-clock, len(tris)/3, len(meshtris), clock2)
     return csgttris
+
+drape.csgt=gluNewTess()
+gluTessNormal(drape.csgt, 0, -1, 0)
+gluTessProperty(drape.csgt, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
+gluTessCallback(drape.csgt, GLU_TESS_VERTEX_DATA,  csgtvertex)
+if __debug__:
+    gluTessCallback(drape.csgt, GLU_TESS_COMBINE,  csgtcombined)
+else:
+    gluTessCallback(drape.csgt, GLU_TESS_COMBINE,  csgtcombine)
+gluTessCallback(drape.csgt, GLU_TESS_EDGE_FLAG,    csgtedge)	# no strips

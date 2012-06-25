@@ -18,6 +18,7 @@ class Prefs:
         self.xplane=None
         self.package=None
         self.options=Prefs.TERRAIN
+        self.imageryprovider=None
         self.packageprops={}
 
         if platform=='win32':
@@ -49,15 +50,21 @@ class Prefs:
             handle.readline().strip()	# skip package
             #if self.package=='None': self.package=None
             for line in handle:
-                if '=' in line:
-                    pkg=line[:line.index('=')]
+                try:
+                    (pkg,args)=line.split('=')
+                    pkg=pkg.strip()
                     if pkg=='*options':
-                        self.options=int(line[9:])
+                        self.options=int(args)
+                    elif pkg=='*imagery':
+                        self.imageryprovider=args.strip()
+                    elif pkg.startswith('*'):
+                        pass	# option from the future!
                     else:
-                        line=line[len(pkg)+2:]
-                        f=line[:line.index('"')]
-                        c=line[len(f)+1:].split()
-                        self.packageprops[pkg]=(f, float(c[0]), float(c[1]), int(c[2]), float(c[3]), float(c[4]), int(c[5]))
+                        args=args.split()
+                        f=args.pop(0).strip('"')
+                        self.packageprops[pkg]=(f,)+tuple([float(i) for i in args])
+                except:
+                    pass
             handle.close()
         except:
             pass
@@ -67,10 +74,11 @@ class Prefs:
             handle=codecs.open(self.filename, 'wt', 'utf-8')
             handle.write('%s\n%s\n*options=%d\n' % (
                 self.xplane, self.package, self.options))
-            for pkg, (f,lat,lon,hdg,w,h,o) in self.packageprops.iteritems():
+            if self.imageryprovider:
+                handle.write('*imagery=%s\n' % self.imageryprovider)
+            for pkg, args in self.packageprops.iteritems():
                 if not pkg: continue	# unsaved Untitled
-                handle.write('%s="%s" %10.6f %11.6f %3d %8.2f %8.2f %2d\n' % (
-                    pkg, f,lat,lon,hdg,w,h,o))
+                handle.write('%s="%s" %s\n' % (pkg, args[0], ' '.join(['%11.6f' % i for i in args[1:]])))
             handle.close()
         except:
             pass

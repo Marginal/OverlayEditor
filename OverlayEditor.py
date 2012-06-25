@@ -107,10 +107,10 @@ global prefs
 if platform=='darwin':
     # Hack: wxMac 2.5 requires the following to get shadows to look OK:
     # ... wx.ALIGN_CENTER_VERTICAL|wx.TOP|wx.BOTTOM, 2)
-    pad=2
+    pad=3
     browse="Choose..."
 else:
-    pad=0
+    pad=3
     browse="Browse..."
 
 
@@ -448,206 +448,79 @@ class BackgroundDialog(wx.Dialog):
         fg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
 
         self.parent=parent
+        self.parent.palette.set(None)
+        self.parent.palette.Disable()
+        if self.parent.menubar:
+            self.parent.menubar.Disable()
+            self.parent.menubar.Enable(wx.ID_PREFERENCES, False)	# needs to be disabled individually on wxMac Carbon
+        #self.parent.toolbar.Disable()	# Doesn't do anything on wxMac Carbon - do it by individual tool
+        ids=[wx.ID_NEW,wx.ID_OPEN,wx.ID_SAVE,wx.ID_DOWN,wx.ID_ADD,wx.ID_EDIT,wx.ID_DELETE,wx.ID_UNDO,wx.ID_REFRESH,wx.ID_PREFERENCES,wx.ID_FORWARD,wx.ID_APPLY]
+        self.toolbarstate=[(id,self.parent.toolbar.GetToolEnabled(id)) for id in ids]
+        for id in ids: self.parent.toolbar.EnableTool(id,False)
+
         if prefs.package:
             self.prefix=glob(join(prefs.xplane,gcustom,prefs.package))[0]
         else:
             self.prefix=glob(join(prefs.xplane,gcustom))[0]
         if prefs.package in prefs.packageprops:
-            (self.image, plat, plon, phdg, pwidth, plength, popacity)=prefs.packageprops[prefs.package]
-            if self.image[0]==curdir:
-                self.image=join(self.prefix, normpath(self.image))
+            self.image=prefs.packageprops[prefs.package][0]
         else:
-            self.image=None
-            plat=parent.loc[0]
-            plon=parent.loc[1]
-            phdg=parent.hdg
-            pwidth=plength=100.0
-            popacity=50.0
+            self.image=''
 
-        if platform=='darwin':
-            textstyle=wx.ALIGN_RIGHT
-        else:
-            textstyle=0
-        (x,y)=self.GetTextExtent("Length:")
-        textsize=(x+pad,y+pad)
-        numid=wx.NewId()
+        outersizer = wx.BoxSizer(wx.VERTICAL)	# For padding
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        outersizer.Add(sizer, 0, wx.ALL|wx.EXPAND, pad+pad)
 
-        panel1 = wx.Panel(self,-1)
-        panel2 = wx.Panel(self,-1)
-        panel3 = wx.Panel(self,-1)
-        panel4 = wx.Panel(self,-1)
+        sizer1 = wx.StaticBoxSizer(wx.StaticBox(self, -1, 'Mapping service'), wx.VERTICAL)
+        sizer.Add(sizer1, 0, wx.ALL|wx.EXPAND, pad)
 
-        box1 = wx.StaticBoxSizer(wx.StaticBox(panel1, -1, 'File'),
-                                 wx.VERTICAL)
-        self.path = wx.TextCtrl(panel1, -1, style=wx.TE_READONLY)
+        self.bing = wx.CheckBox(self, -1, u'Microsoft Bing\u2122 ')
+        self.bing.SetValue(prefs.imageryprovider=='Bing')
+        self.bingtou = wx.HyperlinkCtrl(self, -1, 'Terms of Use', 'http://www.microsoft.com/maps/assets/docs/terms.aspx')
+        sizer11 = wx.FlexGridSizer(1, 3, pad, pad)
+        sizer1.Add(sizer11, 0, wx.ALL|wx.EXPAND, pad)
+        sizer11.Add(self.bing, 0, wx.ALL|wx.EXPAND, pad)
+        sizer11.Add(self.bingtou, 0, wx.ALL|wx.EXPAND, pad)
+        sizer11.AddStretchSpacer()
+
+        sizer2 = wx.StaticBoxSizer(wx.StaticBox(self, -1, 'File'), wx.VERTICAL)
+        sizer.Add(sizer2, 0, wx.ALL|wx.EXPAND, pad)
+
+        if platform!='darwin':	# Mac users are used to dialogs withaout an OK button
+            sizer3=myCreateStdDialogButtonSizer(self, wx.OK)
+            sizer.Add(sizer3, 0, wx.ALL|wx.EXPAND, pad)
+
+        self.path = wx.TextCtrl(self, -1, style=wx.TE_READONLY)
         self.path.SetMinSize((300, -1))
-        self.clearbtn=wx.Button(panel1, wx.ID_CLEAR)
-        self.browsebtn=wx.Button(panel1, -1, browse)
-        grid1 = wx.FlexGridSizer()
-        grid1.AddGrowableCol(0, proportion=1)
-        grid1.Add([0,0], 1, wx.ALIGN_CENTER|wx.ALL, pad)
-        grid1.Add(self.clearbtn, 0, wx.ALIGN_CENTER|wx.ALL, pad)
-        grid1.Add([6,0], 0)	# cosmetic
-        grid1.Add(self.browsebtn, 0, wx.ALIGN_CENTER|wx.ALL, pad)
-        box1.Add(self.path, 1, wx.ALIGN_CENTER|wx.ALL, 4)
-        box1.Add(grid1, 1, wx.LEFT|wx.RIGHT|wx.EXPAND, 4)
+        sizer2.Add(self.path, 1, wx.ALL|wx.EXPAND, pad)
+        sizer22 = wx.FlexGridSizer(1, 4, pad, pad)
+        sizer2.Add(sizer22, 0, wx.ALL|wx.EXPAND, pad)
+        sizer22.AddGrowableCol(0, proportion=1)
+        sizer22.AddStretchSpacer()
+        self.clearbtn=wx.Button(self, wx.ID_CLEAR)
+        sizer22.Add(self.clearbtn, 0, wx.ALIGN_CENTER|wx.ALL, pad)
+        #sizer22.AddSpacer(6)	# cosmetic
+        self.browsebtn=wx.Button(self, -1, browse)
         self.browsebtn.SetDefault()
-        panel1.SetSizer(box1)
+        sizer22.Add(self.browsebtn, 0, wx.ALIGN_CENTER|wx.ALL, pad)
 
-        box2 = wx.StaticBoxSizer(wx.StaticBox(panel2, -1, 'Location'))
-        self.lat=NumCtrl(panel2, numid, plat, integerWidth=3, fractionWidth=6,
-                         min=-89.999999, max=89.999999, limited=True,
-                         selectOnEntry=False,
-                         foregroundColour=fg, signedForegroundColour=fg,
-                         validBackgroundColour = bg,
-                         invalidBackgroundColour = "Red")
-        if platform=='darwin':	# auto-size broken - wrong font?
-            (c,y)=self.lat.GetSize()
-            (x,c)=self.lat.GetTextExtent("-888.8888888")
-            numsize=(x,y)
-        else:
-            numsize=self.lat.GetSize()
-        self.lat.SetMinSize(numsize)
-        self.lon=NumCtrl(panel2, numid, plon, integerWidth=3, fractionWidth=6,
-                         min=-179.999999, max=179.999999, limited=True,
-                         selectOnEntry=False,
-                         foregroundColour=fg, signedForegroundColour=fg,
-                         validBackgroundColour = bg,
-                         invalidBackgroundColour = "Red")
-        self.lon.SetMinSize(numsize)
-        self.hdg=NumCtrl(panel2, numid, phdg, integerWidth=3,
-                         min=0, max=359, limited=True,
-                         selectOnEntry=False,
-                         foregroundColour=fg, signedForegroundColour=fg,
-                         validBackgroundColour = bg,
-                         invalidBackgroundColour="Red")
-        self.hdg.SetMinSize(numsize)
-        grid2 = wx.FlexGridSizer(2, 5, 6, 6)
-        grid2.AddGrowableCol(2, proportion=1)
-        grid2.Add(wx.StaticText(panel2, -1, 'Lat:', size=textsize, style=textstyle), 0, wx.ALIGN_CENTER, pad)
-        grid2.Add(self.lat, 0, wx.ALIGN_CENTER_VERTICAL, pad)
-        grid2.Add([0,0], 1, wx.ALIGN_CENTER|wx.ALL, pad)
-        grid2.Add(wx.StaticText(panel2, -1, 'Hdg:', size=textsize, style=textstyle), 0, wx.ALIGN_CENTER, pad)
-        grid2.Add(self.hdg, 0, wx.ALIGN_CENTER_VERTICAL, pad)
-        grid2.Add(wx.StaticText(panel2, -1, 'Lon:', size=textsize, style=textstyle), 0, wx.ALIGN_CENTER, pad)
-        grid2.Add(self.lon, 0, wx.ALIGN_CENTER_VERTICAL, pad)
-        box2.Add(grid2, 1, wx.ALL|wx.EXPAND, 4)
-        panel2.SetSizer(box2)
+        self.SetSizerAndFit(outersizer)
 
-        box3 = wx.StaticBoxSizer(wx.StaticBox(panel3, -1, 'Size'))
-        self.width=NumCtrl(panel3, numid, pwidth, integerWidth=4, fractionWidth=2,
-                           allowNegative=False, min=0, limited=True,
-                           groupDigits=False, selectOnEntry=False,
-                           foregroundColour=fg, signedForegroundColour=fg,
-                           validBackgroundColour = bg,
-                           invalidBackgroundColour = "Red")
-        self.width.SetMinSize(numsize)
-        self.length=NumCtrl(panel3, numid, plength, integerWidth=4, fractionWidth=2,
-                            allowNegative=False, min=0, limited=True,
-                            groupDigits=False, selectOnEntry=False,
-                            foregroundColour=fg, signedForegroundColour=fg,
-                            validBackgroundColour = bg,
-                            invalidBackgroundColour = "Red")
-        self.length.SetMinSize(numsize)
-        grid3 = wx.FlexGridSizer(1, 5, 6, 6)
-        grid3.AddGrowableCol(2, proportion=1)
-        grid3.Add(wx.StaticText(panel3, -1, 'Width:', size=textsize, style=textstyle), 1, wx.ALIGN_CENTER, pad)
-        grid3.Add(self.width, 1, wx.ALIGN_CENTER_VERTICAL, pad)
-        grid3.Add([0,0], 1, wx.ALIGN_CENTER|wx.ALL, pad)
-        grid3.Add(wx.StaticText(panel3, -1, 'Length:', size=textsize, style=textstyle), 1, wx.ALIGN_CENTER, pad)
-        grid3.Add(self.length, 1, wx.ALIGN_CENTER_VERTICAL, pad)
-        box3.Add(grid3, 1, wx.ALL|wx.EXPAND, 4)
-        panel3.SetSizer(box3)
-
-        box4 = wx.StaticBoxSizer(wx.StaticBox(panel4, -1, 'Opacity'))
-        self.opacity=wx.Slider(panel4, -1, popacity, 0, 100,
-                               style=wx.SL_LABELS)
-        #self.opacity.SetTickFreq(10, 1)
-        box4.Add(self.opacity, 1, wx.ALL|wx.EXPAND, pad)
-        panel4.SetSizer(box4)
-
-        box0 = wx.BoxSizer(wx.VERTICAL)
-        box0.Add(panel1, 0, wx.ALL|wx.EXPAND, 10)
-        box0.Add(panel2, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, 10)
-        box0.Add(panel3, 0, wx.LEFT|wx.RIGHT|wx.TOP|wx.EXPAND, 10)
-        box0.Add(panel4, 0, wx.ALL|wx.EXPAND, 10)
-        self.SetSizerAndFit(box0)
-        self.setpath()
-
+        wx.EVT_CHECKBOX(self, self.bing.GetId(), self.OnUpdate)
         wx.EVT_BUTTON(self, self.clearbtn.GetId(), self.OnClear)
         wx.EVT_BUTTON(self, self.browsebtn.GetId(), self.OnBrowse)
-        EVT_NUM(self, numid, self.OnUpdate)	# All numeric fields
-        wx.EVT_COMMAND_SCROLL(self,self.opacity.GetId(), self.OnUpdate)
-        wx.EVT_KEY_DOWN(self.path, self.OnKeyDown)
-        wx.EVT_KEY_DOWN(self.clearbtn, self.OnKeyDown)
-        wx.EVT_KEY_DOWN(self.browsebtn, self.OnKeyDown)
-        wx.EVT_KEY_DOWN(self.lat, self.OnKeyDown)
-        wx.EVT_KEY_DOWN(self.lon, self.OnKeyDown)
-        wx.EVT_KEY_DOWN(self.hdg, self.OnKeyDown)
-        wx.EVT_KEY_DOWN(self.width, self.OnKeyDown)
-        wx.EVT_KEY_DOWN(self.length, self.OnKeyDown)
-        wx.EVT_KEY_DOWN(self.opacity, self.OnKeyDown)
+        wx.EVT_BUTTON(self, wx.ID_OK, self.OnClose)
+        wx.EVT_BUTTON(self, wx.ID_CANCEL, self.OnClose)
         wx.EVT_CLOSE(self, self.OnClose)
 
-        # Remove selection
-        self.lat.SetFocus()	# So doesn't complain
-        self.parent.canvas.Refresh()
+        self.OnUpdate(None)
 
-    def OnKeyDown(self, event):
-        if not self.image:
-            event.Skip(True)
-            return
-        cursors=[ord('W'), ord('D'), ord('S'), ord('A')]
-        if event.GetKeyCode() in cursors:
-            if event.ControlDown():
-                xinc=zinc=0.000001
-            else:
-                zinc=self.parent.dist/10000000
-                if zinc<0.00001: zinc=0.00001
-                if event.ShiftDown(): zinc*=10
-                xinc=zinc/cos(radians(self.lat.GetValue()))
-            hr=radians((self.parent.hdg + [0,90,180,270][cursors.index(event.GetKeyCode())])%360)
-            try:
-                self.lat.SetValue(self.lat.GetValue()+zinc*cos(hr))
-            except:
-                pass
-            try:
-                self.lon.SetValue(self.lon.GetValue()+xinc*sin(hr))
-            except:
-                pass
-        elif event.GetKeyCode()==ord('Q'):
-            if event.ShiftDown():
-                self.hdg.SetValue((self.hdg.GetValue()-10)%360)
-            else:
-                self.hdg.SetValue((self.hdg.GetValue()-1)%360)
-        elif event.GetKeyCode()==ord('E'):
-            if event.ShiftDown():
-                self.hdg.SetValue((self.hdg.GetValue()+10)%360)
-            else:
-                self.hdg.SetValue((self.hdg.GetValue()+1)%360)
-        elif event.GetKeyCode()==ord('C') or (platform=='darwin' and event.GetKeyCode()==ord('J') and event.CmdDown()):
-            self.parent.loc=[self.lat.GetValue(),self.lon.GetValue()]
-            if event.ShiftDown():
-                self.parent.hdg=self.hdg.GetValue()
-            self.parent.canvas.goto(self.parent.loc, self.parent.hdg, self.parent.elev, self.parent.dist)
-        else:
-            if platform=='darwin' and (event.GetKeyCode() in range(ord('0'), ord('9')+1) or event.GetKeyCode() in [wx.WXK_BACK, wx.WXK_DELETE, ord('-')]):
-                # Hack!!! changing value doesn't cause event so manually queue
-                wx.FutureCall(10, self.OnUpdate, event)
-            event.Skip(True)
-            return
-        if platform=='darwin':
-            self.OnUpdate(event)	# SetValue() doesn't cause event
-        event.Skip(False)
 
     def OnClear(self, event):
-        self.lat.SetFocus()	# So doesn't complain
-        self.image=None
-        self.setpath()
+        self.image=''
         self.OnUpdate(event)
 
     def OnBrowse(self, event):
-        self.lat.SetFocus()	# So doesn't complain
         if self.image:
             if self.image[0]==curdir:
                 dir=dirname(join(self.prefix, normpath(self.image)))
@@ -658,64 +531,66 @@ class BackgroundDialog(wx.Dialog):
             dir=self.prefix
             f=''
         dlg=wx.FileDialog(self, "Location of background image:", dir, f,
-                          "Image files|*.bmp;*.jpg;*.jpeg;*.png|BMP files (*.bmp)|*.bmp|JPEG files (*.jpg, *.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png|All files|*.*",
+                          "Image files|*.dds;*.jpg;*.jpeg;*.png|DDS files (*.dds)|*.bmp|JPEG files (*.jpg, *.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png|All files|*.*",
                           wx.OPEN)
         if dlg.ShowModal()==wx.ID_OK:
             self.image=dlg.GetPath()
-            self.setpath()
-            self.OnUpdate(event)
+            if self.image.startswith(self.prefix):
+                self.image=curdir+self.image[len(self.prefix):]
+            print self.image#XXX
         dlg.Destroy()
+        self.OnUpdate(event)
 
     def OnUpdate(self, event):
-        if event.GetEventType()==wx.wxEVT_SCROLL_THUMBTRACK:
-            return	# Wait til user stops scrolling
-        if not self.image:
-            prefs.packageprops.pop(prefs.package, None)
-            self.parent.canvas.setbackground(None)
-            return
-        f=self.image
-        if prefs.package and f.startswith(self.prefix):
-            f=curdir+f[len(self.prefix):]
-        prefs.packageprops[prefs.package]=(f, self.lat.GetValue(), self.lon.GetValue(), self.hdg.GetValue()%360, self.width.GetValue(), self.length.GetValue(), self.opacity.GetValue())
-        self.parent.canvas.setbackground((self.image, self.lat.GetValue(), self.lon.GetValue(), self.hdg.GetValue()%360, self.width.GetValue(), self.length.GetValue(), self.opacity.GetValue(), None))
-
-    def setpath(self):
-        if not self.image:
+        if not prefs.package:
             self.clearbtn.Disable()
-            self.lat.Disable()
-            self.lon.Disable()
-            self.hdg.Disable()
-            self.width.Disable()
-            self.length.Disable()
-            self.opacity.Disable()
+            self.browsebtn.Disable()
             self.path.SetValue('')
-            return
+        elif not self.image:
+            self.clearbtn.Disable()
+            self.browsebtn.Enable()
+            self.path.SetValue('')
+        else:
+            self.clearbtn.Enable()
+            self.browsebtn.Enable()
+            label=self.image
+            if prefs.package and label.startswith(self.prefix):
+                label=label[len(self.prefix)+1:]
+            (x,y)=self.path.GetClientSize()
+            (x1,y1)=self.GetTextExtent(label)
+            if x1<x:
+                self.path.SetValue(label)
+            else:
+                while sep in label:
+                    label=label[label.index(sep)+1:]
+                    (x1,y1)=self.GetTextExtent('...'+sep+label)
+                    if x1<x: break
+                self.path.SetValue('...'+sep+label)
 
-        self.clearbtn.Enable()
-        self.lat.Enable()
-        self.lon.Enable()
-        self.hdg.Enable()
-        self.width.Enable()
-        self.length.Enable()
-        self.opacity.Enable()
-        label=self.image
-        if prefs.package and label.startswith(self.prefix):
-            label=label[len(self.prefix)+1:]
-        (x,y)=self.path.GetClientSize()
-        (x1,y1)=self.GetTextExtent(label)
-        if x1<x:
-            self.path.SetValue(label)
-            return
-        while sep in label:
-            label=label[label.index(sep)+1:]
-            (x1,y1)=self.GetTextExtent('...'+sep+label)
-            if x1<x: break
-        self.path.SetValue('...'+sep+label)
+        prefs.imageryprovider=self.bing.GetValue() and 'Bing' or None
+        self.parent.canvas.setbackground(prefs, self.parent.loc, self.image)
+        self.parent.canvas.goto(self.parent.loc, prefs=prefs)	# initiate imagery provider setup & loading
+
 
     def OnClose(self, event):
-        # Prevent kill focus event causing crash on wxMac 2.5
-        self.path.SetFocus()
+        self.parent.palette.Enable()
+        if self.parent.menubar:
+            self.parent.menubar.Enable(wx.ID_PREFERENCES, True)	# needs to be enabled individually on wxMac Carbon
+            wx.Window.Enable(self.parent.menubar)		# wx.MenuBar overrides Enable with bogusness
+        for (id,state) in self.toolbarstate: self.parent.toolbar.EnableTool(id,state)
+        self.parent.toolbar.ToggleTool(wx.ID_PREVIEW, False)
+        self.parent.toolbar.Enable()
+        self.path.SetFocus()	# Prevent kill focus event causing crash on wxMac 2.5
         self.Destroy()
+        self.parent.bkgd=None
+        # Update background in prefs
+        prefs.packageprops.pop(prefs.package,False)
+        if self.parent.canvas.background:
+            p=(self.image,)
+            for n in self.parent.canvas.background.nodes[0]:
+                p+=n[:2]
+            prefs.packageprops[prefs.package]=p
+            print prefs.package, prefs.packageprops[prefs.package] # XXX
 
 
 # The app
@@ -786,7 +661,7 @@ class MainWindow(wx.Frame):
             self.menubar.Append(editmenu, u'Edit')
 
             viewmenu = wx.Menu()
-            viewmenu.Append(wx.ID_PREVIEW, u'Background image\u2026')
+            viewmenu.Append(wx.ID_PREVIEW, u'Background imagery\u2026')
             wx.EVT_MENU(self, wx.ID_PREVIEW, self.OnBackground)
             viewmenu.Append(wx.ID_REFRESH, u'Reload')
             wx.EVT_MENU(self, wx.ID_REFRESH, self.OnReload)
@@ -857,7 +732,7 @@ class MainWindow(wx.Frame):
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_PREVIEW, 'Background',
                                   self.icon(['frame_image', 'image', 'image-x-generic'], 'background.png'),	# frame_image is KDE3
-                                  wx.NullBitmap, 0,
+                                  wx.NullBitmap, wx.ITEM_CHECK,
                                   'Adjust background image')
         wx.EVT_TOOL(self.toolbar, wx.ID_PREVIEW, self.OnBackground)
         self.toolbar.AddLabelTool(wx.ID_REFRESH, 'Reload',
@@ -1374,11 +1249,12 @@ class MainWindow(wx.Frame):
 
     def OnBackground(self, event):
         self.canvas.clearsel()
-        self.bkgd=BackgroundDialog(self, wx.ID_ANY, "Background image")
-        self.bkgd.ShowModal()
-        #self.bkgd.Destroy()	# Destroys itself
-        self.bkgd=None
-        self.canvas.Refresh()
+        if self.bkgd:
+            self.bkgd.Close()
+        else:
+            self.bkgd=BackgroundDialog(self, wx.ID_ANY, "Background imagery")
+            self.bkgd.Show()
+        self.canvas.Refresh()	# Show background image as selected
         
     # Load or reload current package
     def OnReload(self, reload, package=None):
@@ -1572,16 +1448,6 @@ class MainWindow(wx.Frame):
             
         self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], PaletteEntry(x)) for x in Exclude.NAMES.keys()]), None)
 
-        if prefs.package and prefs.package in prefs.packageprops:
-            (image, lat, lon, hdg, width, length, opacity)=prefs.packageprops[prefs.package]
-            if image[0]==curdir:
-                if glob(join(prefs.xplane,gcustom,prefs.package,normpath(image))):
-                    image=glob(join(prefs.xplane,gcustom,prefs.package,normpath(image)))[0]
-                else:
-                    image=None
-            background=(image, lat, lon, hdg, width, length, opacity)
-        else:
-            background=None
         if xpver>=9:
             dsfdirs=[join(prefs.xplane, gcustom),
                      join(prefs.xplane, gglobal),
@@ -1589,10 +1455,10 @@ class MainWindow(wx.Frame):
         else:
             dsfdirs=[join(prefs.xplane, gcustom),
                      join(prefs.xplane, gdefault)]
-        self.canvas.reload(prefs.options, airports, nav, mainaptdat,
+        self.canvas.reload(prefs, airports, nav, mainaptdat,
                            netdefs, roadfile,
                            lookup, placements, networks,
-                           background, terrain, dsfdirs)
+                           terrain, dsfdirs)
         if not reload:
             # Load, not reload
             if pkgloc:	# go to first airport by name
@@ -1706,7 +1572,7 @@ class MainWindow(wx.Frame):
             self.defnetdefs=[]	# force reload
             self.OnReload(False)
             prefs.write()
-        self.canvas.goto(self.loc, options=prefs.options)
+        self.canvas.goto(self.loc, prefs=prefs)
         self.ShowLoc()
         self.ShowSel()
 
@@ -1729,6 +1595,7 @@ class MainWindow(wx.Frame):
             return False
         prefs.write()
         if self.goto: self.goto.Close()
+        self.canvas.exit()
         self.Destroy()
         return True
 
@@ -1855,4 +1722,5 @@ else:
 
 # Save prefs
 prefs.write()
+if __debug__: print "Main thread done"
 

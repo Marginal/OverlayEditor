@@ -760,7 +760,7 @@ class DrapedFallback(DrapedDef):
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.type=Locked.POL
-        self.ortho=False
+        self.ortho=True
         self.hscale=10
         self.vscale=10
     
@@ -1250,6 +1250,7 @@ class NetworkDef(PolygonDef):
         self.fittomesh=(self.height!=None)
             
     def flush(self):
+        self.base=None
         for o in self.objdefs:
             o.flush()
         
