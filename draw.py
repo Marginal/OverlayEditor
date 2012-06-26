@@ -239,6 +239,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.taxiwaydata=None	# indices into cache (base, len)
         self.runwaysdata=None	# indices into cache (base, len)
         self.navaids=[]		# (type, lat, lon, hdg)
+        self.navaidplacements={}	# navaid placements by tile
         self.codes={}		# [(code, loc)] by tile
         self.codeslist=0	# airport labels
         self.lookup={}		# virtual name -> filename (may be duplicates)
@@ -248,7 +249,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.background=None
         self.imageryprovider=None	# map image provider, eg 'Bing'
         self.imagery=None
-        self.meshlist=0
         
         self.mousenow=None	# Current position (used in timer and drag)
         self.locked=0		# locked object types
@@ -657,7 +657,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         
         if __debug__: clock=time.clock()
 
-        # Static stuff: mesh, networks, navaids
+        # Static stuff: mesh, networks
         self.glstate.set_instance(self.vertexcache)
         self.glstate.set_color(COL_UNPAINTED)
         self.glstate.set_cull(True)
@@ -694,15 +694,12 @@ class MyGL(wx.glcanvas.GLCanvas):
                     self.glstate.set_color(COL_SELECTED)
                     placement.draw_nodes(self.glstate, False)
 
-        # Navaids etc
-        self.glstate.set_instance(self.vertexcache)
+        # Objects and Polygons
         self.glstate.set_color(COL_UNPAINTED)
         self.glstate.set_texture(0)
         self.glstate.set_poly(False)
-        glCallList(self.meshlist)
-
-        # Objects and Polygons
         placements=self.placements[self.tile]
+        navaidplacements=self.navaidplacements[self.tile]
 
         for layer in range(ClutterDef.LAYERCOUNT):
             if placements[layer]:
@@ -740,7 +737,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 list(self.selected)[0].draw_nodes(self.glstate, self.selectednode)
 
         # List of clutter with static geometry and sorted by texture (ignoring layer ordering since it doesn't really matter so much for Objects)
-        objs=sorted([obj for l in placements for obj in l], key=lambda obj: obj.definition.texture)
+        objs=sorted([obj for l in placements for obj in l]+navaidplacements, key=lambda obj: obj.definition.texture)
         self.glstate.set_instance(self.vertexcache)
         self.glstate.set_poly(False)
         self.glstate.set_depthtest(True)
@@ -1381,6 +1378,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.airports=airports	# [runways] by code
         self.runways={}		# need to re-layout airports
         self.navaids=navaids
+        self.navaidplacements={}	# need to re-layout navaids
         self.aptdatfile=aptdatfile
         self.netdefs=netdefs
         self.netfile=netfile	# logical name of .net file used
@@ -1481,6 +1479,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                 for key in self.placements.keys():
                     placements=reduce(lambda x,y:x+y, self.placements.pop(key))
                     self.unsorted[key]=placements
+                    # invalidate all heights
+                    for placement in placements:
+                        placement.clearlayout(self.vertexcache)
+                for key in self.navaidplacements.keys():
+                    placements=reduce(lambda x,y:x+y, self.navaidplacements.pop(key))
                     # invalidate all heights
                     for placement in placements:
                         placement.clearlayout(self.vertexcache)
@@ -1788,102 +1791,53 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.vertexcache.allocate_instance(array(varray,float32).flatten())
 
             progress.Update(14, 'Navaids')
-            objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
-                  3:  'lib/airport/NAVAIDS/VOR.obj',
-                  4:  'lib/airport/NAVAIDS/ILS.obj',
-                  5:  'lib/airport/NAVAIDS/ILS.obj',
-                  6:  'lib/airport/NAVAIDS/glideslope.obj',
-                  7:  'lib/airport/NAVAIDS/Marker1.obj',
-                  8:  'lib/airport/NAVAIDS/Marker2.obj',
-                  9:  'lib/airport/NAVAIDS/Marker2.obj',
-                  19: '*windsock.obj',
-                  181:'lib/airport/landscape/beacon1.obj',
-                  182:'lib/airport/beacons/beacon_seaport.obj',
-                  183:'lib/airport/beacons/beacon_heliport.obj',
-                  184:'lib/airport/landscape/beacon2.obj',
-                  185:'lib/airport/landscape/beacon1.obj',
-                  211:'lib/airport/lights/slow/VASI.obj',
-                  212:'lib/airport/lights/slow/PAPI.obj',
-                  213:'lib/airport/lights/slow/PAPI.obj',
-                  214:'lib/airport/lights/slow/PAPI.obj',
-                  215:'lib/airport/lights/slow/VASI3.obj',
-                  216:'lib/airport/lights/slow/rway_guard.obj',
-                  }
-            for name in objs.values():
-                try:
-                    if name[0]=='*':
-                        filename=name
-                    else:
-                        filename=self.lookup[name].file
-                    if filename in self.defs:
-                        self.defs[filename].allocate(self.vertexcache)
-                    else:
-                        self.defs[filename]=ObjectDef(filename, self.vertexcache, self.lookup, self.defs)
-                except:
-                    # Older versions of X-Plane don't have eg beacon_seaport
-                    if __debug__: print_exc()
-                
-            # Prepare static stuff: mesh, networks, navaids
-            progress.Update(15, 'Layout')
-            self.glstate.set_instance(self.vertexcache)
-            self.glstate.set_texture(0)
-            self.glstate.set_color(COL_UNPAINTED)
-            self.glstate.set_cull(True)
-            self.glstate.set_depthtest(True)
-            self.glstate.set_poly(False)
-
-            # Display list assumes instance_vbo is bound
-            self.meshlist=glGenLists(1)
-            glNewList(self.meshlist, GL_COMPILE)
-            # networks
-            #glBindTexture(GL_TEXTURE_2D, 0)
-            #glDisable(GL_DEPTH_TEST)
-            #for (roadtype, points) in self.vertexcache.getNets(self.tile,self.options):
-            #    if roadtype<=len(self.defnetdefs) and self.defnetdefs[roadtype].color:
-            #        glColor3f(*self.defnetdefs[roadtype].color)
-            #    else:
-            #        glColor3f(0.5,0.5,0.5)
-            #    glBegin(GL_LINE_STRIP)
-            #    for (x,y,z) in points:
-            #        glVertex3f(x,y,z)
-            #    glEnd()
-
-            # navaids
-            for (i, lat, lon, hdg) in self.navaids:
-                if (int(floor(lat)),int(floor(lon)))==self.tile and i in objs:
-                    if objs[i][0]=='*':
-                        definition=self.defs[objs[i]]
-                    elif objs[i] not in self.lookup:
-                        if __debug__: print "Missing navaid %s" % objs[i]
-                        continue	# missing in this version of X-Plane
-                    else:
-                        definition=self.defs[self.lookup[objs[i]].file]
-                    coshdg=cos(radians(hdg))
-                    sinhdg=sin(radians(hdg))
-                    (x,z)=self.latlon2m(lat,lon)
-                    y=self.vertexcache.height(self.tile,self.options,x,z)
-                    glBindTexture(GL_TEXTURE_2D, definition.texture)
-                    if i==211:
-                        seq=[(1,75),(-1,75),(1,-75),(-1,-75)]
-                    elif i in range(212,215):
-                        seq=[(12,0),(4,0),(-4,0),(-12,0)]
-                    else:
-                        seq=[(0,0)]
-                    for (xinc,zinc) in seq:
-                        glPushMatrix()
-                        glTranslatef(x+xinc*coshdg-zinc*sinhdg, y,
-                                     z+xinc*sinhdg+zinc*coshdg)
-                        glRotatef(-hdg, 0.0,1.0,0.0)
-                        if definition.culled:
-                            glDrawArrays(GL_TRIANGLES, definition.base, definition.culled)
-                        if definition.nocull:
-                            glDisable(GL_CULL_FACE)
-                            glDrawArrays(GL_TRIANGLES, definition.base+definition.culled, definition.nocull)
-                            glEnable(GL_CULL_FACE)
-                        glPopMatrix()
-            glEndList()
+            if self.tile not in self.navaidplacements:
+                objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
+                      3:  'lib/airport/NAVAIDS/VOR.obj',
+                      4:  'lib/airport/NAVAIDS/ILS.obj',
+                      5:  'lib/airport/NAVAIDS/ILS.obj',
+                      6:  'lib/airport/NAVAIDS/glideslope.obj',
+                      7:  'lib/airport/NAVAIDS/Marker1.obj',
+                      8:  'lib/airport/NAVAIDS/Marker2.obj',
+                      9:  'lib/airport/NAVAIDS/Marker2.obj',
+                      19: '*windsock.obj',
+                      181:'lib/airport/landscape/beacon1.obj',
+                      182:'lib/airport/beacons/beacon_seaport.obj',
+                      183:'lib/airport/beacons/beacon_heliport.obj',
+                      184:'lib/airport/landscape/beacon2.obj',
+                      185:'lib/airport/landscape/beacon1.obj',
+                      211:'lib/airport/lights/slow/VASI.obj',
+                      212:'lib/airport/lights/slow/PAPI.obj',
+                      213:'lib/airport/lights/slow/PAPI.obj',
+                      214:'lib/airport/lights/slow/PAPI.obj',
+                      215:'lib/airport/lights/slow/VASI3.obj',
+                      216:'lib/airport/lights/slow/rway_guard.obj',
+                      }
+                placements=[]
+                for (i, lat, lon, hdg) in self.navaids:
+                    if (int(floor(lat)),int(floor(lon)))==self.tile:
+                        if i in objs:
+                            coshdg=cos(radians(hdg))
+                            sinhdg=sin(radians(hdg))
+                            if i==211:
+                                seq=[(1,75),(-1,75),(1,-75),(-1,-75)]
+                            elif i in range(212,215):
+                                seq=[(12,0),(4,0),(-4,0),(-12,0)]
+                            else:
+                                seq=[(0,0)]
+                            for (xinc,zinc) in seq:
+                                placement=Object(objs[i], lat, lon, hdg)
+                                if not placement.load(self.lookup, self.defs, self.vertexcache, False):
+                                    if __debug__: print "Missing navaid %s" % objs[i]
+                                else:
+                                    x,z=placement.position(self.tile, lat, lon)
+                                    placement.layout(self.tile, self.options, self.vertexcache, x+xinc*coshdg-zinc*sinhdg, None, z+xinc*sinhdg+zinc*coshdg)
+                                    placements.append(placement)
+                        elif __debug__: print "Missing navaid type %d" % i
+                self.navaidplacements[self.tile]=placements
 
             # labels
+            progress.Update(15, 'Layout')
             self.codeslist=glGenLists(1)
             glNewList(self.codeslist, GL_COMPILE)
             glColor3f(1.0, 0.25, 0.25)	# Labels are pink
@@ -1964,8 +1918,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         # - with terraintoo if vertexcache has been flushed
         #print "i", objectstoo, runwaysandterraintoo
         if terraintoo:
-            if self.meshlist: glDeleteLists(self.meshlist, 1)
-            self.meshlist=0
             if self.codeslist: glDeleteLists(self.codeslist, 1)
             self.codeslist=0
 
