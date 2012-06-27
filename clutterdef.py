@@ -60,8 +60,8 @@ class BBox:
 # __str__
 # layername
 # setlayer
-# allocate -> (re)allocate into vertexcache
-# flush -> discard vertexcache
+# allocate -> (re)allocate into instance VBO
+# flush -> forget instance VBO allocation
 #
 
 def ClutterDefFactory(filename, vertexcache, lookup, defs):
@@ -106,8 +106,6 @@ class ClutterDef:
     def __init__(self, filename, vertexcache, lookup, defs):
         self.filename=filename
         if filename and vertexcache:
-            if filename[0]=='*':	# this application's resource
-                self.filename=join('Resources', filename[1:])
             self.texpath=dirname(self.filename)        
             co=sep+'custom objects'+sep
             if co in self.filename.lower():
@@ -419,7 +417,6 @@ class ObjectDef(ClutterDef):
                     self.texerr=IOError(0,e.strerror,texture)
                 if self.poly:
                     self.texture_draped=self.texture
-            self.allocate(vertexcache)
             self.draped=draped
 
     def allocate(self, vertexcache):
@@ -436,8 +433,6 @@ class ObjectDef(ClutterDef):
         else:
             children=[]
         self.allocate(vertexcache)
-        for p in children:
-            p[1].allocate(vertexcache)
         canvas.glstate.set_instance(vertexcache)
         xoff=canvas.GetClientSize()[0]-ClutterDef.PREVIEWSIZE
         glViewport(xoff, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
@@ -567,7 +562,6 @@ class ObjectFallback(ObjectDef):
         self.bbox=BBox(-0.5,0.5,-0.5,0.5)
         self.height=1.0
         self.base=None
-        self.allocate(vertexcache)
         self.draped=[]
         self.texture_draped=0
 
@@ -661,6 +655,16 @@ class AutoGenPointDef(ObjectDef):
                 continue
             self.children.append([childname, definition, (p[0]-hanchor)*scale, (vanchor-p[1])*scale, p[2]])
             self.height=max(self.height,definition.height)
+
+    def allocate(self, vertexcache):
+        ObjectDef.allocate(self, vertexcache)
+        for p in self.children:
+            p[1].allocate(vertexcache)
+
+    def flush(self):
+        ObjectDef.flush(self)
+        for p in self.children:
+            p[1].flush()
 
 
 class PolygonDef(ClutterDef):
@@ -981,6 +985,17 @@ class FacadeDef(PolygonDef):
 
         h.close()
 
+    # Skip allocation/deallocation of children - assumed that they're allocated on layout and flushed globally
+    #def allocate(self, vertexcache):
+    #    PolygonDef.allocate(self, vertexcache)
+    #    for p in self.children:
+    #        p[1].allocate(vertexcache)
+    #
+    #def flush(self):
+    #    PolygonDef.flush(self)
+    #    for p in self.children:
+    #        p[1].flush()
+
     def preview(self, canvas, vertexcache):
         if self.version<1000:
             return PolygonDef.preview(self, canvas, vertexcache,
@@ -994,7 +1009,6 @@ class FacadeDef(PolygonDef):
             if s.width>=maxsize: spelling=s
         maxsize=max(spelling.width, maxsize)
         pad=(maxsize-spelling.width)/2
-        canvas.glstate.set_instance(vertexcache)
         xoff=canvas.GetClientSize()[0]-ClutterDef.PREVIEWSIZE
         glViewport(xoff, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
@@ -1021,6 +1035,11 @@ class FacadeDef(PolygonDef):
             hoffset-=segment.width
         glEnd()
         hoffset=0
+        for segment in spelling.segments:
+            for child in segment.children:
+                (childname, definition, is_draped, xdelta, ydelta, zdelta, hdelta)=child
+                definition.allocate(vertexcache)
+        canvas.glstate.set_instance(vertexcache)
         for segment in spelling.segments:
             for child in segment.children:
                 (childname, definition, is_draped, xdelta, ydelta, zdelta, hdelta)=child
@@ -1236,7 +1255,7 @@ class NetworkDef(PolygonDef):
                     self.height=(0,round(height,1))
                 else:
                     self.height=(0,round(-height,1))
-                print "New height", self.height[1]
+                if __debug__: print "New height", self.height[1]
 
         # Calculate height from segments eg LocalRoadBridge
         if not self.objs:
@@ -1245,7 +1264,7 @@ class NetworkDef(PolygonDef):
                 height=min(height,vert1,vert2)
             if height<-2:	# arbitrary - allow for foundations
                 self.height=(0,round(-height,1))
-                print "New height", self.height[1]
+                if __debug__: print "New height", self.height[1]
 
         self.fittomesh=(self.height!=None)
             
@@ -1255,7 +1274,7 @@ class NetworkDef(PolygonDef):
             o.flush()
         
     def preview(self, canvas, vertexcache):
-        print "Preview", self.name, self.width, self.length, self.height
+        if __debug__: print "Preview", self.name, self.width, self.length, self.height
         self.allocate(vertexcache)
         canvas.glstate.set_instance(veretxcache)
         glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
@@ -1281,7 +1300,7 @@ class NetworkDef(PolygonDef):
         canvas.glstate.set_cull(False)
         glBegin(GL_QUADS)
         for (lat1, vert1, s1, lat2, vert2, s2) in self.segments:
-            print lat1, vert1, s1, lat2, vert2, s2
+            #print lat1, vert1, s1, lat2, vert2, s2
             # repeat 4 times to get pylons
             length=0
             for l in range(4):
@@ -1299,7 +1318,7 @@ class NetworkDef(PolygonDef):
         canvas.glstate.set_cull(True)
         for i in range(len(self.objs)):
             (filename, lateral, onground, freq, offset)=self.objs[i]
-            print lateral, freq, offset, filename
+            #print lateral, freq, offset, filename
             obj=self.objdefs[i]
             if not freq: freq=self.length*4
             glPushMatrix()

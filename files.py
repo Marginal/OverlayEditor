@@ -699,6 +699,7 @@ class VertexCache:
         self.meshcache=[]
         self.instance_data=empty((0,5),float32)
         self.instance_pending=[]
+        self.instance_valid=False
         self.instance_count=0
         self.dynamic_data=empty((0,6),float32)
         self.dynamic_pending={}
@@ -727,14 +728,16 @@ class VertexCache:
         else:
             return False
 
-    def allocate_dynamic(self, placement):
+    def allocate_dynamic(self, placement, alloc):
         # cache geometry data, but don't update OpenGL arrays yet
         assert isinstance(placement,Clutter)
-        if placement.dynamic_data is None:
+        if not alloc:
             # Placement's layout is cleared (e.g. prior to deletion) remove from VBO on next rebuild
             self.dynamic_pending.pop(placement,False)
             placement.base=None
         else:
+            assert placement.dynamic_data is not None
+            assert placement.dynamic_data.size	# shouldn't have tried to allocate if no data
             self.dynamic_pending[placement]=True
             self.dynamic_valid=False	# new geometry -> need to update OpenGL
 

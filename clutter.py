@@ -4,14 +4,18 @@
 # clone -> make a new copy, minus layout
 # load -> read definition
 # location -> returns (average) lat/lon
-# layout -> fit to terrain
+# layout -> fit to terrain, allocate into VBO(s)
 # clearlayout -> clear above
+# flush -> clear dynamic VBO allocation (but retain layout) - note doesn't clear instance VBO allocation since def may be shared
 # move -> move and layout
 # movenode -> move - no layout
 # updatenode -> move node - no layout
 
+# Clutter (except for DrapedImage) not in the current tile retain their layout, but not their VBO allocation.
+
 from math import atan2, ceil, cos, degrees, floor, hypot, pi, radians, sin, tan
-from numpy import array, array_equal, concatenate, empty, float32, float64
+from numpy import array, array_equal, concatenate, float32, float64
+from os.path import join
 from sys import maxint
 if __debug__:
     import time
@@ -81,6 +85,8 @@ class Clutter:
         self.definition=None
         self.lat=lat		# For centreing etc
         self.lon=lon
+        self.dynamic_data=None	# Data for inclusion in VBO
+        self.base=None		# Offset when allocated in VBO
         
     def position(self, tile, lat, lon):
         # returns (x,z) position relative to centre of enclosing tile
@@ -96,8 +102,6 @@ class Object(Clutter):
         self.hdg=hdg
         self.y=y
         self.matrix=None
-        self.dynamic_data=None	# Above laid out as array for inclusion in VBO
-        self.base=None		# Offset in VBO
 
     def __str__(self):
         return '<Object "%s" %11.6f %10.6f %d %s>' % (
@@ -108,10 +112,12 @@ class Object(Clutter):
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
-            filename=lookup[self.name].file
+            if self.name.startswith('*'):	# this application's resource
+                filename=join('Resources', self.name[1:])
+            else:
+                filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
-                self.definition.allocate(vertexcache)	# ensure allocated
             else:
                 defs[filename]=self.definition=ObjectDef(filename, vertexcache, lookup, defs)
             return True
@@ -127,7 +133,6 @@ class Object(Clutter):
                     lookup[self.name]=PaletteEntry(self.name)
                 if filename in defs:
                     self.definition=defs[filename]
-                    self.definition.allocate(vertexcache)	# ensure allocated
                 else:
                     defs[filename]=self.definition=ObjectFallback(filename, vertexcache, lookup, defs)
             return False
@@ -143,7 +148,8 @@ class Object(Clutter):
 
     def draw_instance(self, glstate, selected, picking):
         obj=self.definition
-        if obj.vdata is None: return
+        if obj.vdata is None: return	# e.g. .agp base
+        assert self.islaidout() and obj.base is not None, self
         glLoadMatrixf(self.matrix)
         if picking:
             assert not glstate.cull
@@ -174,6 +180,7 @@ class Object(Clutter):
             glstate.set_cull(True)
             glstate.set_poly(True)
             glstate.set_depthtest(True)
+        assert self.islaidout() and self.base is not None, self
         glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
 
     def draw_nodes(self, glstate, selectednode):
@@ -181,13 +188,22 @@ class Object(Clutter):
 
     def clearlayout(self, vertexcache):
         self.matrix=None
-        self.dynamic_data=None	# Can be removed from VBO
-        vertexcache.allocate_dynamic(self)
+        self.dynamic_data=None	# Can be removed from dynamic VBO
+        self.flush(vertexcache)
 
     def islaidout(self):
         return self.matrix is not None
 
-    def layout(self, tile, options, vertexcache, x=None, y=None, z=None, hdg=None, meshtris=None):
+    def flush(self, vertexcache):
+        vertexcache.allocate_dynamic(self, False)
+
+    def layout(self, tile, options, vertexcache, x=None, y=None, z=None, hdg=None, meshtris=None, recalc=True):
+        if self.islaidout() and not recalc:
+            # just ensure allocated
+            self.definition.allocate(vertexcache)
+            if self.dynamic_data is not None: vertexcache.allocate_dynamic(self, True)
+            return
+
         if not (x and z):
             x,z=self.position(tile, self.lat, self.lon)
         if y is not None:
@@ -198,6 +214,7 @@ class Object(Clutter):
             self.hdg=hdg
         h=radians(self.hdg)
         self.matrix=array([cos(h),0.0,sin(h),0.0, 0.0,1.0,0.0,0.0, -sin(h),0.0,cos(h),0.0, x,self.y,z,1.0],float32)
+        self.definition.allocate(vertexcache)	# ensure allocated
         # draped & poly_os
         if not self.definition.draped: return
         coshdg=cos(h)
@@ -212,7 +229,7 @@ class Object(Clutter):
                 vy=vertexcache.height(tile,options, vx, vz, meshtris)
                 tris.append([vx,vy,vz,v[3],v[4],0])
             self.dynamic_data=array(drape(tris, tile, options, vertexcache, meshtris), float32).flatten()
-        vertexcache.allocate_dynamic(self)
+        vertexcache.allocate_dynamic(self, True)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         self.lat=max(tile[0], min(tile[0]+maxres, self.lat+dlat))
@@ -240,7 +257,6 @@ class AutoGenPoint(Object):
             filename=lookup[self.name].file
             if filename in defs:
                 self.definition=defs[filename]
-                self.definition.allocate(vertexcache)	# ensure allocated
             else:
                 defs[filename]=self.definition=AutoGenPointDef(filename, vertexcache, lookup, defs)
         except:
@@ -255,7 +271,6 @@ class AutoGenPoint(Object):
                     lookup[self.name]=PaletteEntry(self.name)
                 if filename in defs:
                     self.definition=defs[filename]
-                    self.definition.allocate(vertexcache)	# ensure allocated
                 else:
                     defs[filename]=self.definition=ObjectFallback(filename, vertexcache, lookup, defs)
             return False
@@ -266,7 +281,6 @@ class AutoGenPoint(Object):
             assert definition.filename in defs	# Child Def should have been created when AutoGenPointDef was loaded
             placement=Object(childname, self.lat, self.lon, self.hdg)
             placement.definition=definition
-            placement.definition.allocate(vertexcache)	# ensure allocated
             self.placements.append([placement, xdelta, zdelta, hdelta])
         return True
 
@@ -285,15 +299,27 @@ class AutoGenPoint(Object):
         for p in self.placements:
             p[0].clearlayout(vertexcache)
 
+    def flush(self, vertexcache):
+        Object.flush(self, vertexcache)
+        for p in self.placements:
+            p[0].flush(vertexcache)
+
     if __debug__:
-        def layoutp(self, tile, options, vertexcache):
+        def layoutp(self, tile, options, vertexcache, recalc=True):
             try:
                 from cProfile import runctx
-                runctx('self.layout2(tile, options, vertexcache)', globals(), locals(), 'profile.dmp')
+                runctx('self.layout2(tile, options, vertexcache, recalc)', globals(), locals(), 'profile.dmp')
             except:
                 print_exc()
 
-    def layout(self, tile, options, vertexcache):
+    def layout(self, tile, options, vertexcache, recalc=True):
+        if self.islaidout() and not recalc:
+            # just ensure allocated
+            Object.layout(self, tile, options, vertexcache, recalc=False)
+            for p in self.placements:
+                p[0].layout(tile, options, vertexcache, recalc=False)
+            return
+
         # We're likely to be doing a lot of height testing and draping, so pre-compute relevant mesh
         # triangles on the assumption that all children are contained in .agp's "floorplan"
         x,z=self.position(tile, self.lat, self.lon)
@@ -348,8 +374,6 @@ class Polygon(Clutter):
         self.closed=True	# Open or closed
         self.col=COL_POLYGON	# Outline colour
         self.points=[]		# list of windings in world space (x,y,z)
-        self.dynamic_data=None	# Above laid out as array for inclusion in VBO
-        self.base=None		# Offset in VBO
 
     def __str__(self):
         return '<"%s" %d %s>' % (self.name,self.param,self.points)
@@ -391,6 +415,7 @@ class Polygon(Clutter):
         pass
 
     def draw_dynamic(self, glstate, selected, picking):
+        assert self.islaidout() and self.base is not None, self
         if not picking:
             glstate.set_texture(None)
             glstate.set_color(selected and COL_SELECTED or None)
@@ -434,10 +459,13 @@ class Polygon(Clutter):
     def clearlayout(self, vertexcache):
         self.points=[]
         self.dynamic_data=None	# Can be removed from VBO
-        vertexcache.allocate_dynamic(self)
+        self.flush(vertexcache)
 
     def islaidout(self):
         return self.dynamic_data is not None
+
+    def flush(self, vertexcache):
+        vertexcache.allocate_dynamic(self, False)
 
     def layout_nodes(self, tile, options, vertexcache, selectednode):
         self.lat=self.lon=0
@@ -483,11 +511,15 @@ class Polygon(Clutter):
 
         return selectednode
 
-    def layout(self, tile, options, vertexcache, selectednode=None):
+    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
+        if self.islaidout() and not recalc:
+            # just ensure allocated
+            vertexcache.allocate_dynamic(self, True)
+            return selectednode
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
         col=self.nonsimple and COL_NONSIMPLE or self.col
         self.dynamic_data=concatenate([array(p+col,float32) for w in self.points for p in w])
-        vertexcache.allocate_dynamic(self)
+        vertexcache.allocate_dynamic(self, True)
         return selectednode
 
     def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
@@ -627,9 +659,9 @@ class Fitted(Polygon):
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
 
-    def layout(self, tile, options, vertexcache, selectednode=None):
+    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
         # insert intermediate nodes XXX
-        return Polygon.layout(self, tile, options, vertexcache, selectednode)
+        return Polygon.layout(self, tile, options, vertexcache, selectednode, recalc)
 
 
 class Draped(Polygon):
@@ -645,9 +677,6 @@ class Draped(Polygon):
     gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
     gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
     gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
-
-    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
-        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
 
     def clone(self):
         return Draped(self.name, self.param, [list(w) for w in self.nodes])
@@ -684,6 +713,7 @@ class Draped(Polygon):
             return u'%s  Tex hdg\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
     def draw_dynamic(self, glstate, selected, picking):
+        assert self.islaidout() and self.base is not None, self
         if self.nonsimple:
             Polygon.draw_dynamic(self, glstate, selected, picking)
             return
@@ -786,7 +816,11 @@ class Draped(Polygon):
         else:
             return Polygon.updatenode(self, node, lat, lon, tile, options, vertexcache)
 
-    def layout(self, tile, options, vertexcache, selectednode=None, tls=None):
+    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True, tls=None):
+        if self.islaidout() and not recalc:
+            # just ensure allocated
+            vertexcache.allocate_dynamic(self, True)
+            return selectednode
         tess=tls and tls.tess or Draped.tess
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
         # Tessellate to generate tri vertices with UV data, and check polygon is simple
@@ -811,15 +845,14 @@ class Draped(Polygon):
             gluTessEndPolygon(tess)
 
             if __debug__:
-                if not tris: print "Draped layout failed - no tris"
+                if not tris: print "Draped layout failed for %s - no tris" % self
 
         except:
             # Combine required -> not simple
             if __debug__:
-                print "Draped layout failed:"
+                print "Draped layout failed for %s:" % self
                 print_exc()
                 tris=[]
-        if __debug__: print "%6.3f time to tessellate" % (time.clock()-clock)
 
         if not tris:
             self.nonsimple=True
@@ -829,7 +862,7 @@ class Draped(Polygon):
         else:
             self.dynamic_data=array(drape(tris, tile, options, vertexcache, csgt=tls and tls.csgt), float32).flatten()
         if not tls:	# defer allocation if called in thread context
-            vertexcache.allocate_dynamic(self)
+            vertexcache.allocate_dynamic(self, True)
         return selectednode
 
 
@@ -865,6 +898,7 @@ class Draped(Polygon):
 
 
 # For draping a map image directly. name is the basename of image filename.
+# Note isn't added to global defs, so has to be flushed separately.
 class DrapedImage(Draped):
 
     def load(self, lookup, defs, vertexcache, usefallback=True):
@@ -1045,6 +1079,7 @@ class Facade(Polygon):
             p.draw_instance(glstate, selected, picking)
 
     def draw_dynamic(self, glstate, selected, picking):
+        assert self.islaidout() and self.base is not None, self
         fac=self.definition
         if self.nonsimple:
             Polygon.draw_dynamic(self, glstate, selected, picking)
@@ -1247,8 +1282,20 @@ class Facade(Polygon):
         self.datalen=self.rooflen=0
         for p in self.placements:
             p.clearlayout(vertexcache)
+        self.placements=[]
 
-    def layout(self, tile, options, vertexcache, selectednode=None):
+    def flush(self, vertexcache):
+        Polygon.flush(self, vertexcache)
+        for p in self.placements:
+            p.flush(vertexcache)
+
+    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
+        if self.islaidout() and not recalc:
+            # just ensure allocated
+            for p in self.placements:
+                p.layout(tile, options, vertexcache, recalc=False)
+            return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
+
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
         if self.definition.version>=1000:
             return self.layout10(tile, options, vertexcache, selectednode)
@@ -1416,7 +1463,7 @@ class Facade(Polygon):
             self.dynamic_data=concatenate([array(p+COL_NONSIMPLE,float32) for w in self.points for p in w])
 
         self.datalen=len(self.dynamic_data)/6
-        vertexcache.allocate_dynamic(self)
+        vertexcache.allocate_dynamic(self, True)
         return selectednode
 
     def layout10(self, tile, options, vertexcache, selectednode):
@@ -1504,7 +1551,6 @@ class Facade(Polygon):
                     (childname, definition, is_draped, xdelta, ydelta, zdelta, hdelta)=child
                     placement=Object(childname, self.lat, self.lon, hdg+hdelta)
                     placement.definition=definition		# Child Def should have been created when FacadeDef was loaded
-                    placement.definition.allocate(vertexcache)	# ensure allocated
                     sz=hoffset+zdelta*hscale+xdelta*sm*(1+zdelta/segment.width)		# scale z, allowing for miter if 1st segment 
                     childx=x+xdelta*coshdg-sz*sinhdg
                     childz=z+xdelta*sinhdg+sz*coshdg
@@ -1562,7 +1608,7 @@ class Facade(Polygon):
                 self.rooflen=len(roofdata)/6
                 self.dynamic_data=concatenate((self.dynamic_data, roofdata))
 
-        vertexcache.allocate_dynamic(self)
+        vertexcache.allocate_dynamic(self, True)
         return selectednode
 
 
@@ -1639,7 +1685,11 @@ class Forest(Fitted):
         self.nodes.pop(i)
         return self.layout(tile, options, vertexcache, (i-1,0))
 
-    def layout(self, tile, options, vertexcache, selectednode=None):
+    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
+        if self.islaidout() and not recalc:
+            # just ensure allocated
+            return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
+
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
 
         # tessellate. This is just to check polygon is simple
@@ -1664,7 +1714,7 @@ class Forest(Fitted):
 
         col=self.nonsimple and COL_NONSIMPLE or self.col
         self.dynamic_data=concatenate([array(p+col,float32) for w in self.points for p in w])
-        vertexcache.allocate_dynamic(self)
+        vertexcache.allocate_dynamic(self, True)
         return selectednode
 
 
@@ -1717,9 +1767,9 @@ class Line(Polygon):
             oc=self.closed and 'Closed' or 'Open'
             return u'%s  %s\u2195  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
 
-    def layout(self, tile, options, vertexcache, selectednode=None):
+    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
         self.closed=(self.param and True)
-        return Polygon.layout(self, tile, options, vertexcache, selectednode)
+        return Polygon.layout(self, tile, options, vertexcache, selectednode, recalc)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam=min(dparam, 1-self.param)	# max 1
@@ -1753,14 +1803,12 @@ class Network(Fitted):
         try:
             if not self.name: raise IOError	# not in roads.net
             self.definition=defs[self.name]
-            self.definition.allocate(vertexcache)	# ensure allocated
             notfallback=True
         except:
             if __debug__:
                 print_exc()
             if usefallback:
                 self.definition=NetworkFallback('None', None, self.index)
-                self.definition.allocate(vertexcache)	# ensure allocated
             notfallback=False
 
         if False:#XXXself.definition.height==None:
@@ -1826,12 +1874,12 @@ class Network(Fitted):
         self.laidoutwithelevation=False
         self.points=[]
         self.dynamic_data=None	# Can be removed from VBO
-        vertexcache.allocate_dynamic(self)
+        vertexcache.allocate_dynamic(self, False)
 
     def islaidout(self):
         return self.dynamic_data is not None
 
-    def layout(self, tile, options, vertexcache, selectednode=None):
+    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
         # XXX handle new
         self.laidoutwithelevation=options&Prefs.ELEVATION
         controlnodes=[i for i in self.nodes[0] if i[0]]

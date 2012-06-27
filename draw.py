@@ -440,13 +440,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.clickmode==ClickModes.DragNode:
             assert len(self.selected)==1
             self.selectednode=list(self.selected)[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
-            self.trashlists(True)	# recompute obj and pick lists
         elif self.clickmode==ClickModes.Drag:
             for placement in self.selected:
                 placement.layout(self.tile, self.options, self.vertexcache)
-            self.trashlists(True)	# recompute obj and pick lists
-        elif self.clickmode==ClickModes.DragBox:
-            self.trashlists()		# selection changed
         self.clickmode=None
         self.Refresh()	# get rid of drag box
         event.Skip()
@@ -639,8 +635,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         if not self.valid:
             # Sea
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-            glColor3f(0.25, 0.25, 0.50)
-            glBindTexture(GL_TEXTURE_2D, 0)
+            self.glstate.set_color((0.25, 0.25, 0.50))
+            self.glstate.set_texture(0)
             glBegin(GL_QUADS)
             glVertex3f( onedeg*cos(radians(1+self.tile[0]))/2, 0, -onedeg/2)
             glVertex3f( onedeg*cos(radians(self.tile[0]))/2, 0,  onedeg/2)
@@ -904,7 +900,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                     glMatrixMode(GL_PROJECTION)
                     glPopMatrix()
 
-                    self.trashlists()	# selection changes
                     self.Refresh()
                     self.frame.ShowSel()
                     return
@@ -948,7 +943,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                             glMatrixMode(GL_PROJECTION)
                             glPopMatrix()
 
-                            self.trashlists()	# selection changes
                             self.Refresh()
                             self.frame.ShowSel()
                             return		# Just abandon remaining queries
@@ -1003,6 +997,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 self.clickmode=ClickModes.DragBox	# Can't leave as ClickModes.Undecided
             self.Refresh()
+            self.frame.ShowSel()
             return
 
         if self.clickmode==ClickModes.DragBox:		# drag box - add or remove all selections
@@ -1022,7 +1017,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.selectsaved=self.selected
             else:
                 self.clickmode=ClickModes.Drag
-            self.trashlists()	# selection changes
             if self.clickctrl:
                 for i in selections:
                     if i not in self.selected:
@@ -1138,7 +1132,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.selected=set([placement])
         self.selectednode=None
 
-        self.trashlists(True)	# selection changes
         self.Refresh()
         self.frame.ShowSel()
 
@@ -1236,7 +1229,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.undostack.append(UndoEntry(self.tile, UndoEntry.DEL, deleted))
             self.selected=set()
 
-        self.trashlists(True)	# selection changes
         self.Refresh()
         self.frame.ShowSel()
         return True
@@ -1246,7 +1238,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         # returns new location
         if not self.undostack: return False	# can't happen
         undo=self.undostack.pop()
-        self.trashlists(True)
         self.goto(undo.tile)	# force assignment of placements to layers
         avlat=0
         avlon=0
@@ -1288,7 +1279,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.Refresh()
         self.selected=set()
         self.selectednode=None
-        self.trashlists()	# selection changed
 
     def allsel(self, withctrl):
         # fake up mouse drag
@@ -1300,7 +1290,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.select()
         self.clickmode=None
         self.clickpos=None
-        self.trashlists()	# selection changed
 
     def nextsel(self, name, withctrl, withshift):
         # returns new location or None
@@ -1334,7 +1323,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                     break
             else:
                 return None
-        self.trashlists(True)	# selection changes
         self.selectednode=None
         self.frame.ShowSel()
         return (placement.lat, placement.lon)
@@ -1383,12 +1371,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.netdefs=netdefs
         self.netfile=netfile	# logical name of .net file used
         self.codes={}		# need to re-layout airports
+        if self.codeslist: glDeleteLists(self.codeslist, 1)
+        self.codeslist=0
         self.lookup=lookup
         self.defs=dict([(x.name, x) for x in netdefs[1:] if x])
         self.vertexcache.reset(terrain, dsfdirs)
-        self.trashlists(True, True)
         self.imageryprovider=prefs.imageryprovider
-        self.imagery.reset()
+        self.imagery.reset(self.vertexcache)
         self.tile=(0,999)	# force reload on next goto
 
         if placements!=None:
@@ -1417,7 +1406,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         else:
                             placement.name='Network #%03d    ' % placement.index	# fallback
 
-        self.background=None
+        self.background=None	# Force reload of texture in next line
         self.setbackground(prefs)
         self.clipboard=[]	# layers might have changed
         self.undostack=[]	# layers might have changed
@@ -1458,35 +1447,43 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.frame.ShowSel()
             self.valid=False
             self.tile=newtile
-            self.vertexcache.flush()
-            # flush all array allocations
+            self.vertexcache.flush()	# clear VBOs
+            # forget all instance VBO allocations
             for Def in self.defs.values(): Def.flush()
             self.selections=set()
-            self.trashlists(True, True)
 
             progress=wx.ProgressDialog('Loading', 'Terrain', 16, self.frame)
             progress.SetSize
             self.vertexcache.loadMesh(newtile, options)
 
             progress.Update(1, 'Terrain textures')
-            self.vertexcache.getMesh(newtile, options)	# allocates into array
+            self.vertexcache.getMesh(newtile, options)	# allocates into VBO
 
             progress.Update(2, 'Mesh')
             self.vertexcache.getMeshdata(newtile, options)
 
             if options&Prefs.ELEVATION!=self.options&Prefs.ELEVATION:
-                # clear layers
+                # Elevation preference chaged - clear all layout (other than airports)
                 for key in self.placements.keys():
                     placements=reduce(lambda x,y:x+y, self.placements.pop(key))
                     self.unsorted[key]=placements
-                    # invalidate all heights
+                    # invalidate all layout
                     for placement in placements:
                         placement.clearlayout(self.vertexcache)
                 for key in self.navaidplacements.keys():
-                    placements=reduce(lambda x,y:x+y, self.navaidplacements.pop(key))
-                    # invalidate all heights
-                    for placement in placements:
+                    # invalidate all layout
+                    for placement in self.navaidplacements.pop(key):
                         placement.clearlayout(self.vertexcache)
+            else:
+                # Just a new tile
+                for key in self.placements.keys():
+                    # forget all dynamic VBO allocation
+                    for placement in reduce(lambda x,y:x+y, self.placements[key]):
+                        placement.flush(self.vertexcache)
+                for key in self.navaidplacements.keys():
+                    # forget all dynamic VBO allocation
+                    for placement in self.navaidplacements[key]:
+                        placement.flush(self.vertexcache)
                 
             self.options=options
 
@@ -1528,9 +1525,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                     self.placements[newtile][placement.definition.layer].append(placement)
                 if __debug__: print "%6.3f time in load&layout" % (time.clock()-clock)
             else:
+                # This tile has been previously viewed - placements are already loaded
                 for placements in self.placements[newtile]:
                     for placement in placements:
-                        placement.definition.allocate(self.vertexcache)
+                        placement.layout(newtile, options, self.vertexcache, recalc=False)	# ensure allocated
 
             # Lay out runways
             progress.Update(13, 'Airports')
@@ -1835,9 +1833,14 @@ class MyGL(wx.glcanvas.GLCanvas):
                                     placements.append(placement)
                         elif __debug__: print "Missing navaid type %d" % i
                 self.navaidplacements[self.tile]=placements
+            else:
+                # This tile has been previously viewed - placements are already loaded
+                for placement in self.navaidplacements[newtile]:
+                    placement.layout(newtile, options, self.vertexcache, recalc=False)	# ensure allocated
 
             # labels
             progress.Update(15, 'Layout')
+            if self.codeslist: glDeleteLists(self.codeslist, 1)
             self.codeslist=glGenLists(1)
             glNewList(self.codeslist, GL_COMPILE)
             glColor3f(1.0, 0.25, 0.25)	# Labels are pink
@@ -1851,20 +1854,16 @@ class MyGL(wx.glcanvas.GLCanvas):
                     glBitmap(8,13, 16,6, 8,0, fixed8x13[ord(c)])
             glEndList()
 
-            # Background image
+            # Background image - always recalc since may span multiple tiles
             if self.background:
                 nodes=self.background.nodes[0]
-                if not self.background.islaidout():
-                    for i in range(len(nodes)):
-                        if (int(floor(nodes[i][1])),int(floor(nodes[i][0])))==newtile:
-                            self.background.layout(newtile, options, self.vertexcache)
-                            break
+                for i in range(len(nodes)):
+                    if (int(floor(nodes[i][1])),int(floor(nodes[i][0])))==newtile:
+                        self.background.layout(newtile, options, self.vertexcache)
+                        break
                 else:
-                    for i in range(len(nodes)):
-                        if (int(floor(nodes[i][0])),int(floor(nodes[i][1])))==newtile:
-                            break
-                    else:
-                        self.background.clearlayout()
+                    self.background.clearlayout(self.vertexcache)
+            self.imagery.reset(self.vertexcache)	# Always recalc
 
             # Done
             progress.Update(16, 'Done')
@@ -1912,15 +1911,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             raise ArithmeticError
         
-    def trashlists(self, picktoo=False, terraintoo=False):
-        # Should be called when selection changed
-        # - with picktoo if objects have changed
-        # - with terraintoo if vertexcache has been flushed
-        #print "i", objectstoo, runwaysandterraintoo
-        if terraintoo:
-            if self.codeslist: glDeleteLists(self.codeslist, 1)
-            self.codeslist=0
-
     def getworldloc(self, mx, my):
         if wx.VERSION >= (2,9):
             self.SetCurrent(self.context)

@@ -241,12 +241,14 @@ class Imagery:
             t.join()
 
 
-    def reset(self):
-        # Called on reload. TexCache has been emptied, so forget textures.
-        # Don't need to force full re-layout because we don't reload mesh from DSFs on reload.
+    def reset(self, vertexcache):
+        # Called on reload or on new tile. Empty the cache and forget allocations since:
+        # a) in the case of reload, textures have been dropped and so would need to be reloaded anyway;
+        # b) try to limit cluttering up the VBO with allocations we may not need again;
+        # c) images by straddle multiple tiles and these would need to be recalculated anyway.
         for placement in self.placementcache.itervalues():
-            if placement and placement.definition:
-                placement.definition.texture=0
+            if placement: placement.clearlayout(vertexcache)
+        self.placementcache={}
 
 
     def goto(self, imageryprovider, loc, dist, screensize):
