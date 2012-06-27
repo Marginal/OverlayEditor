@@ -5,6 +5,8 @@ from sys import platform, getfilesystemencoding
 
 from version import appname, appversion
 
+if __debug__:
+    from traceback import print_exc
 
 class Prefs:
     TERRAIN=1
@@ -67,11 +69,11 @@ class Prefs:
                     pass
             handle.close()
         except:
-            pass
+            if __debug__: print_exc()
 
     def write(self):
         try:
-            handle=codecs.open(self.filename, 'wt', 'utf-8')
+            handle=codecs.open(self.filename, 'w', 'utf-8')
             handle.write('%s\n%s\n*options=%d\n' % (
                 self.xplane, self.package, self.options))
             if self.imageryprovider:
@@ -81,4 +83,4 @@ class Prefs:
                 handle.write('%s="%s" %s\n' % (pkg, args[0], ' '.join(['%11.6f' % i for i in args[1:]])))
             handle.close()
         except:
-            pass
+            if __debug__: print_exc()
