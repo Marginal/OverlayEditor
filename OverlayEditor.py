@@ -537,7 +537,6 @@ class BackgroundDialog(wx.Dialog):
             self.image=dlg.GetPath()
             if self.image.startswith(self.prefix):
                 self.image=curdir+self.image[len(self.prefix):]
-            print self.image#XXX
         dlg.Destroy()
         self.OnUpdate(event)
 
@@ -583,6 +582,8 @@ class BackgroundDialog(wx.Dialog):
         self.path.SetFocus()	# Prevent kill focus event causing crash on wxMac 2.5
         self.Destroy()
         self.parent.bkgd=None
+        self.parent.canvas.clearsel()
+        self.parent.ShowSel()
         # Update background in prefs
         prefs.packageprops.pop(prefs.package,False)
         if self.parent.canvas.background:
@@ -590,7 +591,7 @@ class BackgroundDialog(wx.Dialog):
             for n in self.parent.canvas.background.nodes[0]:
                 p+=n[:2]
             prefs.packageprops[prefs.package]=p
-            print prefs.package, prefs.packageprops[prefs.package] # XXX
+            if __debug__:print prefs.package, prefs.packageprops[prefs.package]
 
 
 # The app

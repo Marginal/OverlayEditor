@@ -296,12 +296,12 @@ class Imagery:
         #print self.loc, width, screensize.width, 1/ppm, ppm, level, ntiles, cx, cy
 
         # Get 6x6 tiles that cover the same area as 3x3 at the next lower level (this is to prevent weirdness when zooming in).
-        #cx=2*(cx/2)
-        #cy=2*(cy/2)
+        cx=2*(cx/2)
+        cy=2*(cy/2)
         placements=[]
         fail1=False	# At least one placement at this level failed - typically cos imagery not available at this location/level
         pending=False	# At least one placement at this level is still loading
-        for (x,y) in self.spiral(7,7):
+        for (x,y) in self.spiral(6,6):
             placement=self.getplacement(cx+x,cy+y,level,True)		# Initiate fetch
             if not placement:
                 fail1=True
@@ -310,14 +310,14 @@ class Imagery:
             else:
                 placements.append(placement)
 
-        #print fail1, pending
+        if __debug__: print level, fail1, pending
         if (fail1 or pending) and level>levelmin:
-            # Not all imagery available at this level. Go up and get 3x3 tiles around the centre tile.
+            # Not all imagery currently available at desired level. Go up and get 3x3 tiles around the centre tile.
             level-=1
             cx/=2
             cy/=2
             fail2=False
-            for (x,y) in self.spiral(5,5):
+            for (x,y) in self.spiral(3,3):
                 placement=self.getplacement(cx+x,cy+y,level,fail1)	# Initiate fetch of imagery only if desired level failed
                 if not (placement and placement.islaidout()):
                     fail2=fail1
@@ -325,7 +325,7 @@ class Imagery:
                     placements.insert(0,placement)	# Insert at start so drawn under higher-level
 
             while fail2 and level>levelmin:
-                # Not all imagery available at this level. Go up and get 2x2 tiles around the centre tile.
+                # Not all imagery available at higher level either. Go up and get 3x3 tiles around the centre tile.
                 level-=1
                 cx/=2
                 cy/=2
@@ -382,9 +382,9 @@ class Imagery:
             try:
                 if __debug__: clock=time.clock()
                 filename=self.filecache.get(name)	# downloaded image or None
-                self.canvas.vertexcache.allocate_dynamic(placement)	# couldn't do this in thread context
+                self.canvas.vertexcache.allocate_dynamic(placement, True)	# couldn't do this in thread context
                 placement.definition.texture=self.canvas.vertexcache.texcache.get(filename, False, False)	# discard alpha
-                if __debug__: print "%6.3f time in imagery load" % (time.clock()-clock)
+                if __debug__: print "%6.3f time in imagery load   for %s" % (time.clock()-clock, placement.name)
                 assert placement.islaidout()
             except:
                 if __debug__: print_exc()
@@ -465,7 +465,11 @@ class Imagery:
         else:
             if __debug__: clock=time.clock()
             placement.layout(self.tile, self.canvas.options, self.canvas.vertexcache, tls=tls)
-            if __debug__: print "%6.3f time in imagery layout for %s" % (time.clock()-clock, placement.name)
+            if not placement.dynamic_data.size:
+                if __debug__: print "DrapedImage layout failed for %s - no tris" % placement.name
+                self.placementcache[name]=None
+            elif __debug__:
+                print "%6.3f time in imagery layout for %s" % (time.clock()-clock, placement.name)
         self.canvas.Refresh()	# Probably wanting to display this - corresponding placement will be loaded and laid out during OnPaint
 
 
