@@ -21,6 +21,7 @@ class Prefs:
         self.package=None
         self.options=Prefs.TERRAIN
         self.imageryprovider=None
+        self.imageryopacity=50	# percent
         self.packageprops={}
 
         if platform=='win32':

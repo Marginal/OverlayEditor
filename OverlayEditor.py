@@ -486,9 +486,14 @@ class BackgroundDialog(wx.Dialog):
         sizer2 = wx.StaticBoxSizer(wx.StaticBox(self, -1, 'File'), wx.VERTICAL)
         sizer.Add(sizer2, 0, wx.ALL|wx.EXPAND, pad)
 
+        sizer3 = wx.StaticBoxSizer(wx.StaticBox(self, -1, 'Opacity'))
+        sizer.Add(sizer3, 0, wx.ALL|wx.EXPAND, pad)
+        self.opacity=wx.Slider(self, -1, prefs.imageryopacity, 10, 100, style=wx.SL_LABELS)
+        sizer3.Add(self.opacity, 1, wx.ALL|wx.EXPAND, pad)
+
         if platform!='darwin':	# Mac users are used to dialogs withaout an OK button
-            sizer3=myCreateStdDialogButtonSizer(self, wx.OK)
-            sizer.Add(sizer3, 0, wx.ALL|wx.EXPAND, pad)
+            sizer4=myCreateStdDialogButtonSizer(self, wx.OK)
+            sizer.Add(sizer4, 0, wx.ALL|wx.EXPAND, pad)
 
         self.path = wx.TextCtrl(self, -1, style=wx.TE_READONLY)
         self.path.SetMinSize((300, -1))
@@ -509,6 +514,9 @@ class BackgroundDialog(wx.Dialog):
         wx.EVT_CHECKBOX(self, self.bing.GetId(), self.OnUpdate)
         wx.EVT_BUTTON(self, self.clearbtn.GetId(), self.OnClear)
         wx.EVT_BUTTON(self, self.browsebtn.GetId(), self.OnBrowse)
+        wx.EVT_SCROLL_THUMBRELEASE(self, self.OnUpdate)
+        wx.EVT_SCROLL_CHANGED(self, self.OnUpdate)	# for keyboard changes on Windows
+        #wx.EVT_COMMAND_SCROLL(self, self.opacity.GetId(), self.OnUpdate)
         wx.EVT_BUTTON(self, wx.ID_OK, self.OnClose)
         wx.EVT_BUTTON(self, wx.ID_CANCEL, self.OnClose)
         wx.EVT_CLOSE(self, self.OnClose)
@@ -567,6 +575,7 @@ class BackgroundDialog(wx.Dialog):
                 self.path.SetValue('...'+sep+label)
 
         prefs.imageryprovider=self.bing.GetValue() and 'Bing' or None
+        prefs.imageryopacity=self.opacity.GetValue()
         self.parent.canvas.setbackground(prefs, self.parent.loc, self.image)
         self.parent.canvas.goto(self.parent.loc, prefs=prefs)	# initiate imagery provider setup & loading
 

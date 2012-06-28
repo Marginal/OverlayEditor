@@ -910,6 +910,18 @@ class DrapedImage(Draped):
         # DrapedImage texture is assigned *after* layout
         return self.dynamic_data is not None and self.definition.texture
 
+    def draw_dynamic(self, glstate, selected, picking):
+        # same as Draped, but don't set color since this is set in OnPaint() and may include opacity
+        assert self.islaidout() and self.base is not None, self
+        if self.nonsimple:
+            Polygon.draw_dynamic(self, glstate, selected, picking)
+            return
+        elif not picking:
+            glstate.set_texture(self.definition.texture)
+            glstate.set_cull(True)
+            glstate.set_poly(True)
+            glstate.set_depthtest(True)
+        glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
 
 class Exclude(Fitted):
 

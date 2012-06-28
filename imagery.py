@@ -281,7 +281,7 @@ class Imagery:
             return []	# Don't do anything on startup. Can't do anything without a valid provider.
 
         # layout assumes mesh loaded
-        assert (int(floor(self.loc[0])),int(floor(self.loc[1])),self.canvas.options&Prefs.ELEVATION) in self.canvas.vertexcache.meshdata
+        assert (not self.canvas.options&Prefs.ELEVATION) or (int(floor(self.loc[0])),int(floor(self.loc[1])),self.canvas.options&Prefs.ELEVATION) in self.canvas.vertexcache.meshdata, self.canvas.vertexcache.meshdata.keys()
 
         # http://msdn.microsoft.com/en-us/library/bb259689.aspx
         width=dist+dist				# Width in m of screen (from glOrtho setup)
@@ -303,8 +303,11 @@ class Imagery:
         placements=[]
         fail1=False	# At least one placement at this level failed - typically cos imagery not available at this location/level
         pending=False	# At least one placement at this level is still loading
-        for (x,y) in self.spiral(6,6):
-            placement=self.getplacement(cx+x,cy+y,level,True)		# Initiate fetch
+        prioritybase=(1+self.provider_levelmax-level)*100
+        seq=self.spiral(6,6)
+        for i in range(len(seq)):
+            (x,y)=seq[i]
+            placement=self.getplacement(cx+x,cy+y,level,prioritybase+i,True)		# Initiate fetch
             if not placement:
                 fail1=True
             elif not placement.islaidout():
@@ -319,8 +322,11 @@ class Imagery:
             cx/=2
             cy/=2
             fail2=False
-            for (x,y) in self.spiral(3,3):
-                placement=self.getplacement(cx+x,cy+y,level,fail1)	# Initiate fetch of imagery only if desired level failed
+            prioritybase+=100
+            seq=self.spiral(3,3)
+            for i in range(len(seq)):
+                (x,y)=seq[i]
+                placement=self.getplacement(cx+x,cy+y,level,prioritybase+i,fail1)	# Initiate fetch of imagery only if desired level failed
                 if not (placement and placement.islaidout()):
                     fail2=fail1
                 else:
@@ -334,8 +340,10 @@ class Imagery:
                 #cx=(cx-1)/2
                 #cy=(cy-1)/2
                 fail2=False
-                for (x,y) in self.spiral(3,3):
-                    placement=self.getplacement(cx+x,cy+y,level,fail1)	# Initiate fetch of imagery only if desired level failed
+                prioritybase+=100
+                for i in range(len(seq)):
+                    (x,y)=seq[i]
+                    placement=self.getplacement(cx+x,cy+y,level,prioritybase+i,fail1)	# Initiate fetch of imagery only if desired level failed
                     if not (placement and placement.islaidout()):
                         fail2=fail1
                     else:
@@ -347,20 +355,22 @@ class Imagery:
 
     # Helper to return coordinates in a spiral from http://stackoverflow.com/questions/398299/looping-in-a-spiral
     def spiral(self, N, M):
-        x,y = 0,0   
+        x = y = 0
         dx, dy = 0, -1
+        retval=[]
         for dumb in xrange(N*M):
-            if abs(x) == abs(y) and [dx,dy] != [1,0] or x>0 and y == 1-x:  
+            if abs(x) == abs(y) and [dx,dy] != [1,0] or x>0 and y == 1-x:
                 dx, dy = -dy, dx            # corner, change direction
             if abs(x)>N/2 or abs(y)>M/2:    # non-square
                 dx, dy = -dy, dx            # change direction
                 x, y = -y+dx, x+dy          # jump
-            yield x, y
+            retval.append((x,y))
             x, y = x+dx, y+dy
+        return retval
 
 
     # Returns a laid-out placement if possible, or not laid-out if image is still loading, or None if not available.
-    def getplacement(self,x,y,level,fetch):
+    def getplacement(self,x,y,level,priority,fetch):
         quadkey=self.bing_quadkey(x,y,level)
         url=self.provider_url % quadkey
         name=basename(url).split('?')[0]
@@ -375,7 +385,7 @@ class Imagery:
             placement.load(self.canvas.lookup, self.canvas.defs, self.canvas.vertexcache)
             self.placementcache[name]=placement
             # Initiate fetch of image and do layout. Prioritise more detail.
-            self.q.put((1+self.provider_levelmax-level, self.initplacement, (placement,name,url)))
+            self.q.put((priority, self.initplacement, (placement,name,url)))
         else:
             placement=None
 

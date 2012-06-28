@@ -672,23 +672,16 @@ class MyGL(wx.glcanvas.GLCanvas):
         if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
 
         # Map imagery & background
-        placements=self.imagery.placements(self.d, size)	# May allocate into vertexcache
+        imagery=self.imagery.placements(self.d, size)	# May allocate into dynamic VBO
         if __debug__: print "%6.3f time to get imagery" % (time.clock()-clock)
         if self.background and self.background.islaidout():
-            placements.append(self.background)
+            imagery.append(self.background)
             if self.frame.bkgd:
                 self.selected=set([self.background])	# Override selection while dialog is open
             elif self.background in self.selected:
                 self.selected=set()
         elif self.frame.bkgd:
             self.selected=set()
-        if placements:
-            self.glstate.set_dynamic(self.vertexcache)
-            for placement in placements:
-                placement.draw_dynamic(self.glstate, False, False)
-                if __debug__:
-                    self.glstate.set_color(COL_SELECTED)
-                    placement.draw_nodes(self.glstate, False)
 
         # Objects and Polygons
         self.glstate.set_color(COL_UNPAINTED)
@@ -720,6 +713,16 @@ class MyGL(wx.glcanvas.GLCanvas):
                     glDrawArrays(GL_TRIANGLES, base, length)
                     if __debug__:
                         if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
+                if layer==ClutterDef.RUNWAYSLAYER and imagery:
+                    self.glstate.set_dynamic(self.vertexcache)
+                    glColor4f(1.0, 1.0, 1.0, self.imageryopacity/100.0)	# not using glstate!
+                    for placement in imagery:
+                        placement.draw_dynamic(self.glstate, False, False)
+                        if False:#XXX__debug__:
+                            self.glstate.set_color(COL_SELECTED)
+                            placement.draw_nodes(self.glstate, False)
+                            glColor4f(1.0, 1.0, 1.0, self.imageryopacity/100.0)
+                    self.glstate.set_color(COL_SELECTED)		# tell glstate there's been a change in colour
 
         # Selected dynamic - last so overwrites
         if self.selected:
@@ -1377,6 +1380,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.defs=dict([(x.name, x) for x in netdefs[1:] if x])
         self.vertexcache.reset(terrain, dsfdirs)
         self.imageryprovider=prefs.imageryprovider
+        self.imageryopacity=prefs.imageryopacity
         self.imagery.reset(self.vertexcache)
         self.tile=(0,999)	# force reload on next goto
 
@@ -1437,6 +1441,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if prefs!=None:
             options=prefs.options
             self.imageryprovider=prefs.imageryprovider
+            self.imageryopacity=prefs.imageryopacity
         else:
             options=self.options
 
