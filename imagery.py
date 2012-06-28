@@ -10,7 +10,7 @@ from sys import exit, getfilesystemencoding, platform
 from tempfile import gettempdir
 import threading
 import time
-from urllib2 import HTTPError, Request, urlopen
+from urllib2 import HTTPError, URLError, Request, urlopen
 if __debug__:
     from traceback import print_exc
     from prefs import Prefs
@@ -144,6 +144,9 @@ class Filecache:
                 if __debug__: self.writedir()
                 return filename
             except HTTPError,e:
+                if __debug__:
+                    print request.get_full_url().split('&')[0], request.headers, tries
+                    print str(e)
                 if e.code==304:	# Not Modified
                     # http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.3.5
                     self.files[name]=(now, modified)
@@ -151,12 +154,16 @@ class Filecache:
                 elif e.code/100==4:
                     # some kind of unrecoverable error
                     break
-                else:
-                    # Retry any other errors
-                    if __debug__: print_exc()
+            except URLError,e:
+                # Retry any other errors
+                if __debug__:
+                    print request.get_full_url().split('&')[0], request.headers, tries
+                    print str(e)
             except:
                 # Retry any other errors
-                if __debug__: print_exc()
+                if __debug__:
+                    print request.get_full_url().split('&')[0], request.headers, tries
+                    print_exc()
 
         # Failed after retries
         self.files[name]=False
@@ -286,9 +293,9 @@ class Imagery:
         # http://msdn.microsoft.com/en-us/library/bb259689.aspx
         width=dist+dist				# Width in m of screen (from glOrtho setup)
         ppm=screensize.width/width		# Pixels on screen required by 1 metre, ignoring tilt
-        level=min(1+int(log(ppm*level0mpp*cos(radians(self.loc[0])), 2)), self.provider_levelmax)	# zoom level requried
+        level=min(int(round(log(ppm*level0mpp*cos(radians(self.loc[0])), 2))), self.provider_levelmax)	# zoom level required
         levelmin=max(13, self.provider_levelmin)	# arbitrary - tessellating out at higher levels takes too long
-        level=max(level,levelmin)
+        level=max(level,levelmin+1)
 
         ntiles=2**level				# number of tiles per axis at this level
         #mpp=cos(radians(self.loc[0]))*level0mpp/ntiles		# actual resolution at this level
@@ -296,58 +303,61 @@ class Imagery:
 
         (cx,cy)=self.latlon2xy(self.loc[0], self.loc[1], level)	# centre tile
         #print self.loc, width, screensize.width, 1/ppm, ppm, level, ntiles, cx, cy
+        if __debug__: print "Desire imagery level", level
 
-        # Get 6x6 tiles that cover the same area as 3x3 at the next lower level (this is to prevent weirdness when zooming in).
+        # Display 6x6 tiles if available that cover the same area as 3x3 at the next higher level (this is to prevent weirdness when zooming in)
         cx=2*(cx/2)
         cy=2*(cy/2)
         placements=[]
-        fail1=False	# At least one placement at this level failed - typically cos imagery not available at this location/level
-        pending=False	# At least one placement at this level is still loading
-        prioritybase=(1+self.provider_levelmax-level)*100
-        seq=self.spiral(6,6)
+        needed=set()	# Placements at this level failed either cos imagery not available at this location/level or is pending layout
+        fetch=[]
+        prioritybase=level*100	# prioritise lower-res
+        seq=[(0,0), (1,0), (1,1), (0,1), (-1,1), (-1,0), (-1,-1), (0,-1), (1,-1), (2,-1), (2,0), (2,1), (2,2), (1,2), (0,2), (-1,2), (-2,2), (-2,1), (-2,0), (-2,-1), (-2,-2), (-1,-2), (0,-2), (1,-2), (2,-2), (3,-2), (3,-1), (3,0), (3,1), (3,2), (3,3), (2,3), (1,3), (0,3), (-1,3), (-2,3)]
         for i in range(len(seq)):
             (x,y)=seq[i]
-            placement=self.getplacement(cx+x,cy+y,level,prioritybase+i,True)		# Initiate fetch
-            if not placement:
-                fail1=True
-            elif not placement.islaidout():
-                pending=True
-            else:
+            placement=self.getplacement(cx+x,cy+y,level,prioritybase+i, False)		# Don't initiate fetch yet
+            if placement and placement.islaidout():
                 placements.append(placement)
+            else:
+                needed.add(((cx+x)/2,(cy+y)/2))
+                if i<4:
+                    fetch.append((cx+x,cy+y,level,prioritybase+i,True))
 
-        if __debug__: print level, fail1, pending
-        if (fail1 or pending) and level>levelmin:
-            # Not all imagery currently available at desired level. Go up and get 3x3 tiles around the centre tile.
+        # Go up and get 5x5 tiles around the centre tile - but only draw them if higher-res imagery not (yet) available.
+        level-=1
+        cx/=2
+        cy/=2
+        fail2=True
+        prioritybase-=100
+        seq=[(0,0), (1,0), (1,1), (0,1), (-1,1), (-1,0), (-1,-1), (0,-1), (1,-1), (2,-1), (2,0), (2,1), (1,2), (0,2), (-1,2), (-2,1), (-2,0), (-2,-1), (-1,-2), (0,-2), (1,-2)] # 5x5 with corners removed #, (0,3), (3,0), (0,-3), (-3,0)]
+        for i in range(len(seq)):
+            (x,y)=seq[i]
+            placement=self.getplacement(cx+x,cy+y,level,prioritybase+i,True)	# Initiate fetch
+            if placement:
+                # Some imagery may be available at this level
+                fail2=False
+                if placement.islaidout() and (i>=9 or (cx+x,cy+y) in needed):
+                    placements.insert(0,placement)	# Insert at start so drawn under higher-level
+
+        while fail2 and level>levelmin:
+            # No imagery available at higher level. Go up and get 3x3 tiles around the centre tile.
             level-=1
             cx/=2
             cy/=2
-            fail2=False
-            prioritybase+=100
-            seq=self.spiral(3,3)
+            prioritybase-=100
+            seq=[(0,0), (1,0), (1,1), (0,1), (-1,1), (-1,0), (-1,-1), (0,-1), (1,-1)]
             for i in range(len(seq)):
                 (x,y)=seq[i]
-                placement=self.getplacement(cx+x,cy+y,level,prioritybase+i,fail1)	# Initiate fetch of imagery only if desired level failed
-                if not (placement and placement.islaidout()):
-                    fail2=fail1
-                else:
-                    placements.insert(0,placement)	# Insert at start so drawn under higher-level
-
-            while fail2 and level>levelmin:
-                # Not all imagery available at higher level either. Go up and get 3x3 tiles around the centre tile.
-                level-=1
-                cx/=2
-                cy/=2
-                #cx=(cx-1)/2
-                #cy=(cy-1)/2
-                fail2=False
-                prioritybase+=100
-                for i in range(len(seq)):
-                    (x,y)=seq[i]
-                    placement=self.getplacement(cx+x,cy+y,level,prioritybase+i,fail1)	# Initiate fetch of imagery only if desired level failed
-                    if not (placement and placement.islaidout()):
-                        fail2=fail1
-                    else:
+                placement=self.getplacement(cx+x,cy+y,level,prioritybase+i,True)	# Initiate fetch only if previous level completely failed
+                if placement:
+                    # Some imagery may be available at this level
+                    fail2=False
+                    if placement.islaidout():
                         placements.insert(0,placement)	# Insert at start so drawn under higher-level
+
+        # Now initiate fetch of higher-level imagery of centre 2x2
+        for args in fetch:
+            self.getplacement(*args)
 
         if __debug__: print "Actual imagery level", level
         return placements

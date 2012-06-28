@@ -610,7 +610,7 @@ class MainWindow(wx.Frame):
         self.loc=(0.5,0.5)	# (lat,lon)
         self.hdg=0
         self.elev=45
-        self.dist=2048*zoom
+        self.dist=2048.0
         self.airports={}	# default apt.dat, by code
         self.nav=[]
         self.defnetdefs=[]
@@ -1263,6 +1263,7 @@ class MainWindow(wx.Frame):
             self.bkgd.Close()
         else:
             self.bkgd=BackgroundDialog(self, wx.ID_ANY, "Background imagery")
+            self.bkgd.CenterOnParent()	# Otherwise is top-left on Mac
             self.bkgd.Show()
         self.canvas.Refresh()	# Show background image as selected
         
@@ -1318,7 +1319,7 @@ class MainWindow(wx.Frame):
             # Load, not reload
             progress.Update(2, 'Overlay DSFs')
             self.elev=45
-            self.dist=2048*zoom
+            self.dist=2048.0
             placements={}
             networks={}
             if pkgnavdata:

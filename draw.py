@@ -715,13 +715,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                         if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
                 if layer==ClutterDef.RUNWAYSLAYER and imagery:
                     self.glstate.set_dynamic(self.vertexcache)
+                    if __debug__: self.glstate.set_color(COL_SELECTED)
                     glColor4f(1.0, 1.0, 1.0, self.imageryopacity/100.0)	# not using glstate!
                     for placement in imagery:
                         placement.draw_dynamic(self.glstate, False, False)
-                        if False:#XXX__debug__:
-                            self.glstate.set_color(COL_SELECTED)
-                            placement.draw_nodes(self.glstate, False)
-                            glColor4f(1.0, 1.0, 1.0, self.imageryopacity/100.0)
+                        if __debug__: placement.draw_nodes(self.glstate, False)
                     self.glstate.set_color(COL_SELECTED)		# tell glstate there's been a change in colour
 
         # Selected dynamic - last so overwrites
