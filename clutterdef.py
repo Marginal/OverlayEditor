@@ -4,7 +4,7 @@ from numpy import array, concatenate, float32
 from operator import itemgetter, attrgetter
 from os import listdir
 from os.path import basename, dirname, exists, join, normpath, sep
-from sys import maxint
+from sys import exc_info, maxint
 
 from OpenGL.GL import *
 import wx
@@ -117,7 +117,7 @@ class ClutterDef:
             self.texture=vertexcache.texcache.get(fallbacktexture)
         else:
             self.texture=0
-        self.texerr=None
+        self.texerr=None	# (filename, errorstring)
         self.layer=ClutterDef.DEFAULTLAYER
         self.canpreview=False
         self.type=0	# for locking
@@ -408,13 +408,17 @@ class ObjectDef(ClutterDef):
             if texture_draped:	# can be None
                 try:
                     self.texture_draped=vertexcache.texcache.get(texture_draped)
-                except IOError, e:
-                    self.texerr=IOError(0,e.strerror,texture_draped)
+                except EnvironmentError, e:
+                    self.texerr=(texture_draped, e.strerror)
+                except:
+                    self.texerr=(texture_draped, unicode(exc_info()[1]))
             if texture:	# can be None
                 try:
                     self.texture=vertexcache.texcache.get(texture)
-                except IOError, e:
-                    self.texerr=IOError(0,e.strerror,texture)
+                except EnvironmentError, e:
+                    self.texerr=(texture, e.strerror)
+                except:
+                    self.texerr=(texture, unicode(exc_info()[1]))
                 if self.poly:
                     self.texture_draped=self.texture
             self.draped=draped
@@ -627,8 +631,10 @@ class AutoGenPointDef(ObjectDef):
             if texture_draped:	# texture can be none?
                 try:
                     self.texture_draped=vertexcache.texcache.get(texture_draped)
-                except IOError, e:
-                    self.texerr=IOError(0,e.strerror,texture_draped)
+                except EnvironmentError, e:
+                    self.texerr=(texture_draped, e.strerror)
+                except:
+                    self.texerr=(texture_draped, unicode(exc_info()[1]))
             assert len(crop)==4, crop
             # rescale
             vt=[[(crop[i][0]-hanchor)*scale, 0, (vanchor-crop[i][1])*scale,
@@ -756,8 +762,10 @@ class DrapedDef(PolygonDef):
         h.close()
         try:
             self.texture=vertexcache.texcache.get(texture, not self.ortho, alpha)
-        except IOError, e:
-            self.texerr=IOError(0,e.strerror,texture)
+        except EnvironmentError, e:
+            self.texerr=(texture, e.strerror)
+        except:
+            self.texerr=(texture, unicode(exc_info()[1]))
 
 
 class DrapedFallback(DrapedDef):
@@ -857,8 +865,10 @@ class FacadeDef(PolygonDef):
                         self.texture_roof=vertexcache.texcache.get(texture)
                     else:
                         self.texture=vertexcache.texcache.get(texture)
-                except IOError, e:
-                    self.texerr=IOError(0,e.strerror,texture)
+                except EnvironmentError, e:
+                    self.texerr=(texture, e.strerror)
+                except:
+                    self.texerr=(texture, unicode(exc_info()[1]))
             elif id=='RING':
                 self.ring=int(c[1])
             elif id=='TWO_SIDED':
@@ -1114,8 +1124,10 @@ class ForestDef(PolygonDef):
                 texture=self.cleanpath(c[1])
                 try:
                     self.texture=vertexcache.texcache.get(texture)
-                except IOError, e:
-                    self.texerr=IOError(0,e.strerror,texture)
+                except EnvironmentError, e:
+                    self.texerr=(texture, e.strerror)
+                except:
+                    self.texerr=(texture, unicode(exc_info()[1]))
             elif id=='SCALE_X':
                 scalex=float(c[1])
             elif id=='SCALE_Y':
@@ -1169,8 +1181,10 @@ class LineDef(PolygonDef):
                 texture=self.cleanpath(c[1])
                 try:
                     self.texture=vertexcache.texcache.get(texture)
-                except IOError, e:
-                    self.texerr=IOError(0,e.strerror,texture)
+                except EnvironmentError, e:
+                    self.texerr=(texture, e.strerror)
+                except:
+                    self.texerr=(texture, unicode(exc_info()[1]))
             elif id=='SCALE':
                 self.hscale=float(c[1])
                 self.vscale=float(c[2])
@@ -1226,8 +1240,10 @@ class NetworkDef(PolygonDef):
         if not self.texture:
             try:
                 self.texture=vertexcache.texcache.get(normpath(join(self.texpath, self.texname)))
-            except IOError, e:
-                self.texerr=IOError(0,e.strerror,basename(self.texname))
+            except EnvironmentError, e:
+                self.texerr=(normpath(join(self.texpath, self.texname)), e.strerror)
+            except:
+                self.texerr=(normpath(join(self.texpath, self.texname)), unicode(exc_info()[1]))
         if self.objdefs:
             for o in self.objdefs:
                 o.allocate(vertexcache)

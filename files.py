@@ -644,25 +644,10 @@ class TexCache:
                 self.terraintexs.append(id)
             return id
 
-        # Callers expect an IOError
-        except IOError, e:
-            if e.errno==2:
-                if __debug__: print "%s file not found" % basename(path)
-                raise IOError, (2, "%s: %s" % (path, e.strerror))
-            elif e.strerror:
-                if __debug__: print "%s %s" % (basename(path), e.strerror)
-                raise IOError, (e.errno, e.strerror)
-            else:	# PIL "cannot read interlaced PNG files"
-                if __debug__: print "%s: %s" % (basename(path), e)
-                raise IOError, (0, str(e))
-        except GLerror, e:
-            if __debug__: print "%s %s" % (basename(path), e)
-            raise IOError, (0, str(e))
         except:
             if __debug__:
-                print "%s unknown error" % basename(path)
                 print_exc()
-            raise IOError, (0, 'unknown error')
+            raise
 
 
 class VertexCache:
@@ -801,22 +786,26 @@ class VertexCache:
                 if __debug__: print_exc()
         if __debug__: print "%6.3f time in loadMesh" % (time.clock()-clock)
         if not key in self.mesh:
-            for path in self.dsfdirs[1:]:
-                if glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))) or glob(join(path, pardir, '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[eE][nN][vV]" % (tile[0], tile[1]))):
-                    # DSF or ENV exists but can't read it
-                    tex=join('Resources','airport0_000.png')
-                    break
-            else:
-                tex=join('Resources','Sea01.png')
-            self.mesh[key]=[(tex, 1,
-                             [[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
-                              [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100],
-                              [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2,   0, 100],
-                              [-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
-                              [ onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2, 100,   0],
-                              [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100]])]
-            self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
-            self.nets[(tile[0],tile[1],Prefs.NETWORK)]=[]
+            self.loadFallbackMesh(tile, options)
+
+    def loadFallbackMesh(self, tile, options):
+        key=(tile[0],tile[1],options&Prefs.TERRAIN)
+        for path in self.dsfdirs[1:]:
+            if glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))) or glob(join(path, pardir, '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[eE][nN][vV]" % (tile[0], tile[1]))):
+                # DSF or ENV exists but can't read it
+                tex=join('Resources','airport0_000.png')
+                break
+        else:
+            tex=join('Resources','Sea01.png')
+        self.mesh[key]=[(tex, 1,
+                         [[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
+                          [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100],
+                          [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2,   0, 100],
+                          [-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
+                          [ onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2, 100,   0],
+                          [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100]])]
+        self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
+        self.nets[(tile[0],tile[1],Prefs.NETWORK)]=[]
 
     # return mesh data sorted by tex for drawing
     def getMesh(self, tile, options):

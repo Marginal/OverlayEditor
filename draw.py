@@ -16,7 +16,7 @@ from math import acos, atan2, cos, sin, floor, hypot, pi, radians
 from numpy import array, array_equal, empty, identity, float32, float64, int32
 from os.path import basename, curdir, join
 from struct import unpack
-from sys import exit, platform, version
+from sys import exc_info, exit, platform, version
 import time
 import wx
 import wx.glcanvas
@@ -1137,7 +1137,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.frame.ShowSel()
 
         if texerr:
-            myMessageBox(texerr.strerror.decode('utf-8'), "Can't read texture " + texerr.filename, wx.ICON_INFORMATION|wx.OK, self.frame)
+            myMessageBox(u"%s: %s" % texerr, "Can't read texture.", wx.ICON_INFORMATION|wx.OK, self.frame)
 
         return True
 
@@ -1428,6 +1428,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def goto(self, loc, hdg=None, elev=None, dist=None, prefs=None):
         if __debug__: print "goto", loc
+        errdsf=None
         errobjs=[]
         errtexs=[]
         newtile=(int(floor(loc[0])),int(floor(loc[1])))	# (lat,lon) of SW corner
@@ -1460,7 +1461,19 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.vertexcache.loadMesh(newtile, options)
 
             progress.Update(1, 'Terrain textures')
-            self.vertexcache.getMesh(newtile, options)	# allocates into VBO
+            try:
+                self.vertexcache.getMesh(newtile, options)	# allocates into VBO
+            except EnvironmentError, e:
+                if e.filename:
+                    errdsf=u"%s: %s" % (e.filename, e.strerror)
+                else:
+                    errdsf=unicode(e)
+                self.vertexcache.loadFallbackMesh(newtile, options)
+                self.vertexcache.getMesh(newtile, options)
+            except:
+                errdsf=unicode(exc_info()[1])
+                self.vertexcache.loadFallbackMesh(newtile, options)
+                self.vertexcache.getMesh(newtile, options)
 
             progress.Update(2, 'Mesh')
             self.vertexcache.getMeshdata(newtile, options)
@@ -1520,7 +1533,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         self.frame.palette.markbad(placement.name)
 
                     if placement.definition.texerr:
-                        s=u"%s: %s" % (placement.definition.texerr.filename, placement.definition.texerr.strerror.decode('utf-8'))
+                        s=u"%s: %s" % placement.definition.texerr
                         if not s in errtexs: errtexs.append(s)
                         
                     if not placement.islaidout():
@@ -1670,11 +1683,17 @@ class MyGL(wx.glcanvas.GLCanvas):
                         if thisarea.intersects(bbox):
                             # tesselator is expensive - minimise mesh triangles
                             for tri in tris:
-                                (pt, coeffs)=tri
-                                tbox=BBox()
-                                for i in range(3):
-                                    tbox.include(pt[i][0], pt[i][2])
-                                if thisarea.intersects(tbox):
+                                (meshpt, coeffs)=tri
+                                # following code is unwrapped below for speed
+                                #tbox=BBox()
+                                #for i in range(3):
+                                #    tbox.include(pt[i][0], pt[i][2])
+                                (m0,m1,m2)=meshpt
+                                minx=min(m0[0], m1[0], m2[0])
+                                maxx=max(m0[0], m1[0], m2[0])
+                                minz=min(m0[2], m1[2], m2[2])
+                                maxz=max(m0[2], m1[2], m2[2])
+                                if thisarea.intersects(BBox(minx, maxx, minz, maxz)):
                                     meshtris.append(tri)
                     if not meshtris:
                         #if __debug__: print 0
@@ -1882,6 +1901,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.imagery.goto(self.imageryprovider, loc, self.d, self.GetClientSize())
 
         # Redraw can happen under MessageBox, so do this last
+        if errdsf:
+            myMessageBox(errdsf, "Can't load terrain.", wx.ICON_EXCLAMATION|wx.OK, self.frame)
+
         if errobjs:
             sortfolded(errobjs)
             if len(errobjs)>11: errobjs=errobjs[:10]+['and %d more objects' % (len(errobjs)-10)]
