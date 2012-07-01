@@ -453,14 +453,10 @@ class TexCache:
         #if __debug__: clock=time.clock()	# Processor time
 
         # X-Plane 10 will load dds or png depending on user's compression settings.
-        # We will prefer dds if the texture is to be downsampled (terrain), otherwise png (objects).
+        # We always prefer DDS on the basis that a pre-compressed DDS will look better than a dynamically compressed PNG.
         (base,oldext)=splitext(path)
-        if downsample:
-            for ext in ['.dds', '.DDS', '.png', '.PNG', oldext]:
-                if exists(base+ext): break
-        else:
-            for ext in ['.png', '.PNG', '.dds', '.DDS', oldext]:
-                if exists(base+ext): break
+        for ext in ['.dds', '.DDS', '.png', '.PNG', '.bmp', 'BMP', oldext]:
+            if exists(base+ext): break
 
         try:
             if ext.lower()=='.dds':
@@ -1017,7 +1013,7 @@ def importObj(pkgpath, path):
                 tex=tex.replace('/', sep)
                 (tex, ext)=splitext(tex)
                 header+=newtexprefix+basename(tex)+rest
-                for e in [ext, '.dds', '.DDS', '.png', '.PNG']:
+                for e in [ext, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                     if exists(join(oldtexpath, tex+e)):
                         if not isdir(newtexpath): mkdir(newtexpath)
                         if not exists(join(newtexpath, basename(tex)+e)):
@@ -1053,15 +1049,17 @@ def importObj(pkgpath, path):
                     tex=tex.replace(':', sep)
                     tex=tex.replace('/', sep)
                     (tex, ext)=splitext(tex)
-                    for e in [ext, '.dds', '.DDS', '.png', '.PNG']:
+                    found=False
+                    for e in [ext, '.dds', '.DDS', '.png', '.PNG', '.bmp', '.BMP']:
                         if exists(join(oldtexpath, tex+e)):
                             if not isdir(newtexpath): mkdir(newtexpath)
                             if not exists(join(newtexpath, basename(tex)+e)):
                                 copyfile(join(oldtexpath, tex+e),
                                          join(newtexpath, basename(tex)+e))
-                            header+=c[0]+'\t'+newtexprefix+basename(tex)+e+'\n'
-                            break
-                    else:
+                            if not found:
+                                header+=c[0]+'\t'+newtexprefix+basename(tex)+e+'\n'
+                                found=True
+                    if not found:
                         header+=c[0]+'\t'+newtexprefix+basename(tex)+ext+'\n'
             else:
                 header+=line+'\n'
