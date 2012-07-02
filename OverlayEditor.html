@@ -30,13 +30,8 @@ Scenery</a> &rarr; <a href="http://marginal.org.uk/x-planescenery/tools.html">To
 <h2><img style="border: 0px solid; vertical-align: middle;" src="Resources/OverlayEditor.png"> DSF overlay scenery editor</h2>
 
 <h3>Overview</h3>
-<p>This application edits X-Plane<small><sup>&reg;</sup></small>
-DSF overlay scenery packages for X-Plane 8.30 or later.
-It runs on Windows 2000 or later, MacOS 10.5 or later and Linux.</p>
-<p>This document is a reference - it is assumed that you're familiar with
-X-Plane's scenery system and that you know how to create X-Plane scenery
-objects. If not, then you can get started by following
-<a target="_blank" href="http://marginal.org.uk/x-planescenery/hangar_tutorial/index.html">this tutorial</a>.<p>
+<p>This application edits X-Plane<small><sup>&reg;</sup></small> DSF overlay scenery packages for X-Plane 8.30 or later. It runs on Windows 2000 or later, MacOS 10.5 or later and Linux.</p>
+<p>This document is a reference - it is assumed that you're familiar with X-Plane's scenery system and that you know how to create X-Plane scenery objects. If not, then you can get started by following <a target="_blank" href="http://marginal.org.uk/x-planescenery/hangar_tutorial/index.html">this tutorial</a>. Please read the section <a href="#other">below</a> if you intend to use OverlayEditor in conjunction with other scenery tools.<p>
 
 <h3>Setting up</h3>
 <p>Users of Mac OS 10.7 (Lion) should first <a target="_blank" href="http://www.wxpython.org/download.php">download</a>
@@ -402,7 +397,7 @@ X-Plane "allow sloped runways" rendering setting is turned on.</li>
 <p>X-Plane prioritises scenery packages; and it doesn't load scenery from
 lower priority packages once it has found a "full" DSF for the required area.
 A package's priority is determined by its <a href="http://en.wikipedia.org/wiki/ASCIIbetical">ASCIIbetical</a> order in
-the<code> Custom&nbsp;Scenery </code>folder.
+the<code> Custom&nbsp;Scenery </code>folder.</a>
 So an overlay scenery package will not be displayed if it has a name later
 in the alphabet than a "full" scenery package for the same area.</a><br>
 This application lets you edit the overlay scenery package and does not
@@ -423,6 +418,10 @@ Many objects in the <code>global8</code> library exist in multiple versions
 exists in eight different versions in X-Plane 8.40; if you use that object
 in your scenery package then this application will always display the same
 version, but X-Plane will display one of the eight versions chosen at random.<p>
+
+<h3><a name="other">Using OverlayEditor in conjunction with other scenery tools</a></h3>
+<p>There are are number of other applications that can create X-Plane scenery packages. Those applications that place scenery objects work by writing "overlay" <code>.dsf</code> files into a scenery package folder. OverlayEditor can read and edit "overlay" <code>.dsf</code> files produced by other applications; but of course if you re-run the application you may overwrite any edits that you have made using OverlayEditor.</p>
+<p>In particular, the WED application can be used to both to create X-Plane airport layouts and to place scenery objects. You can safely use WED to create and edit airport layout(s) and OverlayEditor to place scenery objects within the same scenery package <b>as long as you only use the <samp>File &rarr; Export&nbsp;apt.dat</samp> menu option in WED</b> and avoid the <samp>File &rarr; Export&nbsp;Scenery&nbsp;Pack</samp> menu option.</p>
 
 <h3>Troubleshooting</h3>
 
