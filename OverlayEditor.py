@@ -1005,7 +1005,10 @@ class MainWindow(wx.Frame):
             if self.dist>maxzoom: self.dist=maxzoom
         elif event.GetKeyCode() in [wx.WXK_PAGEUP, wx.WXK_PRIOR, wx.WXK_NUMPAD_PAGEUP, wx.WXK_NUMPAD_PRIOR]:
             if event.ShiftDown():
-                self.elev+=5
+                if self.elev==2:
+                    self.elev=5	# for symmetry
+                else:
+                    self.elev+=5
             else:
                 self.elev+=1
             if self.elev>90: self.elev=90

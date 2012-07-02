@@ -276,7 +276,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.h=0
         self.e=90
         self.d=3333.25
-        self.cliprat=1000
 
         # Must specify min sizes for glX? - see glXChooseVisual and GLXFBConfig
         wx.glcanvas.GLCanvas.__init__(self, parent,
@@ -284,28 +283,17 @@ class MyGL(wx.glcanvas.GLCanvas):
                                       attribList=[
             wx.glcanvas.WX_GL_RGBA,
             wx.glcanvas.WX_GL_DOUBLEBUFFER,
-            wx.glcanvas.WX_GL_DEPTH_SIZE, 24])	# ATI on Mac defaults to 16
+            wx.glcanvas.WX_GL_DEPTH_SIZE, 32])	# ATI on Mac defaults to 16
         if self.GetId()==-1:
             # Failed - try with default depth buffer
             wx.glcanvas.GLCanvas.__init__(self, parent,
                                           style=GL_RGBA|GL_DOUBLEBUFFER|GL_DEPTH|wx.FULL_REPAINT_ON_RESIZE,
                                           attribList=[wx.glcanvas.WX_GL_RGBA,wx.glcanvas.WX_GL_DOUBLEBUFFER])
-            self.cliprat=100
         if self.GetId()==-1:
             myMessageBox('Try updating the drivers for your graphics card.',
                          "Can't initialise OpenGL.",
                          wx.ICON_ERROR|wx.OK, self)
             exit(1)
-
-        # Can't use polygon offset in display list on OSX 10.3 or early
-        # versions of 10.4. 10.4.8 (Darwin 8.8.1) onwards is OK?
-        # Note 10.4 Intel 950 drivers ship with OGL 1.2
-        if platform=='darwin':
-            from os import uname	# not defined in win32 builds
-            ver=uname()[2].split('.')
-            self.nopolyosinlist=(int(ver[0])<8 or (int(ver[0])==8 and int(ver[1])<8))
-        else:
-            self.nopolyosinlist=False
 
         if wx.VERSION >= (2,9):
             self.context = wx.glcanvas.GLContext(self)
@@ -474,6 +462,7 @@ class MyGL(wx.glcanvas.GLCanvas):
     def OnMouseMotion(self, event):
         # Capture unreliable on Mac, so may have missed Up events. See
         # https://sourceforge.net/tracker/?func=detail&atid=109863&aid=1489131&group_id=9863
+        #self.getworldloc(event.GetX(),event.GetY())	# debug
         if self.clickmode==ClickModes.Move:
             if not event.MiddleIsDown():
                 self.OnMiddleUp(event)
@@ -506,9 +495,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 gluPickMatrix(event.GetX(),
                               size[1]-1-event.GetY(), 5,5,
                               array([0.0, 0.0, size[0], size[1]],int32))
-                glOrtho(-self.d, self.d,
-                        -self.d*size.y/size.x, self.d*size.y/size.x,
-                        -self.d*self.cliprat, self.d*self.cliprat)
+                vd=self.d*size.y/size.x
+                glOrtho(-self.d, self.d, -vd, vd, -30*vd, 30*vd)
                 glRotatef(self.e, 1.0,0.0,0.0)
                 glRotatef(self.h, 0.0,1.0,0.0)
                 glTranslatef(-self.x, -self.y, -self.z)
@@ -619,10 +607,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         glMatrixMode(GL_PROJECTION)
         glViewport(0, 0, *size)
         glLoadIdentity()
-	# try to minimise near offset to improve clipping
-        glOrtho(-self.d, self.d,
-                -self.d*size.y/size.x, self.d*size.y/size.x,
-                -self.d*self.cliprat, self.d*self.cliprat)
+        vd=self.d*size.y/size.x
+        glOrtho(-self.d, self.d, -vd, vd, -30*vd, 30*vd)	# 30 ~= 1/sin(2), where 2 is minimal elevation angle
         glRotatef(self.e, 1.0,0.0,0.0)
         glRotatef(self.h, 0.0,1.0,0.0)
         glTranslatef(-self.x, -self.y, -self.z)
@@ -661,14 +647,13 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Mesh
         if not self.options&Prefs.ELEVATION:
-            glPushMatrix()
             glScalef(1,0,1)		# Defeat elevation data
         for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
             self.glstate.set_poly(bool(poly))
             self.glstate.set_texture(texno)
             glDrawArrays(GL_TRIANGLES, base, number)
         if not self.options&Prefs.ELEVATION:
-            glPopMatrix()
+            glLoadIdentity()
         if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
 
         # Map imagery & background
@@ -808,6 +793,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glEnd()
 
             glPopMatrix()
+            glMatrixMode(GL_MODELVIEW)
 
 
         self.glstate.set_poly(False)
@@ -841,9 +827,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             gluPickMatrix(self.clickpos[0],
                           size[1]-1-self.clickpos[1], 5,5,
                           array([0.0, 0.0, size[0], size[1]],int32))
-        glOrtho(-self.d, self.d,
-                 -self.d*size.y/size.x, self.d*size.y/size.x,
-                 -self.d*self.cliprat, self.d*self.cliprat)
+        vd=self.d*size.y/size.x
+        glOrtho(-self.d, self.d, -vd, vd, -30*vd, 30*vd)
         glRotatef(self.e, 1.0,0.0,0.0)
         glRotatef(self.h, 0.0,1.0,0.0)
         glTranslatef(-self.x, -self.y, -self.z)
@@ -1944,20 +1929,28 @@ class MyGL(wx.glcanvas.GLCanvas):
         size = self.GetClientSize()
         mx=max(0, min(size[0]-1, mx))
         my=max(0, min(size[1]-1, size[1]-1-my))
+        self.glstate.set_instance(self.vertexcache)
         self.glstate.set_texture(0)
         self.glstate.set_depthtest(True)
         self.glstate.set_poly(False)	# DepthMask=True
+        glLoadIdentity()
         glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)
-        for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
-            if not poly:
-                glDrawArrays(GL_TRIANGLES, base, number)
-        dz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
-        if dz==0.0 or dz==1.0:
-            mz=0.5	# treat off the tile edge as sea level
+        if self.options&Prefs.ELEVATION:
+            for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
+                if not poly:
+                    glDrawArrays(GL_TRIANGLES, base, number)
         else:
-            mz=dz
+            glBegin(GL_QUADS)
+            glVertex3f( onedeg*cos(radians(1+self.tile[0]))/2, 0, -onedeg/2)
+            glVertex3f( onedeg*cos(radians(self.tile[0]))/2, 0,  onedeg/2)
+            glVertex3f(-onedeg*cos(radians(self.tile[0]))/2, 0,  onedeg/2)
+            glVertex3f(-onedeg*cos(radians(1+self.tile[0]))/2, 0, -onedeg/2)
+            glEnd()
+        mz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
+        if mz==1.0: mz=0.5	# treat off the tile edge as sea level
         (x,y,z)=gluUnProject(mx,my,mz, model=identity(4,float64), view=array([0,0,size[0],size[1]], int32))
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
+        #self.SwapBuffers()	# debug
         glClear(GL_DEPTH_BUFFER_BIT)
         lat=round2res(self.centre[0]-z/onedeg)
         lon=round2res(self.centre[1]+x/(onedeg*cos(radians(lat))))
