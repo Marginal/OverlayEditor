@@ -148,14 +148,18 @@ class Object(Clutter):
 
     def draw_instance(self, glstate, selected, picking):
         obj=self.definition
-        if obj.vdata is None: return	# e.g. .agp base
-        assert self.islaidout() and obj.base is not None, self
         glLoadMatrixf(self.matrix)
         if picking:
+            assert self.islaidout(), self
             assert not glstate.cull
             # glstate.poly doesn't affect selection
-            glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
-        else:
+            if obj.vdata is not None:
+                glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
+            glBegin(GL_POINTS)
+            glVertex3f(0.0,0.0,0.0)	# draw point at object origin so selectable even if not visible
+            glEnd()
+        elif obj.vdata is not None:	# .agp base has no vertex data
+            assert self.islaidout() and obj.base is not None, self
             glstate.set_texture(obj.texture)
             glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
             assert not glstate.poly
@@ -416,13 +420,16 @@ class Polygon(Clutter):
 
     def draw_dynamic(self, glstate, selected, picking):
         assert self.islaidout() and self.base is not None, self
-        if not picking:
+        if picking:
+            assert not glstate.texture
+            assert glstate.color
+            glBegin(GL_POINTS)
+            glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
+            glEnd()
+        else:
             glstate.set_texture(None)
             glstate.set_color(selected and COL_SELECTED or None)
             glstate.set_depthtest(False)	# Need line to appear over terrain
-        else:
-            assert not glstate.texture
-            assert glstate.color
         base=self.base
         if self.closed:
             for winding in self.points:
@@ -717,7 +724,11 @@ class Draped(Polygon):
         if self.nonsimple:
             Polygon.draw_dynamic(self, glstate, selected, picking)
             return
-        elif not picking:
+        elif picking:
+            glBegin(GL_POINTS)
+            glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
+            glEnd()
+        else:
             glstate.set_texture(self.definition.texture)
             glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
             glstate.set_cull(True)
