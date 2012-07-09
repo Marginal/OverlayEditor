@@ -686,6 +686,7 @@ def writeDSF(dsfdir, key, placements, netfile):
     h.write('I\n800\nDSF2TEXT\n\n')
     h.write('PROPERTY\tsim/planet\tearth\n')
     h.write('PROPERTY\tsim/overlay\t1\n')
+    h.write('PROPERTY\tsim/require_agpoint\t1/0\n')
     h.write('PROPERTY\tsim/require_object\t1/0\n')
     h.write('PROPERTY\tsim/require_facade\t1/0\n')
     h.write('PROPERTY\tsim/creation_agent\t%s %4.2f\n' % (appname, appversion))
