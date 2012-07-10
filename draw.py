@@ -259,7 +259,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.selectednode=None	# Selected node. Only if len(self.selected)==1
         self.selections=set()	# Hits for cycling picking
         self.selectsaved=set()	# Selection at start of ctrl drag box
-        self.selectmax=4096	# max 1024 names
         self.draginert=True
         self.dragx=wx.SystemSettings_GetMetric(wx.SYS_DRAG_X)
         self.dragy=wx.SystemSettings_GetMetric(wx.SYS_DRAG_Y)
@@ -515,7 +514,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                             break
                     glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
                 else:
-                    glSelectBuffer(self.selectmax)
+                    glSelectBuffer(len([item for sublist in poly.points for item in sublist])*4)	# 4 ints per hit record containing one name
                     glRenderMode(GL_SELECT)
                     glInitNames()
                     glPushName(0)
@@ -866,7 +865,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 checkpolynode.pick_nodes(self.glstate)
                 # We'll check on the status later
             else:
-                glSelectBuffer(self.selectmax)
+                glSelectBuffer(len([item for sublist in checkpolynode.points for item in sublist])*4)			# 4 ints per hit record containing one name
                 glRenderMode(GL_SELECT)
                 glInitNames()
                 glPushName(0)
@@ -946,7 +945,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
 
         else:	# not self.glstate.occlusion_query
-            glSelectBuffer(self.selectmax)
+            glSelectBuffer(len([item for sublist in placements for item in sublist])*8)	# Twice as many for two-phase drawing
             glRenderMode(GL_SELECT)
             glInitNames()
             glPushName(0)
