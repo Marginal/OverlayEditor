@@ -1530,6 +1530,8 @@ class MainWindow(wx.Frame):
             self.loc=[round2res(choice[0]),
                       round2res(choice[1])]
             self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
+            #from cProfile import runctx
+            #runctx('self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)', globals(), locals(), 'profile.dmp')
             self.ShowLoc()
 
     def OnLock(self, event):
