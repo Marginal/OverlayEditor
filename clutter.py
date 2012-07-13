@@ -1052,10 +1052,11 @@ class Facade(Polygon):
                 else:
                     self.param=min(65535, max(1, int(round(floors[self.floorno].height))))
             elif not self.param:	# old-style
-                self.param=maxint
-                for (a,b) in self.definition.horiz:
-                    self.param=min(self.param, int(ceil(self.definition.hscale * (b-a))))
-                self.param=max(self.param,1)
+                wall=self.definition.walls[0]	# just use first wall
+                vpanels=wall.vpanels
+                self.param=sum([p.width for p in vpanels[0]+vpanels[2]])		# all bottom & top panels
+                if not self.param: self.param=sum([p.width for p in vpanels[1]])	# else all middle panels
+                self.param=max(int(0.5+self.param+wall.basement*wall.scale[1]),1)
             self.closed=(self.definition.ring and True)
             return True
         except:
@@ -1258,48 +1259,6 @@ class Facade(Polygon):
                                       self.nodes[i][j][2]))	# inherit wall type
         return self.layout(tile, options, vertexcache, (i,newnode))
 
-    # Helper for layout
-    def subdiv(self, size, scale, divs, ends, isvert):
-        trgsize=size/scale
-        #print size, scale, divs, ends, isvert, trgsize
-        cumsize=0
-        if ends[0]+ends[1]>=len(divs):
-            points=range(len(divs))
-            for i in points: cumsize+=divs[i][1]-divs[i][0]
-            if cumsize==0: return (points,1)
-            return (points,size/cumsize)
-
-        if isvert:
-            points1=range(ends[0])
-            points2=range(len(divs)-ends[1], len(divs))
-        else:
-            points1=range(len(divs)-ends[1])
-            points2=range(ends[0],len(divs))
-        for i in points1+points2: cumsize+=divs[i][1]-divs[i][0]
-        if cumsize<trgsize or isvert:
-            points=range(ends[0], len(divs)-ends[1])
-            extsize=0
-            for i in points: extsize+=divs[i][1]-divs[i][0]
-            i=int((trgsize-cumsize)/extsize)
-            cumsize+=extsize*i
-            points=points1 + points*i
-            for i in range(ends[0], len(divs)-ends[1]):
-                if cumsize+divs[i][1]-divs[i][0] > trgsize: break
-                cumsize+=divs[i][1]-divs[i][0]
-                points.append(i)
-            points.extend(points2)
-        else:
-            points=points1+points2
-            while cumsize>trgsize and (isvert or len(points)>1):
-                i=max(0,min((len(points)-1+ends[0]-ends[1])/2, len(points)-1))
-                cumsize-=(divs[points[i]][1]-divs[points[i]][0])
-                points.pop(i)
-        if isvert:
-            #if points: points[-1]=len(divs)-1	# always end with roof
-            return (points,scale)
-        else:
-            return (points,size/cumsize)
-
     def clearlayout(self, vertexcache):
         Polygon.clearlayout(self, vertexcache)
         self.datalen=self.rooflen=0
@@ -1326,166 +1285,251 @@ class Facade(Polygon):
             return self.layout8(tile, options, vertexcache, selectednode)
 
     def layout8(self, tile, options, vertexcache, selectednode):
-        try:
-            fac=self.definition
-            points=self.points[0]
-            n=len(points)
-            (vert,vscale)=self.subdiv(self.param, fac.vscale, fac.vert,fac.vends, True)
-            roofheight=0
-            for i in range(len(vert)):
-                roofheight+=(fac.vert[vert[i]][1]-fac.vert[vert[i]][0])
-            roofheight*=fac.vscale	# not scaled to fit
-
-            if fac.roof_slope:
-                roofpts=[]
-                dist=sin(radians(fac.roof_slope))*fac.vscale*(fac.vert[vert[-1]][1]-fac.vert[vert[-1]][0])
-                for i in range(n):
-                    if i==n-1 and not fac.ring:
-                        tonext=(points[i][0]-points[i-1][0],
-                                points[i][2]-points[i-1][2])
-                    else:
-                        tonext=(points[(i+1)%n][0]-points[i][0],
-                                points[(i+1)%n][2]-points[i][2])
-                    m=hypot(*tonext)
-                    tonext=(tonext[0]/m, tonext[1]/m)
-                    toprev=(points[(i-1)%n][0]-points[i][0],
-                            points[(i-1)%n][2]-points[i][2])
-                    m=hypot(*toprev)
-                    toprev=(toprev[0]/m, toprev[1]/m)
-                    d=toprev[0]*tonext[1]-toprev[1]*tonext[0]
-                    if n==2 or d==0 or (not fac.ring and (i==0 or i==n-1)):
-                        roofpts.append((points[i][0]+dist*tonext[1],
-                                        points[i][1]+roofheight,
-                                        points[i][2]-dist*tonext[0]))
-                    else:
-                        # http://astronomy.swin.edu.au/~pbourke/geometry/lineline2d
-                        u=(toprev[0]*(dist*tonext[0]+dist*toprev[0])+
-                           toprev[1]*(dist*tonext[1]+dist*toprev[1]))/d
-                        roofpts.append((points[i][0]+dist*tonext[1]+u*tonext[0],
-                                        points[i][1]+roofheight,
-                                        points[i][2]-dist*tonext[0]+u*tonext[1]))
+        tris=[]
+        roofpts=[]
+        points=self.points[0]
+        n=len(points)
+        for node in range(self.closed and n or n-1):
+            (x,y,z)=points[node]
+            (tox,toy,toz)=points[(node+1)%n]
+            size=hypot(tox-x, z-toz)		# target wall length
+            if size<=0: continue
+            # find a wall that encompasses the target size
+            for w in self.definition.walls:
+                if w.widths[0]<=size<=w.widths[1]:
+                    wall=w
+                    break
             else:
-                roofpts=[(points[i][0], points[i][1]+roofheight, points[i][2]) for i in range(n)]
+                wall=self.definition.walls[0]	# just pick the first one if no walls fit the target size
 
-            data=[]
-            quads=[]
-            for wall in range(n-1+fac.ring):
-                size=hypot(points[(wall+1)%n][0]-points[wall][0],
-                           points[(wall+1)%n][2]-points[wall][2])
-                if size==0: continue
-                h=((points[(wall+1)%n][0]-points[wall][0])/size,
-                   (points[(wall+1)%n][1]-points[wall][1])/size,
-                   (points[(wall+1)%n][2]-points[wall][2])/size)
-                r=((roofpts[(wall+1)%n][0]-roofpts[wall][0])/size,
-                   (roofpts[(wall+1)%n][1]-roofpts[wall][1])/size,
-                   (roofpts[(wall+1)%n][2]-roofpts[wall][2])/size)
-                (horiz,hscale)=self.subdiv(size, fac.hscale, fac.horiz, fac.hends,False)
-                cumheight=0
-                for i in range(len(vert)-1):
-                    heightinc=fac.vscale*(fac.vert[vert[i]][1]-fac.vert[vert[i]][0])
-                    cumwidth=0
-                    for j in range(len(horiz)):
-                        widthinc=hscale*(fac.horiz[horiz[j]][1]-fac.horiz[horiz[j]][0])
-                        quads.append((points[wall][0]+h[0]*cumwidth,
-                                      points[wall][1]+h[1]*cumwidth+cumheight,
-                                      points[wall][2]+h[2]*cumwidth,
-                                      fac.horiz[horiz[j]][0],
-                                      fac.vert[vert[i]][0]))
-                        quads.append((points[wall][0]+h[0]*cumwidth,
-                                      points[wall][1]+h[1]*cumwidth+cumheight+heightinc,
-                                      points[wall][2]+h[2]*cumwidth,
-                                      fac.horiz[horiz[j]][0],
-                                      fac.vert[vert[i]][1]))
-                        quads.append((points[wall][0]+h[0]*(cumwidth+widthinc),
-                                      points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight+heightinc,
-                                      points[wall][2]+h[2]*(cumwidth+widthinc),
-                                      fac.horiz[horiz[j]][1],
-                                      fac.vert[vert[i]][1]))
-                        quads.append((points[wall][0]+h[0]*(cumwidth+widthinc),
-                                      points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight,
-                                      points[wall][2]+h[2]*(cumwidth+widthinc),
-                                      fac.horiz[horiz[j]][1],
-                                      fac.vert[vert[i]][0]))
-                        cumwidth+=widthinc
-                    cumheight+=heightinc
-                # penthouse
-                cumwidth=0
-                for j in range(len(horiz)):
-                    if not len(vert): continue
-                    widthinc=hscale*(fac.horiz[horiz[j]][1]-fac.horiz[horiz[j]][0])
-                    quads.append((points[wall][0]+h[0]*cumwidth,
-                                  points[wall][1]+h[1]*cumwidth+cumheight,
-                                  points[wall][2]+h[2]*cumwidth,
-                                  fac.horiz[horiz[j]][0],
-                                  fac.vert[vert[-1]][0]))
-                    quads.append((roofpts[wall][0]+r[0]*cumwidth,
-                                  roofpts[wall][1]+r[1]*cumwidth,
-                                  roofpts[wall][2]+r[2]*cumwidth,
-                                  fac.horiz[horiz[j]][0],
-                                  fac.vert[vert[-1]][1]))
-                    quads.append((roofpts[wall][0]+r[0]*(cumwidth+widthinc),
-                                  roofpts[wall][1]+r[1]*(cumwidth+widthinc),
-                                  roofpts[wall][2]+r[2]*(cumwidth+widthinc),
-                                  fac.horiz[horiz[j]][1],
-                                  fac.vert[vert[-1]][1]))
-                    quads.append((points[wall][0]+h[0]*(cumwidth+widthinc),
-                                  points[wall][1]+h[1]*(cumwidth+widthinc)+cumheight,
-                                  points[wall][2]+h[2]*(cumwidth+widthinc),
-                                  fac.horiz[horiz[j]][1],
-                                  fac.vert[vert[-1]][0]))
-                    cumwidth+=widthinc
-
-            for i in range(0,len(quads),4):
-                data.extend([array(quads[i  ]+(0,),float32),
-                             array(quads[i+1]+(0,),float32),
-                             array(quads[i+2]+(0,),float32),
-                             array(quads[i  ]+(0,),float32),
-                             array(quads[i+2]+(0,),float32),
-                             array(quads[i+3]+(0,),float32)])
-            
-            # roof
-            root=[]
-            if n>2 and fac.ring and fac.roof:
-                minx=minz=maxint
-                maxx=maxz=-maxint
-                for i in roofpts:
-                    minx=min(minx,i[0])
-                    maxx=max(maxx,i[0])
-                    minz=min(minz,i[2])
-                    maxz=max(maxz,i[2])
-                xscale=(fac.roof[2][0]-fac.roof[0][0])/(maxx-minx)
-                zscale=(fac.roof[2][1]-fac.roof[0][1])/(maxz-minz)
-                (x,z)=self.position(tile, self.lat,self.lon)
-                y=vertexcache.height(tile,options,x,z)+roofheight
-                roof=[(x, y, z,
-                       fac.roof[0][0] + (x-minx)*xscale,
-                       fac.roof[0][1] + (z-minz)*zscale)]
-                if n<=4:
-                    for i in range(len(roofpts)-1, -1, -1):
-                        roof.append((roofpts[i][0], roofpts[i][1], roofpts[i][2],
-                                     fac.roof[3-i][0], fac.roof[3-i][1]))
+            # http://wiki.x-plane.com/Facade_Overview
+            hgrid=[]
+            vgrid=[]
+            for (target,panels,scale,grid,is_horiz) in [(size,wall.hpanels,wall.scale[0],hgrid,True), (float(self.param),wall.vpanels,wall.scale[1],vgrid,False)]:	# horizontal then vertical
+                width=0		# cumulative width
+                ltex=None	# end tex coord for left panel(s)
+                mltex=[]	# end tex coord for middle-left panel(s)
+                mrtex=[]	# start tex coord for middle-right panel(s)
+                rtex=None	# start tex coord for right panel(s)
+                top=None	# top floor kept separate for sloping
+                for i in range(max(len(panels[0]),len(panels[2]))):
+                    if not is_horiz:		# different rules appear to apply for vertical bottom and tops
+                        if width<=target:
+                            if i<len(panels[0]):
+                                panel=panels[0][i]
+                                ltex=panel.texcoords[1]
+                                width+=panel.width
+                            if i<len(panels[2]):
+                                panel=panels[2][-i-1]	# add from right
+                                if wall.roofslope and i==0:
+                                    top=panel.texcoords[0]	# need to keep top floor separate for sloping
+                                else:
+                                    rtex=panel.texcoords[0]
+                                width+=panel.width
+                        continue
+                    for left in [False,True]:	# despite the documentation, X-Plane appears to fill from right
+                        if left:
+                            if i<len(panels[0]):
+                                panel=panels[0][i]
+                                if width+panel.width-target < target-width:
+                                    ltex=panel.texcoords[1]
+                                    width+=panel.width
+                                else:
+                                    break
+                        else:
+                            if i<len(panels[2]):
+                                panel=panels[2][-i-1]	# add from right
+                                if width+panel.width-target < target-width:
+                                    rtex=panel.texcoords[0]
+                                    width+=panel.width
+                                else:
+                                    break
+                    else:
+                        continue
+                    break
                 else:
-                    for i in range(len(roofpts)-1, -1, -1):
-                        roof.append((roofpts[i][0], roofpts[i][1], roofpts[i][2],
-                                     fac.roof[0][0] + (roofpts[i][0]-minx)*xscale,
-                                     fac.roof[0][1] + (roofpts[i][2]-minz)*zscale))
-                for i in range(1,len(roofpts)-1):
-                    data.extend([array(roof[0  ]+(0,),float32),
-                                 array(roof[i]+(0,),float32),
-                                 array(roof[i+1]+(0,),float32)])
+                    # left and right panels have not filled the target
+                    while panels[1]:
+                        for i in range(len(panels[1])):
+                            for left in [False,True]:
+                                if left:
+                                    panel=panels[1][i]
+                                    if width+panel.width-target <= (is_horiz and target-width or 0):
+                                        if i==0: mltex.append(0)
+                                        mltex[-1]=panel.texcoords[1]
+                                        width+=panel.width
+                                    else:
+                                        break
+                                else:
+                                    panel=panels[1][-i-1]
+                                    if width+panel.width-target <= (is_horiz and target-width or 0):
+                                        if i==0: mrtex.insert(0,0)
+                                        mrtex[0]=panel.texcoords[0]
+                                        width+=panel.width
+                                    else:
+                                        break
+                            else:
+                                continue
+                            break
+                        else:
+                            continue
+                        break
 
-            if not data: raise AssertionError	# wtf
-            self.dynamic_data=concatenate(data)
+                if is_horiz and rtex is None and not mrtex:	# if nothing fits, just cram in rightmost panel
+                    if panels[2]:
+                        panel=panels[2][-1]
+                        rtex=panel.texcoords[0]
+                    elif panels[1]:
+                        panel=panels[1][-1]
+                        mrtex=[panel.texcoords[0]]
+                    else:
+                        panel=panels[0][0]
+                        ltex=panel.texcoords[1]
+                    width=panel.width
+                if ltex is not None and mltex:
+                    assert ltex==panels[1][0].texcoords[0]	# end of left panel is start of middle?
+                    ltex=mltex.pop(0)	# optimisation - merge left with first middle-left
+                if rtex is not None and mrtex:
+                    assert rtex==panels[1][-1].texcoords[1]	# start of right panel is end of middle?
+                    rtex=mrtex.pop()	# optimisation - merge last middle-right with right
 
-        except:
-            # layout error
-            if __debug__:
-                print "Facade layout failed:"
-                print_exc()
+                # make list of (offset[m], texcoord)
+                texscale=scale*(is_horiz and target/width or 1)	# vertical doesn't stretch
+                width=0			# cumulative width
+                if ltex:
+                    grid.append((0,panels[0][0].texcoords[0]))
+                    width+=texscale*(ltex-panels[0][0].texcoords[0])
+                    grid.append((width,ltex))
+                for m in mltex:
+                    grid.append((width,panels[1][0].texcoords[0]))
+                    width+=texscale*(m-panels[1][0].texcoords[0])
+                    grid.append((width,m))
+                for m in mrtex:
+                    grid.append((width,m))
+                    width+=texscale*(panels[1][-1].texcoords[1]-m)
+                    grid.append((width,panels[1][-1].texcoords[1]))
+                if top:
+                    if rtex:
+                        grid.append((width,rtex))
+                        width+=texscale*(top-rtex)
+                        grid.append((width,top))
+                    grid.append((width,top))
+                    width+=texscale*(panels[2][-1].texcoords[1]-top)
+                    grid.append((width,panels[2][-1].texcoords[1]))
+                elif rtex:
+                    grid.append((width,rtex))
+                    width+=texscale*(panels[2][-1].texcoords[1]-rtex)
+                    grid.append((width,panels[2][-1].texcoords[1]))
+
+            # make tris
+            if not (vgrid and hgrid): continue	# empty
+            h=atan2(tox-x, z-toz) % twopi
+            coshdg=cos(h)
+            sinhdg=sin(h)
+            vscale=(toy-y)/hgrid[-1][0]
+            y-=wall.basement*wall.scale[1]	# basement offsets down and reduces height above ground level
+            for j in range(0,len(vgrid),2):
+                (voffset1,v1)=vgrid[j]
+                (voffset2,v2)=vgrid[j+1]
+                topfloor=(j==len(vgrid)-2)
+                if topfloor and wall.roofslope:
+                    rs=radians(wall.roofslope)
+                    roofheight=voffset1+(voffset2-voffset1)*cos(rs)
+                    sz=(voffset2-voffset1)*sin(rs)
+                else:
+                    roofheight=voffset2
+                    sz=0
+                for i in range(0,len(hgrid),2):
+                    (hoffset1,u1)=hgrid[i]
+                    (hoffset2,u2)=hgrid[i+1]
+                    tris.append([x+hoffset2*sinhdg, y+hoffset2*vscale+voffset1, z-hoffset2*coshdg, u2,v1,0])
+                    tris.append([x+hoffset1*sinhdg, y+hoffset1*vscale+voffset1, z-hoffset1*coshdg, u1,v1,0])
+                    if topfloor and wall.roofslope:
+                        if i==0 and (self.closed or node!=0):
+                            # miter joint between first segment and previous wall
+                            (prvx,prvy,prvz)=points[(node-1)%n]
+                            sm=tan((atan2(prvx-x, z-prvz)%twopi + h)/2 - h+piby2)	# miter angle
+                            vx=x+hoffset1*sinhdg-sz*coshdg+sm*sz*sinhdg
+                            vy=y+hoffset1*vscale+roofheight
+                            vz=z-hoffset1*coshdg-sz*sinhdg-sm*sz*coshdg
+                            tris.append([vx,vy,vz,u1,v2,0])
+                            tris.append([vx,vy,vz,u1,v2,0])
+                            roofpts.append([vx,vy,vz])			# save top first point in each wall for later
+                        else:
+                            tris.append([x+hoffset1*sinhdg-sz*coshdg, y+hoffset1*vscale+roofheight, z-hoffset1*coshdg-sz*sinhdg, u1,v2,0])
+                            tris.append([x+hoffset1*sinhdg-sz*coshdg, y+hoffset1*vscale+roofheight, z-hoffset1*coshdg-sz*sinhdg, u1,v2,0])
+                            if i==0: roofpts.append(tris[-1][:3])	# save top first point in each wall for later
+
+                        if i==len(hgrid)-2 and wall.roofslope and (self.closed or node!=n-2):
+                            # miter joint between last segment and next wall
+                            (nxtx,nxty,nxtz)=points[(node+2)%n]
+                            sm=tan((atan2(nxtx-tox, toz-nxtz)%twopi + h-pi)/2 - h+piby2)	# miter angle
+                            tris.append([x+hoffset2*sinhdg-sz*coshdg+sm*sz*sinhdg, y+hoffset2*vscale+roofheight, z-hoffset2*coshdg-sz*sinhdg-sm*sz*coshdg, u2,v2,0])
+                        else:
+                            tris.append([x+hoffset2*sinhdg-sz*coshdg, y+hoffset2*vscale+roofheight, z-hoffset2*coshdg-sz*sinhdg, u2,v2,0])
+
+                    else:
+                        tris.append([x+hoffset1*sinhdg, y+hoffset1*vscale+voffset2, z-hoffset1*coshdg, u1,v2,0])
+                        if topfloor and i==0: roofpts.append(tris[-1][:3])	# save top first point in each wall for later
+                        tris.append([x+hoffset1*sinhdg, y+hoffset1*vscale+voffset2, z-hoffset1*coshdg, u1,v2,0])
+                        tris.append([x+hoffset2*sinhdg, y+hoffset2*vscale+voffset2, z-hoffset2*coshdg, u2,v2,0])
+                    tris.append([x+hoffset2*sinhdg, y+hoffset2*vscale+voffset1, z-hoffset2*coshdg, u2,v1,0])
+
+        if not tris:
+            if __debug__: print "Facade layout failed for %s - no tris" % self
             self.nonsimple=True
             self.dynamic_data=concatenate([array(p+COL_NONSIMPLE,float32) for w in self.points for p in w])
+            self.datalen=len(self.dynamic_data)/6
+        elif self.definition.roof and self.closed:
+            # Tessellate to generate tri vertices with UV data, and check polygon is simple
+            try:
+                n=len(roofpts)
+                rooftris=[]
+                (x,y,z)=roofpts[0]
+                (tox,toy,toz)=roofpts[1]
+                h=atan2(tox-x, z-toz) + piby2	# texture heading determined by nodes 0->1
+                coshdg=cos(h)
+                sinhdg=sin(h)
+                minx=minz=maxint
+                maxx=maxz=-maxint
+                for j in range(n):
+                    # UV boundary taken from building footprint, not roof footprint
+                    minx=min(minx, (points[j][0]*coshdg+points[j][2]*sinhdg))
+                    maxx=max(maxx, (points[j][0]*coshdg+points[j][2]*sinhdg))
+                    minz=min(minz, (points[j][0]*sinhdg-points[j][2]*coshdg))
+                    maxz=max(maxz, (points[j][0]*sinhdg-points[j][2]*coshdg))
+                # don't know what these numbers repreent, but 1st and 3rd pair look like tex coords
+                minu=min(self.definition.roof[0][0], self.definition.roof[2][0])
+                maxu=max(self.definition.roof[0][0], self.definition.roof[2][0])
+                minv=min(self.definition.roof[0][1], self.definition.roof[2][1])
+                maxv=max(self.definition.roof[0][1], self.definition.roof[2][1])
+                gluTessBeginPolygon(Facade.tess, rooftris)
+                gluTessBeginContour(Facade.tess)
+                for j in range(n):
+                    gluTessVertex(Facade.tess, array([roofpts[j][0], 0, roofpts[j][2]],float64), list(roofpts[j]) + [maxu-(roofpts[j][0]*coshdg+roofpts[j][2]*sinhdg-minx)*(maxu-minu)/(maxx-minx), minv+(roofpts[j][0]*sinhdg-roofpts[j][2]*coshdg-minz)*(maxv-minv)/(maxz-minz), 0])
+                gluTessEndContour(Facade.tess)
+                gluTessEndPolygon(Facade.tess)
+                if __debug__:
+                    if not rooftris: print "Facade roof layout failed - no tris"
+            except:
+                # Combine required -> not simple
+                if __debug__:
+                    print "Facade roof layout failed:"
+                    print_exc()
+                    rooftris=[]
 
-        self.datalen=len(self.dynamic_data)/6
+            if self.definition.texture_roof:
+                self.rooflen=len(rooftris)
+                self.datalen=len(tris)
+            else:
+                self.rooflen=0
+                self.datalen=len(tris)+len(rooftris)
+            self.dynamic_data=array(tris+rooftris, float32).flatten()
+        else:
+            self.rooflen=0
+            self.datalen=len(tris)
+            self.dynamic_data=array(tris, float32).flatten()
+
         vertexcache.allocate_dynamic(self, True)
         return selectednode
 
@@ -1605,11 +1649,10 @@ class Facade(Polygon):
                     maxu=max(maxu, (points[j][0]*coshdg+points[j][2]*sinhdg)/s)
                     minv=min(minv, (points[j][0]*sinhdg-points[j][2]*coshdg)/s)
                 gluTessBeginPolygon(Facade.tess, tris)
-                for i in range(len(self.nodes)):
-                    gluTessBeginContour(Facade.tess)
-                    for j in range(len(self.nodes[i])):
-                        gluTessVertex(Facade.tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [(self.points[i][j][0]*coshdg+self.points[i][j][2]*sinhdg)/s-maxu, (self.points[i][j][0]*sinhdg-self.points[i][j][2]*coshdg)/s-minv, 0])
-                    gluTessEndContour(Facade.tess)
+                gluTessBeginContour(Facade.tess)
+                for j in range(n):
+                    gluTessVertex(Facade.tess, array([points[j][0], 0, points[j][2]],float64), list(points[j]) + [(points[j][0]*coshdg+points[j][2]*sinhdg)/s-maxu, (points[j][0]*sinhdg-points[j][2]*coshdg)/s-minv, 0])
+                gluTessEndContour(Facade.tess)
                 gluTessEndPolygon(Facade.tess)
                 if __debug__:
                     if not tris: print "Facade roof layout failed - no tris"

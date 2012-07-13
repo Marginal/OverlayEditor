@@ -814,31 +814,41 @@ class FacadeDef(PolygonDef):
             self.mesh=[]
             self.children=[]	# [name, definition, is_draped, xdelta, ydelta, zdelta, hdelta]
 
+    class v8Wall:
+        def __init__(self):
+            self.widths=[0,1]
+            self.scale=[1,1]
+            self.hpanels=[[],[],[]]	# left, center, right u coords
+            self.vpanels=[[],[],[]]	# bottom, middle, top v coords
+            self.basement=0		# basement depth v coords
+            self.roofslope=0		# 0=vertical (no slope)
+        def __repr__(self):
+            return str(vars(self))
+
+    class v8Panel:
+        def __init__(self):
+            self.width=1		# width or height
+            self.texcoords=(0,1)	# (start, end)
+        def __repr__(self):
+            return str(vars(self))
+
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.canpreview=True
         self.type=Locked.FAC
 
-        # Only reads first wall in first LOD
         self.ring=1
         self.two_sided=False
-        self.roof=[]
-        self.roofscale=1
-        self.texture_roof=0
-        self.floors=[]
+        self.texture_roof=0		# separate texture for roof
+        self.walls=[]	# v8 facade
+        self.roof=[]	# v8 facade
+        self.floors=[]	# v10 facade
         self.version=800
 
-        # v8 per-wall
-        self.roof_slope=0
-        self.hscale=100
-        self.vscale=100
-        self.horiz=[]
-        self.vert=[]
-        self.hends=[0,0]
-        self.vends=[0,0]
-
+        activelod=False
         currentfloor=currentsegment=currentwall=None
         rooftex=False
+        texsize=(1,1)	# default values in v8
         objects=[]
         placements=[]
         segments=[]
@@ -873,53 +883,42 @@ class FacadeDef(PolygonDef):
                 self.ring=int(c[1])
             elif id=='TWO_SIDED':
                 self.two_sided=(int(c[1])!=0)
-            elif id=='LOD':
-                # LOD
-                roof=[]
-                while True:
-                    line=h.readline()
-                    if not line: break
-                    c=line.split()
-                    if not c: continue
-                    id=c[0]
-                    if id=='LOD':
-                        break	# stop after first LOD
-                    elif id in ['ROOF','HARD_ROOF']:
-                        roof.append((float(c[1]), float(c[2])))
-                    elif id in ['WALL','HARD_WALL']:
-                        while True:
-                            line=h.readline()
-                            if not line: break
-                            c=line.split()
-                            if not c: continue
-                            id=c[0]
-                            if id in ['LOD', 'WALL']:
-                                break
-                            elif id=='SCALE':
-                                self.hscale=float(c[1])
-                                self.vscale=float(c[2])
-                            elif id=='ROOF_SLOPE':
-                                self.roof_slope=float(c[1])
-                            elif id in ['LEFT', 'CENTER', 'RIGHT']:
-                                self.horiz.append((float(c[1]),float(c[2])))
-                                if id=='LEFT': self.hends[0]+=1
-                                elif id=='RIGHT': self.hends[1]+=1
-                            elif id in ['BOTTOM', 'MIDDLE', 'TOP']:
-                                self.vert.append((float(c[1]),float(c[2])))
-                                if id=='BOTTOM': self.vends[0]+=1
-                                elif id=='TOP': self.vends[1]+=1
-                        break # stop after first WALL
-                if len(roof) in [0,4]:
-                    self.roof=roof
-                else:
-                    self.roof=[roof[0], roof[0], roof[0], roof[0]]
-                self.fittomesh=(not roof)	# is this true
-                if not self.horiz or not self.vert:
-                    raise IOError
-                break	# stop after first LOD
-            # v10
             elif id=='GRADED':
                 self.fittomesh=False
+
+            # v8
+            elif id=='LOD':
+                currentwall=None
+                activelod=not float(c[1])	# Only do LOD with visibility starting at 0
+            elif id=='TEX_SIZE' and activelod:	# Not sure if this is per-LOD. Definitely not per-wall.
+                texsize=(float(c[1]), float(c[2]))
+            elif id=='ROOF' and activelod:
+                self.roof.append((float(c[1])/texsize[0], float(c[2])/texsize[1]))
+            elif id=='ROOF_SCALE' and activelod:# v10 extension to v8 format
+                self.roof=[(float(c[i])/texsize[0], float(c[i+1])/texsize[1]) for i in [1,3,5,7]]
+
+            elif id=='WALL' and activelod:
+                currentwall=FacadeDef.v8Wall()
+                currentwall.widths=(float(c[1]),float(c[2]))
+                self.walls.append(currentwall)
+            elif id=='SCALE' and activelod:
+                currentwall.scale=(float(c[1]),float(c[2]))
+            elif id=='ROOF_SLOPE' and activelod:
+                currentwall.roofslope=float(c[1])
+            elif id=='BASEMENT_DEPTH' and activelod:
+                currentwall.basement=float(c[1])/texsize[1]
+            elif id in ['LEFT','CENTER','RIGHT'] and activelod:
+                panel=FacadeDef.v8Panel()
+                panel.texcoords=(float(c[1])/texsize[0],float(c[2])/texsize[0])
+                panel.width=(panel.texcoords[1]-panel.texcoords[0])*currentwall.scale[0]
+                currentwall.hpanels[['LEFT','CENTER','RIGHT'].index(id)].append(panel)
+            elif id in ['BOTTOM','MIDDLE','TOP'] and activelod:
+                panel=FacadeDef.v8Panel()
+                panel.texcoords=(float(c[1])/texsize[1],float(c[2])/texsize[1])
+                panel.width=(panel.texcoords[1]-panel.texcoords[0])*currentwall.scale[1]
+                currentwall.vpanels[['BOTTOM','MIDDLE','TOP'].index(id)].append(panel)
+
+            # v10
             elif id in ['SHADER_WALL','SHADER_ROOF']:
                 rooftex=(id=='SHADER_ROOF')
             elif id=='ROOF_SCALE':
@@ -992,6 +991,13 @@ class FacadeDef(PolygonDef):
                     wall.spellings.sort(key=attrgetter('width'), reverse=True)	# layout code assumes spellings are in descending width
                     for spelling in wall.spellings:
                         if not spelling.width: raise IOError	# Can't handle zero-width segments
+        else:	# v8
+            if not self.walls: raise IOError
+            for wall in self.walls:
+                if not sum([p.width for panels in wall.hpanels for p in panels]): raise IOError	# must have some panels
+                if not sum([p.width for panels in wall.vpanels for p in panels]): raise IOError	# must have some panels
+            if self.roof and len(self.roof)!=4:
+                self.roof=[self.roof[0], self.roof[0], self.roof[0], self.roof[0]]	# roof needs zero or four points
 
         h.close()
 
@@ -1007,10 +1013,23 @@ class FacadeDef(PolygonDef):
     #        p[1].flush()
 
     def preview(self, canvas, vertexcache):
-        if self.version<1000:
-            return PolygonDef.preview(self, canvas, vertexcache,
-                                      self.horiz[0][0], self.vert[0][0],
-                                      self.horiz[-1][1], self.vert[-1][1])
+        if self.version>=1000:
+            return self.preview10(canvas, vertexcache)
+        else:
+            return self.preview8(canvas, vertexcache)
+
+    def preview8(self, canvas, vertexcache):
+        width=0
+        wall=self.walls[0]		# just use first wall
+        hpanels=wall.hpanels
+        l=min([p.texcoords[0] for p in hpanels[0]+hpanels[1]+hpanels[2]])
+        r=max([p.texcoords[1] for p in hpanels[0]+hpanels[1]+hpanels[2]])
+        vpanels=wall.vpanels
+        b=min([p.texcoords[0] for p in vpanels[0]+vpanels[1]+vpanels[2]])
+        t=max([p.texcoords[1] for p in vpanels[0]+vpanels[1]+vpanels[2]])
+        return PolygonDef.preview(self, canvas, vertexcache, l, b+wall.basement, r, t)
+
+    def preview10(self, canvas, vertexcache):
         floor=self.floors[-1]		# highest floor
         wall=floor.walls[0]		# default wall
         maxsize=floor.height*1.5 or 4	# 4 chosen to make standard fence and jet blast shield look OK
@@ -1088,14 +1107,14 @@ class FacadeFallback(FacadeDef):
         self.ring=1
         self.version=800
         self.two_sided=True
+        self.texture_roof=0
         self.roof=[]
-        self.roof_slope=0
-        self.hscale=1
-        self.vscale=1
-        self.horiz=[(0.0,1.0)]
-        self.vert=[(0.0,1.0)]
-        self.hends=[0,0]
-        self.vends=[0,0]
+        wall=FacadeDef.v8Wall()
+        wall.scale=[10,10]
+        panel=FacadeDef.v8Panel()
+        panel.width=wall.scale[0]
+        wall.hpanels[1]=wall.vpanels[0]=[panel]
+        self.walls=[wall]
 
 
 class ForestDef(PolygonDef):
