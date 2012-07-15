@@ -132,6 +132,9 @@ class Filecache:
                 if h.info().getheader('X-VE-Tile-Info')=='no-tile':
                     # Bing serves a placeholder and adds this header if no imagery available at this resolution
                     raise HTTPError(url, 404, None, None, None)
+                if int(h.info().getheader('Content-Length'))<3000:
+                    # ArcGIS doesn't give any indication that it's serving a placeholder. Assume small filesize = placeholder
+                    raise HTTPError(url, 404, None, None, None)
                 f=open(filename, 'wb')
                 f.write(d)
                 f.close()
@@ -187,10 +190,11 @@ class Imagery:
 
     def __init__(self, canvas):
 
-        self.providers={'Bing': self.bing_setup}
+        self.providers={'Bing': self.bing_setup, 'ArcGIS': self.arcgis_setup}
 
         self.canvas=canvas
         self.imageryprovider=None
+        self.provider_base=None
         self.provider_url=None
         self.provider_logo=None	# (filename, width, height)
         self.provider_levelmin=self.provider_levelmax=0
@@ -262,6 +266,7 @@ class Imagery:
 
         if not imageryprovider: imageryprovider=None
         if imageryprovider!=self.imageryprovider:
+            self.provider_base=None
             self.provider_url=None
             self.provider_logo=None
             self.imageryprovider=imageryprovider
@@ -381,9 +386,7 @@ class Imagery:
 
     # Returns a laid-out placement if possible, or not laid-out if image is still loading, or None if not available.
     def getplacement(self,x,y,level,priority,fetch):
-        quadkey=self.bing_quadkey(x,y,level)
-        url=self.provider_url % quadkey
-        name=basename(url).split('?')[0]
+        (name,url)=self.provider_url(x,y,level)
         if name in self.placementcache:
             # Already created
             placement=self.placementcache[name]
@@ -446,7 +449,9 @@ class Imagery:
                 digit+=2
             quadkey+=('%d' % digit)
             i-=1
-        return quadkey
+        url=self.provider_base % quadkey
+        name=basename(url).split('?')[0]
+        return (name,url)
 
 
     # Called in worker thread - don't do anything fancy since main body of code is not thread-safe
@@ -464,14 +469,38 @@ class Imagery:
             # http://msdn.microsoft.com/en-us/library/ff701712.aspx
             self.provider_levelmin=int(res['zoomMin'])
             self.provider_levelmax=int(res['zoomMax'])
-            self.provider_url=res['imageUrl'].replace('{subdomain}',res['imageUrlSubdomains'][-1]).replace('{culture}','en').replace('{quadkey}','%s') + '&key=' + key	# was random.choice(res['imageUrlSubdomains']) but always picking the same server seems to give better caching
-        except:
-            if __debug__: print_exc()
-        try:
+            self.provider_base=res['imageUrl'].replace('{subdomain}',res['imageUrlSubdomains'][-1]).replace('{culture}','en').replace('{quadkey}','%s') + '&key=' + key	# was random.choice(res['imageUrlSubdomains']) but always picking the same server seems to give better caching
+            self.provider_url=self.bing_quadkey
             if info['brandLogoUri']:
                 filename=self.filecache.fetch(basename(info['brandLogoUri']), info['brandLogoUri'])
                 image = PIL.Image.open(filename)	# yuck. but at least open is lazy
                 self.provider_logo=(filename,image.size[0],image.size[1])
+        except:
+            if __debug__: print_exc()
+        self.canvas.Refresh()	# Might have been waiting on this to get imagery
+
+
+    def arcgis_url(self, x, y, level):
+        url=self.provider_base % ("%d/%d/%d" % (level, y, x))
+        name="arcgis_%d_%d_%d.jpeg" % (level, y, x)
+        return (name,url)
+
+    # Called in worker thread - don't do anything fancy since main body of code is not thread-safe
+    def arcgis_setup(self, tls):
+        try:
+            h=urlopen('http://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer?f=json')
+            d=h.read()
+            h.close()
+            info=json_decode(d)
+            # http://resources.arcgis.com/en/help/rest/apiref/index.html
+            # http://resources.arcgis.com/en/help/rest/apiref/mapserver.html
+            self.provider_levelmin=min([lod['level'] for lod in info['tileInfo']['lods']])
+            self.provider_levelmax=max([lod['level'] for lod in info['tileInfo']['lods']])
+            self.provider_base='http://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/%s'
+            self.provider_url=self.arcgis_url
+            filename=self.filecache.fetch('logo-med.png', 'http://serverapi.arcgisonline.com/jsapi/arcgis/2.8/images/map/logo-med.png')
+            image = PIL.Image.open(filename)	# yuck. but at least open is lazy
+            self.provider_logo=(filename,image.size[0],image.size[1])
         except:
             if __debug__: print_exc()
         self.canvas.Refresh()	# Might have been waiting on this to get imagery
@@ -498,5 +527,7 @@ class Imagery:
 # Python 2.5 doesn't have json module, so here's a quick and dirty decoder. Doesn't santise input.
 def json_decode(s):
     null=None
+    true=True
+    false=False
     if not s.startswith('{'): return {}
     return eval(s.decode('utf-8').replace('\/','/'))

@@ -473,14 +473,24 @@ class BackgroundDialog(wx.Dialog):
 
         sizer1 = wx.StaticBoxSizer(wx.StaticBox(self, -1, 'Mapping service'), wx.VERTICAL)
         sizer.Add(sizer1, 0, wx.ALL|wx.EXPAND, pad)
-
-        self.bing = wx.CheckBox(self, -1, u'Microsoft Bing\u2122 ')
-        self.bing.SetValue(prefs.imageryprovider=='Bing')
-        self.bingtou = wx.HyperlinkCtrl(self, -1, 'Terms of Use', 'http://www.microsoft.com/maps/assets/docs/terms.aspx')
+        self.imgnone = wx.RadioButton(self, -1, 'None', style=wx.RB_GROUP)
+        self.imgnone.SetValue(prefs.imageryprovider not in ['Bing','ArcGIS'])
+        self.imgbing = wx.RadioButton(self, -1, u'Microsoft Bing\u2122 ')
+        self.imgbing.SetValue(prefs.imageryprovider=='Bing')
+        bingtou = wx.HyperlinkCtrl(self, -1, 'Terms of Use', 'http://www.microsoft.com/maps/assets/docs/terms.aspx')
+        self.imgarcgis = wx.RadioButton(self, -1, u'ESRI ArcGIS Online ')
+        self.imgarcgis.SetValue(prefs.imageryprovider=='ArcGIS')
+        arcgistou = wx.HyperlinkCtrl(self, -1, 'Terms of Use', 'http://www.esri.com/legal/pdfs/e-800-termsofuse.pdf')
         sizer11 = wx.FlexGridSizer(1, 3, pad, pad)
         sizer1.Add(sizer11, 0, wx.ALL|wx.EXPAND, pad)
-        sizer11.Add(self.bing, 0, wx.ALL|wx.EXPAND, pad)
-        sizer11.Add(self.bingtou, 0, wx.ALL|wx.EXPAND, pad)
+        sizer11.Add(self.imgnone, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, pad)
+        sizer11.AddStretchSpacer()
+        sizer11.AddStretchSpacer()
+        sizer11.Add(self.imgbing, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, pad)
+        sizer11.Add(bingtou, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, pad)
+        sizer11.AddStretchSpacer()
+        sizer11.Add(self.imgarcgis, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, pad)
+        sizer11.Add(arcgistou, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, pad)
         sizer11.AddStretchSpacer()
 
         sizer2 = wx.StaticBoxSizer(wx.StaticBox(self, -1, 'File'), wx.VERTICAL)
@@ -511,7 +521,9 @@ class BackgroundDialog(wx.Dialog):
 
         self.SetSizerAndFit(outersizer)
 
-        wx.EVT_CHECKBOX(self, self.bing.GetId(), self.OnUpdate)
+        wx.EVT_RADIOBUTTON(self, self.imgnone.GetId(), self.OnUpdate)
+        wx.EVT_RADIOBUTTON(self, self.imgbing.GetId(), self.OnUpdate)
+        wx.EVT_RADIOBUTTON(self, self.imgarcgis.GetId(), self.OnUpdate)
         wx.EVT_BUTTON(self, self.clearbtn.GetId(), self.OnClear)
         wx.EVT_BUTTON(self, self.browsebtn.GetId(), self.OnBrowse)
         wx.EVT_SCROLL_THUMBRELEASE(self, self.OnUpdate)
@@ -574,7 +586,7 @@ class BackgroundDialog(wx.Dialog):
                     if x1<x: break
                 self.path.SetValue('...'+sep+label)
 
-        prefs.imageryprovider=self.bing.GetValue() and 'Bing' or None
+        prefs.imageryprovider=(self.imgbing.GetValue() and 'Bing') or (self.imgarcgis.GetValue() and 'ArcGIS') or None
         prefs.imageryopacity=self.opacity.GetValue()
         self.parent.canvas.setbackground(prefs, self.parent.loc, self.image)
         self.parent.canvas.goto(self.parent.loc, prefs=prefs)	# initiate imagery provider setup & loading
