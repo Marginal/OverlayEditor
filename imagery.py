@@ -19,19 +19,18 @@ from clutter import Draped, DrapedImage, Polygon, tessvertex, tessedge, csgtvert
 from version import appname
 
 try:
-    from Queue import PriorityQueue
+    from Queue import LifoQueue
 except:	# not in Python 2.5
-    import heapq
-    class PriorityQueue(Queue):
+    class LifoQueue(Queue):
         def _init(self, maxsize):
             self.maxsize = maxsize
             self.queue = []
         def _qsize(self, len=len):
             return len(self.queue)
-        def _put(self, item, heappush=heapq.heappush):
-            heappush(self.queue, item)
-        def _get(self, heappop=heapq.heappop):
-            return heappop(self.queue)
+        def _put(self, item):
+            self.queue.append(item)
+        def _get(self):
+            return self.queue.pop()
 
 fourpi=4*pi
 
@@ -208,7 +207,7 @@ class Imagery:
 
         # Setup a pool of worker threads
         self.workers=[]
-        self.q=PriorityQueue()
+        self.q=LifoQueue()
         for i in range(Imagery.connections):
             t=threading.Thread(target=self.worker)
             t.daemon=True	# this doesn't appear to work for threads blocked on Queue
@@ -235,7 +234,7 @@ class Imagery:
         gluTessCallback(tls.csgt, GLU_TESS_EDGE_FLAG,    csgtedge)
 
         while True:
-            (priority, fn, args)=self.q.get()
+            (fn, args)=self.q.get()
             if not fn: exit()	# Die!
             fn(tls, *args)
             self.q.task_done()
@@ -246,7 +245,7 @@ class Imagery:
         self.filecache.writedir()
 	# kill workers
         for i in range(Imagery.connections):
-            self.q.put((0, None, ()))	# Top priority! Don't want to hold up program exit
+            self.q.put((None, ()))	# Top priority! Don't want to hold up program exit
         # wait for them
         for t in self.workers:
             t.join()
@@ -271,7 +270,7 @@ class Imagery:
             self.provider_logo=None
             self.imageryprovider=imageryprovider
             if self.imageryprovider not in self.providers: return
-            self.q.put((0, self.providers[self.imageryprovider], ()))
+            self.q.put((self.providers[self.imageryprovider], ()))
 
         newtile=(int(floor(loc[0])),int(floor(loc[1])))
         if not self.provider_url or self.tile!=newtile:
@@ -310,59 +309,67 @@ class Imagery:
         #print self.loc, width, screensize.width, 1/ppm, ppm, level, ntiles, cx, cy
         if __debug__: print "Desire imagery level", level
 
+        # We're using a Lifo queue, so as the user navigates the most important tiles are processed first.
+        # Should remove from the queue those tiles the user is probably not going to see again, but that's difficult so we don't.
+
         # Display 6x6 tiles if available that cover the same area as 3x3 at the next higher level (this is to prevent weirdness when zooming in)
         cx=2*(cx/2)
         cy=2*(cy/2)
         placements=[]
         needed=set()	# Placements at this level failed either cos imagery not available at this location/level or is pending layout
         fetch=[]
-        prioritybase=level*100	# prioritise lower-res
-        seq=[(0,0), (1,0), (1,1), (0,1), (-1,1), (-1,0), (-1,-1), (0,-1), (1,-1), (2,-1), (2,0), (2,1), (2,2), (1,2), (0,2), (-1,2), (-2,2), (-2,1), (-2,0), (-2,-1), (-2,-2), (-1,-2), (0,-2), (1,-2), (2,-2), (3,-2), (3,-1), (3,0), (3,1), (3,2), (3,3), (2,3), (1,3), (0,3), (-1,3), (-2,3)]
+        seq=[(-2, 3), (-1, 3), (0, 3), (1, 3), (2, 3), (3, 3), (3, 2), (3, 1), (3, 0), (3, -1), (3, -2), (2, -2), (1, -2), (0, -2), (-1, -2), (-2, -2), (-2, -1), (-2, 0), (-2, 1), (-2, 2), (-1, 2), (0, 2), (1, 2), (2, 2), (2, 1), (2, 0), (2, -1), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (0, 0)]
         for i in range(len(seq)):
             (x,y)=seq[i]
-            placement=self.getplacement(cx+x,cy+y,level,prioritybase+i, False)		# Don't initiate fetch yet
+            placement=self.getplacement(cx+x,cy+y,level, False)		# Don't initiate fetch yet
             if placement and placement.islaidout():
                 placements.append(placement)
             else:
                 needed.add(((cx+x)/2,(cy+y)/2))
-                if i<4:
-                    fetch.append((cx+x,cy+y,level,prioritybase+i,True))
+                if 0<=x<=1 and 0<=y<=1:
+                    fetch.append((cx+x,cy+y,level, True))		# schedule fetch of the centre 2x2 tiles
 
         # Go up and get 5x5 tiles around the centre tile - but only draw them if higher-res imagery not (yet) available.
         level-=1
         cx/=2
         cy/=2
         fail2=True
-        prioritybase-=100
-        seq=[(0,0), (1,0), (1,1), (0,1), (-1,1), (-1,0), (-1,-1), (0,-1), (1,-1), (2,-1), (2,0), (2,1), (1,2), (0,2), (-1,2), (-2,1), (-2,0), (-2,-1), (-1,-2), (0,-2), (1,-2)] # 5x5 with corners removed #, (0,3), (3,0), (0,-3), (-3,0)]
+        if self.q.empty():
+            # If the queue is empty then the first (and low importance) tile starts processing immediately.
+            # So here we add the most important centre tile of 5x5 and ensure it starts processing.
+            placement=self.getplacement(cx,cy,level, True)	# Initiate fetch
+            if placement:
+                fail2=False		# Some imagery may be available at this level
+                if placement.islaidout() and (cx,cy) in needed:
+                    placements.insert(0,placement)		# Insert at start so drawn under higher-level
+                    needed.remove((cx,cy))
+            while not self.q.empty():
+                time.sleep(0)		# Allow worker thread to remove from queue
+        # First initiate fetch of higher-level imagery of centre 2x2
+        for args in fetch: self.getplacement(*args)
+
+        seq=[(1, -2), (0, -2), (-1, -2), (-2, -1), (-2, 0), (-2, 1), (-1, 2), (0, 2), (1, 2), (2, 1), (2, 0), (2, -1), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (0, 0)] # 5x5 with corners removed #, (0,3), (3,0), (0,-3), (-3,0)]
         for i in range(len(seq)):
             (x,y)=seq[i]
-            placement=self.getplacement(cx+x,cy+y,level,prioritybase+i,True)	# Initiate fetch
+            placement=self.getplacement(cx+x,cy+y,level, True)	# Initiate fetch
             if placement:
-                # Some imagery may be available at this level
-                fail2=False
-                if placement.islaidout() and (i>=9 or (cx+x,cy+y) in needed):
+                fail2=False		# Some imagery may be available at this level
+                if placement.islaidout() and (abs(x)>1 or abs(y)>1 or (cx+x,cy+y) in needed):
                     placements.insert(0,placement)	# Insert at start so drawn under higher-level
 
         while fail2 and level>levelmin:
-            # No imagery available at higher level. Go up and get 3x3 tiles around the centre tile.
+            # No imagery available at all at higher level. Go up and get 3x3 tiles around the centre tile.
             level-=1
             cx/=2
             cy/=2
-            prioritybase-=100
-            seq=[(0,0), (1,0), (1,1), (0,1), (-1,1), (-1,0), (-1,-1), (0,-1), (1,-1)]
+            seq=[(1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (0, 0)]
             for i in range(len(seq)):
                 (x,y)=seq[i]
-                placement=self.getplacement(cx+x,cy+y,level,prioritybase+i,True)	# Initiate fetch only if previous level completely failed
+                placement=self.getplacement(cx+x,cy+y,level, True)
                 if placement:
-                    # Some imagery may be available at this level
-                    fail2=False
+                    fail2=False		# Some imagery may be available at this level
                     if placement.islaidout():
                         placements.insert(0,placement)	# Insert at start so drawn under higher-level
-
-        # Now initiate fetch of higher-level imagery of centre 2x2
-        for args in fetch:
-            self.getplacement(*args)
 
         if __debug__: print "Actual imagery level", level
         return placements
@@ -385,7 +392,7 @@ class Imagery:
 
 
     # Returns a laid-out placement if possible, or not laid-out if image is still loading, or None if not available.
-    def getplacement(self,x,y,level,priority,fetch):
+    def getplacement(self,x,y,level,fetch):
         (name,url)=self.provider_url(x,y,level)
         if name in self.placementcache:
             # Already created
@@ -398,7 +405,7 @@ class Imagery:
             placement.load(self.canvas.lookup, self.canvas.defs, self.canvas.vertexcache)
             self.placementcache[name]=placement
             # Initiate fetch of image and do layout. Prioritise more detail.
-            self.q.put((priority, self.initplacement, (placement,name,url)))
+            self.q.put((self.initplacement, (placement,name,url)))
         else:
             placement=None
 
