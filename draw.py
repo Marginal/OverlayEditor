@@ -277,22 +277,23 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.d=3333.25
 
         # Must specify min sizes for glX? - see glXChooseVisual and GLXFBConfig
-        wx.glcanvas.GLCanvas.__init__(self, parent,
-                                      style=GL_RGBA|GL_DOUBLEBUFFER|GL_DEPTH|wx.FULL_REPAINT_ON_RESIZE,
-                                      attribList=[
-            wx.glcanvas.WX_GL_RGBA,
-            wx.glcanvas.WX_GL_DOUBLEBUFFER,
-            wx.glcanvas.WX_GL_DEPTH_SIZE, 32])	# ATI on Mac defaults to 16
-        if self.GetId()==-1:
-            # Failed - try with default depth buffer
-            wx.glcanvas.GLCanvas.__init__(self, parent,
-                                          style=GL_RGBA|GL_DOUBLEBUFFER|GL_DEPTH|wx.FULL_REPAINT_ON_RESIZE,
-                                          attribList=[wx.glcanvas.WX_GL_RGBA,wx.glcanvas.WX_GL_DOUBLEBUFFER])
-        if self.GetId()==-1:
-            myMessageBox('Try updating the drivers for your graphics card.',
-                         "Can't initialise OpenGL.",
-                         wx.ICON_ERROR|wx.OK, self)
-            exit(1)
+        try:
+            # Ask for a large depth buffer.
+            # wxGTK<=2.8 can't recover from a failure in glXChooseFBConfig so skip this - http://trac.wxwidgets.org/ticket/12479
+            if platform.startswith('linux'): raise AssertionError
+            # We're not using the stencil buffer so would prefer to specify a 32bit depth buffer, but this can cause e.g. Intel Windows drivers to fall back to 16 even though they support 24
+            wx.glcanvas.GLCanvas.__init__(self, parent, style=wx.FULL_REPAINT_ON_RESIZE,
+                                          attribList=[wx.glcanvas.WX_GL_RGBA,wx.glcanvas.WX_GL_DOUBLEBUFFER,wx.glcanvas.WX_GL_DEPTH_SIZE, 24])
+        except:
+            # Failed - try with safe 16bit depth buffer.
+            try:
+                if __debug__: print "Trying 16bit depth buffer"
+                # wxGTK<=2.8 has no way to discover if this fails, so will segfault later
+                wx.glcanvas.GLCanvas.__init__(self, parent, style=wx.FULL_REPAINT_ON_RESIZE,
+                                              attribList=[wx.glcanvas.WX_GL_RGBA,wx.glcanvas.WX_GL_DOUBLEBUFFER,wx.glcanvas.WX_GL_DEPTH_SIZE, 16])
+            except:
+                myMessageBox('Try updating the drivers for your graphics card.', "Can't initialise OpenGL.", wx.ICON_ERROR|wx.OK, self)
+                exit(1)
 
         if wx.VERSION >= (2,9):
             self.context = wx.glcanvas.GLContext(self)
@@ -316,12 +317,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         wx.EVT_TIMER(self, self.timer.GetId(), self.OnTimer)
 
     def glInit(self):
-        #print "Canvas Init"
         # Setup state. Under X must be called after window is shown
         if wx.VERSION >= (2,9):
             self.SetCurrent(self.context)
         else:
             self.SetCurrent()
+        if __debug__: print "RGBA: %d%d%d%d, Depth: %d, Stencil: %d, Aux: %d, DoubleBuffer: %d" % (glGetInteger(GL_RED_BITS), glGetInteger(GL_GREEN_BITS), glGetInteger(GL_BLUE_BITS), glGetInteger(GL_ALPHA_BITS), glGetInteger(GL_DEPTH_BITS), glGetInteger(GL_STENCIL_BITS), glGetInteger(GL_AUX_BUFFERS), glGetBoolean(GL_DOUBLEBUFFER))
 
         if not vbo.get_implementation():
             myMessageBox('This application requires the use of OpenGL Vertex Buffer Objects (VBOs) which are not supported by your graphics card.\nTry updating the drivers for your graphics card.',
