@@ -481,7 +481,7 @@ class BackgroundDialog(wx.Dialog):
         self.imgarcgis = wx.RadioButton(self, -1, u'ESRI ArcGIS Online ')
         self.imgarcgis.SetValue(prefs.imageryprovider=='ArcGIS')
         arcgistou = wx.HyperlinkCtrl(self, -1, 'Terms of Use', 'http://www.esri.com/legal/pdfs/e-800-termsofuse.pdf')
-        sizer11 = wx.FlexGridSizer(1, 3, pad, pad)
+        sizer11 = wx.FlexGridSizer(3, 3, pad, pad)
         sizer1.Add(sizer11, 0, wx.ALL|wx.EXPAND, pad)
         sizer11.Add(self.imgnone, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, pad)
         sizer11.AddStretchSpacer()
