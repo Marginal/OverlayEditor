@@ -1207,7 +1207,7 @@ class MainWindow(wx.Frame):
         for key in stuff.keys():
             try:
                 writeDSF(dsfdir, key, stuff[key], self.canvas.netfile)
-            except IOError, e:
+            except EnvironmentError, e:
                 if __debug__: print_exc()
                 myMessageBox(str(e.strerror),
                              "Can't save %+03d%+04d.dsf." % (key[0], key[1]), 

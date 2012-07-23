@@ -816,8 +816,13 @@ def writeDSF(dsfdir, key, placements, netfile):
             rename(tilename+'.DSF.BAK', tilename+'.DSF')
         if __debug__: print err
         err=err.strip().split('\n')
-        if len(err)>1 and err[-1].startswith('('):
-            err=err[-2].strip()	# DSF errors appear on penultimate line
+        for line in err:
+            if line.lower().startswith('error'):	# first error line seems to be the most/only useful
+                err=line
+                break
         else:
-            err=err[0].strip()
+            if len(err)>1 and err[-1].startswith('('):
+                err=err[-2].strip()	# last line reports line number within source code - not useful
+            else:
+                err=err[0].strip()	# only one line - report it
         raise IOError, (0, err)
