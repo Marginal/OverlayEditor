@@ -462,19 +462,19 @@ class TexCache:
             if ext.lower()=='.dds':
                 # Do DDS manually - files need flipping
                 h=file(base+ext,'rb')
-                if h.read(4)!='DDS ': raise IOError, 'This is not a DDS file'
+                if h.read(4)!='DDS ': raise Exception, 'This is not a DDS file'
                 (ssize,sflags,height,width,size,depth,mipmaps)=unpack('<7I', h.read(28))
                 #print ssize,sflags,height,width,size,depth,mipmaps
-                if sflags&(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT)!=(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT): raise IOError, 'Missing mandatory fields'
-                if sflags&DDSD_DEPTH: raise IOError, 'Volume texture not supported'
+                if sflags&(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT)!=(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT): raise Exception, 'Missing mandatory fields'
+                if sflags&DDSD_DEPTH: raise Exception, 'Volume texture not supported'
                 for dim in [width,height]:
                     l=log(dim,2)
                     if l!=int(l):
-                        raise IOError, "Width and/or height is not a power of two"
+                        raise Exception, "Width and/or height is not a power of two"
                 if sflags&(DDSD_PITCH|DDSD_LINEARSIZE)==DDSD_PITCH:
                     size*=height
                 #elif sflags&(DDSD_PITCH|DDSD_LINEARSIZE)!=DDSD_LINEARSIZE:
-                #    raise IOError, 'Invalid size'
+                #    raise Exception, 'Invalid size'
                 h.seek(0x4c)
                 (psize,pflags,fourcc,bits,redmask,greenmask,bluemask,alphamask,caps1,caps2)=unpack('<2I4s7I', h.read(40))
                 if not sflags&DDSD_MIPMAPCOUNT or not caps1&DDSCAPS_MIPMAP:
@@ -482,7 +482,7 @@ class TexCache:
 
                 if pflags&DDPF_FOURCC:
                     # http://oss.sgi.com/projects/ogl-sample/registry/EXT/texture_compression_s3tc.txt
-                    if not self.s3tc: raise IOError, 'This video driver does not support DXT compression'
+                    if not self.s3tc: raise Exception, 'This video driver does not support DXT compression'
                     if fourcc=='DXT1':
                         if not (sflags&(DDSD_PITCH|DDSD_LINEARSIZE)):
                             size=width*height/2
@@ -502,7 +502,7 @@ class TexCache:
                             assert size==width*height
                         iformat=GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
                     else:
-                        raise IOError, '%s format not supported' % fourcc
+                        raise Exception, '%s format not supported' % fourcc
 
                     if downsample and mipmaps>=2 and width>=16 and height>=16:
                         h.seek(4+ssize + (size*5)/4)
@@ -547,22 +547,22 @@ class TexCache:
                 elif pflags&DDPF_RGB:	# uncompressed
                     assert size==width*height*bits/8	# pitch appears unreliable
                     if bits==24 and redmask==0xff0000 and greenmask==0x00ff00 and bluemask==0x0000ff:
-                        if not self.bgra: raise IOError, 'This video driver does not support BGR format'
+                        if not self.bgra: raise Exception, 'This video driver does not support BGR format'
                         format=GL_BGR_EXT
                         iformat=GL_RGB
                     elif bits==24 and redmask==0x0000ff and greenmask==0x00ff00 and bluemask==0xff0000:
                         format=GL_RGB
                         iformat=GL_RGB
                     elif bits==32 and pflags&DDPF_ALPHAPIXELS and alphamask==0xff000000L and redmask==0x00ff0000 and greenmask==0x0000ff00 and bluemask==0x000000ff:
-                        if not self.bgra: raise IOError, 'This video driver does not support BGRA format'
+                        if not self.bgra: raise Exception, 'This video driver does not support BGRA format'
                         format=GL_BGRA_EXT
                         iformat=GL_RGBA
                     elif bits==32 and not pflags&DDPF_ALPHAPIXELS and redmask==0x00ff0000 and greenmask==0x0000ff00 and bluemask==0x000000ff:
-                        if not self.bgra: raise IOError, 'This video driver does not support BGRA format'
+                        if not self.bgra: raise Exception, 'This video driver does not support BGRA format'
                         format_GL_BGRA_EXT
                         iformat=GL_RGB
                     else:
-                        raise IOError, '%dbpp format not supported' % bits
+                        raise Exception, '%dbpp format not supported' % bits
 
                     if downsample and mipmaps>=2 and width>4 and height>4:
                         h.seek(4+ssize + (size*5)/4)
@@ -577,7 +577,7 @@ class TexCache:
                     # fall through
 
                 else:	# wtf?
-                    raise IOError, 'Invalid compression type'
+                    raise Exception, 'Invalid compression type'
 
             else:	# supported PIL formats
                 image = PIL.Image.open(base+ext)
@@ -589,7 +589,7 @@ class TexCache:
                         size[i]=self.maxtexsize
                     if size!=[image.size[0],image.size[1]]:
                         if not fixsize:
-                            raise IOError, "Width and/or height is not a power of two"
+                            raise Exception, "Width and/or height not a power of two"
                         elif not self.npot:
                             image=image.resize((size[0], size[1]), PIL.Image.BICUBIC)
 

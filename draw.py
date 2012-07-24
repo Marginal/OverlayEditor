@@ -322,14 +322,14 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.SetCurrent(self.context)
         else:
             self.SetCurrent()
-        if __debug__: print "RGBA: %d%d%d%d, Depth: %d, Stencil: %d, Aux: %d, DoubleBuffer: %d" % (glGetInteger(GL_RED_BITS), glGetInteger(GL_GREEN_BITS), glGetInteger(GL_BLUE_BITS), glGetInteger(GL_ALPHA_BITS), glGetInteger(GL_DEPTH_BITS), glGetInteger(GL_STENCIL_BITS), glGetInteger(GL_AUX_BUFFERS), glGetBoolean(GL_DOUBLEBUFFER))
+        if __debug__: print "%s, %s, %s\nRGBA: %d%d%d%d, Depth: %d, Stencil: %d, Aux: %d, DoubleBuffer: %d" % (glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION), glGetInteger(GL_RED_BITS), glGetInteger(GL_GREEN_BITS), glGetInteger(GL_BLUE_BITS), glGetInteger(GL_ALPHA_BITS), glGetInteger(GL_DEPTH_BITS), glGetInteger(GL_STENCIL_BITS), glGetInteger(GL_AUX_BUFFERS), glGetBoolean(GL_DOUBLEBUFFER))
 
         if not vbo.get_implementation():
             myMessageBox('This application requires the use of OpenGL Vertex Buffer Objects (VBOs) which are not supported by your graphics card.\nTry updating the drivers for your graphics card.',
                          "Can't initialise OpenGL.",
                          wx.ICON_ERROR|wx.OK, self)
             exit(1)
-        if not glInitTextureCompressionS3tcEXT():
+        if not glInitTextureCompressionS3tcEXT() and not __debug__:
             myMessageBox('This application requires the use of DXT texture compression which is not supported by your graphics card.\nTry updating the drivers for your graphics card.',
                          "Can't initialise OpenGL.",
                          wx.ICON_ERROR|wx.OK, self)
