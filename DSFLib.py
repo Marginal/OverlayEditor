@@ -2,7 +2,7 @@ from math import cos, floor, pi, radians
 from os import mkdir, popen3, rename, unlink, SEEK_CUR, SEEK_END
 from os.path import basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 from struct import unpack
-from sys import platform, maxint
+from sys import platform, getfilesystemencoding, maxint
 from tempfile import gettempdir
 import types
 import time
@@ -81,7 +81,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
         (c,l)=unpack('<4sI', d)
         table[c]=p+4
         p+=l
-    if __debug__: print path, table
+    if __debug__: print path.encode(getfilesystemencoding() or 'utf-8'), table
     if not 'DAEH' in table or not 'NFED' in table or not 'DOEG' in table or not 'SDMC' in table:
         raise IOError, baddsf
 
@@ -793,11 +793,9 @@ def writeDSF(dsfdir, key, placements, netfile):
     
     h.close()
     if platform=='win32':
-        # Bug - how to suppress environment variable expansion?
-        cmds='%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename) #.replace('%','%%'))
-        if type(cmds)==types.UnicodeType:
-            # commands must be MBCS encoded
-            cmds=cmds.encode("mbcs")
+        # No reliable way to encode non-ASCII pathnames, so use tempdir which appears safe. This is apparently fixed in Python 3.
+        tmp2=join(gettempdir(), "%+03d%+04d.dsf" % (south,west))
+        cmds=('%s -text2dsf "%s" "%s"' % (dsftool, tmp, tmp2)).encode('mbcs')
     else:
         # See "QUOTING" in bash(1)
         cmds='%s -text2dsf "%s" "%s.dsf"' % (dsftool, tmp, tilename.replace('\\','\\\\').replace('"','\\"').replace("$", "\\$").replace("`", "\\`"))
@@ -809,6 +807,8 @@ def writeDSF(dsfdir, key, placements, netfile):
     o.close()
     e.close()
     if not __debug__: unlink(tmp)
+    if platform=='win32' and exists(join(gettempdir(), "%+03d%+04d.dsf" % (south,west))):
+        rename(tmp2, tilename+'.dsf')
     if not exists(tilename+'.dsf'):
         if exists(tilename+'.dsf.bak'):
             rename(tilename+'.dsf.bak', tilename+'.dsf')

@@ -46,17 +46,10 @@ class Filecache:
         elif platform=='darwin':
             self.cachedir=expanduser('~/Library/Caches').decode(getfilesystemencoding() or 'utf-8')
         elif platform=='win32':
-            from _winreg import OpenKey, QueryValueEx, HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER, REG_SZ, REG_EXPAND_SZ
-            handle=OpenKey(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders')
-            (v,t)=QueryValueEx(handle, 'Local AppData')
-            handle.Close()
-            if t==REG_EXPAND_SZ:
-                dirs=v.rstrip('\0').decode('mbcs').strip().split('\\')
-                for i in range(len(dirs)):
-                    if dirs[i][0]==dirs[i][-1]=='%':
-                        dirs[i]=getenv(dirs[i][1:-1],dirs[i]).decode('mbcs')
-                v='\\'.join(dirs)
-            self.cachedir=v
+            import ctypes.wintypes
+            buf= ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
+            ctypes.windll.shell32.SHGetFolderPathW(0, 0x801c, 0, 0, buf)	# CSIDL_LOCAL_APPDATA
+            self.cachedir=buf.value
         try:
             self.cachedir=join(self.cachedir, appname)
             if not isdir(self.cachedir):
