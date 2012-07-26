@@ -1093,10 +1093,17 @@ class MyGL(wx.glcanvas.GLCanvas):
         if not name:
             return False
         texerr=None
-        if name.lower()[-4:] in [ObjectDef.OBJECT, AutoGenPointDef.AGP]:
-            placement=ObjectFactory(name, lat, lon, hdg)
-        else:
-            placement=PolygonFactory(name, None, lat, lon, size, hdg)
+        try:
+            if name.lower()[-4:] in [ObjectDef.OBJECT, AutoGenPointDef.AGP]:
+                placement=ObjectFactory(name, lat, lon, hdg)
+            else:
+                placement=PolygonFactory(name, None, lat, lon, size, hdg)
+        except UnicodeError:
+            myMessageBox('Filename "%s" uses non-ASCII characters' % name, 'Cannot add this object.', wx.ICON_ERROR|wx.OK, self.frame)
+            return False
+        except:
+            myMessageBox("Can't read " + name, 'Cannot add this object.', wx.ICON_ERROR|wx.OK, self.frame)
+            return False
         if __debug__: print "add", placement
             
         if not placement.load(self.lookup, self.defs, self.vertexcache):

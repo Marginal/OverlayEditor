@@ -135,10 +135,10 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             terrain=h.read(l-9).replace('\\','/').replace(':','/').split('\0')
             h.read(1)
         elif c=='TJBO':
-            objects=h.read(l-9).replace('\\','/').replace(':','/').split('\0')
+            objects=[x.decode() for x in h.read(l-9).replace('\\','/').replace(':','/').split('\0')]	# X-Plane only supports ASCII
             h.read(1)
         elif c=='YLOP':
-            polygons=h.read(l-9).replace('\\','/').replace(':','/').split('\0')
+            polygons=[x.decode() for x in h.read(l-9).replace('\\','/').replace(':','/').split('\0')]	# X-Plane only supports ASCII
             h.read(1)
         elif c=='WTEN':
             networks=h.read(l-9).replace('\\','/').replace(':','/').split('\0')

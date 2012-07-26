@@ -81,7 +81,7 @@ def PolygonFactory(name, param, nodes, lon=None, size=None, hdg=None):
 class Clutter:
 
     def __init__(self, name, lat=None, lon=None):
-        self.name=name		# virtual name
+        self.name=name.decode()	# virtual name ASCII only - may raise UnicodeError
         self.definition=None
         self.lat=lat		# For centreing etc
         self.lon=lon

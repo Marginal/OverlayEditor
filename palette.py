@@ -46,36 +46,41 @@ class PaletteListBox(wx.VListBox):
         self.choices=[]
         names=objects.keys()
         for name,entry in objects.iteritems():
-            realname=name
-            ext=name[-4:].lower()
-            if tabname==NetworkDef.TABNAME:
-                imgno=7
-            elif tabname==ExcludeDef.TABNAME:
-                imgno=8
-            elif ext in UnknownDefs:
-                imgno=6
-            elif realname in parent.bad:
-                imgno=16
-            elif ext==PolygonDef.DRAPED:
-                imgno=4
-                if tabno==0 and self.pkgdir:
-                    # find orthos - assume library objects aren't
-                    try:
-                        h=file(join(self.pkgdir,entry.file), 'rU')
-                        for line in h:
-                            line=line.strip()
-                            if line.startswith('TEXTURE_NOWRAP') or line.startswith('TEXTURE_LIT_NOWRAP'):
-                                imgno=5
-                                break
-                            elif line.startswith('TEXTURE'):
-                                break
-                        h.close()
-                    except:
-                        pass
-            elif ext in KnownDefs:
-                imgno=KnownDefs.index(ext)
-            else:
-                imgno=16	# wtf?
+            try:
+                realname=name.encode()	# X-Plane only supports ASCII
+                ext=name[-4:].lower()
+                if tabname==NetworkDef.TABNAME:
+                    imgno=7
+                elif tabname==ExcludeDef.TABNAME:
+                    imgno=8
+                elif ext in UnknownDefs:
+                    imgno=6
+                elif realname in parent.bad:
+                    imgno=16
+                elif ext==PolygonDef.DRAPED:
+                    imgno=4
+                    if tabno==0 and self.pkgdir:
+                        # find orthos - assume library objects aren't
+                        try:
+                            h=file(join(self.pkgdir,entry.file), 'rU')
+                            for line in h:
+                                line=line.strip()
+                                if line.startswith('TEXTURE_NOWRAP') or line.startswith('TEXTURE_LIT_NOWRAP'):
+                                    imgno=5
+                                    break
+                                elif line.startswith('TEXTURE'):
+                                    break
+                            h.close()
+                        except:
+                            pass
+                elif ext in KnownDefs:
+                    imgno=KnownDefs.index(ext)
+                else:
+                    imgno=16	# wtf?
+            except:
+                realname=name
+                parent.bad[name]=True
+                imgno=16	# non-ASCII
             if tabname in [NetworkDef.TABNAME, ExcludeDef.TABNAME]:
                 pass
             elif not self.pkgdir:
@@ -377,7 +382,7 @@ class Palette(wx.SplitterWindow):
             self.previewkey=self.lastkey
             self.previewimg=self.previewbmp=None
 
-            if not self.previewkey or self.previewkey not in self.frame.canvas.lookup:
+            if not self.previewkey or self.previewkey in self.cb.bad or self.previewkey not in self.frame.canvas.lookup:
                 self.preview.SetBackgroundColour(wx.NullColour)
                 self.preview.ClearBackground()
                 wx.EVT_PAINT(self.preview, self.OnPaint)
