@@ -76,10 +76,7 @@ class ClickModes:
 class GLstate():
     def __init__(self):
         self.debug=__debug__ and False
-        if bool(glGenQueries):
-            self.occlusion_query=hasGLExtension('GL_ARB_occlusion_query2') and GL_ANY_SAMPLES_PASSED or GL_SAMPLES_PASSED
-        else:
-            self.occlusion_query=False
+        self.occlusion_query=None	# Will test for this later
         self.queries=[]
         glEnableClientState(GL_VERTEX_ARRAY)
         self.texture=0
@@ -616,6 +613,33 @@ class MyGL(wx.glcanvas.GLCanvas):
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
 
+        # Workaround for buggy ATI drivers: Check that occlusion queries actually work
+        if self.glstate.occlusion_query is None:
+            if not bool(glGenQueries):
+                self.glstate.occlusion_query=False
+            else:
+                self.glstate.occlusion_query=hasGLExtension('GL_ARB_occlusion_query2') and GL_ANY_SAMPLES_PASSED or GL_SAMPLES_PASSED
+            if self.glstate.occlusion_query:
+                self.glstate.set_texture(0)
+                self.glstate.set_color(COL_WHITE)
+                self.glstate.set_depthtest(False)
+                self.glstate.set_poly(False)
+                self.glstate.set_cull(False)
+                self.glstate.alloc_queries(1)
+                glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)
+                glBeginQuery(self.glstate.occlusion_query, self.glstate.queries[0])
+                glBegin(GL_QUADS)
+                glVertex3f( 100, 0, -100)
+                glVertex3f( 100, 0,  100)
+                glVertex3f(-100, 0,  100)
+                glVertex3f(-100, 0, -100)
+                glEnd()
+                glEndQuery(self.glstate.occlusion_query)
+                if not glGetQueryObjectuiv(self.glstate.queries[0], GL_QUERY_RESULT):
+                    self.glstate.occlusion_query=False
+                    if __debug__: print "Occlusion query fail!"
+                glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
+
         # Ground terrain
 
         if not self.valid:
@@ -648,10 +672,14 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Mesh
         if not self.options&Prefs.ELEVATION:
             glScalef(1,0,1)		# Defeat elevation data
+        if __debug__:
+            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
         for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
             self.glstate.set_poly(bool(poly))
             self.glstate.set_texture(texno)
             glDrawArrays(GL_TRIANGLES, base, number)
+        if __debug__:
+            if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
         if not self.options&Prefs.ELEVATION:
             glLoadIdentity()
         if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
