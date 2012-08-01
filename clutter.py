@@ -155,9 +155,10 @@ class Object(Clutter):
             # glstate.poly doesn't affect selection
             if obj.vdata is not None:
                 glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
-            glBegin(GL_POINTS)
-            glVertex3f(0.0,0.0,0.0)	# draw point at object origin so selectable even if not visible
-            glEnd()
+            if glstate.occlusion_query:
+                glBegin(GL_POINTS)
+                glVertex3f(0.0,0.0,0.0)	# draw point at object origin so selectable even if not visible
+                glEnd()
         elif obj.vdata is not None:	# .agp base has no vertex data
             assert self.islaidout() and obj.base is not None, self
             glstate.set_texture(obj.texture)
@@ -423,9 +424,10 @@ class Polygon(Clutter):
         if picking:
             assert not glstate.texture
             assert glstate.color
-            glBegin(GL_POINTS)
-            glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
-            glEnd()
+            if glstate.occlusion_query:
+                glBegin(GL_POINTS)
+                glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
+                glEnd()
         else:
             glstate.set_texture(None)
             glstate.set_color(selected and COL_SELECTED or None)
@@ -725,9 +727,10 @@ class Draped(Polygon):
             Polygon.draw_dynamic(self, glstate, selected, picking)
             return
         elif picking:
-            glBegin(GL_POINTS)
-            glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
-            glEnd()
+            if glstate.occlusion_query:
+                glBegin(GL_POINTS)
+                glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
+                glEnd()
         else:
             glstate.set_texture(self.definition.texture)
             glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
