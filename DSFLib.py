@@ -671,7 +671,6 @@ def makemesh(flags,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,
 def writeDSF(dsfdir, key, placements, netfile):
     (south,west)=key
     tiledir=join(dsfdir, "%+02d0%+03d0" % (int(south/10), int(west/10)))
-    if not isdir(tiledir): mkdir(tiledir)
     tilename=join(tiledir, "%+03d%+04d" % (south,west))
     if exists(tilename+'.dsf'):
         if exists(tilename+'.dsf.bak'): unlink(tilename+'.dsf.bak')
@@ -680,6 +679,7 @@ def writeDSF(dsfdir, key, placements, netfile):
         if exists(tilename+'.DSF.BAK'): unlink(tilename+'.DSF.BAK')
         rename(tilename+'.DSF', tilename+'.DSF.BAK')
     if not (placements): return
+    if not isdir(tiledir): mkdir(tiledir)
 
     tmp=join(gettempdir(), "%+03d%+04d.txt" % (south,west))
     h=file(tmp, 'wt')
