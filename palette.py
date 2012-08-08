@@ -365,6 +365,7 @@ class Palette(wx.SplitterWindow):
             self.frame.canvas.SetCurrent(self.frame.canvas.context)
         else:
             self.frame.canvas.SetCurrent()
+        self.SetFocus()		# required not to lose key events under GTK
         if dc.GetSize().y<16 or not self.lastkey:
             if self.previewkey:
                 self.previewkey=None

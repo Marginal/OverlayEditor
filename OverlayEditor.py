@@ -34,7 +34,7 @@ try:
     import OpenGL
     if OpenGL.__version__ >= '3':
         # Not defined in PyOpenGL 2.x.
-	if __debug__:
+	if __debug__ and not platform.startswith('linux'):
             OpenGL.ERROR_ON_COPY =True	# force array conversion/flattening to be explicit
         else:
             OpenGL.ERROR_CHECKING=False	# don't check OGL errors for speed
