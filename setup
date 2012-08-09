@@ -68,4 +68,5 @@ sed s/appversion/$VERSION/ <MacOS/Info.plist >${APPNAME}.app/Contents/Info.plist
 mv ${APPNAME}.app/Contents/MacOS/*.icns ${APPNAME}.app/Contents/Resources/
 mv -f ${APPNAME}.app/Contents/MacOS/*.png ${APPNAME}.app/Contents/Resources/	# overwrite with Mac versions
 mv -f ${APPNAME}.app/Contents/MacOS/screenshot.jpg ${APPNAME}.app/Contents/Resources/
-zip -r ${APPNAME}_${VER}_mac.zip ${APPNAME}.app
+codesign -s "Developer ID Application: Jonathan Harris" ${APPNAME}.app
+zip -ry ${APPNAME}_${VER}_mac.zip ${APPNAME}.app
