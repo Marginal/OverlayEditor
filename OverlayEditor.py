@@ -785,12 +785,9 @@ class MainWindow(wx.Frame):
         wx.EVT_TOOL(self.toolbar, wx.ID_HELP, self.OnHelp)
         
         self.toolbar.Realize()
-        self.toolbar.EnableTool(wx.ID_DOWN,   False)
-        self.toolbar.EnableTool(wx.ID_ADD,    False)
-        self.toolbar.EnableTool(wx.ID_EDIT,   False)
-        self.toolbar.EnableTool(wx.ID_DELETE, False)
-        self.toolbar.EnableTool(wx.ID_UNDO,   False)
-        self.toolbar.EnableTool(wx.ID_REFRESH,False)
+        # Disable all toolbar buttons until app has loaded to prevent callbacks before app has initialised data
+        for id in [wx.ID_NEW,wx.ID_OPEN,wx.ID_SAVE,wx.ID_DOWN,wx.ID_ADD,wx.ID_EDIT,wx.ID_DELETE,wx.ID_UNDO,wx.ID_REFRESH,wx.ID_PREFERENCES,wx.ID_FORWARD,wx.ID_APPLY]:
+            self.toolbar.EnableTool(id, False)
         if self.menubar:
             self.menubar.Enable(wx.ID_DOWN,   False)
             #self.menubar.Enable(wx.ID_CUT,    False)
@@ -1505,6 +1502,14 @@ class MainWindow(wx.Frame):
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
         self.ShowLoc()
 
+        # These buttons shouldn't be available 'til after first reload
+        self.toolbar.EnableTool(wx.ID_NEW,     True)
+        self.toolbar.EnableTool(wx.ID_OPEN,    True)
+        self.toolbar.EnableTool(wx.ID_SAVE,    True)
+        self.toolbar.EnableTool(wx.ID_PREFERENCES, True)
+        self.toolbar.EnableTool(wx.ID_FORWARD, True)
+        self.toolbar.EnableTool(wx.ID_APPLY,   True)
+
         # redraw
         self.Refresh()
 
@@ -1737,8 +1742,9 @@ if __debug__:
             frame.menubar.Enable(wx.ID_DOWN,  True)
             frame.menubar.Enable(wx.ID_REFRESH,True)
 
-# Load data files
+# Load data files - progress dialog on Mac requires that app frame be created first, so do this by posting a reload event
 wx.PostEvent(frame.toolbar, wx.PyCommandEvent(wx.EVT_TOOL.typeId, wx.ID_REFRESH))
+
 if False:	# XXX trace
     from trace import Trace
     sys.stdout=open(appname+'.log', 'wt', 0)	# unbuffered
