@@ -588,7 +588,7 @@ class BackgroundDialog(wx.Dialog):
 
         prefs.imageryprovider=(self.imgbing.GetValue() and 'Bing') or (self.imgarcgis.GetValue() and 'ArcGIS') or None
         prefs.imageryopacity=self.opacity.GetValue()
-        self.parent.canvas.setbackground(prefs, self.parent.loc, self.image)
+        self.parent.canvas.setbackground(prefs, self.parent.loc, self.image, True)
         self.parent.canvas.goto(self.parent.loc, prefs=prefs)	# initiate imagery provider setup & loading
 
 

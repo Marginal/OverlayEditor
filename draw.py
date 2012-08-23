@@ -1070,7 +1070,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 (self.centre[0]-lat)*(onedeg-2)))
 
     # create the background polygon. Defer layout to goto since can be called in reload() before location is known.
-    def setbackground(self, prefs, loc=None, newfile=None):
+    def setbackground(self, prefs, loc=None, newfile=None, layoutnow=False):
         if newfile is None and prefs.package in prefs.packageprops:
             backgroundfile=prefs.packageprops[prefs.package][0]
         else:
@@ -1098,13 +1098,14 @@ class MyGL(wx.glcanvas.GLCanvas):
                             nodes[j]=(lon+sin(h)*l, lat+cos(h)*l)
                 else:
                     nodes=[(p[i], p[i+1]) for i in range(0, len(p), 2)]
-                self.background=DrapedImage(None, 65535, [nodes])
+                self.background=DrapedImage('background', 65535, [nodes])
             else:
-                self.background=DrapedImage(None, 65535, loc[0], loc[1], self.h, self.d)
+                self.background=DrapedImage('background', 65535, loc[0], loc[1], self.d, self.h)
             self.background.load(self.lookup, self.defs, self.vertexcache)
             for i in range(len(self.background.nodes[0])):
                 self.background.nodes[0][i]+=((i+1)/2%2,i/2)
-            # Defer layout
+            if layoutnow:
+                self.background.layout(self.tile, self.options, self.vertexcache)
 
         if self.background.name!=backgroundfile:
             self.background.name=backgroundfile
