@@ -1180,7 +1180,6 @@ class LineDef(PolygonDef):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.MARKINGLAYER
         self.canpreview=True
-        self.type=Locked.UNKNOWN
         self.offsets=[]
         self.hscale=self.vscale=1
         width=1
@@ -1226,7 +1225,6 @@ class LineFallback(LineDef):
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.MARKINGLAYER
-        self.type=Locked.LIN
 
 
 class NetworkDef(PolygonDef):
