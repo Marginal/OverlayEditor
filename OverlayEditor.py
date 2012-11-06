@@ -638,12 +638,14 @@ class MainWindow(wx.Frame):
             self.SetIcon(wx.Icon(executable, wx.BITMAP_TYPE_ICO))
             self.menubar=None
         elif platform.lower().startswith('linux'):	# PNG supported by GTK
-            self.SetIcon(wx.Icon('Resources/%s.png' % appname,
-                                 wx.BITMAP_TYPE_PNG))
+            icons=wx.IconBundle()
+            icons.AddIconFromFile('Resources/%s.png' % appname, wx.BITMAP_TYPE_PNG)
+            icons.AddIconFromFile('Resources/%s-128.png'% appname, wx.BITMAP_TYPE_PNG)
+            self.SetIcons(icons)
             self.menubar=None
         
         if platform=='darwin' or (__debug__ and False):
-            # icon pulled from Resources via Info.plist. Need minimal menu
+            # icon pulled from Resources via Info.plist (except for MessageBox icon). Need minimal menu
             # http://developer.apple.com/documentation/UserExperience/Conceptual/AppleHIGuidelines/XHIGMenus/XHIGMenus.html#//apple_ref/doc/uid/TP30000356-TPXREF103
             self.menubar = wx.MenuBar()
             filemenu = wx.Menu()

@@ -1,3 +1,7 @@
 #!/bin/sh
+if [ "$DESKTOP_SESSION" = "ubuntu" ]; then
+  # Unity is broken (but Unity2D isn't): https://bugs.launchpad.net/unity/+bug/671141
+  desktop-file-install /usr/local/share/applications/overlayeditor.desktop
+fi
 gtk-update-icon-cache -f -q -t /usr/local/share/icons/hicolor &>/dev/null
 exit 0	# ignore errors from updating icon cache

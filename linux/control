@@ -2,8 +2,8 @@ Package: overlayeditor
 Section: graphics
 Priority: extra
 Architecture: all
-Installed-Size: 2676
-Depends: bash, p7zip, python (>=2.4), python-imaging (>=1.1.4), python-numpy, python-opengl (>=3.0.1~a1), python-tk, python-wxgtk2.8
+Installed-Size: 3224
+Depends: bash, desktop-file-utils, p7zip, python (>=2.4), python-imaging (>=1.1.4), python-numpy, python-opengl (>=3.0.1~a1), python-tk, python-wxgtk2.8
 Provides: overlayeditor
 Maintainer: Jonathan Harris <x-plane@marginal.org.uk>
 Description: X-Plane DSF overlay editor

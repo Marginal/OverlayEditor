@@ -29,29 +29,28 @@ mkdir -p $RPMRT/usr/local/bin
 mkdir -p $RPMRT/usr/local/lib/${APPLINUX}/Resources
 mkdir -p $RPMRT/usr/local/lib/${APPLINUX}/Resources/previews
 mkdir -p $RPMRT/usr/local/lib/${APPLINUX}/linux
-mkdir -p $RPMRT/usr/local/lib/${APPLINUX}/win32
-cp linux/${APPLINUX}.desktop $RPMRT/usr/local/lib/${APPLINUX}/
+mkdir -p $RPMRT/usr/local/share/applications
+mkdir -p $RPMRT/usr/local/share/icons/hicolor/48x48/apps
+mkdir -p $RPMRT/usr/local/share/icons/hicolor/128x128/apps
 cp -p linux/${APPLINUX}.spec $RPM/SPECS/
 cp -p linux/${APPLINUX} $RPMRT/usr/local/bin/
+cp -p linux/${APPLINUX}.desktop $RPMRT/usr/local/share/applications/
+cp -p Resources/${APPNAME}.png $RPMRT/usr/local/share/icons/hicolor/48x48/apps/${APPLINUX}.png
+cp -p linux/${APPNAME}-128.png $RPMRT/usr/local/share/icons/hicolor/128x128/apps/${APPLINUX}.png
+cp -p linux/${APPNAME}-128.png $RPMRT/usr/local/lib/${APPLINUX}/Resources/
 for i in $PY $DATA; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/; done
 for i in $RSRC; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/Resources/; done
 for i in $PREV; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/Resources/previews/; done
 cp -p linux/DSFTool $RPMRT/usr/local/lib/${APPLINUX}/linux/
-rpmbuild -bb --buildroot $RPMRT --define "_topdir $RPM" --define "_unpackaged_files_terminate_build 0" --define "version $VERSION" --define "release $RELEASE" --quiet $RPM/SPECS/${APPLINUX}.spec
+rpmbuild -bb --buildroot $RPMRT --define "_target_os linux" --define "_target_vendor pc" --define "_topdir $RPM" --define "_unpackaged_files_terminate_build 0" --define "version $VERSION" --define "release $RELEASE" --quiet $RPM/SPECS/${APPLINUX}.spec
 mv $RPM/RPMS/noarch/${APPLINUX}-$VERSION-$RELEASE.noarch.rpm .
 
 # Debian/Ubuntu
 mkdir -p $RPMRT/DEBIAN
-mkdir -p $RPMRT/usr/local/share/applications
-mkdir -p $RPMRT/usr/local/share/icons/hicolor/48x48/apps
-cp -p linux/${APPLINUX}.desktop $RPMRT/usr/local/share/applications/
-cp -p Resources/${APPNAME}.png $RPMRT/usr/local/share/icons/hicolor/48x48/apps/${APPLINUX}.png
 echo Version: $VERSION-$RELEASE> $RPMRT/DEBIAN/control
 cat   linux/control >> $RPMRT/DEBIAN/control
 cp -p linux/postinst $RPMRT/DEBIAN/
-sudo chown -R 0:0 $RPMRT/*
-dpkg-deb -b $RPMRT .	# requires gnu-tar
-sudo chown -R $USER:staff $RPMRT/*
+fakeroot "dpkg-deb -b $RPMRT ."	# requires gnu-tar
 
 # mac
 mkdir -p ${APPNAME}.app/Contents/MacOS
