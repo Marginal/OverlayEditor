@@ -197,7 +197,7 @@ class PaletteChoicebook(wx.Choicebook):
         self.lists.append(l)
         self.AddPage(l, tabname)
         wx.EVT_LISTBOX(self, l.GetId(), self.OnChoice)
-        wx.EVT_KILL_FOCUS(l, self.OnKillFocus)	# Prevent wx 2.9 on win32 from displaying in unfocussed color
+        #wx.EVT_KILL_FOCUS(l, self.OnKillFocus)	# Prevent wx 2.9 on win32 from displaying in unfocussed color
         wx.EVT_KEY_DOWN(l, self.OnKeyDown)
     
     def add(self, name):
@@ -365,7 +365,11 @@ class Palette(wx.SplitterWindow):
             self.frame.canvas.SetCurrent(self.frame.canvas.context)
         else:
             self.frame.canvas.SetCurrent()
-        self.SetFocus()		# required not to lose key events under GTK
+        # MainWindow (and wxFrames in general) don't receive focus or generate key events under GTK
+        # so set focus here which does - http://www.wxwidgets.org/docs/faqgtk.htm#charinframe
+        # Also this prevents ChoiceBook grabbing focus on win32
+        self.preview.SetFocusIgnoringChildren()
+
         if dc.GetSize().y<16 or not self.lastkey:
             if self.previewkey:
                 self.previewkey=None
