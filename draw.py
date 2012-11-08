@@ -1165,7 +1165,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def addnode(self, name, lat, lon, hdg, size):
         # Add new node/winding
-        if len(self.selected)!=1 or not isinstance(list(self.selected)[0], Polygon):
+        if len(self.selected)!=1 or not isinstance(list(self.selected)[0], Polygon) or self.frame.bkgd:	# No additional nodes for background image
             return False
         placement=list(self.selected)[0]
         layer=placement.definition.layer
