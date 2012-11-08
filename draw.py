@@ -1449,6 +1449,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def goto(self, loc, hdg=None, elev=None, dist=None, prefs=None):
         if __debug__: print "goto", loc
+        if not self.vertexcache.dsfdirs: return	# Hack: can get spurious events on Mac during startup (progress dialogs aren't truly modal)
         errdsf=None
         errobjs=[]
         errtexs=[]
