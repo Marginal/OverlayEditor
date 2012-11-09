@@ -4,14 +4,14 @@ regional variants - eg lib/g8/pol/wet_warm_hill_s.pol:
 cut / copy / paste
 import sceneries - http://forums.x-plane.org/index.php?showtopic=36042
 
+faster airport layout
 don't show .ter - eg lib/g8/terrain/temp_city_park.ter
 don't import into custom objects for types other than obj
 don't look in custom objects for types other than obj
 load textures from custom object textures
 
-insert node - average two _editable_ nodes
+runway layout with custom terrain textures -eg Ascension
 
-fix nopoly - use drawmultielements (1.4)
 gettext
 don't change position on undo?
 display ramp starting points
@@ -21,13 +21,9 @@ import whole package
 
 palette right click / ctrl-click -> delete, rename
 selectall drag problem
-.lin
 taxilines
 drag nodes - undo each changed node
 
-pyopengl 3 on Unix
-
-lock objects
 Info popup - name, source .obj file / library, layer, source texture, editable location, info.txt (File -> Show Inspector Cmd-I)
 Use of control or cmd in Finder for selection drag?
 Multiple tiles

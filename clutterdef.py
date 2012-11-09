@@ -731,8 +731,8 @@ class DrapedDef(PolygonDef):
         self.canpreview=True
         self.type=Locked.POL
         self.ortho=False
-        self.hscale=100
-        self.vscale=100
+        self.hscale=None
+        self.vscale=None
         alpha=True
         texture=None
     
@@ -760,6 +760,7 @@ class DrapedDef(PolygonDef):
             elif id=='NO_ALPHA':
                 alpha=False
         h.close()
+        if not (self.hscale and self.vscale): raise IOError	# Required even for orthos
         try:
             self.texture=vertexcache.texcache.get(texture, not self.ortho, alpha)
         except EnvironmentError, e:
