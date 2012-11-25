@@ -384,6 +384,9 @@ class ObjectDef(ClutterDef):
                     anim.pop()
                 elif id=='ANIM_trans':
                     anim[-1]=[anim[-1][i]+float(c[i+1]) for i in range(3)]
+                elif id=='ANIM_trans_key':
+                    if anim[-1]==(len(anim)>1 and anim[-2] or [0,0,0]):	# not already shifted
+                        anim[-1]=[anim[-1][i]+float(c[i+2]) for i in range(3)]
                 elif id=='TRIS':
                     start=int(c[1])
                     new=int(c[2])
