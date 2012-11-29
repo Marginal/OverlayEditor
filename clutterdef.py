@@ -1,6 +1,6 @@
 import codecs
-from math import fabs
-from numpy import array, concatenate, float32
+from math import cos, fabs, radians, sin
+from numpy import array, array_equal, concatenate, diag, dot, float32, identity, outer
 from operator import itemgetter, attrgetter
 from os import listdir
 from os.path import basename, dirname, exists, join, normpath, sep
@@ -319,9 +319,12 @@ class ObjectDef(ClutterDef):
                     break
 
         elif version=='800':
+            # Note: using numpy arrays to construct vt and idx would be ~50% slower!
             vt=[]
             idx=[]
             anim=[]
+            done_anim_t=False
+            done_anim_r=False
             for line in h:
                 c=line.split()
                 if not c: continue
@@ -377,21 +380,57 @@ class ObjectDef(ClutterDef):
                     self.setlayer(c[1], int(c[2]))
                 elif id=='ANIM_begin':
                     if anim:
-                        anim.append(list(anim[-1]))
+                        anim.append(anim[-1].copy())
                     else:
-                        anim=[[0,0,0]]
+                        anim=[identity(4)]
+                    done_anim_t=False
+                    done_anim_r=False
                 elif id=='ANIM_end':
                     anim.pop()
                 elif id=='ANIM_trans':
-                    anim[-1]=[anim[-1][i]+float(c[i+1]) for i in range(3)]
+                    t=identity(4)
+                    t[3,:3]=c[1:4]
+                    anim[-1]=dot(t,anim[-1])
+                    done_anim_t=True
                 elif id=='ANIM_trans_key':
-                    if anim[-1]==(len(anim)>1 and anim[-2] or [0,0,0]):	# not already shifted
-                        anim[-1]=[anim[-1][i]+float(c[i+2]) for i in range(3)]
+                    if not done_anim_t:
+                        t=identity(4)
+                        t[3,:3]=c[2:5]
+                        anim[-1]=dot(t,anim[-1])
+                    done_anim_t=True
+                elif id=='ANIM_rotate_begin':
+                    anim_axis = c[1:4]
+                elif id in ['ANIM_rotate', 'ANIM_rotate_key']:
+                    if id=='ANIM_rotate':
+                        angle=radians(float(c[4]))
+                        anim_axis=c[1:4]
+                    else:
+                        angle=radians(float(c[2]))
+                    if angle and not done_anim_r:
+                        sina = sin(angle)
+                        cosa = cos(angle)
+                        d = array(anim_axis, float32)
+                        r = diag([cosa, cosa, cosa]) + outer(d,d)*(1.0-cosa)
+                        d *= sina
+                        r += array([[  0.0,  d[2], -d[1]],
+                                    [-d[2],  0.0,   d[0]],
+                                    [ d[1], -d[0],  0.0]], float32)
+                        m = identity(4, float32)
+                        m[:3,:3] = r
+                        anim[-1] = dot(m,anim[-1])
+                    done_anim_r=True
                 elif id=='TRIS':
                     start=int(c[1])
                     new=int(c[2])
                     if anim:
-                        current.extend([[vt[idx[i]][j]+anim[-1][j] for j in range (3)] + [vt[idx[i]][3],vt[idx[i]][4]] for i in range(start, start+new)])
+                        if array_equal(anim[-1][:3,:3], identity(3)):
+                            # Special case for translation only
+                            off=list(anim[-1][3])	# translation vector
+                            current.extend([[vt[idx[i]][j]+off[j] for j in range (3)] + vt[idx[i]][3:] for i in range(start, start+new)])
+                        else:
+                            # This is slow!
+                            v=dot([vt[idx[i]][:3]+[1.0] for i in range(start, start+new)], anim[-1])
+                            current.extend([list(v[i])[:3] + vt[idx[start+i]][3:] for i in range(new)])
                     else:
                         current.extend(itemgetter(*idx[start:start+new])(vt))	#current.extend([vt[idx[i]] for i in range(start, start+new)])
         h.close()
