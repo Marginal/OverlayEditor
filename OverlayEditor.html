@@ -34,9 +34,7 @@ Scenery</a> &rarr; <a href="http://marginal.org.uk/x-planescenery/tools.html">To
 <p>This document is a reference - it is assumed that you're familiar with the basics of X-Plane's scenery system. Please read the section <a href="#other">below</a> if you intend to use OverlayEditor in conjunction with other scenery tools.<p>
 
 <h3>Setting up</h3>
-<p>The first time that you run the application you are asked to
-identify X-Plane's top-level folder (<i>ie</i> the folder which
-contains the X-Plane, Plane-Maker etc applications).<p>
+<p>The first time that you run the application you are asked to identify X-Plane's top-level folder (<i>i.e.</i> the folder which contains the X-Plane, Plane-Maker etc applications).<p>
 
 <h3>The application window</h3>
 <p>The application window consists of five parts. Click on this screenshot for a description:</p>
@@ -60,9 +58,8 @@ This creates a new folder in X-Plane's<code> Custom&nbsp;Scenery </code>folder.<
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Open" src="Resources/open.png"></td>
       <td>Open an existing scenery package.<br>
-All the packages in X-Plane's<code> Custom&nbsp;Scenery </code>folder are
-listed,  but you can only actually edit those that use DSF overlays
-(rather than ENVs or "full" DSFs).</td>
+All the packages in X-Plane's<code> Custom&nbsp;Scenery </code>folder are listed, but you can only actually edit those that use DSF overlays
+(rather than ENVs or &ldquo;full&rdquo; DSFs that contain a terrain mesh).</td>
     </tr>
     <tr>
       <td style="width: 48px; height: 32px; vertical-align: top;"><img style="border: 0px solid; width: 32px; height: 32px;" alt="Save" src="Resources/save.png"></td>
@@ -135,11 +132,7 @@ Do not change the location of X-Plane's top-level folder while you are editing a
 <h4><a name="mainwindow">Main window</a></h4>
 <p>This shows the objects in a 1&deg;&times;1&deg; region of the loaded
 scenery package.</p>
-<p>By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Preferences" src="Resources/prefs.png"></a>.
-Runways, taxiways and navaids are displayed in simplified form and cannot
-be edited.
-Scenery objects from other scenery packages and "autogen" scenery objects
-from the default scenery are not displayed at all.<p>
+<p>By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Preferences" src="Resources/prefs.png"></a>. Runways, taxiways and navaids are displayed in simplified form and cannot be edited. Scenery objects from other scenery packages and &ldquo;autogen&rdquo; scenery objects from the default scenery are not displayed at all.<p>
 <p>Navigate with the cursor keys or mouse. Hold down <samp>Shift</samp> for
 bigger steps or <samp>Ctrl</samp> for tiny steps:</p>
 <table style="margin-left: 40px;" border="0">
@@ -199,13 +192,8 @@ To select objects:</p>
 </table>
 <p>You can't select or otherwise manipulate runways, taxiways or navaids
 (ILS, VOR, DME etc).</p>
-<p>If you select a single polygon <small>(facade, forest, draped or exclusion region)</small>
-or network segment <small>(road, railway or powerline)</small>
-you can click on an individual node (<i>ie</i> corner) to select it.
-The selected node is highlighted in white.</p>
-<p>These keys affect the selected objects or the selected node.
-Hold down <samp>Shift</samp> for bigger steps or <samp>Ctrl</samp>
-for tiny steps:</p>
+<p>If you select a single polygon <small>(facade, forest, draped or exclusion region)</small> or network segment <small>(road, railway or powerline)</small> you can click on an individual node (<i>i.e.</i> corner) to select it. The selected node is highlighted in white.</p>
+<p>These keys affect the selected objects or the selected node. Hold down <samp>Shift</samp> for bigger steps or <samp>Ctrl</samp> for tiny steps:</p>
 <table style="margin-left: 40px;" border="0">
   <tbody>
     <tr>
@@ -272,10 +260,7 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
 <p>This area shows the cursor location, heading and elevation. If you have selected an object or polygon this area also shows details about it (or an average location if you have selected more than one object).</p>
 
 <h4><a name="objectlist">List of objects</a></h4>
-<p>All the objects, facades etc in the scenery package folder are listed under
-the heading "Objects", including those that are present in the scenery
-package folder but are not used in the scenery.
-The type of object is indicated by a symbol:</p>
+<p>All the objects, facades etc in the scenery package folder are listed under the heading &ldquo;Objects&rdquo;, including those that are present in the scenery package folder but are not used in the scenery. The type of object is indicated by a symbol:</p>
 <dl>
   <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="obj" src="Resources/obj.png"> - 3D object (<code>.obj</code>)</dd>
   <dd><img style="border: 0px solid; width: 12px; height: 12px;" alt="fac" src="Resources/fac.png"> - Facade polygon (<code>.fac</code>)</dd>
@@ -356,12 +341,9 @@ are of this latter type)</small>.
 -->
 
 <h3>Differences between this application and X-Plane</h3>
-<p>This application displays terrain and objects in orthogonal projection
-(no perspective) and in a simplified form. <i>ie</i>:</p>
+<p>This application displays terrain and objects in orthogonal projection (no perspective) and in a simplified form. <i>i.e.</i>:</p>
 <ul>
-  <li>No lights, lines, materials, shading or animation. 
-3D objects that only contain lights or lines are displayed as small
-"placeholders" so that they can be edited.</li>
+  <li>No lights, lines, materials, shading or animation. 3D objects that only contain lights or lines are displayed as small &ldquo;placeholders&rdquo; so that they can be edited.</li>
   <li>This application can only display 3D objects, facades and draped
 polygons.
 Other types of polygon (beaches, forests, lines, strings <i>etc</i>) are
@@ -384,20 +366,11 @@ for either purpose but you will see visual artefacts if you use a
 however this application does not understand or display bezier polygon curves.
 Any bezier control points will be deleted if you edit the polygon.</li>
   <li>Terrain textures are simplified - no beaches or overlay textures.</li>
-  <li>No flattening of terrain around airports. Terrain is displayed as if the
-X-Plane "allow sloped runways" rendering setting is turned on.</li>
+  <li>No flattening of terrain around airports. Terrain is displayed as if the X-Plane &ldquo;allow sloped runways&rdquo; rendering setting is turned on.</li>
 </ul>
 <a name="priority">
-<p>X-Plane prioritises scenery packages; and it doesn't load scenery from
-lower priority packages once it has found a "full" DSF for the required area.
-A package's priority is determined by its <a href="http://en.wikipedia.org/wiki/ASCIIbetical">ASCIIbetical</a> order in
-the<code> Custom&nbsp;Scenery </code>folder.</a>
-So an overlay scenery package will not be displayed if it has a name later
-in the alphabet than a "full" scenery package for the same area.</a><br>
-This application lets you edit the overlay scenery package and does not
-warn you about this problem.
-You can see the order in which X-Plane prioritises your packages
-by looking at the file <code>Log.txt</code> in X-Plane's top-level folder.</p>
+<p>X-Plane prioritises scenery packages. Prior to X-Plane 10.10 a package's priority is determined by its <a href="http://en.wikipedia.org/wiki/ASCIIbetical">ASCIIbetical</a> order in the <code>Custom&nbsp;Scenery</code> folder. Since X-Plane 10.10 a package's priority is determined by its order in the <a target="_blank" href="http://developer.x-plane.com/2012/09/scenery-packs-the-new-rules/"><code>Custom&nbsp;Scenery/scenery_packs.ini</code></a> file. You can see the order in which X-Plane prioritises your packages by looking at the file <code>Log.txt</code> in X-Plane's top-level folder.<br>
+X-Plane will not load or display a scenery package if it has a lower priority than a &ldquo;full&rdquo; DSF scenery package (<i>i.e.</i> one containg a terrain mesh) for the same area, but this application will not warn you about this problem.</p>
 <p>When you open or reload a scenery package this application warns about any
 objects that are missing or that it can't read, but lets you edit and save
 the scenery package anyway. X-Plane will display an error unless you
@@ -414,7 +387,7 @@ in your scenery package then this application will always display the same
 version, but X-Plane will display one of the eight versions chosen at random.<p>
 
 <h3><a name="other">Using OverlayEditor in conjunction with other scenery tools</a></h3>
-<p>There are a number of other applications that can create X-Plane scenery packages. Those applications that place scenery objects work by writing "overlay" <code>.dsf</code> files into a scenery package folder. OverlayEditor can read and edit "overlay" <code>.dsf</code> files produced by other applications; but of course if you re-run the other application you may overwrite any edits that you have made using OverlayEditor.</p>
+<p>There are a number of other applications that can create X-Plane scenery packages. Those applications that place scenery objects work by writing &ldquo;overlay&rdquo; <code>.dsf</code> files into a scenery package folder. OverlayEditor can read and edit &ldquo;overlay&rdquo; <code>.dsf</code> files produced by other applications; but of course if you re-run the other application you may overwrite any edits that you have made using OverlayEditor.</p>
 <p>In particular, the WED application can be used to both to create X-Plane airport layouts and to place scenery objects. You can safely use WED to create and edit airport layout(s) and OverlayEditor to place scenery objects within the same scenery package <b>as long as you only use the <samp>File &rarr; Export&nbsp;apt.dat</samp> menu option in WED</b> and avoid the <samp>File &rarr; Export&nbsp;Scenery&nbsp;Pack</samp> menu option.</p>
 
 <h3>Troubleshooting</h3>
@@ -425,20 +398,16 @@ if the preferences are set to display terrain. Closing other applications,
 particularly applications like X-Plane that also make heavy use of textures,
 will make OverlayEditor load faster. Or you can tell OverlayEditor not to
 display terrain; press
-<a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
-and select "No terrain".</p>
+<a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a> and select &ldquo;No terrain&rdquo;.</p>
 <p>Editing is slower when the preferences are set to display terrain elevation.
 This is particularly noticable when editing polygons because OverlayEditor
 has to fit the polygons to the terrain mesh. OverlayEditor runs much
 faster if you tell it not to display elevation; press
-<a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
-and select "No terrain" or "Show terrain".
+<a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a> and select &ldquo;No terrain&rdquo; or &ldquo;Show terrain&rdquo;.
 <!-- But note that you need to display elevation in order to edit network segments. --></p>
 
-<h4>OverlayEditor complains that it "Can't read one or more objects"</h4>
-<p>Your scenery package uses objects that are either missing or unreadable.
-Missing or unreadable 3D objects are displayed as small "placeholders".
-Missing or unreadable polygons are displayed as "placeholder" shapes.</p>
+<h4>OverlayEditor complains that it &ldquo;Can't read one or more objects&rdquo;</h4>
+<p>Your scenery package uses objects that are either missing or unreadable. Missing or unreadable 3D objects are displayed as small &ldquo;placeholders&rdquo;. Missing or unreadable polygons are displayed as &ldquo;placeholder&rdquo; shapes.</p>
 <dl>
   <dt>To delete all uses of the missing or unreadable 3D object or polygon in the current 1&deg;&times;1&deg; region:</dt>
   <dd>Select the 3D object or polygon in the <a href="#objectlist">list of objects</a></dd>
@@ -453,7 +422,7 @@ Otherwise this is either an X-Plane v5 object or it is not an X-Plane
 object at all. If the object looks OK then please report the problem to the
 <a href="mailto:x-plane@marginal.org.uk">author</a>.</p>
 
-<h4>OverlayEditor complains that it "Can't read one or more textures"</h4>
+<h4>OverlayEditor complains that it &ldquo;Can't read one or more textures&rdquo;</h4>
 <p>This happens when OverlayEditor fails to find or read the texture file
 listed in your object(s).<br>
 OverlayEditor expects the texture filename to have the correct case -
@@ -465,26 +434,25 @@ Note that OverlayEditor only reports problems with textures when you load or
 reload a scenery package, and when you first add an object to the scenery.</p>
 
 <h4>My 3D object just appears as a small grey blob in OverlayEditor</h4>
-<p>OverlayEditor doesn't draw lights or lines - 3D objects that only contain
-lights or lines are displayed as small "placeholders".
-This is a limitation of the application.</p>
+<p>OverlayEditor doesn't draw lights or lines - 3D objects that only contain lights or lines are displayed as small &ldquo;placeholders&rdquo;. This is a limitation of the application.</p>
     
 <h4>My forest/draped polygon just appears as a red outline in OverlayEditor</h4>
-<p>In X-Plane polygons must be "<a href="http://en.wikipedia.org/wiki/Simple_polygon">simple</a>",
-<i>ie</i> a polygon's sides must not intersect each other.
-X-Plane won't display non-simple polygons.
-OverlayEditor displays non-simple polygons as a bright red outline.</p>
+<p>In X-Plane polygons must be &ldquo;<a href="http://en.wikipedia.org/wiki/Simple_polygon">simple</a>&rdquo;, <i>i.e.</i> a polygon's sides must not intersect each other. X-Plane won't display non-simple polygons. OverlayEditor displays non-simple polygons as a bright red outline.</p>
+
+<h4>OverlayEditor won't let me place my object/node exactly where I want it</h4>
+<p>This is a limitation of the DSF file format as currently used by X-Plane.<br>
+Laminar's scenery tools encode DSF files with a precision of approximately 0.000002&deg;, which at the equator is about 20cm. To avoid objects and nodes shifting when you save and re-open your scenery package, or when you view your scenery package in X-Plane, OverlayEditor doesn't let you place objects or polygon nodes with finer precision than that supported by the DSF files.</p>
     
 <h4>I want to remove some scenery objects from the default scenery</h4>
 <dl>
   <dt>You can use an exclusion region:</dt>
   <dd>Navigate to the area from which you want to remove the scenery objects.</dd>
-  <dd>Select "Exclusions" from the drop-down <a href="#objectlist">Objects</a> menu.</dd>
+  <dd>Select &ldquo;Exclusions&rdquo; from the drop-down <a href="#objectlist">Objects</a> menu.</dd>
   <dd>Choose the type of object that you want to exclude.</dd>
   <dd>Press <samp>Enter</samp> or <img style="border: 0px solid; width: 16px; height: 16px;" alt="Add" src="Resources/add.png">.</dd>
   <dd>Drag the corners of the new region as desired.</dd>
 </dl>
-<p>OverlayEditor doesn't display the "autogen" scenery objects, so you may have to experiment a bit.</p>
+<p>OverlayEditor doesn't display the &ldquo;autogen&rdquo; scenery objects, so you may have to experiment a bit.</p>
 <p>Exclusion regions are always rectangular (you can't add or delete nodes) and can't be rotated. You can make up more complex shapes by adding multiple exclusion regions.</p>
 
 <h4>I want to remove some scenery objects from another scenery package</h4>
@@ -508,16 +476,12 @@ using a 3D modelling application.</p>
 it looks OK.</dd>
   <dt>&nbsp;</dt>
   <dt>Check that OverlayEditor saved your package in the correct copy of X-Plane:</dt>
-  <dd>Press <a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a>
-and check that the "X-Plane location" points to the copy of X-Plane
-that you're running.<br>
-If it doesn't, change the "X-Plane location" setting.
-Then, in Explorer or the Finder, move your scenery package folder to the
-copy of X-Plane that you're running.</dd>
+  <dd>Press <a href="#preferences"><img style="border: 0px solid; width: 16px; height: 16px;" alt="Prefs" src="Resources/prefs.png"></a> and check that the &ldquo;X-Plane location&rdquo; points to the copy of X-Plane that you're running.<br>
+If it doesn't, change the &ldquo;X-Plane location&rdquo; setting. Then, in Explorer or the Finder, move your scenery package folder to the copy of X-Plane that you're running.</dd>
   <dt>&nbsp;</dt>
   <dt>Check your X-Plane settings:</dt>
   <dd>Run X-Plane and choose <samp>Settings &rarr; Rendering&nbsp;Options</samp>.<br>
-Check that "number of objects" is not set to "None".</dd>
+Check that &ldquo;number of objects&rdquo; is not set to &ldquo;None&rdquo;.</dd>
   <dt>&nbsp;</dt>
   <dt>Check that X-Plane found your scenery package:</dt>
   <dd>Quit X-Plane. Open the file <code>Log.txt</code> in the top-level
@@ -539,7 +503,7 @@ Rename one or both of the packages to change their relative priority.</dd>
 <h3>Limitations</h3>
 <ul>
   <li>Does not display roads, railway or powerline networks.</li>
-  <li>Does not display autogen scenery.</li>
+  <li>Does not display &ldquo;autogen&rdquo; scenery.</li>
   <li>Does not display lights or lines in 3D objects.</li>
   <li>Does not convert or edit X-Plane 7 and earlier <code>.env</code> files.</li>
   <li>Displays but does not edit runways, taxiways, navaids etc.</li>
