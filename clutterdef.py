@@ -1027,7 +1027,7 @@ class FacadeDef(PolygonDef):
             if not self.floors: raise IOError
             self.floors.sort(key=attrgetter('height'))		# layout code assumes floors are in ascending height
             for floor in self.floors:
-                floor.roofs.sort(reverse=True)			# drawing marginally faster if we draw the top roof first
+                floor.roofs.sort()				# draw roofs in ascending height due to poly_os on height 0
                 if not floor.walls: raise IOError
                 for wall in floor.walls:
                     if not wall.spellings: raise IOError

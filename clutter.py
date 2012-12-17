@@ -1031,6 +1031,7 @@ class Facade(Polygon):
         self.floorno=0		# for v10 - must keep in sync with self.param
         self.placements=[]	# child object placements
         self.datalen=0
+        self.drapedlen=0
         self.rooflen=0
 
     def clone(self):
@@ -1116,15 +1117,19 @@ class Facade(Polygon):
             if self.rooflen:
                 glDrawArrays(GL_TRIANGLES, self.base+self.datalen, self.rooflen)
         else:
-            glstate.set_texture(fac.texture)
             glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
             glstate.set_cull(not fac.two_sided)
-            glstate.set_poly(False)
             glstate.set_depthtest(True)
-            glDrawArrays(GL_TRIANGLES, self.base, self.datalen)
+            if self.drapedlen:
+                glstate.set_poly(True)
+                glstate.set_texture(fac.texture_roof)
+                glDrawArrays(GL_TRIANGLES, self.base+self.datalen, self.drapedlen)
+            glstate.set_poly(False)
             if self.rooflen:
                 glstate.set_texture(fac.texture_roof)
-                glDrawArrays(GL_TRIANGLES, self.base+self.datalen, self.rooflen)
+                glDrawArrays(GL_TRIANGLES, self.base+self.datalen+self.drapedlen, self.rooflen)
+            glstate.set_texture(fac.texture)
+            glDrawArrays(GL_TRIANGLES, self.base, self.datalen)
         for p in self.placements:
             p.draw_dynamic(glstate, selected, picking)
         
@@ -1639,7 +1644,6 @@ class Facade(Polygon):
         if floor.roofs:
             # Tessellate to generate tri vertices with UV data, and check polygon is simple
             try:
-                tris=[]
                 (x,y,z)=points[0]
                 (tox,toy,toz)=points[1]
                 h=atan2(tox-x, z-toz) + piby2	# texture heading determined by nodes 0->1
@@ -1651,6 +1655,28 @@ class Facade(Polygon):
                 for j in range(n):
                     maxu=max(maxu, (points[j][0]*coshdg+points[j][2]*sinhdg)/s)
                     minv=min(minv, (points[j][0]*sinhdg-points[j][2]*coshdg)/s)
+                if floor.roofs[0]==0:
+                    # "Roof" at height 0 is special and always gets draped (irrespective of "GRADED" setting in .fac)
+                    tris=[]
+                    gluTessBeginPolygon(Facade.tess, tris)
+                    gluTessBeginContour(Facade.tess)
+                    if self.definition.fittomesh:
+                        for j in range(n):
+                            gluTessVertex(Facade.tess, array([points[j][0], 0, points[j][2]],float64), list(points[j]) + [(points[j][0]*coshdg+points[j][2]*sinhdg)/s-maxu, (points[j][0]*sinhdg-points[j][2]*coshdg)/s-minv, 0])
+                    else:
+                        # Facade as a whole isn't draped but this floor at height 0 should be, so find elevations
+                        for j in range(n):
+                            gluTessVertex(Facade.tess, array([points[j][0], 0, points[j][2]],float64),
+                                          [points[j][0], vertexcache.height(tile,options,points[j][0],points[j][2]), points[j][2], (points[j][0]*coshdg+points[j][2]*sinhdg)/s-maxu, (points[j][0]*sinhdg-points[j][2]*coshdg)/s-minv, 0])
+                    gluTessEndContour(Facade.tess)
+                    gluTessEndPolygon(Facade.tess)
+                    if __debug__:
+                        if not tris: print "Facade draped layout failed - no tris"
+                    rooftris=drape(tris, tile, options, vertexcache)
+                else:
+                    rooftris=[]
+                # Remaining roofs laid out at polygon point elevations
+                tris=[]
                 gluTessBeginPolygon(Facade.tess, tris)
                 gluTessBeginContour(Facade.tess)
                 for j in range(n):
@@ -1667,14 +1693,15 @@ class Facade(Polygon):
                     tris=[]
 
             if not tris:
-                self.rooflen=0
+                self.drapedlen=self.rooflen=0
             else:
-                rooftris=[]
-                for roof in floor.roofs:
+                # replicate tessellated triangles at each roof height (except height 0 which is already laid out above)
+                self.drapedlen=len(rooftris)
+                for roof in floor.roofs[rooftris and 1 or 0:]:
                     for tri in tris:
                         rooftris.append([tri[0],roof+tri[1]]+tri[2:6])
                 roofdata=array(rooftris, float32).flatten()
-                self.rooflen=len(roofdata)/6
+                self.rooflen=len(roofdata)/6-self.drapedlen
                 self.dynamic_data=concatenate((self.dynamic_data, roofdata))
 
         vertexcache.allocate_dynamic(self, True)
