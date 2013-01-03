@@ -806,7 +806,6 @@ def writeDSF(dsfdir, key, placements, netfile):
     err+=e.read()
     o.close()
     e.close()
-    if not __debug__: unlink(tmp)
     if platform=='win32' and exists(join(gettempdir(), "%+03d%+04d.dsf" % (south,west))):
         rename(tmp2, tilename+'.dsf')
     if not exists(tilename+'.dsf'):
@@ -816,13 +815,17 @@ def writeDSF(dsfdir, key, placements, netfile):
             rename(tilename+'.DSF.BAK', tilename+'.DSF')
         if __debug__: print err
         err=err.strip().split('\n')
+        coords=''
         for line in err:
             if line.lower().startswith('error'):	# first error line seems to be the most/only useful
-                err=line
+                err=line+'\n'+coords			# previous line holds polygon point co-ords
                 break
+            else:
+                coords=line
         else:
             if len(err)>1 and err[-1].startswith('('):
                 err=err[-2].strip()	# last line reports line number within source code - not useful
             else:
                 err=err[0].strip()	# only one line - report it
         raise IOError, (0, err)
+    if not __debug__: unlink(tmp)	# Delete temp file if successful. TODO mail this file
