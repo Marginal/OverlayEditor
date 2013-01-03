@@ -4,7 +4,7 @@ from glob import glob
 from math import cos, floor, sin, pi, radians, sqrt
 import os	# for startfile
 from os import chdir, getenv, listdir, mkdir, walk
-from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
+from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
 import sys	# for path
 from sys import exit, argv, executable, platform, version
 if __debug__:
@@ -66,7 +66,8 @@ if not 'startfile' in dir(os):
 from clutter import round2res, minres, latlondisp, Exclude	# for loading exclusions into palette
 from clutterdef import ClutterDef, KnownDefs, ExcludeDef, NetworkDef
 from draw import MyGL
-from files import importObj, scanApt, readApt, readNav, readLib, readNet, sortfolded
+from files import scanApt, readApt, readNav, readLib, readNet, sortfolded
+from importobjs import importpaths, importobjs
 from lock import LockDialog
 from palette import Palette, PaletteEntry
 from DSFLib import readDSF, writeDSF
@@ -1198,6 +1199,8 @@ class MainWindow(wx.Frame):
         base=glob(join(prefs.xplane,gcustom,prefs.package))[0]
         if not glob(join(base,gnavdata)):
             mkdir(join(base,'Earth nav data'))
+        if not glob(join(base,'[Oo][Bb][Jj][Ee][Cc][Tt][Ss]')):
+            mkdir(join(base,'objects'))
         dsfdir=glob(join(prefs.xplane,gcustom,prefs.package,gnavdata))[0]
 
         stuff=dict(self.canvas.unsorted)
@@ -1516,31 +1519,53 @@ class MainWindow(wx.Frame):
         self.Refresh()
 
     def OnImport(self, event):
-        dlg=wx.FileDialog(self, "Import files:", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Draped, Facades, Forests, Lines|*.obj;*.pol;*.fac;*.for;*.lin|Object files (*.obj)|*.obj|Draped polygon files (*.pol)|*.pol|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|Line files (*.lin)|*.lin|All files|*.*", wx.OPEN|wx.MULTIPLE)
+        dlg=wx.FileDialog(self, "Import", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Draped, Facades, Forests, Lines, Textures|*.obj;*.pol;*.fac;*.for;*.lin;*.dds;*.png|Object files (*.obj)|*.obj|Draped polygon files (*.pol)|*.pol|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|Line files (*.lin)|*.lin|Textures (*.dds, *.png)|*.dds;*.png|All files|*.*", wx.OPEN|wx.MULTIPLE|wx.FILE_MUST_EXIST)
         if dlg.ShowModal()!=wx.ID_OK:
             dlg.Destroy()
             return
         paths=dlg.GetPaths()
         sortfolded(paths)	# why not
         dlg.Destroy()
-        
+        if not paths: return
         pkgpath=glob(join(prefs.xplane,gcustom,prefs.package))[0]
-        for path in paths:
-            try:
-                newpath=importObj(pkgpath, path)
-            except IOError, e:
-                msg=e.strerror
-            except:
-                msg=''
-            else:
-                name=newpath[len(pkgpath)+1:].replace(sep, '/')
+        if paths[0].lower().startswith(pkgpath.lower()):
+            myMessageBox("Can't import objects from the same package!", "Import", wx.ICON_ERROR|wx.OK, self)
+            return
+        try:
+            files=importpaths(pkgpath, paths)
+        except EnvironmentError, e:
+            if __debug__: print_exc()
+            myMessageBox(str(e.strerror), "Can't import %s" % e.filename, wx.ICON_ERROR|wx.OK, self)
+            return
+        except UnicodeError, e:
+            if __debug__: print_exc()
+            myMessageBox('Filename uses non-ASCII characters', "Can't import %s." % e.object, wx.ICON_ERROR|wx.OK, self)
+            return
+
+        existing=[]
+        for (src, dst) in files:
+            if exists(dst): existing.append(dst[len(pkgpath)+1:])
+        if existing and myMessageBox('This scenery package already contains the following file(s):\n  '+'\n  '.join(existing)+'\n\nDo you want to replace them?', 'Replace files', wx.ICON_QUESTION|wx.YES_NO, self)!=wx.YES:
+            return
+
+        try:
+            importobjs(pkgpath, files)
+        except EnvironmentError, e:
+            if __debug__: print_exc()
+            myMessageBox(str(e.strerror), "Can't import %s." % e.filename, wx.ICON_ERROR|wx.OK, self)
+            return
+
+        if existing:
+            # Some of those files may be in use - do full reload
+            self.OnReload(True)
+        else:
+            for (src, dst) in files:
+                if splitext(src)[1].lower() in ['.dds', '.png']: continue
+                name=dst[len(pkgpath)+1:].replace(sep, '/')
                 if name.lower().startswith('custom objects'):
                     name=name[15:]
-                self.canvas.lookup[name]=PaletteEntry(newpath)
+                self.canvas.lookup[name]=PaletteEntry(dst)
                 self.palette.add(name)
-                continue
-            myMessageBox(msg, "Can't import %s" % path,
-                         wx.ICON_ERROR|wx.OK, self)
 
     def OnGoto(self, event):
         self.goto.CenterOnParent()	# Otherwise is centred on screen
@@ -1688,6 +1713,7 @@ class MainWindow(wx.Frame):
                 else:
                     mkdir(join(base,v))
                     mkdir(join(base,v,'Earth nav data'))
+                    mkdir(join(base,v,'objects'))
                     dlg.Destroy()
                     return v
             else:

@@ -61,7 +61,7 @@ def myMessageBox(message, caption, style=wx.OK, parent=None):
         id=event.GetId()
         if id==wx.ID_OK:
             event.GetEventObject().GetGrandParent().EndModal(wx.OK)
-        elif id==wx.ID_SAVE:
+        elif id in [wx.YES, wx.ID_SAVE, wx.ID_REPLACE]:
             event.GetEventObject().GetGrandParent().EndModal(wx.YES)
         elif id==wx.ID_NO:
             event.GetEventObject().GetGrandParent().EndModal(wx.NO)
@@ -93,10 +93,15 @@ def myMessageBox(message, caption, style=wx.OK, parent=None):
     text.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
     WrapText(text, txtwidth)
 
-    if style&~wx.ICON_MASK in [wx.OK,wx.CANCEL]:
-        button=wx.Button(panel0, wx.ID_OK)
-    else:
+    # Mac doesn't display icons so change the confirm button depending on context
+    if style&wx.YES_NO == wx.YES_NO and style&wx.ICON_MASK == wx.ICON_EXCLAMATION:
         button=wx.Button(panel0, wx.ID_SAVE)
+    elif style&wx.YES_NO == wx.YES_NO and style&wx.ICON_MASK == wx.ICON_QUESTION:
+        button=wx.Button(panel0, wx.ID_REPLACE)
+    elif style&wx.YES_NO:
+        button=wx.Button(panel0, wx.ID_YES)
+    else:
+        button=wx.Button(panel0, wx.ID_OK)
     button.SetDefault()
     
     grid=wx.GridBagSizer()	# 7 rows, 8 cols
@@ -125,7 +130,9 @@ def myMessageBox(message, caption, style=wx.OK, parent=None):
     if True: # wx.VERSION>=(2,8,11):	# crashes on wxMac 2.8 (and earlier?) when display asleep, but hopefully that won't happen with this app
         dlg.CenterOnParent()	# see http://trac.wxwidgets.org/ticket/11557
     wx.EVT_BUTTON(dlg, wx.ID_OK, OnButton)
+    wx.EVT_BUTTON(dlg, wx.ID_YES, OnButton)
     wx.EVT_BUTTON(dlg, wx.ID_SAVE, OnButton)    
+    wx.EVT_BUTTON(dlg, wx.ID_REPLACE, OnButton)
     wx.EVT_BUTTON(dlg, wx.ID_NO, OnButton)
     wx.EVT_BUTTON(dlg, wx.ID_CANCEL, OnButton)
     retval=dlg.ShowModal()

@@ -1,4 +1,3 @@
-import codecs
 from math import cos, fabs, radians, sin
 from numpy import array, array_equal, concatenate, diag, dot, float32, identity, outer
 from operator import itemgetter, attrgetter
