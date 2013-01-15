@@ -73,8 +73,9 @@ def importpaths(pkgpath, paths):
             h.close()
             retval.append((f, join(newpath, name+'.pol')))
             for f in glob(join(oldpath, name+'.[DdPp][DdNn][SsGg]')):
-                if not samefile(f, join(newtexpath, basename(f))):
-                    retval.append((f, join(newtexpath, basename(f))))
+                n=join(newtexpath, basename(f))
+                if not samefile(f, n):
+                    retval.append((f, n))
         else:
             # Import some kind of object
             retval.append((path, join(newpath, basename(path))))
@@ -105,11 +106,13 @@ def importpaths(pkgpath, paths):
                             tex=line.strip()
                         tex=splitext(tex.replace(':',sep).replace('\\',sep))[0]
                         for f in glob(join(oldtexpath, tex+'.[DdPp][DdNn][SsGg]')):
-                            if not samefile(f, join(newtexpath, basename(f))):
-                                retval.append((f, join(newtexpath, basename(f))))
+                            n=join(newtexpath, basename(f))
+                            if (f, n) not in retval and not samefile(f, n):
+                                retval.append((f, n))
                         for f in glob(join(oldtexpath, tex+'_LIT.[DdPp][DdNn][SsGg]')):
-                            if not samefile(f, join(newtexpath, basename(f))):
-                                retval.append((f, join(newtexpath, basename(f))))
+                            n=join(newtexpath, basename(f))
+                            if (f, n) not in retval and not samefile(f, n):
+                                retval.append((f, n))
                         break
             else: # v8.x
                 while True:
@@ -121,8 +124,9 @@ def importpaths(pkgpath, paths):
                     elif c[0] in ['TEXTURE', 'TEXTURE_NOWRAP', 'TEXTURE_LIT', 'TEXTURE_LIT_NOWRAP', 'TEXTURE_NORMAL', 'TEXTURE_NORMAL_NOWRAP', 'TEXTURE_DRAPED', 'TEXTURE_DRAPED_NORMAL']:
                         tex=splitext(line.strip()[len(c[0]):].strip().replace(':',sep).replace('\\',sep))[0]
                         for f in glob(join(oldtexpath, tex+'.[DdPp][DdNn][SsGg]')):
-                            if not samefile(f, join(newtexpath, basename(f))):
-                                retval.append((f, join(newtexpath, basename(f))))
+                            n=join(newtexpath, basename(f))
+                            if (f, n) not in retval and not samefile(f, n):
+                                retval.append((f, n))
                     elif c[0]=='VT':
                         break	# Stop at first vertex
             h.close()

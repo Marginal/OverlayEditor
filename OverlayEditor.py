@@ -1531,7 +1531,6 @@ class MainWindow(wx.Frame):
             dlg.Destroy()
             return
         paths=dlg.GetPaths()
-        sortfolded(paths)	# why not
         dlg.Destroy()
         if not paths: return
         pkgpath=glob(join(prefs.xplane,gcustom,prefs.package))[0]
@@ -1552,6 +1551,7 @@ class MainWindow(wx.Frame):
         existing=[]
         for (src, dst) in files:
             if exists(dst): existing.append(dst[len(pkgpath)+1:])
+        sortfolded(existing)
         if existing and myMessageBox('This scenery package already contains the following file(s):\n  '+'\n  '.join(existing)+'\n\nDo you want to replace them?', 'Replace files', wx.ICON_QUESTION|wx.YES_NO, self)!=wx.YES:
             return
 
