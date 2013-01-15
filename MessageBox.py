@@ -157,7 +157,7 @@ def AboutBox(parent=None):
     ver=wx.StaticText(panel0, -1, "Version %4.2f" % appversion)
     ver.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
 
-    blurb=wx.StaticText(panel0, -1, "Copyright 2007-2012 Jonathan Harris")
+    blurb=wx.StaticText(panel0, -1, "Copyright 2007-2013 Jonathan Harris")
     blurb.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
 
     box=wx.BoxSizer(wx.VERTICAL)
