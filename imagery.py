@@ -16,7 +16,7 @@ if __debug__:
     from prefs import Prefs
 
 from clutter import Draped, DrapedImage, Polygon, tessvertex, tessedge, csgtvertex, csgtcombined, csgtcombine, csgtedge	# no strips
-from version import appname
+from version import appname, appversion
 
 try:
     from Queue import LifoQueue
@@ -113,6 +113,7 @@ class Filecache:
                 request=Request(url)
         else:
             request=Request(url)
+        request.add_header('User-Agent', '%s/%4.2f' % (appname, appversion))
 
         tries=3
         while tries:
@@ -131,7 +132,7 @@ class Filecache:
                 f.write(d)
                 f.close()
                 cachecontrol=h.info().getheader('Cache-Control')
-                if 'public' in cachecontrol or 'private' in cachecontrol or ('max-age' in cachecontrol and 'no-cache' not in cachecontrol):
+                if not cachecontrol or 'public' in cachecontrol or 'private' in cachecontrol or ('max-age' in cachecontrol and 'no-cache' not in cachecontrol):
                     # http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.9
                     self.files[name]=(now, now)	# just use time of request for modification time
                 else:
@@ -182,7 +183,7 @@ class Imagery:
 
     def __init__(self, canvas):
 
-        self.providers={'Bing': self.bing_setup, 'ArcGIS': self.arcgis_setup}
+        self.providers={'Bing': self.bing_setup, 'ArcGIS': self.arcgis_setup, 'MapQuest': self.mq_setup }
 
         self.canvas=canvas
         self.imageryprovider=None
@@ -288,6 +289,7 @@ class Imagery:
         assert (not self.canvas.options&Prefs.ELEVATION) or (int(floor(self.loc[0])),int(floor(self.loc[1])),self.canvas.options&Prefs.ELEVATION) in self.canvas.vertexcache.meshdata, self.canvas.vertexcache.meshdata.keys()
 
         # http://msdn.microsoft.com/en-us/library/bb259689.aspx
+        # http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#Resolution_and_Scale
         width=dist+dist				# Width in m of screen (from glOrtho setup)
         ppm=screensize.width/width		# Pixels on screen required by 1 metre, ignoring tilt
         level=min(int(round(log(ppm*level0mpp*cos(radians(self.loc[0])), 2))), self.provider_levelmax)	# zoom level required
@@ -473,8 +475,9 @@ class Imagery:
             self.provider_url=self.bing_quadkey
             if info['brandLogoUri']:
                 filename=self.filecache.fetch(basename(info['brandLogoUri']), info['brandLogoUri'])
-                image = PIL.Image.open(filename)	# yuck. but at least open is lazy
-                self.provider_logo=(filename,image.size[0],image.size[1])
+                if filename:
+                    image = PIL.Image.open(filename)	# yuck. but at least open is lazy
+                    self.provider_logo=(filename,image.size[0],image.size[1])
         except:
             if __debug__: print_exc()
         self.canvas.Refresh()	# Might have been waiting on this to get imagery
@@ -499,8 +502,31 @@ class Imagery:
             self.provider_base='http://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/%s'
             self.provider_url=self.arcgis_url
             filename=self.filecache.fetch('logo-med.png', 'http://serverapi.arcgisonline.com/jsapi/arcgis/2.8/images/map/logo-med.png')
-            image = PIL.Image.open(filename)	# yuck. but at least open is lazy
-            self.provider_logo=(filename,image.size[0],image.size[1])
+            if filename:
+                image = PIL.Image.open(filename)	# yuck. but at least open is lazy
+                self.provider_logo=(filename,image.size[0],image.size[1])
+        except:
+            if __debug__: print_exc()
+        self.canvas.Refresh()	# Might have been waiting on this to get imagery
+
+
+    def mq_url(self, x, y, level):
+        url=self.provider_base % ("%d/%d/%d.jpg" % (level, x, y))
+        name="mq_%d_%d_%d.jpg" % (level, x, y)
+        return (name,url)
+
+    # Called in worker thread - don't do anything fancy since main body of code is not thread-safe
+    def mq_setup(self, tls):
+        # http://developer.mapquest.com/web/products/open/map
+        try:
+            self.provider_levelmin=0
+            self.provider_levelmax=18
+            self.provider_base='http://otile1.mqcdn.com/tiles/1.0.0/map/%s'
+            self.provider_url=self.mq_url
+            filename=self.filecache.fetch('questy.png', 'http://open.mapquest.com/cdn/toolkit/lite/images/questy.png')
+            if filename:
+                image = PIL.Image.open(filename)	# yuck. but at least open is lazy
+                self.provider_logo=(filename,image.size[0],image.size[1])
         except:
             if __debug__: print_exc()
         self.canvas.Refresh()	# Might have been waiting on this to get imagery
