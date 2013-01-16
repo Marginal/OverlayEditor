@@ -1552,8 +1552,15 @@ class MainWindow(wx.Frame):
         for (src, dst) in files:
             if exists(dst): existing.append(dst[len(pkgpath)+1:])
         sortfolded(existing)
-        if existing and myMessageBox('This scenery package already contains the following file(s):\n  '+'\n  '.join(existing)+'\n\nDo you want to replace them?', 'Replace files', wx.ICON_QUESTION|wx.YES_NO, self)!=wx.YES:
-            return
+        if existing:
+            r=myMessageBox('This scenery package already contains the following file(s):\n  '+'\n  '.join(existing)+'\n\nDo you want to replace them?', 'Replace files', wx.ICON_QUESTION|wx.YES_NO|wx.CANCEL, self)
+            if r==wx.NO:
+                # Strip out existing
+                for (src, dst) in list(files):
+                    if exists(dst): files.remove((src,dst))
+                existing=[]	# No need to do reload
+            elif r!=wx.YES:
+                return
 
         try:
             importobjs(pkgpath, files)
