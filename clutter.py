@@ -33,10 +33,12 @@ from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, Exclud
 from palette import PaletteEntry
 from prefs import Prefs
 
+f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use for airport layout)
 twopi=pi*2
 piby2=pi/2
-onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
-resolution=8*65535
+onedeg=111320	# approx 1 degree of longitude at equator (60nm) [m]. Radius from sim/physics/earth_radius_m
+divisions=32	# WED 1.1 encodes at 8. WED 1.2 encodes at 32
+resolution=divisions*65535
 minres=1.0/resolution
 maxres=1-minres
 minhdg=360.0/65535
@@ -104,7 +106,7 @@ class Object(Clutter):
         self.matrix=None
 
     def __str__(self):
-        return '<Object "%s" %11.6f %10.6f %d %s>' % (
+        return '<Object "%s" %12.7f %11.7f %d %s>' % (
             self.name, self.lat, self.lon, self.hdg, self.y)
 
     def clone(self):
@@ -2020,9 +2022,9 @@ def latlondisp(dms, lat, lon):
         abslon=abs(lon)
         mmlon=(abslon-int(abslon)) * 60.0
         sslon=(mmlon-int(mmlon)) * 60.0
-        return u'Lat: %s%02d\u00B0%02d\'%06.3f"  Lon: %s%03d\u00B0%02d\'%06.3f"' % (sgnlat, abslat, mmlat, sslat, sgnlon, abslon, mmlon, sslon)
+        return u'Lat: %s%02d\u00B0%02d\'%07.4f"  Lon: %s%03d\u00B0%02d\'%07.4f"' % (sgnlat, abslat, mmlat, sslat, sgnlon, abslon, mmlon, sslon)
     else:
-        return "Lat: %.6f  Lon: %.6f" % (lat, lon)
+        return "Lat: %.7f  Lon: %.7f" % (lat, lon)
 
 
 

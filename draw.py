@@ -26,15 +26,12 @@ if __debug__:
 
 from files import VertexCache, sortfolded, readApt, glInitTextureCompressionS3tcEXT
 from fixed8x13 import fixed8x13
-from clutter import ObjectFactory, PolygonFactory, Draped, DrapedImage, Facade, Object, Polygon, Network, Exclude, resolution, round2res, latlondisp
+from clutter import ObjectFactory, PolygonFactory, Draped, DrapedImage, Facade, Object, Polygon, Network, Exclude, onedeg, resolution, round2res, latlondisp
 from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
 from imagery import Imagery
 from MessageBox import myMessageBox
 from prefs import Prefs
 from version import appname
-
-onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
-f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 sband=16	# width of mouse scroll band around edge of window
 
@@ -1991,7 +1988,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glClear(GL_DEPTH_BUFFER_BIT)
         lat=round2res(self.centre[0]-z/onedeg)
         lon=round2res(self.centre[1]+x/(onedeg*cos(radians(lat))))
-        if __debug__: print "%3d %3d %.6f, %5d %5.1f %5d, %10.6f %11.6f" % (mx,my,mz, x,y,z, lat,lon)
+        if __debug__: print "%3d %3d %.6f, %5d %5.1f %5d, %11.7f %12.7f" % (mx,my,mz, x,y,z, lat,lon)
         return (lat,lon)
 
 

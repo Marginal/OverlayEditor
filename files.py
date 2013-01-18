@@ -30,16 +30,13 @@ from traceback import print_exc
 import time
 import wx
 
-from clutter import Clutter
+from clutter import Clutter, onedeg, f2m
 from clutterdef import BBox, KnownDefs, SkipDefs, NetworkDef
 from DSFLib import readDSF
 from palette import PaletteEntry
 from prefs import Prefs
 from version import appname, appversion
 
-
-onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
-f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use)
 
 # DDS surface flags
 DDSD_CAPS	= 0x00000001

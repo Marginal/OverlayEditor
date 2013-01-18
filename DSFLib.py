@@ -14,7 +14,7 @@ except:
 if __debug__:
     from traceback import print_exc
 
-from clutter import PolygonFactory, ObjectFactory, Object, Polygon, Draped, Exclude, Network, minres, minhdg
+from clutter import PolygonFactory, ObjectFactory, Object, Polygon, Draped, Exclude, Network, divisions, minres, minhdg
 from version import appname, appversion
 
 onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
@@ -217,8 +217,10 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             poolkind.append(thispool)
         elif c=='LACS':
             scal.append([unpack('<2f', h.read(8)) for i in range(0, l-8, 8)])
+            #if __debug__: print c,scal[-1]
         elif c=='23CS':
             sc32.append([unpack('<2f', h.read(8)) for i in range(0, l-8, 8)])
+            #if __debug__: print c,sc32[-1]
         else:
             h.seek(l-8, 1)
     if __debug__: print "%6.3f time in GEOD atom" % (time.clock()-clock)
@@ -706,7 +708,7 @@ def writeDSF(dsfdir, key, placements, netfile):
                         maxlon=max(maxlon,n[0])
                         minlat=min(minlat,n[1])
                         maxlat=max(maxlat,n[1])
-                    h.write('PROPERTY\t%s\t%.6f/%.6f/%.6f/%.6f\n' % (
+                    h.write('PROPERTY\t%s\t%.8f/%.8f/%.8f/%.8f\n' % (
                         k, minlon, minlat, maxlon, maxlat))
                     break
         else:
@@ -717,6 +719,8 @@ def writeDSF(dsfdir, key, placements, netfile):
     h.write('PROPERTY\tsim/east\t%d\n' %  (west+1))
     h.write('PROPERTY\tsim/north\t%d\n' % (south+1))
     h.write('PROPERTY\tsim/south\t%d\n' %  south)
+    h.write('\n')
+    h.write('DIVISIONS\t%d\n' % divisions)
     h.write('\n')
 
     objdefs=[]
@@ -747,8 +751,8 @@ def writeDSF(dsfdir, key, placements, netfile):
 
     for obj in objects:
         # DSFTool rounds down, so round up here first
-        h.write('OBJECT\t%d\t%12.7f%13.7f%6.1f\n' % (
-            objdefs.index(obj.name), min(west+1, obj.lon+minres/2), min(south+1, obj.lat+minres/2), round(obj.hdg,1)+minhdg/2))
+        h.write('OBJECT\t%d\t%14.9f %14.9f %5.1f\n' % (
+            objdefs.index(obj.name), min(west+1, obj.lon+minres/4), min(south+1, obj.lat+minres/4), round(obj.hdg,1)+minhdg/2))
     if objects: h.write('\n')
     
     for poly in polygons:
@@ -759,18 +763,18 @@ def writeDSF(dsfdir, key, placements, netfile):
             h.write('BEGIN_WINDING\n')
             for p in w:
                 # DSFTool rounds down, so round up here first
-                h.write('POLYGON_POINT\t%12.7f%13.7f' % (min(west+1, p[0]+minres/2), min(south+1, p[1]+minres/2)))
+                h.write('POLYGON_POINT\t%14.9f %14.9f' % (min(west+1, p[0]+minres/4), min(south+1, p[1]+minres/4)))
                 if len(p)==4 and poly.param!=65535: # bezier
-                    h.write('%13.7f%13.7f' % (min(west+1, p[2]+minres/2), min(south+1, p[3]+minres/2)))
+                    h.write(' %14.9f %14.9f' % (min(west+1, p[2]+minres/4), min(south+1, p[3]+minres/4)))
                 elif len(p)==3:	# Facade with wall type, or AGL beach with subtype
                       h.write('%4d' % p[2])
                 elif len(p)==5:	# Facade with wall type and bezier
-                      h.write('%4d%13.7f%13.7f' % (p[2], min(west+1, p[3]+minres/2), min(south+1, p[4]+minres/2)))
+                      h.write('%4d %14.9f %14.9f' % (p[2], min(west+1, p[3]+minres/4), min(south+1, p[4]+minres/4)))
                 elif len(p)==8:	# Draped/Ortho with bezier and UV
-                    h.write('%13.7f%13.7f%13.7f%13.7f%13.7f%13.7f' % (min(west+1, p[2]+minres/2), min(south+1, p[3]+minres/2), p[4], p[5], p[6], p[7]))
+                    h.write(' %14.9f %14.9f %14.9f %14.9f %14.9f %14.9f' % (min(west+1, p[2]+minres/4), min(south+1, p[3]+minres/4), p[4], p[5], p[6], p[7]))
                 else:		# draped with UV, or dunno
                     for n in range(2,len(p)):
-                        h.write('%13.7f' % p[n])
+                        h.write(' %14.9f' % p[n])
                 h.write('\n')
             h.write('END_WINDING\n')
         h.write('END_POLYGON\n')
@@ -779,14 +783,14 @@ def writeDSF(dsfdir, key, placements, netfile):
     for poly in polygons:
         if not isinstance(poly, Network): continue
         p=poly.nodes[0][0]
-        h.write('BEGIN_SEGMENT\t%d %d\t%d\t%13.8f %13.8f %11.6f\n' % (
+        h.write('BEGIN_SEGMENT\t%d %d\t%d\t%14.9f %14.9f %11.6f\n' % (
             0, poly.index, junctions[(p[0], p[1], p[2])],
             p[0], p[1], p[2]))
         for p in poly.nodes[0][1:-1]:
-            h.write('SHAPE_POINT\t\t\t%13.8f %13.8f %11.6f\n' % (
+            h.write('SHAPE_POINT\t\t\t%14.9f %14.9f %11.6f\n' % (
                 p[0], p[1], p[2]))
         p=poly.nodes[0][-1]
-        h.write('END_SEGMENT\t\t%d\t%13.8f %13.8f %11.6f\n' % (
+        h.write('END_SEGMENT\t\t%d\t%14.9f %14.9f %11.6f\n' % (
             junctions[(p[0], p[1], p[2])],
             p[0], p[1], p[2]))
     if junctions: h.write('\n')
