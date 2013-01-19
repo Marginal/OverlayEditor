@@ -86,9 +86,7 @@ class PaletteListBox(wx.VListBox):
             elif not self.pkgdir:
                 # library object
                 if name.startswith('/'): name=name[1:]
-                if name.startswith('lib/'):
-                    name=name[4:]
-                elif name.startswith(tabname+'/'):
+                if name.startswith(tabname+'/'):
                     name=name[len(tabname)+1:]
                 name=name[:-4]
             elif name.lower().startswith('objects/') and name[8:] not in names:

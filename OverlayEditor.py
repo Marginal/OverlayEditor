@@ -1447,7 +1447,7 @@ class MainWindow(wx.Frame):
                             objects[name]=PaletteEntry(join(path,f))
                     elif f[-4:].lower()=='.net':
                         roadfile=join(path,f)
-        self.palette.load('Objects', objects, pkgdir)
+        self.palette.load('Objects in this package', objects, pkgdir)
         lookup.update(objects)
         for lib in libs: self.palette.load(lib, lookupbylib[lib], None)
 
