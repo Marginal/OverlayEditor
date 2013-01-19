@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 from glob import glob
-from math import cos, floor, sin, pi, radians, sqrt
+from math import cos, floor, hypot, sin, pi, radians, sqrt
 import os	# for startfile
 from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
@@ -86,9 +86,9 @@ else:
     chdir(mypath)
 
 # constants
-zoom=sqrt(2)
-zoom2=2
-maxzoom=32768*zoom
+zoom2=sqrt(2)
+zoom=sqrt(zoom2)
+maxzoom=32768*zoom2
 gresources='[rR][eE][sS][oO][uU][rR][cC][eE][sS]'
 gnavdata='[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]'
 gaptdat=join(gnavdata,'[aA][pP][tT].[dD][aA][tT]')
@@ -1094,23 +1094,23 @@ class MainWindow(wx.Frame):
             if self.menubar:
                 self.menubar.Enable(wx.ID_UNDO, True)
         event.Skip(True)
-    
+
+
     def OnMouseWheel(self, event):
         if event.GetWheelRotation()>0:
-            if event.ShiftDown():
-                self.dist/=zoom2
-            else:
-                self.dist/=zoom
-            if self.dist<1.0: self.dist=1.0
+            r=event.ShiftDown() and 1.0/zoom2 or 1.0/zoom
+            if self.dist*r < 1.0: r = 1.0/self.dist
         elif event.GetWheelRotation()<0:
-            if event.ShiftDown():
-                self.dist*=zoom2
-            else:
-                self.dist*=zoom
-            if self.dist>maxzoom: self.dist=maxzoom
+            r=event.ShiftDown() and zoom2 or zoom
+            if self.dist*r > maxzoom: r = maxzoom/self.dist
         else:
             event.Skip(True)
             return
+        (mx,my,mz)=self.canvas.getlocalloc(event.GetX(),event.GetY())	# OpenGL coords of mouse / zoom point
+        (cx,cz)=(self.canvas.x, self.canvas.z)				# OpenGL coords of cursor
+        d=hypot(cx-mx, cz-mz)	# horizontal distance [m] between zoom point and cursor
+        self.loc = self.canvas.xz2latlon(mx+r*(cx-mx), mz+r*(cz-mz))
+        self.dist *= r
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
         self.Update()		# Let window draw first
         self.ShowLoc()

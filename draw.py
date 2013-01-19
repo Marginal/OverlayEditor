@@ -1955,7 +1955,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             raise ArithmeticError
         
-    def getworldloc(self, mx, my):
+    def getlocalloc(self, mx, my):
         if wx.VERSION >= (2,9):
             self.SetCurrent(self.context)
         else:
@@ -1986,10 +1986,18 @@ class MyGL(wx.glcanvas.GLCanvas):
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
         #self.SwapBuffers()	# debug
         glClear(GL_DEPTH_BUFFER_BIT)
+        if __debug__: print "%3d %3d %.6f, %5d %5.1f %5d" % (mx,my,mz, x,y,z)
+        return (x,y,z)
+
+    def xz2latlon(self, x, z):
         lat=round2res(self.centre[0]-z/onedeg)
         lon=round2res(self.centre[1]+x/(onedeg*cos(radians(lat))))
-        if __debug__: print "%3d %3d %.6f, %5d %5.1f %5d, %11.7f %12.7f" % (mx,my,mz, x,y,z, lat,lon)
+        if __debug__: print "%11.7f %12.7f" % (lat,lon)
         return (lat,lon)
+
+    def getworldloc(self, mx, my):
+        (x,y,z)=self.getlocalloc(mx, my)
+        return self.xz2latlon(x,z)
 
 
 # runway tessellators
