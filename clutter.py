@@ -941,13 +941,14 @@ class DrapedImage(Draped):
 
 class Exclude(Fitted):
 
-    NAMES={'sim/exclude_bch': 'Exclude: Beaches',
-           'sim/exclude_pol': 'Exclude: Draped polygons',
-           'sim/exclude_fac': 'Exclude: Facades',
-           'sim/exclude_for': 'Exclude: Forests',
-           'sim/exclude_obj': 'Exclude: Objects',
-           'sim/exclude_net': 'Exclude: '+NetworkDef.TABNAME,
-           'sim/exclude_str': 'Exclude: Strings'}
+    PREFIX='Exclude: '
+    NAMES={'sim/exclude_bch': PREFIX+'Beaches',
+           'sim/exclude_pol': PREFIX+'Draped polygons',
+           'sim/exclude_fac': PREFIX+'Facades',
+           'sim/exclude_for': PREFIX+'Forests',
+           'sim/exclude_obj': PREFIX+'Objects',
+           'sim/exclude_net': PREFIX+ NetworkDef.TABNAME,
+           'sim/exclude_str': PREFIX+'Strings'}
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if lon==None:
