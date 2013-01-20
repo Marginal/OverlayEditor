@@ -759,7 +759,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glLoadIdentity()	# Drawing Objects alters the matrix
 
         # labels
-        if self.d>2000:	# arbitrary
+        if self.codeslist and self.d>2000:	# arbitrary
             if __debug__: print "labels"
             glCallList(self.codeslist)
 
@@ -1881,19 +1881,24 @@ class MyGL(wx.glcanvas.GLCanvas):
 
             # labels
             progress.Update(15, 'Layout')
-            if self.codeslist: glDeleteLists(self.codeslist, 1)
-            self.codeslist=glGenLists(1)
-            glNewList(self.codeslist, GL_COMPILE)
-            glColor3f(1.0, 0.25, 0.25)	# Labels are pink
-            glBindTexture(GL_TEXTURE_2D, 0)
-            for (code, (lat,lon)) in self.codes[self.tile]:
-                (x,z)=self.latlon2m(lat,lon)
-                y=self.vertexcache.height(self.tile,self.options,x,z)
-                glRasterPos3f(x, y, z)
-                code=code.encode('latin1', 'replace')
-                for c in code:
-                    glBitmap(8,13, 16,6, 8,0, fixed8x13[ord(c)])
-            glEndList()
+            if self.codeslist:
+                glDeleteLists(self.codeslist, 1)
+                self.codeslist=0
+            if __debug__ and platform=='win32':
+                pass	# hacky workaround for https://www.virtualbox.org/ticket/8666
+            elif self.codes[self.tile]:
+                self.codeslist=glGenLists(1)
+                glNewList(self.codeslist, GL_COMPILE)
+                glColor3f(1.0, 0.25, 0.25)	# Labels are pink
+                glBindTexture(GL_TEXTURE_2D, 0)
+                for (code, (lat,lon)) in self.codes[self.tile]:
+                    (x,z)=self.latlon2m(lat,lon)
+                    y=self.vertexcache.height(self.tile,self.options,x,z)
+                    glRasterPos3f(x, y, z)
+                    code=code.encode('latin1', 'replace')
+                    for c in code:
+                        glBitmap(8,13, 16,6, 8,0, fixed8x13[ord(c)])
+                glEndList()
 
             # Background image - always recalc since may span multiple tiles
             if self.background:
