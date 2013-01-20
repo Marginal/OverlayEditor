@@ -45,13 +45,13 @@ Scenery</a> &rarr; <a href="http://marginal.org.uk/x-planescenery/tools.html">To
 
 <h3>The application window</h3>
 <p>The application window consists of five parts. Click on this screenshot for a description:</p>
-<img style="border: 0px solid; width: 1020px; height: 768px;" alt="application window" src="Resources/screenshot.jpg" usemap="#appwinmap">
+<img style="border: 0px solid; width: 1024px; height: 768px;" alt="application window" src="Resources/screenshot.jpg" usemap="#appwinmap">
 <map name="appwinmap">
-  <area shape="rect" coords="0,0,1023,68" href="#toolbar" title="Tool bar">
-  <area shape="rect" coords="0,69,679,737" href="#mainwindow" title="Main window">
-  <area shape="rect" coords="0,738,1023,767" href="#statusbar" title="Status bar">
-  <area shape="rect" coords="680,69,1023,407" href="#objectlist" title="List of objects">
-  <area shape="rect" coords="680,408,1023,767" href="#preview" title="Preview">
+  <area shape="rect" coords="0,0,1023,63" href="#toolbar" title="Tool bar">
+  <area shape="rect" coords="0,64,681,739" href="#mainwindow" title="Main window">
+  <area shape="rect" coords="0,740,1023,767" href="#statusbar" title="Status bar">
+  <area shape="rect" coords="682,64,1023,381" href="#objectlist" title="List of objects">
+  <area shape="rect" coords="682,382,1023,767" href="#preview" title="Preview">
 </map>
 
 <h4><a name="toolbar">Tool bar</a></h4>
@@ -102,7 +102,7 @@ If you have a polygon/network <u>node</u> selected - Add new polygon/network nod
       <td>Undo the last edit.</td>
     </tr>
     <tr>
-      <td class="button"><img class="tlbbutton" alt="Background" src="Resources/background.png"></td>
+      <td class="button"><a name="background"><img class="tlbbutton" alt="Background" src="Resources/background.png"></a></td>
       <td>Turn background imagery on or off.<br>
 You can use a mapping service or a simple file to provide background imagery. <small>(Note that the background imagery is just for reference; it's not saved with the scenery package).</small></td>
     </tr>
@@ -137,7 +137,7 @@ Do not change the location of X-Plane's top-level folder while you are editing a
 
 <h4><a name="mainwindow">Main window</a></h4>
 <p>This shows the objects that have been placed in a 1&deg;&times;1&deg; region of the loaded scenery package.</p>
-<p>By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a>. Runways, taxiways and navaids are displayed in simplified form and cannot be edited. Scenery objects from other scenery packages and &ldquo;autogen&rdquo; scenery objects from the default scenery are not displayed at all.<p>
+<p>By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> and/or add mapping imagery with <a href="#background"><img class="inlbutton" alt="Background" src="Resources/background.png"></a>. Runways, taxiways and navaids are displayed in simplified form and cannot be edited. Scenery objects from other scenery packages and &ldquo;autogen&rdquo; scenery objects from the default scenery are not displayed at all.<p>
 <p>Navigate with the cursor keys or mouse. Hold down <kbd>Shift</kbd> for bigger steps or <kbd>Ctrl</kbd> for tiny steps:</p>
 <div style="margin-left: 40px;">
 <table class="kbdtable">
@@ -290,13 +290,7 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
   <dd><img class="inlsymbol" alt="exc" src="Resources/exc.png"> - Exclusion region</dd>
   <dd><img class="inlsymbol" alt="bad" src="Resources/bad.png"> - Missing or unreadable object or polygon</dd>
 </dl>
-<p>Objects that have been made available by scenery libraries, including
-X-Plane's built-in libraries, are listed under further headings in the
-drop-down list. Note that later versions of X-Plane come with more extensive
-libraries than earlier versions, so you you should always design using the
-earliest version of X-Plane that you want your scenery package to work
-with.
-(See <a target="_blank" href="http://marginal.org.uk/x-planescenery/library_tutorial/index.html">this tutorial</a> if you're interested in making your own scenery libraries).</p>
+<p>Objects that have been made available by scenery libraries, including X-Plane's built-in libraries, are listed under further headings in the drop-down list. Or use the <samp>Search</samp> box to search through the available objects by name. Note that later versions of X-Plane come with more extensive libraries than earlier versions, so you you should always design using the earliest version of X-Plane that you want your scenery package to work with. (See <a target="_blank" href="http://marginal.org.uk/x-planescenery/library_tutorial/index.html">this tutorial</a> if you're interested in making your own scenery libraries).</p>
 <p>Some library objects are shown in these lists with a symbol <img class="inlsymbol" alt="objs" src="Resources/objs.png"> or <img class="inlsymbol" alt="facs" src="Resources/facs.png"> instead of the normal symbol <img class="inlsymbol" alt="obj" src="Resources/obj.png"> or <img class="inlsymbol" alt="fac" src="Resources/fac.png">.
 This means that the library object exists in multiple versions; X-Plane will
 choose which version of the object to display at random, but this application

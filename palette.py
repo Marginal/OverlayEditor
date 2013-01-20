@@ -39,73 +39,82 @@ class PaletteListBox(wx.VListBox):
         self.inafg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
         self.inabg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENU)
         self.indent=4
+        self.parent=parent
+        self.tabname=tabname
+        self.tabno=tabno
         self.pkgdir=pkgdir
-        self.populate(parent, tabname, tabno, objects)
+        self.populate(objects)
 
-    def populate(self, parent, tabname, tabno, objects):
+    def populate(self, objects):
+        self.SetSelection(-1)
         self.choices=[]
-        names=objects.keys()
-        for name,entry in objects.iteritems():
-            try:
-                realname=name.encode()	# X-Plane only supports ASCII
-                ext=name[-4:].lower()
-                if tabname==NetworkDef.TABNAME:
-                    imgno=7
-                elif tabname==ExcludeDef.TABNAME:
-                    imgno=8
-                elif ext in UnknownDefs:
-                    imgno=6
-                elif realname in parent.bad:
-                    imgno=16
-                elif ext==PolygonDef.DRAPED:
-                    imgno=4
-                    if tabno==0 and self.pkgdir:
-                        # find orthos - assume library objects aren't
-                        try:
-                            h=file(join(self.pkgdir,entry.file), 'rU')
-                            for line in h:
-                                line=line.strip()
-                                if line.startswith('TEXTURE_NOWRAP') or line.startswith('TEXTURE_LIT_NOWRAP'):
-                                    imgno=5
-                                    break
-                                elif line.startswith('TEXTURE'):
-                                    break
-                            h.close()
-                        except:
-                            pass
-                elif ext in KnownDefs:
-                    imgno=KnownDefs.index(ext)
+        if self.tabname==NetworkDef.TABNAME:
+            for name,entry in objects.iteritems(): self.choices.append((7, name, name))
+            self.SetItemCount(len(self.choices))
+            return
+        elif self.tabname==ExcludeDef.TABNAME:
+            for name,entry in objects.iteritems(): self.choices.append((8, name, name))
+            self.SetItemCount(len(self.choices))
+        else:
+            names=objects.keys()
+            for name,entry in objects.iteritems():
+                try:
+                    realname=name.encode()	# X-Plane only supports ASCII
+                    ext=name[-4:].lower()
+                    if ext in UnknownDefs:
+                        imgno=6
+                    elif realname in self.parent.bad:
+                        imgno=16
+                    elif ext==PolygonDef.DRAPED:
+                        imgno=4
+                        if self.tabno==0 and self.pkgdir:
+                            # find orthos - assume library objects aren't
+                            try:
+                                h=file(join(self.pkgdir,entry.file), 'rU')
+                                for line in h:
+                                    line=line.strip()
+                                    if line.startswith('TEXTURE_NOWRAP') or line.startswith('TEXTURE_LIT_NOWRAP'):
+                                        imgno=5
+                                        break
+                                    elif line.startswith('TEXTURE'):
+                                        break
+                                h.close()
+                            except:
+                                pass
+                    elif ext in KnownDefs:
+                        imgno=KnownDefs.index(ext)
+                    else:
+                        imgno=16	# wtf?
+                except:
+                    realname=name
+                    self.parent.bad[name]=True
+                    imgno=16	# non-ASCII
+                if not self.pkgdir:
+                    # library object
+                    if name.startswith('/'): name=name[1:]
+                    if name.startswith(self.tabname+'/'):
+                        name=name[len(self.tabname)+1:]
+                    name=name[:-4]
+                elif name.lower().startswith('objects/') and name[8:] not in names:
+                    name=name[8:-4]
+                elif name.lower().startswith('custom objects/') and name[15:] not in names:
+                    name=name[15:-4]
                 else:
-                    imgno=16	# wtf?
-            except:
-                realname=name
-                parent.bad[name]=True
-                imgno=16	# non-ASCII
-            if tabname in [NetworkDef.TABNAME, ExcludeDef.TABNAME]:
-                pass
-            elif not self.pkgdir:
-                # library object
-                if name.startswith('/'): name=name[1:]
-                if name.startswith(tabname+'/'):
-                    name=name[len(tabname)+1:]
-                name=name[:-4]
-            elif name.lower().startswith('objects/') and name[8:] not in names:
-                name=name[8:-4]
-            elif name.lower().startswith('custom objects/') and name[15:] not in names:
-                name=name[15:-4]
-            else:
-                name=name[:-4]
-            if entry.multiple and imgno!=16: imgno+=9
-            self.choices.append((imgno, name, realname))
-        self.SetItemCount(len(self.choices))
+                    name=name[:-4]
+                if entry.multiple and imgno!=16: imgno+=9
+                self.choices.append((imgno, name, realname))
+            self.SetItemCount(len(self.choices))
 
         # sort according to display name and set up quick lookup
         self.choices.sort(lambda x,y: cmp(x[1].lower(), y[1].lower()))
         for i in range(len(self.choices)):
             (imgno, name, realname)=self.choices[i]
-            if tabno==0 or realname not in parent.lookup:
+            if self.tabno==0 or realname not in self.parent.lookup:
                 # per-package objects take precedence
-                parent.lookup[realname]=(tabno,i)
+                self.parent.lookup[realname]=(self.tabno,i)
+
+        # Mark for repaint if we're on show
+        self.Refresh()
 
     def OnMeasureItem(self, n):
         return self.height
@@ -169,11 +178,16 @@ class PaletteChoicebook(wx.Choicebook):
         #print "choice"
         l=event.GetEventObject()
         (imgno, name, realname)=l.choices[l.GetSelection()]
-        self.frame.palette.set(realname)
+        for ll in self.lists:
+            if ll!=l: ll.SetSelection(-1)
         self.frame.canvas.clearsel()
         self.frame.statusbar.SetStatusText("", 2)
+        self._postselection(True)
         self.frame.toolbar.EnableTool(wx.ID_DELETE, False)
         if self.frame.menubar: self.frame.menubar.Enable(wx.ID_DELETE, False)
+        if realname!=self.frame.palette.lastkey:
+            self.frame.palette.lastkey=realname
+            self.frame.palette.preview.Refresh()
         event.Skip()
 
     def OnKillFocus(self, event):
@@ -205,8 +219,7 @@ class PaletteChoicebook(wx.Choicebook):
         lookup=self.frame.canvas.lookup
         objects=dict([(realname, lookup[realname]) for (imgno, foo, realname) in l.choices])
         objects[name]=lookup[name]
-        l.populate(self, 'Objects', 0, objects)
-        self.Refresh()
+        l.populate(objects)
 
         # Select added name
         self.set(name)
@@ -236,19 +249,19 @@ class PaletteChoicebook(wx.Choicebook):
             if self.GetSelection()!=ontab: self.SetSelection(ontab)
             l=self.lists[ontab]
             l.SetSelection(ind)
-            self.frame.toolbar.EnableTool(wx.ID_ADD,  True)
-            self.frame.toolbar.EnableTool(wx.ID_EDIT, False)
-            if self.frame.menubar:
-                self.frame.menubar.Enable(wx.ID_ADD,  True)
-                self.frame.menubar.Enable(wx.ID_EDIT, False)
+            self._postselection(True)
         else:
             # no key, or listed in DSF but not present - eg unrecognised poly
             self.lists[self.GetSelection()].SetSelection(-1)
-            self.frame.toolbar.EnableTool(wx.ID_ADD,  False)
-            self.frame.toolbar.EnableTool(wx.ID_EDIT, False)
-            if self.frame.menubar:
-                self.frame.menubar.Enable(wx.ID_ADD, False)
-                self.frame.menubar.Enable(wx.ID_EDIT, False)
+            self._postselection(False)
+
+    def _postselection(self, found):
+        # Do stuff after a selection
+        self.frame.toolbar.EnableTool(wx.ID_ADD,  found)
+        self.frame.toolbar.EnableTool(wx.ID_EDIT, False)
+        if self.frame.menubar:
+            self.frame.menubar.Enable(wx.ID_ADD,  found)
+            self.frame.menubar.Enable(wx.ID_EDIT, False)
 
     def markbad(self, name=None):
         # Mark name as bad, or current selection if no name. Adds name if not already present.
@@ -272,8 +285,7 @@ class PaletteChoicebook(wx.Choicebook):
             lookup=self.frame.canvas.lookup
             objects=dict([(realname, lookup[realname]) for (imgno, foo, realname) in l.choices])
             objects[name]=lookup[name]
-            l.populate(self, 'Objects', 0, objects)
-            self.Refresh()
+            l.populate(objects)
         else:
             (ontab,ind)=self.lookup[name]
             (imgno, name, realname)=self.lists[ontab].choices[ind]
@@ -292,15 +304,28 @@ class Palette(wx.SplitterWindow):
         wx.SplitterWindow.__init__(self, parent, wx.ID_ANY,
                                    style=wx.SP_3DSASH|wx.SP_NOBORDER|wx.SP_LIVE_UPDATE)
         self.SetWindowStyle(self.GetWindowStyle() & ~wx.TAB_TRAVERSAL)	# wx.TAB_TRAVERSAL is set behind our backs - this fucks up cursor keys
-        self.cb=PaletteChoicebook(self, frame)
+        panel=wx.Panel(self)
+        sizer=wx.BoxSizer(wx.VERTICAL)
+        self.sb=wx.SearchCtrl(panel)
+        self.sb.ShowCancelButton(True)
+        sizer.Add(self.sb, 0, flag=wx.EXPAND|(platform=='darwin' and wx.ALL or wx.BOTTOM), border=3)
+        if platform=='darwin' and wx.VERSION<(2,9): sizer.AddSpacer(6)	# layout on OSX sucks
+        self.cb=PaletteChoicebook(panel, frame)
+        sizer.Add(self.cb, 1, wx.EXPAND)
+        panel.SetSizerAndFit(sizer)
         self.preview=wx.Panel(self, wx.ID_ANY, style=wx.FULL_REPAINT_ON_RESIZE)
         self.SetMinimumPaneSize(1)
-        self.SplitHorizontally(self.cb, self.preview, -ClutterDef.PREVIEWSIZE)
+        self.SplitHorizontally(panel, self.preview, -ClutterDef.PREVIEWSIZE)
         self.lastheight=self.GetSize().y
         wx.EVT_SIZE(self, self.OnSize)
         wx.EVT_KEY_DOWN(self.preview, self.OnKeyDown)
         wx.EVT_SPLITTER_SASH_POS_CHANGING(self, self.GetId(), self.OnSashPositionChanging)
         wx.EVT_PAINT(self.preview, self.OnPaint)
+        wx.EVT_TEXT(self.sb, self.sb.GetId(), self.OnSearch)
+        if wx.version()<'2.9.4.1':
+            # cancel button doesn't send EVT_SEARCHCTRL_CANCEL_BTN under 2.9.4.0 - http://trac.wxwidgets.org/ticket/14799
+            # event not needed under 2.9.4.1
+            wx.EVT_SEARCHCTRL_CANCEL_BTN(self.sb, self.sb.GetId(), self.OnCancelSearch)
 
     def glInit(self):
         self.sashsize=self.GetClientSize()[1]-(self.cb.GetClientSize()[1]+self.preview.GetClientSize()[1])
@@ -329,12 +354,29 @@ class Palette(wx.SplitterWindow):
         self.frame.OnKeyDown(event)
         event.Skip(False)
 
+    def OnSearch(self, event):
+        if not self.cb.lists: return	# wxMac 2.9 sends spurious event on start
+        search=self.sb.GetValue().lower()
+        if search:
+            objects=dict((name,entry) for (name,entry) in self.frame.canvas.lookup.iteritems() if search in name.lower())
+        else:
+            objects={}
+        self.cb.lists[-1].populate(objects)
+        self.cb.SetSelection(search and len(self.cb.lists)-1 or 0)	# Switch to "Search Results"
+
+    def OnCancelSearch(self, event):
+        # Not called under 2.9.4.1 and later
+        self.sb.ChangeValue('')		# Don't want to generate an EVT_TEXT
+        self.cb.SetSelection(0)		# Switch to "Objects in this package"
+        self.cb.lists[-1].populate({})
+
     def flush(self):
         self.cb.flush()
+        self.sb.Clear()		# may change choicebook tab!
         self.lastkey=None
         self.preview.Refresh()
             
-    def load(self, tabname, objects, pkgdir):
+    def load(self, tabname, objects, pkgdir=None):
         self.cb.load(tabname, objects, pkgdir)
     
     def add(self, name):

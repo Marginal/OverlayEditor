@@ -1449,7 +1449,7 @@ class MainWindow(wx.Frame):
                         roadfile=join(path,f)
         self.palette.load('Objects in this package', objects, pkgdir)
         lookup.update(objects)
-        for lib in libs: self.palette.load(lib, lookupbylib[lib], None)
+        for lib in libs: self.palette.load(lib, lookupbylib[lib])
 
         if False: # xpver>=9: XXX disable networks
             defroadfile=lookupbylib['g8'].pop(NetworkDef.DEFAULTFILE,None)
@@ -1477,11 +1477,12 @@ class MainWindow(wx.Frame):
                 names={}
                 for x in netdefs:                
                     if x and x.name: names[x.name]=lookup[x.name]=PaletteEntry(x.name)
-                self.palette.load(NetworkDef.TABNAME, names, None)
+                self.palette.load(NetworkDef.TABNAME, names)
         else:
             netdefs=self.defnetdefs=[]
             
-        self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], PaletteEntry(x)) for x in Exclude.NAMES.keys()]), None)
+        self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], PaletteEntry(x)) for x in Exclude.NAMES.keys()]))
+        self.palette.load('Search results', {})
 
         if xpver>=9:
             dsfdirs=[join(prefs.xplane, gcustom),
