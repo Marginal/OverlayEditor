@@ -752,7 +752,7 @@ def writeDSF(dsfdir, key, placements, netfile):
     for obj in objects:
         # DSFTool rounds down, so round up here first
         h.write('OBJECT\t%d\t%14.9f %14.9f %5.1f\n' % (
-            objdefs.index(obj.name), min(west+1, obj.lon+minres/4), min(south+1, obj.lat+minres/4), round(obj.hdg,1)+minhdg/2))
+            objdefs.index(obj.name), min(west+1, obj.lon+minres/4), min(south+1, obj.lat+minres/4), round(obj.hdg,1)+minhdg/4))
     if objects: h.write('\n')
     
     for poly in polygons:

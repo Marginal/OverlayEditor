@@ -4,7 +4,7 @@ from os.path import dirname, exists, join
 if __debug__:
     from traceback import print_exc
 
-from clutterdef import ClutterDefFactory, ClutterDef, PolygonDef, DrapedDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
+from clutterdef import ClutterDefFactory, ClutterDef, ObjectDef, PolygonDef, DrapedDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
 from MessageBox import myMessageBox
 
 
@@ -97,7 +97,7 @@ class PaletteListBox(wx.VListBox):
                     name=name[:-4]
                 elif name.lower().startswith('objects/') and name[8:] not in names:
                     name=name[8:-4]
-                elif name.lower().startswith('custom objects/') and name[15:] not in names:
+                elif ext==ObjectDef.OBJECT and name.lower().startswith('custom objects/') and name[15:] not in names:
                     name=name[15:-4]
                 else:
                     name=name[:-4]

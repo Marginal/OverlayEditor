@@ -64,7 +64,7 @@ if not 'startfile' in dir(os):
     import webbrowser
 
 from clutter import round2res, minres, latlondisp, Exclude	# for loading exclusions into palette
-from clutterdef import ClutterDef, KnownDefs, ExcludeDef, NetworkDef
+from clutterdef import ClutterDef, ObjectDef, KnownDefs, ExcludeDef, NetworkDef
 from draw import MyGL
 from files import scanApt, readApt, readNav, readLib, readNet, sortfolded
 from importobjs import importpaths, importobjs
@@ -1440,7 +1440,7 @@ class MainWindow(wx.Frame):
                 for f in files:
                     if f[-4:].lower() in KnownDefs and f[0]!='.':
                         name=join(path,f)[len(pkgdir)+1:-4].replace('\\','/')+f[-4:].lower()
-                        if name.lower().startswith('custom objects'):
+                        if name.lower().startswith('custom objects') and f[-4:].lower()==ObjectDef.OBJECT:
                             name=name[15:]
                         #if not name in lookup:	# library takes precedence
                         if not name.startswith('opensceneryx/placeholder.'):	# no point adding placeholders
@@ -1576,9 +1576,10 @@ class MainWindow(wx.Frame):
             self.OnReload(True)
         else:
             for (src, dst) in files:
-                if splitext(src)[1].lower() in ['.dds', '.png']: continue
+                ext=splitext(src)[1].lower()
+                if ext in ['.dds', '.png']: continue
                 name=dst[len(pkgpath)+1:].replace(sep, '/')
-                if name.lower().startswith('custom objects'):
+                if name.lower().startswith('custom objects') and ext==ObjectDef.OBJECT:
                     name=name[15:]
                 self.canvas.lookup[name]=PaletteEntry(dst)
                 self.palette.add(name)
