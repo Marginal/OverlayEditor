@@ -94,11 +94,12 @@ class ClutterDef:
     BEACHESLAYER=LAYERNAMES.index('beaches')*11+5
     SHOULDERLAYER=LAYERNAMES.index('shoulders')*11+5
     TAXIWAYLAYER=LAYERNAMES.index('taxiways')*11+5
+    DRAPEDLAYER=TAXIWAYLAYER				# for draped polygons of all kinds
     RUNWAYSLAYER=LAYERNAMES.index('runways')*11+5
     MARKINGLAYER=LAYERNAMES.index('markings')*11+5
     NETWORKLAYER=LAYERNAMES.index('roads')*11+5
     OUTLINELAYER=LAYERNAMES.index('roads')*11+5	# for polygons
-    DRAPEDLAYER=LAYERNAMES.index('objects')*11	# for draped geometry
+    DRAPEDOBJLAYER=LAYERNAMES.index('objects')*11	# objects -5 for draped geometry
     DEFAULTLAYER=LAYERNAMES.index('objects')*11+5
     PREVIEWSIZE=400	# size of image in preview window
 
@@ -347,7 +348,7 @@ class ObjectDef(ClutterDef):
                     if len(c)>1 and c[1].lower()!='none':
                         texture_draped=self.cleanpath(c[1])
                         # FIXME: Should have different layers for static and dynamic content
-                        self.layer=ClutterDef.DRAPEDLAYER
+                        self.layer=ClutterDef.DRAPEDOBJLAYER
                 elif id=='ATTR_LOD':
                     if float(c[1])!=0: break
                     current=last=culled	# State is reset per LOD
@@ -617,7 +618,7 @@ class AutoGenPointDef(ObjectDef):
 
     def __init__(self, filename, vertexcache, lookup, defs):
         ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
-        self.layer=ClutterDef.DRAPEDLAYER	# For the draped texture
+        self.layer=ClutterDef.DRAPEDOBJLAYER	# For the draped texture
         self.canpreview=True
         self.type=Locked.OBJ
         self.vdata=None
@@ -769,6 +770,7 @@ class DrapedDef(PolygonDef):
 
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
+        self.layer=ClutterDef.DRAPEDLAYER
         self.canpreview=True
         self.type=Locked.POL
         self.ortho=False
@@ -813,6 +815,7 @@ class DrapedDef(PolygonDef):
 class DrapedFallback(DrapedDef):
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
+        self.layer=ClutterDef.DRAPEDLAYER
         self.type=Locked.POL
         self.ortho=True
         self.hscale=10
