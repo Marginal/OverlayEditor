@@ -717,7 +717,7 @@ class AutoGenPointDef(ObjectDef):
 
 class PolygonDef(ClutterDef):
 
-    EXCLUDE='Exclude:'
+    EXCLUDE='Exclude: '
     FACADE='.fac'
     FOREST='.for'
     LINE='.lin'

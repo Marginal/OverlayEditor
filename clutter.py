@@ -941,14 +941,13 @@ class DrapedImage(Draped):
 
 class Exclude(Fitted):
 
-    PREFIX='Exclude: '
-    NAMES={'sim/exclude_bch': PREFIX+'Beaches',
-           'sim/exclude_pol': PREFIX+'Draped polygons',
-           'sim/exclude_fac': PREFIX+'Facades',
-           'sim/exclude_for': PREFIX+'Forests',
-           'sim/exclude_obj': PREFIX+'Objects',
-           'sim/exclude_net': PREFIX+ NetworkDef.TABNAME,
-           'sim/exclude_str': PREFIX+'Strings'}
+    NAMES={'sim/exclude_bch': PolygonDef.EXCLUDE+'Beaches',
+           'sim/exclude_pol': PolygonDef.EXCLUDE+'Draped polygons',
+           'sim/exclude_fac': PolygonDef.EXCLUDE+'Facades',
+           'sim/exclude_for': PolygonDef.EXCLUDE+'Forests',
+           'sim/exclude_obj': PolygonDef.EXCLUDE+'Objects',
+           'sim/exclude_net': PolygonDef.EXCLUDE+ NetworkDef.TABNAME,
+           'sim/exclude_str': PolygonDef.EXCLUDE+'Strings'}
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if lon==None:
@@ -971,7 +970,7 @@ class Exclude(Fitted):
         return Exclude(self.name, self.param, [list(w) for w in self.nodes])
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
-        self.definition=ExcludeDef(self.name, vertexcache, lookup, defs)
+        self.definition=ExcludeDef(self.name, vertexcache, lookup, defs)	# just create a new one
         return True
 
     def locationstr(self, dms, node=None):

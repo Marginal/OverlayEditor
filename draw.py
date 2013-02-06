@@ -27,7 +27,7 @@ if __debug__:
 from files import VertexCache, sortfolded, readApt, glInitTextureCompressionS3tcEXT
 from fixed8x13 import fixed8x13
 from clutter import ObjectFactory, PolygonFactory, Draped, DrapedImage, Facade, Object, Polygon, Network, Exclude, onedeg, resolution, round2res, latlondisp
-from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
+from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
 from imagery import Imagery
 from MessageBox import myMessageBox
 from prefs import Prefs
@@ -1313,8 +1313,8 @@ class MyGL(wx.glcanvas.GLCanvas):
     def nextsel(self, name, withctrl, withshift):
         # returns new location or None
         # we have 0 or more items of the same type selected
-        if not self.lookup[name].file in self.defs:
-            return None	# can't exist in this tile if not loaded
+        if name.startswith(PolygonDef.EXCLUDE) or not self.lookup[name].file in self.defs:
+            return None	# Don't have an easy way of mapping to an ExcludeDef. Placement can't exist in this tile if not loaded.
         definition=self.defs[self.lookup[name].file]
         placements=self.placements[self.tile][definition.layer]
         if withctrl and withshift:
