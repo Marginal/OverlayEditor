@@ -1559,7 +1559,8 @@ class MainWindow(wx.Frame):
                 # Strip out existing
                 for (src, dst) in list(files):
                     if exists(dst): files.remove((src,dst))
-                existing=[]	# No need to do reload
+                if not files: return	# None to do
+                existing=[]		# No need to do reload
             elif r!=wx.YES:
                 return
 
@@ -1581,6 +1582,7 @@ class MainWindow(wx.Frame):
                     name=name[15:]
                 self.canvas.lookup[name]=PaletteEntry(dst)
                 self.palette.add(name)
+            self.palette.set(name)	# show last added
 
     def OnGoto(self, event):
         self.goto.CenterOnParent()	# Otherwise is centred on screen
