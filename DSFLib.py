@@ -14,10 +14,8 @@ except:
 if __debug__:
     from traceback import print_exc
 
-from clutter import PolygonFactory, ObjectFactory, Object, Polygon, Draped, Exclude, Network, divisions, minres, minhdg
+from clutter import PolygonFactory, ObjectFactory, Object, Polygon, Draped, Exclude, Network, divisions, minres, minhdg, onedeg
 from version import appname, appversion
-
-onedeg=1852*60	# 1 degree of longitude at equator (60nm) [m]
 
 if platform=='win32':
     dsftool=join(curdir,'win32','DSFTool.exe')
