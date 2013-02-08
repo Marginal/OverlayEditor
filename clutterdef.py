@@ -1,5 +1,5 @@
 from math import cos, fabs, radians, sin
-from numpy import array, array_equal, concatenate, diag, dot, float32, identity, outer
+from numpy import array, array_equal, concatenate, copy, diag, dot, float32, identity, outer
 from operator import itemgetter, attrgetter
 from os import listdir
 from os.path import basename, dirname, exists, join, normpath, sep
@@ -380,7 +380,7 @@ class ObjectDef(ClutterDef):
                     self.setlayer(c[1], int(c[2]))
                 elif id=='ANIM_begin':
                     if anim:
-                        anim.append(anim[-1].copy())
+                        anim.append(copy(anim[-1]))
                     else:
                         anim=[identity(4)]
                     done_anim_t=False
