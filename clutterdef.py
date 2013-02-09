@@ -715,6 +715,12 @@ class AutoGenPointDef(ObjectDef):
             p[1].flush()
 
 
+class AutoGenFallback(ObjectFallback):
+    def __init__(self, filename, vertexcache, lookup, defs):
+        ObjectFallback.__init__(self, filename, vertexcache, lookup, defs)
+        self.children=[]
+
+
 class PolygonDef(ClutterDef):
 
     EXCLUDE='Exclude: '

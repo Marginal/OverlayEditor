@@ -28,7 +28,7 @@ from OpenGL.GL.ARB.occlusion_query import *
 glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
 glEndQuery = alternate(glEndQuery, glEndQueryARB)
 
-from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELNODE
+from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, AutoGenFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELNODE
 
 from palette import PaletteEntry
 from prefs import Prefs
@@ -279,7 +279,7 @@ class AutoGenPoint(Object):
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
-                    defs[filename]=self.definition=ObjectFallback(filename, vertexcache, lookup, defs)
+                    defs[filename]=self.definition=AutoGenFallback(filename, vertexcache, lookup, defs)
             return False
 
         # load children
