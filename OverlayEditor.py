@@ -1206,8 +1206,6 @@ class MainWindow(wx.Frame):
         base=glob(join(prefs.xplane,gcustom,prefs.package))[0]
         if not glob(join(base,gnavdata)):
             mkdir(join(base,'Earth nav data'))
-        if not glob(join(base,'[Oo][Bb][Jj][Ee][Cc][Tt][Ss]')):
-            mkdir(join(base,'objects'))
         dsfdir=glob(join(prefs.xplane,gcustom,prefs.package,gnavdata))[0]
 
         stuff=dict(self.canvas.unsorted)
