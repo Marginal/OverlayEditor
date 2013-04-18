@@ -38,7 +38,7 @@ from prefs import Prefs
 from version import appname, appversion
 
 downsamplemin=64	# Don't downsample textures this size or smalller
-compressmin=64		# Don't bother compressing or generating mipmaps for textures this size or smalller
+compressmin=64		# Don't bother compressing or generating mipmaps for textures this size or smaller
 
 # DDS surface flags
 DDSD_CAPS	= 0x00000001
@@ -422,6 +422,7 @@ class TexCache:
         self.blank=0	#self.get(join('Resources','blank.png'))
         self.texs={}
         self.terraintexs=[]	# terrain textures will not be reloaded
+        self.stats={}
         # Must be after init
         self.maxtexsize=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
         self.npot=glInitTextureNonPowerOfTwoARB()
@@ -430,7 +431,7 @@ class TexCache:
         self.bgra=glInitBgraEXT()
         # Texture compression appears severe on Mac, but this doesn't help
         if self.compress: glHint(GL_TEXTURE_COMPRESSION_HINT_ARB, GL_NICEST)
-        #glHint(GL_GENERATE_MIPMAP_HINT, GL_NICEST)	# prefer speed
+        glHint(GL_GENERATE_MIPMAP_HINT, GL_FASTEST)	# prefer speed
         if glGetString(GL_VERSION) >= '1.2':
             self.clampmode=GL_CLAMP_TO_EDGE
         else:
@@ -531,7 +532,8 @@ class TexCache:
                     else:
                         data=h.read()
                     h.close()
-                        
+                    self.stats[path]=len(data)
+
                     id=glGenTextures(1)
                     glBindTexture(GL_TEXTURE_2D, id)
                     if wrap:
@@ -545,6 +547,7 @@ class TexCache:
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipmaps-1)
                     elif width>compressmin and height>compressmin:
                         glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE)	# must be before glTexImage
+                        self.stats[path]=int(self.stats[path]*4.0/3.0)
                     else:					# Don't bother generating mipmaps for smaller textures
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0)
                     for i in range(mipmaps):
@@ -636,8 +639,12 @@ class TexCache:
             if self.compress and (width>compressmin or height>compressmin):	# Don't compress small textures, including built-ins
                 if iformat==GL_RGB:
                     iformat=GL_COMPRESSED_RGB_ARB
+                    self.stats[path]=width*height/2	# Assume DXT1
                 elif iformat==GL_RGBA:
-                    iformat=GL_COMPRESSED_RGBA_ARB                        
+                    iformat=GL_COMPRESSED_RGBA_ARB
+                    self.stats[path]=width*height	# Assume DXT3/5
+            else:
+                self.stats[path]=width*height*4		# Assume 4bpp even for GL_RGB
 
             id=glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, id)
@@ -650,6 +657,7 @@ class TexCache:
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
             if width>compressmin and height>compressmin:
                 glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE)	# must be before glTexImage
+                self.stats[path]=int(self.stats[path]*4.0/3.0)
             else:						# Don't bother generating mipmaps for smaller textures
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0)
             glTexImage2D(GL_TEXTURE_2D, 0, iformat, width, height, 0, format, GL_UNSIGNED_BYTE, data)

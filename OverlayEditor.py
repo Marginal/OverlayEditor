@@ -1078,8 +1078,15 @@ class MainWindow(wx.Frame):
             return
         elif __debug__:
             if event.GetKeyCode()==ord('P'):
+                print '--- Textures'
+                for k,v in self.canvas.vertexcache.texcache.stats.iteritems():
+                    print '"%s" %d' % (k,v)
+                print '---'
                 from cProfile import runctx
-                runctx('self.canvas.OnPaint(None)', globals(), locals(), 'profile.dmp')
+                runctx('self.canvas.OnPaint(None)', globals(), locals(), 'onpaint.dmp')
+                e=wx.MouseEvent()
+                e.m_x = e.m_y = 300
+                runctx('self.canvas.OnLeftDown(e)', globals(), locals(), 'select.dmp')
             elif event.GetKeyCode()==ord('M'):
                 print '---', time.asctime(), '---'
         else:
