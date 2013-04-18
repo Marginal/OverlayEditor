@@ -37,6 +37,8 @@ from palette import PaletteEntry
 from prefs import Prefs
 from version import appname, appversion
 
+downsamplemin=64	# Don't downsample textures this size or smalller
+compressmin=64		# Don't bother compressing or generating mipmaps for textures this size or smalller
 
 # DDS surface flags
 DDSD_CAPS	= 0x00000001
@@ -428,6 +430,7 @@ class TexCache:
         self.bgra=glInitBgraEXT()
         # Texture compression appears severe on Mac, but this doesn't help
         if self.compress: glHint(GL_TEXTURE_COMPRESSION_HINT_ARB, GL_NICEST)
+        #glHint(GL_GENERATE_MIPMAP_HINT, GL_NICEST)	# prefer speed
         if glGetString(GL_VERSION) >= '1.2':
             self.clampmode=GL_CLAMP_TO_EDGE
         else:
@@ -458,7 +461,7 @@ class TexCache:
 
         try:
             if ext.lower()=='.dds':
-                # Do DDS manually - files need flipping
+                # Do DDS manually
                 h=file(base+ext,'rb')
                 if h.read(4)!='DDS ': raise Exception, 'This is not a DDS file'
                 (ssize,sflags,height,width,size,depth,mipmaps)=unpack('<7I', h.read(28))
@@ -475,8 +478,8 @@ class TexCache:
                 #    raise Exception, 'Invalid size'
                 h.seek(0x4c)
                 (psize,pflags,fourcc,bits,redmask,greenmask,bluemask,alphamask,caps1,caps2)=unpack('<2I4s7I', h.read(40))
-                if not sflags&DDSD_MIPMAPCOUNT or not caps1&DDSCAPS_MIPMAP:
-                    mipmaps=0
+                if not sflags&DDSD_MIPMAPCOUNT or not caps1&DDSCAPS_MIPMAP or not mipmaps:
+                    mipmaps=1
 
                 if pflags&DDPF_FOURCC:
                     # http://oss.sgi.com/projects/ogl-sample/registry/EXT/texture_compression_s3tc.txt
@@ -502,23 +505,31 @@ class TexCache:
                     else:
                         raise Exception, '%s format not supported' % fourcc
 
-                    if downsample and mipmaps>=2 and width>=16 and height>=16:
+                    if downsample and mipmaps>2 and width>downsamplemin and height>downsamplemin:
+                        # Downsample twice
                         h.seek(4+ssize + (size*5)/4)
                         size/=16
                         width/=4
                         height/=4
+                        mipmaps-=2
                     else:	# don't downsample
                         h.seek(4+ssize)
                     if not alpha:	# discard alpha
                         if iformat==GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
-                            data=h.read(size)
+                            data=h.read()
                         else:
                             data=''
-                            for i in range(size/16):
-                                data+=h.read(16)[8:]	# skip alpha
+                            mw=width
+                            mh=height
+                            for i in range(mipmaps):
+                                for j in range(((mw+3)/4) * ((mh+3)/4)):
+                                    data+=h.read(16)[8:]	# skip alpha
+                                mw = mw/2 or 1
+                                mh = mh/2 or 1
+                            size=width*height/2			# without alpha
                         iformat=GL_COMPRESSED_RGB_S3TC_DXT1_EXT
                     else:
-                        data=h.read(size)
+                        data=h.read()
                     h.close()
                         
                     id=glGenTextures(1)
@@ -529,12 +540,19 @@ class TexCache:
                     else:
                         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,self.clampmode)
                         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,self.clampmode)
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-                    if OpenGL.__version__ < '3':
-                        glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, data)
-                    else:
-                        glCompressedTexImage2DARB(GL_TEXTURE_2D, 0, iformat, width, height, 0, len(data), data)
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+                    if mipmaps>1:
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipmaps-1)
+                    elif width>compressmin and height>compressmin:
+                        glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE)	# must be before glTexImage
+                    else:					# Don't bother generating mipmaps for smaller textures
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0)
+                    for i in range(mipmaps):
+                        size = (iformat in [GL_COMPRESSED_RGB_S3TC_DXT1_EXT,GL_COMPRESSED_RGBA_S3TC_DXT1_EXT] and 8 or 16) * ((width+3)/4) * ((height+3)/4)
+                        glCompressedTexImage2DARB(GL_TEXTURE_2D, i, iformat, width, height, 0, size, data)
+                        data = data[size:]
+                        width = width/2 or 1
+                        height = height/2 or 1
                     #if __debug__: print "%6.3f" % (time.clock()-clock), basename(path), wrap, alpha, downsample, fixsize
 
                     self.texs[path]=id
@@ -562,7 +580,8 @@ class TexCache:
                     else:
                         raise Exception, '%dbpp format not supported' % bits
 
-                    if downsample and mipmaps>=2 and width>4 and height>4:
+                    if downsample and mipmaps>2 and width>downsamplemin and height>downsamplemin:
+                        # Downsample twice
                         h.seek(4+ssize + (size*5)/4)
                         size/=16
                         width/=4
@@ -614,7 +633,7 @@ class TexCache:
             # variables used: data, format, iformat, width, height
             if not alpha:	# Discard alpha
                 iformat=GL_RGB
-            if self.compress and (width>64 or height>64):	# Don't compress small textures, including built-ins
+            if self.compress and (width>compressmin or height>compressmin):	# Don't compress small textures, including built-ins
                 if iformat==GL_RGB:
                     iformat=GL_COMPRESSED_RGB_ARB
                 elif iformat==GL_RGBA:
@@ -628,8 +647,11 @@ class TexCache:
             else:
                 glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,self.clampmode)
                 glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,self.clampmode)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+            if width>compressmin and height>compressmin:
+                glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE)	# must be before glTexImage
+            else:						# Don't bother generating mipmaps for smaller textures
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0)
             glTexImage2D(GL_TEXTURE_2D, 0, iformat, width, height, 0, format, GL_UNSIGNED_BYTE, data)
             #if __debug__: print "%6.3f" % (time.clock()-clock), basename(path), wrap, alpha, downsample, fixsize
                 
@@ -791,7 +813,7 @@ class VertexCache:
                 break
         else:
             tex=join('Resources','Sea01.png')
-        self.mesh[key]=[(tex, 1,
+        self.mesh[key]=[(tex, 8,
                          [[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
                           [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100],
                           [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2,   0, 100],
