@@ -3,6 +3,7 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.arrays import vbo
 from OpenGL.extensions import alternate, hasGLExtension
+from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.GL.ARB.occlusion_query import *
 glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
 glDeleteQueries = alternate(glDeleteQueries, glDeleteQueriesARB)
@@ -10,6 +11,7 @@ glEndQuery = alternate(glEndQuery, glEndQueryARB)
 glGenQueries = alternate(glGenQueries, glGenQueriesARB)
 glGetQueryObjectuiv = alternate(glGetQueryObjectiv, glGetQueryObjectuivARB)
 GL_ANY_SAMPLES_PASSED=0x8C2F	# not in 3.0.1
+from OpenGL.GL.ARB.instanced_arrays import glInitInstancedArraysARB, glVertexAttribDivisorARB
 
 from glob import glob
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
@@ -91,16 +93,38 @@ class GLstate():
         self.current_vbo=None
         self.instance_vbo=vbo.VBO(None, GL_STATIC_DRAW_ARB)
         self.dynamic_vbo=vbo.VBO(None, GL_STATIC_DRAW_ARB)
+        # Use of GL_ARB_instanced_arrays requires a shader. Just duplicate fixed pipeline shaders.
+        try:
+            if not glInitInstancedArraysARB(): raise Exception
+            vanilla   = open('Resources/vanilla.vs').read()
+            instanced = open('Resources/instanced.vs').read()
+            unlit     = open('Resources/unlit.fs').read()
+            colorvs   = open('Resources/color.vs').read()
+            colorfs   = open('Resources/color.fs').read()
+            self.textureshader   = compileProgram(compileShader(vanilla, GL_VERTEX_SHADER),
+                                                  compileShader(unlit, GL_FRAGMENT_SHADER))
+            self.colorshader     = compileProgram(compileShader(colorvs, GL_VERTEX_SHADER),
+                                                  compileShader(colorfs, GL_FRAGMENT_SHADER))
+            self.instancedshader = compileProgram(compileShader(instanced, GL_VERTEX_SHADER),
+                                                  compileShader(unlit, GL_FRAGMENT_SHADER))
+            self.transform_pos = glGetAttribLocation(self.instancedshader, 'transform')
+            self.selected_pos =  glGetAttribLocation(self.instancedshader, 'selected')
+            glUseProgram(self.textureshader)
+            self.instanced_arrays = True
+        except:
+            if __debug__: print_exc()
+            self.textureshader = self.colorshader = self.instancedshader = None
+            self.instanced_arrays = False
 
     def set_texture(self, id):
         if self.texture!=id:
             if __debug__:
                 if self.debug: print "set_texture", id
             if id is None:
-                if self.texture is not None:
-                    if __debug__:
-                        if self.debug: print "set_texture disable GL_TEXTURE_COORD_ARRAY"
-                    glDisableClientState(GL_TEXTURE_COORD_ARRAY)
+                if __debug__:
+                    if self.debug: print "set_texture disable GL_TEXTURE_COORD_ARRAY"
+                glDisableClientState(GL_TEXTURE_COORD_ARRAY)
+                if self.colorshader: glUseProgram(self.colorshader)
                 if self.texture!=0:
                     glBindTexture(GL_TEXTURE_2D, 0)
             else:
@@ -108,6 +132,7 @@ class GLstate():
                     if __debug__:
                         if self.debug: print "set_texture enable GL_TEXTURE_COORD_ARRAY"
                     glEnableClientState(GL_TEXTURE_COORD_ARRAY)
+                    if self.textureshader: glUseProgram(self.textureshader)
                 glBindTexture(GL_TEXTURE_2D, id)
             self.texture=id
         elif __debug__:
@@ -118,11 +143,10 @@ class GLstate():
             if color is None:
                 # Colors from VBO
                 if __debug__:
-                    if self.debug: print "set_color None"
-                if self.color is not None:
-                    if __debug__:
-                        if self.debug: print "set_color enable GL_COLOR_ARRAY"
-                    glEnableClientState(GL_COLOR_ARRAY)
+                    if self.debug:
+                        print "set_color None"
+                        print "set_color enable GL_COLOR_ARRAY"
+                glEnableClientState(GL_COLOR_ARRAY)
             else:
                 # Color specified explicitly
                 if __debug__:
@@ -753,6 +777,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if __debug__: print "%6.3f time to draw" % (time.clock()-clock)
 
         # Overlays
+        self.glstate.set_texture(None)
         self.glstate.set_poly(False)
         self.glstate.set_depthtest(False)
         self.glstate.set_poly(True)
@@ -765,7 +790,6 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Position centre
         #if __debug__: print "cursor"
-        self.glstate.set_texture(0)
         self.glstate.set_color(COL_CURSOR)
         glTranslatef(self.x, self.y, self.z)
         glBegin(GL_LINES)

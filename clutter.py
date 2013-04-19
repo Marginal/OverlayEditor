@@ -446,7 +446,7 @@ class Polygon(Clutter):
 
     def draw_nodes(self, glstate, selectednode):
         # Just do it in immediate mode
-        glstate.set_texture(0)
+        glstate.set_texture(None)
         assert glstate.color==COL_SELECTED
         glstate.set_depthtest(False)
         for winding in self.points:
@@ -1957,7 +1957,7 @@ class Network(Fitted):
         glEnd()
 
     def draw_nodes(self, glstate, selectednode):
-        glstate.set_texture(0)
+        glstate.set_texture(None)
         glstate.set_depthtest(False)
         glBegin(GL_POINTS)
         for j in range(len(self.points[0])):

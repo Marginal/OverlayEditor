@@ -76,7 +76,7 @@ res=["Resources/windsock.obj",
      "Resources/screenshot.jpg",
      "Resources/800library.txt"]
 for f in listdir('Resources'):
-    if f[-4:]=='.png': res.append('Resources/%s' % f)
+    if f[-3:]in ['png', '.vs', '.fs']: res.append('Resources/%s' % f)
 
 setup(name='OverlayEditor',
       version=("%4.2f" % appversion),
