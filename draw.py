@@ -24,7 +24,7 @@ import wx.glcanvas
 if __debug__:
     from traceback import print_exc
 
-from files import VertexCache, sortfolded, readApt, glInitTextureCompressionS3tcEXT
+from files import VertexCache, sortfolded, readApt, glInitTextureCompressionS3TcEXT
 from fixed8x13 import fixed8x13
 from clutter import ObjectFactory, PolygonFactory, Draped, DrapedImage, Facade, Object, Polygon, Network, Exclude, onedeg, resolution, round2res, latlondisp
 from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
@@ -323,7 +323,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                          "Can't initialise OpenGL.",
                          wx.ICON_ERROR|wx.OK, self)
             exit(1)
-        if not glInitTextureCompressionS3tcEXT() and not __debug__:
+        if not glInitTextureCompressionS3TcEXT() and not __debug__:
             myMessageBox('This application requires the use of DXT texture compression which is not supported by your graphics card.\nTry updating the drivers for your graphics card.',
                          "Can't initialise OpenGL.",
                          wx.ICON_ERROR|wx.OK, self)

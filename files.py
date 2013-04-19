@@ -3,20 +3,9 @@ import PIL.PngImagePlugin, PIL.BmpImagePlugin, PIL.JpegImagePlugin 	# force for 
 import OpenGL	# for __version__
 from OpenGL.GL import *
 from OpenGL.GL.EXT.bgra import glInitBgraEXT, GL_BGR_EXT, GL_BGRA_EXT
-from OpenGL.GL.ARB.texture_compression import glInitTextureCompressionARB, glCompressedTexImage2DARB, GL_COMPRESSED_RGB_ARB, GL_COMPRESSED_RGBA_ARB, GL_TEXTURE_COMPRESSION_HINT_ARB
-try:
-    from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3tcEXT, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
-except:
-    try:	# Full SWIG rebuild, eg Fedora
-        from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3TcEXT, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
-        glInitTextureCompressionS3tcEXT=glInitTextureCompressionS3TcEXT
-    except:
-        def glInitTextureCompressionS3tcEXT(): return False
-
-try:
-    from OpenGL.GL.ARB.texture_non_power_of_two import glInitTextureNonPowerOfTwoARB
-except:	# not in 2.0.0.44
-    def glInitTextureNonPowerOfTwoARB(): return False
+from OpenGL.GL.ARB.texture_compression import glInitTextureCompressionARB, glCompressedTexImage2DARB
+from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3TcEXT, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+from OpenGL.GL.ARB.texture_non_power_of_two import glInitTextureNonPowerOfTwoARB
 
 import codecs
 from glob import glob
@@ -427,10 +416,9 @@ class TexCache:
         self.maxtexsize=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
         self.npot=glInitTextureNonPowerOfTwoARB()
         self.compress=glInitTextureCompressionARB()
-        self.s3tc=self.compress and glInitTextureCompressionS3tcEXT()
+        self.s3tc=self.compress and glInitTextureCompressionS3TcEXT()
         self.bgra=glInitBgraEXT()
-        # Texture compression appears severe on Mac, but this doesn't help
-        if self.compress: glHint(GL_TEXTURE_COMPRESSION_HINT_ARB, GL_NICEST)
+        if self.compress: glHint(GL_TEXTURE_COMPRESSION_HINT, GL_NICEST)	# Texture compression appears severe on Mac, but this doesn't help
         glHint(GL_GENERATE_MIPMAP_HINT, GL_FASTEST)	# prefer speed
         if glGetString(GL_VERSION) >= '1.2':
             self.clampmode=GL_CLAMP_TO_EDGE
@@ -638,10 +626,10 @@ class TexCache:
                 iformat=GL_RGB
             if self.compress and (width>compressmin or height>compressmin):	# Don't compress small textures, including built-ins
                 if iformat==GL_RGB:
-                    iformat=GL_COMPRESSED_RGB_ARB
+                    iformat=GL_COMPRESSED_RGB
                     self.stats[path]=width*height/2	# Assume DXT1
                 elif iformat==GL_RGBA:
-                    iformat=GL_COMPRESSED_RGBA_ARB
+                    iformat=GL_COMPRESSED_RGBA
                     self.stats[path]=width*height	# Assume DXT3/5
             else:
                 self.stats[path]=width*height*4		# Assume 4bpp even for GL_RGB
