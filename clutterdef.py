@@ -6,6 +6,12 @@ from os.path import basename, dirname, exists, join, normpath, sep
 from sys import exc_info, maxint
 
 from OpenGL.GL import *
+from OpenGL.arrays import vbo
+from OpenGL.extensions import alternate
+from OpenGL.GL.ARB.instanced_arrays import glVertexAttribDivisorARB
+from OpenGL.GL.ARB.draw_instanced import glDrawArraysInstancedARB
+glDrawArraysInstanced = alternate(glDrawArraysInstanced, glDrawArraysInstancedARB, platform.createExtensionFunction('glDrawArraysInstancedARB', dll=platform.GL, extension='GL_ARB_instanced_arrays', argTypes=(constants.GLenum,constants.GLint,constants.GLsizei,constants.GLsizei)))	# Handle systems that support GL_ARB_instanced_arrays but not GL_ARB_draw_instanced
+
 import wx
 if __debug__:
     import time
@@ -147,6 +153,9 @@ class ClutterDef:
     def flush(self):
         pass
 
+    def draw_instanced(self, canvas, selected):
+        pass
+
     # Normalise path, replacing : / and \ with os-specific separator, eliminating .. etc
     def cleanpath(self, path):
         # relies on normpath on win replacing '/' with '\\'
@@ -167,6 +176,10 @@ class ObjectDef(ClutterDef):
         self.base=None
         self.draped=[]
         self.texture_draped=0
+        # For instancing
+        self.instances=set()	# Objects in current tile
+        self.transform_valid=False
+        self.transform_vbo=vbo.VBO(None, GL_DYNAMIC_DRAW)
 
         h=None
         culled=[]
@@ -469,6 +482,39 @@ class ObjectDef(ClutterDef):
         if self.base==None and self.vdata is not None:
             self.base=vertexcache.allocate_instance(self.vdata)
 
+    def draw_instanced(self, canvas, selected):
+        assert canvas.glstate.instanced_arrays
+        if self.vdata is None or not self.instances:
+            #if __debug__: print "No data for instancing %s" % self
+            return
+        canvas.glstate.set_texture(self.texture)
+        if selected:
+            canvas.selected_vbo.set_array(array([o in selected for o in self.instances],float32))
+            canvas.selected_vbo.bind()
+            glVertexAttribPointer(canvas.glstate.selected_pos, 1, GL_FLOAT, GL_FALSE, 4, canvas.selected_vbo)
+            glVertexAttribDivisorARB(canvas.glstate.selected_pos, 1)
+        if not self.transform_valid:
+            if __debug__:
+                for o in self.instances: assert o.matrix is not None, "Empty matrix %s" % o
+            self.transform_vbo.set_array(concatenate([o.matrix for o in self.instances]))
+            self.transform_valid = True
+        self.transform_vbo.bind()
+        pos=canvas.glstate.transform_pos
+        glVertexAttribPointer(pos,   4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo)
+        glVertexAttribDivisorARB(pos,   1)
+        glVertexAttribPointer(pos+1, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 16)
+        glVertexAttribDivisorARB(pos+1, 1)
+        glVertexAttribPointer(pos+2, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 32)
+        glVertexAttribDivisorARB(pos+2, 1)
+        glVertexAttribPointer(pos+3, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 48)
+        glVertexAttribDivisorARB(pos+3, 1)
+        if self.culled:
+            canvas.glstate.set_cull(True)
+            glDrawArraysInstanced(GL_TRIANGLES, self.base, self.culled, len(self.instances))
+        if self.nocull:
+            canvas.glstate.set_cull(False)
+            glDrawArraysInstanced(GL_TRIANGLES, self.base+self.culled, self.nocull, len(self.instances))
+
     def flush(self):
         self.base=None
 
@@ -610,6 +656,10 @@ class ObjectFallback(ObjectDef):
         self.base=None
         self.draped=[]
         self.texture_draped=0
+        # For instancing
+        self.instances=set()	# Objects in current tile
+        self.transform_valid=False
+        self.transform_vbo=vbo.VBO(None, GL_DYNAMIC_DRAW)
 
 
 class AutoGenPointDef(ObjectDef):
@@ -629,6 +679,9 @@ class AutoGenPointDef(ObjectDef):
         self.draped=[]
         self.texture_draped=0
         self.children=[]	# [name, ObjectDef, xdelta, zdelta, hdelta]
+        # For instancing
+        self.instances=set()		# Objects in current tile
+        self.transform_valid=False	# note no vbo since we assume we don't have vdata ourseleves
 
         hscale=vscale=width=hanchor=vanchor=crop=texture_draped=None
         objects=[]

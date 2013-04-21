@@ -91,8 +91,8 @@ class GLstate():
         glDisable(GL_POLYGON_OFFSET_FILL)
         glDepthMask(GL_TRUE)
         self.current_vbo=None
-        self.instance_vbo=vbo.VBO(None, GL_STATIC_DRAW_ARB)
-        self.dynamic_vbo=vbo.VBO(None, GL_STATIC_DRAW_ARB)
+        self.instance_vbo=vbo.VBO(None, GL_STATIC_DRAW)
+        self.dynamic_vbo=vbo.VBO(None, GL_STATIC_DRAW)
         # Use of GL_ARB_instanced_arrays requires a shader. Just duplicate fixed pipeline shaders.
         try:
             if not glInitInstancedArraysARB(): raise Exception
@@ -271,6 +271,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.mousenow=None	# Current position (used in timer and drag)
         self.locked=0		# locked object types
         self.selected=set()	# selected placements
+        self.selected_vbo =vbo.VBO(None, GL_STREAM_DRAW)
         self.clickmode=None
         self.clickpos=None	# Location of mouse down
         self.clickctrl=False	# Ctrl was held down
@@ -728,7 +729,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if placements[layer]:
                 self.glstate.set_dynamic(self.vertexcache)
             for placement in placements[layer]:	# XXX Sort by texture / color?
-                if not placement in self.selected:
+                if placement not in self.selected:
                     placement.draw_dynamic(self.glstate, False, False)
             # pavements
             if layer in [ClutterDef.SHOULDERLAYER, ClutterDef.TAXIWAYLAYER, ClutterDef.RUNWAYSLAYER]:
@@ -767,12 +768,34 @@ class MyGL(wx.glcanvas.GLCanvas):
             if len(self.selected)==1:
                 list(self.selected)[0].draw_nodes(self.glstate, self.selectednode)
 
-        # List of clutter with static geometry and sorted by texture (ignoring layer ordering since it doesn't really matter so much for Objects)
-        objs=sorted([obj for l in placements for obj in l]+navaidplacements, key=lambda obj: obj.definition.texture)
+        # Draw clutter with static geometry and sorted by texture (ignoring layer ordering since it doesn't really matter so much for Objects)
         self.glstate.set_instance(self.vertexcache)
         self.glstate.set_poly(False)
         self.glstate.set_depthtest(True)
-        for obj in objs: obj.draw_instance(self.glstate, obj in self.selected, False)
+        if self.glstate.instanced_arrays:
+            self.glstate.set_color(COL_UNPAINTED)
+            self.glstate.set_texture(0)	# has side-effect so shader program won't be reset
+            glUseProgram(self.glstate.instancedshader)
+            pos=self.glstate.transform_pos
+            glEnableVertexAttribArray(pos)
+            glEnableVertexAttribArray(pos+1)
+            glEnableVertexAttribArray(pos+2)
+            glEnableVertexAttribArray(pos+3)
+            selected = self.selected.copy()
+            if selected:
+                glEnableVertexAttribArray(self.glstate.selected_pos)
+                for o in self.selected: selected.update(o.placements)	# include children
+            for objdef in self.defs.values():
+                objdef.draw_instanced(self, selected)
+            glDisableVertexAttribArray(pos)
+            glDisableVertexAttribArray(pos+1)
+            glDisableVertexAttribArray(pos+2)
+            glDisableVertexAttribArray(pos+3)
+            glDisableVertexAttribArray(self.glstate.selected_pos)
+        else:
+            # Instancing not supported
+            objs=sorted([obj for l in placements for obj in l]+navaidplacements, key=lambda obj: obj.definition.texture)
+            for obj in objs: obj.draw_instance(self.glstate, obj in self.selected, False)
 
         if __debug__: print "%6.3f time to draw" % (time.clock()-clock)
 

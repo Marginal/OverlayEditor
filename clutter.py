@@ -89,6 +89,7 @@ class Clutter:
         self.lon=lon
         self.dynamic_data=None	# Data for inclusion in VBO
         self.base=None		# Offset when allocated in VBO
+        self.placements=[]	# child object placements
         
     def position(self, tile, lat, lon):
         # returns (x,z) position relative to centre of enclosing tile
@@ -177,18 +178,21 @@ class Object(Clutter):
                 if obj.nocull:
                     glstate.set_cull(False)
                     glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
+        for p in self.placements:
+            p.draw_instance(glstate, selected, picking)
 
     def draw_dynamic(self, glstate, selected, picking):
-        if self.dynamic_data is None:
-            return
-        elif not picking:
-            glstate.set_texture(self.definition.texture_draped)
-            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
-            glstate.set_cull(True)
-            glstate.set_poly(True)
-            glstate.set_depthtest(True)
-        assert self.islaidout() and self.base is not None, self
-        glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+        if self.dynamic_data is not None:
+            if not picking:
+                glstate.set_texture(self.definition.texture_draped)
+                glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+                glstate.set_cull(True)
+                glstate.set_poly(True)
+                glstate.set_depthtest(True)
+            assert self.islaidout() and self.base is not None, self
+            glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+        for p in self.placements:
+            p.draw_dynamic(glstate, selected, picking)
 
     def draw_nodes(self, glstate, selectednode):
         pass
@@ -197,18 +201,29 @@ class Object(Clutter):
         self.matrix=None
         self.dynamic_data=None	# Can be removed from dynamic VBO
         self.flush(vertexcache)
+        for p in self.placements:
+            p.clearlayout(vertexcache)
+        self.placements=[]
 
     def islaidout(self):
         return self.matrix is not None
 
     def flush(self, vertexcache):
         vertexcache.allocate_dynamic(self, False)
+        self.definition.instances.discard(self)
+        self.definition.transform_valid=False
+        for p in self.placements:
+            p.flush(vertexcache)
 
     def layout(self, tile, options, vertexcache, x=None, y=None, z=None, hdg=None, meshtris=None, recalc=True):
+        self.definition.instances.add(self)
+        self.definition.transform_valid=False
         if self.islaidout() and not recalc:
             # just ensure allocated
             self.definition.allocate(vertexcache)
             if self.dynamic_data is not None: vertexcache.allocate_dynamic(self, True)
+            for p in self.placements:
+                p.layout(tile, options, vertexcache, recalc=False)
             return
 
         if not (x and z):
@@ -222,6 +237,8 @@ class Object(Clutter):
         h=radians(self.hdg)
         self.matrix=array([cos(h),0.0,sin(h),0.0, 0.0,1.0,0.0,0.0, -sin(h),0.0,cos(h),0.0, x,self.y,z,1.0],float32)
         self.definition.allocate(vertexcache)	# ensure allocated
+        for p in self.placements:
+            p.layout(tile, options, vertexcache)
         # draped & poly_os
         if not self.definition.draped: return
         coshdg=cos(h)
@@ -251,10 +268,6 @@ class Object(Clutter):
         
 
 class AutoGenPoint(Object):
-
-    def __init__(self, name, lat, lon, hdg, y=None):
-        Object.__init__(self, name, lat, lon, hdg, y)
-        self.placements=[]	# [Object, xdelta, zdelta, hdelta]
 
     def clone(self):
         return AutoGenPoint(self.name, self.lat, self.lon, self.hdg, self.y)
@@ -288,28 +301,8 @@ class AutoGenPoint(Object):
             assert definition.filename in defs	# Child Def should have been created when AutoGenPointDef was loaded
             placement=Object(childname, self.lat, self.lon, self.hdg)
             placement.definition=definition
-            self.placements.append([placement, xdelta, zdelta, hdelta])
+            self.placements.append(placement)
         return True
-
-    def draw_instance(self, glstate, selected, picking):
-        Object.draw_instance(self, glstate, selected, picking)
-        for p in self.placements:
-            p[0].draw_instance(glstate, selected, picking)
-
-    def draw_dynamic(self, glstate, selected, picking):
-        Object.draw_dynamic(self, glstate, selected, picking)
-        for p in self.placements:
-            p[0].draw_dynamic(glstate, selected, picking)
-
-    def clearlayout(self, vertexcache):
-        Object.clearlayout(self, vertexcache)
-        for p in self.placements:
-            p[0].clearlayout(vertexcache)
-
-    def flush(self, vertexcache):
-        Object.flush(self, vertexcache)
-        for p in self.placements:
-            p[0].flush(vertexcache)
 
     if __debug__:
         def layoutp(self, tile, options, vertexcache, recalc=True):
@@ -323,8 +316,6 @@ class AutoGenPoint(Object):
         if self.islaidout() and not recalc:
             # just ensure allocated
             Object.layout(self, tile, options, vertexcache, recalc=False)
-            for p in self.placements:
-                p[0].layout(tile, options, vertexcache, recalc=False)
             return
 
         # We're likely to be doing a lot of height testing and draping, so pre-compute relevant mesh
@@ -353,11 +344,12 @@ class AutoGenPoint(Object):
         h=radians(self.hdg)
         coshdg=cos(h)
         sinhdg=sin(h)
-        for p in self.placements:
-            (child, xdelta, zdelta, hdelta)=p
+        assert len(self.placements)==len(self.definition.children), "%s %s %s %s" % (self, len(self.placements), self.definition, len(self.definition.children))
+        for i in range(len(self.placements)):
+            (childname, definition, xdelta, zdelta, hdelta)=self.definition.children[i]
             childx=x+xdelta*coshdg-zdelta*sinhdg
             childz=z+xdelta*sinhdg+zdelta*coshdg
-            child.layout(tile, options, vertexcache, childx, None, childz, self.hdg+hdelta, mymeshtris)
+            self.placements[i].layout(tile, options, vertexcache, childx, None, childz, self.hdg+hdelta, mymeshtris)
 
 
 class Polygon(Clutter):
@@ -419,7 +411,8 @@ class Polygon(Clutter):
             return u'%s  Param\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
     def draw_instance(self, glstate, selected, picking):
-        pass
+        for p in self.placements:
+            p.draw_instance(glstate, selected, picking)
 
     def draw_dynamic(self, glstate, selected, picking):
         assert self.islaidout() and self.base is not None, self
@@ -443,6 +436,8 @@ class Polygon(Clutter):
             for winding in self.points:
                 glDrawArrays(GL_LINE_STRIP, base, len(winding))
                 base+=len(winding)
+        for p in self.placements:
+            p.draw_dynamic(glstate, selected, picking)
 
     def draw_nodes(self, glstate, selectednode):
         # Just do it in immediate mode
@@ -471,6 +466,9 @@ class Polygon(Clutter):
         self.points=[]
         self.dynamic_data=None	# Can be removed from VBO
         self.flush(vertexcache)
+        for p in self.placements:
+            p.clearlayout(vertexcache)
+        self.placements=[]
 
     def islaidout(self):
         return self.dynamic_data is not None
@@ -526,11 +524,15 @@ class Polygon(Clutter):
         if self.islaidout() and not recalc:
             # just ensure allocated
             vertexcache.allocate_dynamic(self, True)
+            for p in self.placements:
+                p.layout(tile, options, vertexcache, recalc=False)
             return selectednode
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
         col=self.nonsimple and COL_NONSIMPLE or self.col
         self.dynamic_data=concatenate([array(p+col,float32) for w in self.points for p in w])
         vertexcache.allocate_dynamic(self, True)
+        for p in self.placements:
+            p.layout(tile, options, vertexcache)
         return selectednode
 
     def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
@@ -836,6 +838,8 @@ class Draped(Polygon):
         if self.islaidout() and not recalc:
             # just ensure allocated
             vertexcache.allocate_dynamic(self, True)
+            for p in self.placements:
+                p.layout(tile, options, vertexcache, recalc=False)
             return selectednode
         tess=tls and tls.tess or Draped.tess
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
@@ -879,6 +883,8 @@ class Draped(Polygon):
             self.dynamic_data=array(drape(tris, tile, options, vertexcache, csgt=tls and tls.csgt), float32).flatten()
         if not tls:	# defer allocation if called in thread context
             vertexcache.allocate_dynamic(self, True)
+        for p in self.placements:
+            p.layout(tile, options, vertexcache)
         return selectednode
 
 
@@ -1031,7 +1037,6 @@ class Facade(Polygon):
             for j in range(len(self.nodes[0])):
                 self.nodes[0][j]+=(0,)
         self.floorno=0		# for v10 - must keep in sync with self.param
-        self.placements=[]	# child object placements
         self.datalen=0
         self.drapedlen=0
         self.rooflen=0
@@ -1103,10 +1108,6 @@ class Facade(Polygon):
                 return Polygon.locationstr(self, dms, node)
             else:
                 return u'%s  Height\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
-
-    def draw_instance(self, glstate, selected, picking):
-        for p in self.placements:
-            p.draw_instance(glstate, selected, picking)
 
     def draw_dynamic(self, glstate, selected, picking):
         assert self.islaidout() and self.base is not None, self
@@ -1272,9 +1273,6 @@ class Facade(Polygon):
     def clearlayout(self, vertexcache):
         Polygon.clearlayout(self, vertexcache)
         self.datalen=self.rooflen=0
-        for p in self.placements:
-            p.clearlayout(vertexcache)
-        self.placements=[]
 
     def flush(self, vertexcache):
         Polygon.flush(self, vertexcache)
@@ -1936,9 +1934,6 @@ class Network(Fitted):
         else:
             return '%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes))
 
-    def draw_instance(self, glstate, selected, picking):
-        pass
-
     def draw_dynamic(self, glstate, selected, picking):
         # just draw outline
         if picking:
@@ -1955,6 +1950,8 @@ class Network(Fitted):
         for p in self.points[0]:
             glVertex3f(p[0],p[1],p[2])
         glEnd()
+        for p in self.placements:
+            p.draw_dynamic(glstate, selected, picking)
 
     def draw_nodes(self, glstate, selectednode):
         glstate.set_texture(None)
@@ -1973,6 +1970,8 @@ class Network(Fitted):
         self.points=[]
         self.dynamic_data=None	# Can be removed from VBO
         vertexcache.allocate_dynamic(self, False)
+        for p in self.placements:
+            p.clearlayout(vertexcache)
 
     def islaidout(self):
         return self.dynamic_data is not None
