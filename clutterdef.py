@@ -489,10 +489,7 @@ class ObjectDef(ClutterDef):
             return
         canvas.glstate.set_texture(self.texture)
         if selected:
-            canvas.selected_vbo.set_array(array([o in selected for o in self.instances],float32))
-            canvas.selected_vbo.bind()
-            glVertexAttribPointer(canvas.glstate.selected_pos, 1, GL_FLOAT, GL_FALSE, 4, canvas.selected_vbo)
-            glVertexAttribDivisorARB(canvas.glstate.selected_pos, 1)
+            canvas.glstate.set_attrib_selected(array([o in selected for o in self.instances],float32))
         if not self.transform_valid:
             if __debug__:
                 for o in self.instances: assert o.matrix is not None, "Empty matrix %s" % o

@@ -92,7 +92,8 @@ class GLstate():
         glDepthMask(GL_TRUE)
         self.current_vbo=None
         self.instance_vbo=vbo.VBO(None, GL_STATIC_DRAW)
-        self.dynamic_vbo=vbo.VBO(None, GL_STATIC_DRAW)
+        self.dynamic_vbo =vbo.VBO(None, GL_STATIC_DRAW)
+        self.selected_vbo=vbo.VBO(None, GL_STREAM_DRAW)
         # Use of GL_ARB_instanced_arrays requires a shader. Just duplicate fixed pipeline shaders.
         try:
             if not glInitInstancedArraysARB(): raise Exception
@@ -108,7 +109,7 @@ class GLstate():
             self.instancedshader = compileProgram(compileShader(instanced, GL_VERTEX_SHADER),
                                                   compileShader(unlit, GL_FRAGMENT_SHADER))
             self.transform_pos = glGetAttribLocation(self.instancedshader, 'transform')
-            self.selected_pos =  glGetAttribLocation(self.instancedshader, 'selected')
+            self.selected_pos  = glGetAttribLocation(self.instancedshader, 'selected')
             glUseProgram(self.textureshader)
             self.instanced_arrays = True
         except:
@@ -226,6 +227,12 @@ class GLstate():
         elif __debug__:
             if self.debug: print "set_dynamic already dynamic_vbo"
 
+    def set_attrib_selected(self, selectflags):
+        self.selected_vbo.set_array(selectflags)
+        self.selected_vbo.bind()
+        glVertexAttribPointer(self.selected_pos, 1, GL_FLOAT, GL_FALSE, 4, self.selected_vbo)
+        glVertexAttribDivisorARB(self.selected_pos, 1)
+
     def alloc_queries(self, needed):
         if len(self.queries)<needed:
             if len(self.queries): glDeleteQueries(len(self.queries), self.queries)
@@ -271,7 +278,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.mousenow=None	# Current position (used in timer and drag)
         self.locked=0		# locked object types
         self.selected=set()	# selected placements
-        self.selected_vbo =vbo.VBO(None, GL_STREAM_DRAW)
         self.clickmode=None
         self.clickpos=None	# Location of mouse down
         self.clickctrl=False	# Ctrl was held down
@@ -514,6 +520,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 gluPickMatrix(event.GetX(),
                               size[1]-1-event.GetY(), 5,5,
                               array([0.0, 0.0, size[0], size[1]],int32))
+                glViewport(0, 0, 5, 5)
                 vd=self.d*size.y/size.x
                 glOrtho(-self.d, self.d, -vd, vd, -30*vd, 30*vd)
                 glRotatef(self.e, 1.0,0.0,0.0)
@@ -899,6 +906,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             gluPickMatrix(self.clickpos[0],
                           size[1]-1-self.clickpos[1], 5,5,
                           array([0.0, 0.0, size[0], size[1]],int32))
+            glViewport(0, 0, 5, 5)
         vd=self.d*size.y/size.x
         glOrtho(-self.d, self.d, -vd, vd, -30*vd, 30*vd)
         glRotatef(self.e, 1.0,0.0,0.0)
@@ -966,22 +974,19 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Select placements
         if self.glstate.occlusion_query:
+            lookup = []
             self.glstate.set_instance(self.vertexcache)
             for i in range(len(placements)-1,-1,-1):	# favour higher layers
                 for j in range(len(placements[i])):
-                    if not placements[i][j].definition.type & self.locked:
-                        glBeginQuery(self.glstate.occlusion_query, self.glstate.queries[queryidx])
-                        placements[i][j].draw_instance(self.glstate, False, True)
-                        glEndQuery(self.glstate.occlusion_query)
+                    if not placements[i][j].definition.type & self.locked and placements[i][j].draw_instance(self.glstate, False, True, self.glstate.queries[queryidx]):
+                        lookup.append((i,j))
                         queryidx+=1
             self.glstate.set_dynamic(self.vertexcache)
-            glLoadIdentity()
+            glLoadIdentity()	# Drawing Objects alters the matrix
             for i in range(len(placements)-1,-1,-1):	# favour higher layers
                 for j in range(len(placements[i])):
-                    if not placements[i][j].definition.type & self.locked:
-                        glBeginQuery(self.glstate.occlusion_query, self.glstate.queries[queryidx])
-                        placements[i][j].draw_dynamic(self.glstate, False, True)
-                        glEndQuery(self.glstate.occlusion_query)
+                    if not placements[i][j].definition.type & self.locked and placements[i][j].draw_dynamic(self.glstate, False, True, self.glstate.queries[queryidx]):
+                        lookup.append((i,j))
                         queryidx+=1
 
             # First check poly node status
@@ -1008,13 +1013,10 @@ class MyGL(wx.glcanvas.GLCanvas):
             # Now check for selections
             self.selectednode=None
             selections=set()
-            for k in range(2):
-                for i in range(len(placements)-1,-1,-1):
-                    for j in range(len(placements[i])):
-                        if not placements[i][j].definition.type & self.locked:
-                            if placements[i][j] not in selections and glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
-                                selections.add(placements[i][j])
-                            queryidx+=1                            
+            for k in range(len(lookup)):
+                if glGetQueryObjectuiv(self.glstate.queries[queryidx+k], GL_QUERY_RESULT):
+                    (i,j)=lookup[k]
+                    selections.add(placements[i][j])
             glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
 
         else:	# not self.glstate.occlusion_query
@@ -1047,7 +1049,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Restore state for unproject
         glMatrixMode(GL_PROJECTION)
-        glPopMatrix()	
+        glPopMatrix()
 
         if self.frame.bkgd:	# Don't allow selection of other objects while background dialog is open
             if self.clickmode==ClickModes.Drag or self.background in selections:

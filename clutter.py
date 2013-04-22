@@ -100,6 +100,8 @@ class Clutter:
 
 class Object(Clutter):
 
+    origin=array([0,0,0],float32)
+
     def __init__(self, name, lat, lon, hdg, y=None):
         Clutter.__init__(self, name, lat, lon)
         self.hdg=hdg
@@ -149,23 +151,39 @@ class Object(Clutter):
         else:
             return '%s  Hdg: %-5.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg)
 
-    def draw_instance(self, glstate, selected, picking):
+    def draw_instance(self, glstate, selected, picking, queryobj=None):
         obj=self.definition
-        glLoadMatrixf(self.matrix)
+        assert self.islaidout() and (obj.vdata is None or obj.base is not None), self
         if picking:
-            assert self.islaidout(), self
             assert not glstate.cull
             # glstate.poly doesn't affect selection
-            if obj.vdata is not None:
+            if queryobj is not None:
+                if obj.vdata is not None or self.placements:
+                    glBeginQuery(glstate.occlusion_query, queryobj)
+                    if obj.vdata is not None:	# .agp base has no vertex data
+                        glLoadMatrixf(self.matrix)
+                        glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
+                        glBegin(GL_POINTS)
+                        glVertex3fv(Object.origin)	# draw point at object origin so selectable even if not visible
+                        glEnd()
+                    for p in self.placements:
+                        p.draw_instance(glstate, selected, picking)
+                    glEndQuery(glstate.occlusion_query)
+                    return True
+                else:
+                    return False
+            elif obj.vdata is not None:
+                glLoadMatrixf(self.matrix)
                 glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
-            if glstate.occlusion_query:
                 glBegin(GL_POINTS)
-                glVertex3f(0.0,0.0,0.0)	# draw point at object origin so selectable even if not visible
+                glVertex3fv(Object.origin)	# draw point at object origin so selectable even if not visible
                 glEnd()
+            # Fall through for children
+
         elif obj.vdata is not None:	# .agp base has no vertex data
-            assert self.islaidout() and obj.base is not None, self
             glstate.set_texture(obj.texture)
             glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            glLoadMatrixf(self.matrix)
             assert not glstate.poly
             assert glstate.depthtest
             if selected:	# draw rear side of selected "invisible" faces
@@ -178,21 +196,37 @@ class Object(Clutter):
                 if obj.nocull:
                     glstate.set_cull(False)
                     glDrawArrays(GL_TRIANGLES, obj.base+obj.culled, obj.nocull)
-        for p in self.placements:
-            p.draw_instance(glstate, selected, picking)
 
-    def draw_dynamic(self, glstate, selected, picking):
-        if self.dynamic_data is not None:
-            if not picking:
-                glstate.set_texture(self.definition.texture_draped)
-                glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
-                glstate.set_cull(True)
-                glstate.set_poly(True)
-                glstate.set_depthtest(True)
-            assert self.islaidout() and self.base is not None, self
+        return sum([p.draw_instance(glstate, selected, picking) for p in self.placements])
+
+    def draw_dynamic(self, glstate, selected, picking, queryobj=None):
+        assert self.islaidout() and (self.dynamic_data is None or self.base is not None), self
+        if picking:
+            if queryobj is not None:
+                if self.dynamic_data is not None or self.placements:
+                    glBeginQuery(glstate.occlusion_query, queryobj)
+                    if self.dynamic_data is not None:
+                        glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+                    for p in self.placements:
+                        p.draw_dynamic(glstate, selected, picking)
+                    glEndQuery(glstate.occlusion_query)
+                    return True
+                else:
+                    return False
+            elif self.dynamic_data is not None:
+                glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+            # Fall through for children
+
+        elif self.dynamic_data is not None:
+            glstate.set_texture(self.definition.texture_draped)
+            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            glstate.set_cull(True)
+            glstate.set_poly(True)
+            glstate.set_depthtest(True)
             glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
-        for p in self.placements:
-            p.draw_dynamic(glstate, selected, picking)
+
+        return sum([p.draw_dynamic(glstate, selected, picking) for p in self.placements])
+
 
     def draw_nodes(self, glstate, selectednode):
         pass
@@ -410,16 +444,24 @@ class Polygon(Clutter):
         else:
             return u'%s  Param\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw_instance(self, glstate, selected, picking):
-        for p in self.placements:
-            p.draw_instance(glstate, selected, picking)
+    def draw_instance(self, glstate, selected, picking, queryobj=None):
+        if queryobj is not None and self.placements:
+            assert picking
+            glBeginQuery(glstate.occlusion_query, queryobj)
+            for p in self.placements:
+                p.draw_instance(glstate, selected, picking)
+            glEndQuery(glstate.occlusion_query)
+            return True
+        else:
+            return sum([p.draw_instance(glstate, selected, picking) for p in self.placements])
 
-    def draw_dynamic(self, glstate, selected, picking):
+    def draw_dynamic(self, glstate, selected, picking, queryobj=None):
         assert self.islaidout() and self.base is not None, self
         if picking:
             assert not glstate.texture
             assert glstate.color
-            if glstate.occlusion_query:
+            if queryobj is not None:
+                glBeginQuery(glstate.occlusion_query, queryobj)
                 glBegin(GL_POINTS)
                 glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
                 glEnd()
@@ -438,6 +480,9 @@ class Polygon(Clutter):
                 base+=len(winding)
         for p in self.placements:
             p.draw_dynamic(glstate, selected, picking)
+        if queryobj is not None:
+            glEndQuery(glstate.occlusion_query)
+        return True
 
     def draw_nodes(self, glstate, selectednode):
         # Just do it in immediate mode
@@ -661,9 +706,11 @@ class Beach(Polygon):
         Polygon.load(self, lookup, defs, vertexcache, usefallback=True)
         self.definition.layer=ClutterDef.BEACHESLAYER
 
-    def draw_dynamic(self, glstate, selected, picking):
-        # Don't draw so can't be picked
-        if not picking: Polygon.draw_dynamic(self, glstate, selected, picking)
+    def draw_dynamic(self, glstate, selected, picking, queryobj=None):
+        if picking:
+            return False	# Don't draw so can't be picked
+        else:
+            return Polygon.draw_dynamic(self, glstate, selected, picking)
 
 
 # Like Draped, but for lines
@@ -725,13 +772,13 @@ class Draped(Polygon):
         else:
             return u'%s  Tex hdg\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw_dynamic(self, glstate, selected, picking):
+    def draw_dynamic(self, glstate, selected, picking, queryobj=None):
         assert self.islaidout() and self.base is not None, self
         if self.nonsimple:
-            Polygon.draw_dynamic(self, glstate, selected, picking)
-            return
+            return Polygon.draw_dynamic(self, glstate, selected, picking, queryobj)
         elif picking:
-            if glstate.occlusion_query:
+            if queryobj is not None:
+                glBeginQuery(glstate.occlusion_query, queryobj)
                 glBegin(GL_POINTS)
                 glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
                 glEnd()
@@ -742,6 +789,9 @@ class Draped(Polygon):
             glstate.set_poly(True)
             glstate.set_depthtest(True)
         glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+        if queryobj is not None:
+            glEndQuery(glstate.occlusion_query)
+        return True
         
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         if self.param==65535:
@@ -932,18 +982,26 @@ class DrapedImage(Draped):
         # DrapedImage texture is assigned *after* layout
         return self.dynamic_data is not None and self.definition.texture
 
-    def draw_dynamic(self, glstate, selected, picking):
+    def draw_dynamic(self, glstate, selected, picking, queryobj=None):
         # same as Draped, but don't set color since this is set in OnPaint() and may include opacity
         assert self.islaidout() and self.base is not None, self
         if self.nonsimple:
-            Polygon.draw_dynamic(self, glstate, selected, picking)
-            return
-        elif not picking:
+            return Polygon.draw_dynamic(self, glstate, selected, picking, queryobj)
+        elif picking:
+            if queryobj is not None:
+                glBeginQuery(glstate.occlusion_query, queryobj)
+                glBegin(GL_POINTS)
+                glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
+                glEnd()
+        else:
             glstate.set_texture(self.definition.texture)
             glstate.set_cull(True)
             glstate.set_poly(True)
             glstate.set_depthtest(True)
         glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+        if queryobj is not None:
+            glEndQuery(glstate.occlusion_query)
+        return True
 
 class Exclude(Fitted):
 
@@ -1109,12 +1167,14 @@ class Facade(Polygon):
             else:
                 return u'%s  Height\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def draw_dynamic(self, glstate, selected, picking):
+    def draw_dynamic(self, glstate, selected, picking, queryobj=None):
         assert self.islaidout() and self.base is not None, self
         fac=self.definition
         if self.nonsimple:
-            Polygon.draw_dynamic(self, glstate, selected, picking)
+            return Polygon.draw_dynamic(self, glstate, selected, picking, queryobj)
         elif picking:
+            if queryobj is not None:
+                glBeginQuery(glstate.occlusion_query, queryobj)
             Polygon.draw_dynamic(self, glstate, selected, picking)	# for outline
             glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
             if self.rooflen:
@@ -1135,6 +1195,9 @@ class Facade(Polygon):
             glDrawArrays(GL_TRIANGLES, self.base, self.datalen)
         for p in self.placements:
             p.draw_dynamic(glstate, selected, picking)
+        if queryobj is not None:
+            glEndQuery(glstate.occlusion_query)
+        return True
         
     def draw_nodes(self, glstate, selectednode):
         # Draws wall baseline in white if wall type is editable
@@ -1934,11 +1997,13 @@ class Network(Fitted):
         else:
             return '%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes))
 
-    def draw_dynamic(self, glstate, selected, picking):
+    def draw_dynamic(self, glstate, selected, picking, queryobj=None):
         # just draw outline
         if picking:
             # Can't pick if no elevation
-            if not self.laidoutwithelevation: return
+            if not self.laidoutwithelevation: return False
+            if queryobj is not None:
+                glBeginQuery(glstate.occlusion_query, queryobj)
         else:
             glstate.set_texture(None)
             if selected:
@@ -1952,6 +2017,9 @@ class Network(Fitted):
         glEnd()
         for p in self.placements:
             p.draw_dynamic(glstate, selected, picking)
+        if queryobj is not None:
+            glEndQuery(glstate.occlusion_query)
+        return True
 
     def draw_nodes(self, glstate, selectednode):
         glstate.set_texture(None)
