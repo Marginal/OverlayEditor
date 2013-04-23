@@ -13,6 +13,7 @@
 
 # Clutter (except for DrapedImage) not in the current tile retain their layout, but not their VBO allocation.
 
+import gc
 from math import atan2, ceil, cos, degrees, floor, hypot, pi, radians, sin, tan
 from numpy import array, array_equal, concatenate, float32, float64
 from os.path import join
@@ -124,10 +125,13 @@ class Object(Clutter):
             if filename in defs:
                 self.definition=defs[filename]
             else:
+                gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
                 defs[filename]=self.definition=ObjectDef(filename, vertexcache, lookup, defs)
+                gc.enable()
             return True
         except:
             # virtual name not found or can't load physical file
+            gc.enable()
             if __debug__:
                 print_exc()
             if usefallback:

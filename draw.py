@@ -13,6 +13,7 @@ glGetQueryObjectuiv = alternate(glGetQueryObjectiv, glGetQueryObjectuivARB)
 GL_ANY_SAMPLES_PASSED=0x8C2F	# not in 3.0.1
 from OpenGL.GL.ARB.instanced_arrays import glInitInstancedArraysARB, glVertexAttribDivisorARB
 
+import gc
 from glob import glob
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
 from numpy import array, array_equal, empty, identity, float32, float64, int32
@@ -974,6 +975,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Select placements
         if self.glstate.occlusion_query:
+            gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
             lookup = []
             self.glstate.set_instance(self.vertexcache)
             for i in range(len(placements)-1,-1,-1):	# favour higher layers
@@ -988,6 +990,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     if not placements[i][j].definition.type & self.locked and placements[i][j].draw_dynamic(self.glstate, False, True, self.glstate.queries[queryidx]):
                         lookup.append((i,j))
                         queryidx+=1
+            gc.enable()
 
             # First check poly node status
             queryidx=0
@@ -1629,6 +1632,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             key=(newtile[0],newtile[1],options&Prefs.ELEVATION)
             if key not in self.runways:
                 if __debug__: clock=time.clock()	# Processor time
+                gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
                 self.runways[key]=[]
                 self.codes[newtile]=[]
                 svarray=[]
@@ -1860,6 +1864,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 taxiwaylen=len(tvarray)
                 runwaylen=len(rvarray)
                 self.runways[key]=(varray,shoulderlen,taxiwaylen,runwaylen)
+                gc.enable()
                 if __debug__: print "%6.3f time in runways" % (time.clock()-clock)
             else:
                 (varray,shoulderlen,taxiwaylen,runwaylen)=self.runways[key]

@@ -1,3 +1,4 @@
+import gc
 from math import cos, fabs, radians, sin
 from numpy import array, array_equal, concatenate, copy, diag, dot, float32, identity, outer
 from operator import itemgetter, attrgetter
@@ -744,8 +745,11 @@ class AutoGenPointDef(ObjectDef):
                 definition=defs[childfilename]
             else:
                 try:
+                    gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
                     defs[childfilename]=definition=ObjectDef(childfilename, vertexcache, lookup, defs, make_editable=False)
+                    gc.enable()
                 except:
+                    gc.enable()
                     if __debug__:
                         print_exc()
                     defs[childfilename]=definition=ObjectFallback(childfilename, vertexcache, lookup, defs)
@@ -1034,8 +1038,11 @@ class FacadeDef(PolygonDef):
                     definition=defs[childfilename]
                 else:
                     try:
+                        gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
                         defs[childfilename]=definition=ObjectDef(childfilename, vertexcache, lookup, defs, make_editable=False)
+                        gc.enable()
                     except:
+                        gc.enable()
                         if __debug__:
                             print_exc()
                         defs[childfilename]=definition=ObjectFallback(childfilename, vertexcache, lookup, defs)

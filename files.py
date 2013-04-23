@@ -8,6 +8,7 @@ from OpenGL.GL.EXT.texture_compression_s3tc import glInitTextureCompressionS3TcE
 from OpenGL.GL.ARB.texture_non_power_of_two import glInitTextureNonPowerOfTwoARB
 
 import codecs
+import gc
 from glob import glob
 from math import cos, log, pi, radians
 from numpy import array, concatenate, empty, ndarray, float32, uint32
@@ -146,9 +147,12 @@ def readApt(filename, offset=None):
                 h.close()
                 return run
             if code:
-                if code in airports: raise AssertionError, "Airport %s is listed more than once." % code
-                if not run: raise AssertionError, "Airport %s does not have any runways." % code
-                airports[code]=(name,loc,run)
+                if code in airports:
+                    if loc: raise AssertionError, "Airport %s is listed more than once." % code
+                elif not run:
+                    raise AssertionError, "Airport %s does not have any runways." % code
+                else:
+                    airports[code]=(name,loc,run)
                 code=name=loc=None
                 run=[]
             code=c[4].decode('latin1')
@@ -219,24 +223,18 @@ def readApt(filename, offset=None):
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
         elif id==99:
             break
-            if offset:	# reached next airport
-                if not run: raise AssertionError, "Airport %s does not have any runways." % code
-                h.close()
-                return run
-            if not loc or not run: raise IOError
-            airports[code]=(name,loc,run)
-            code=name=loc=None
-            run=[]
-            break
-    # No terminating 99
     if offset:
         if not run: raise AssertionError, "Airport %s does not have any runways." % code
         h.close()
         return run
+    # last one
     if code:
-        if code in airports: raise AssertionError, "Airport %s is listed more than once." % code
-        if not run: raise AssertionError, "Airport %s does not have any runways." % code
-        airports[code]=(name,loc,run)
+        if code in airports:
+            if loc: raise AssertionError, "Airport %s is listed more than once." % code
+        elif not run:
+            raise AssertionError, "Airport %s does not have any runways." % code
+        else:
+            airports[code]=(name,loc,run)
     else:
         raise AssertionError, "The apt.dat file in this package is empty."
     h.close()
@@ -777,6 +775,7 @@ class VertexCache:
                 dsfs+=thisdsfs
                 #print join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))
         if __debug__: clock=time.clock()	# Processor time
+        gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
         for dsf in dsfs:
             try:
                 (lat, lon, placements, nets, mesh)=readDSF(dsf, False, False, self.ter)
@@ -796,6 +795,7 @@ class VertexCache:
                     break
             except:
                 if __debug__: print_exc()
+        gc.enable()
         if __debug__: print "%6.3f time in loadMesh" % (time.clock()-clock)
         if not key in self.mesh:
             self.loadFallbackMesh(tile, options)
@@ -866,6 +866,7 @@ class VertexCache:
         meshdata=[]
         tot=0
         if __debug__: clock=time.clock()	# Processor time
+        gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
         for texture, flags, v in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
             if not flags&1: continue	# not interested in overlays
             minx=minz=maxint
@@ -879,6 +880,7 @@ class VertexCache:
                 tris.append(([v[i][:3], v[i+1][:3], v[i+2][:3]], [0,0,0,0]))
             meshdata.append((BBox(minx, maxx, minz, maxz), tris))
             tot+=len(tris)
+        gc.enable()
         if __debug__: print "%6.3f time in getMeshdata" % (time.clock()-clock)
         #print len(meshdata), "patches,", tot, "tris,", tot/len(meshdata), "av"
         self.meshdata[key]=meshdata

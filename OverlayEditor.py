@@ -1386,6 +1386,7 @@ class MainWindow(wx.Frame):
         if self.menubar:
             self.menubar.Enable(wx.ID_UNDO, False)
         progress.Update(3, 'Airports')
+        if __debug__: clock=time.clock()	# Processor time
         pkgapts={}
         nav=list(self.nav)
         pkgloc=None
@@ -1415,6 +1416,7 @@ class MainWindow(wx.Frame):
         # Merge in custom airports
         airports=dict(self.airports)
         airports.update(pkgapts)
+        if __debug__: print "%6.3f time in custom airports" % (time.clock()-clock)
 
         if self.goto: self.goto.Close()	# Needed on wxMac 2.5
         self.goto=GotoDialog(self, airports)	# build only
