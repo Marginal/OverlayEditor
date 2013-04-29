@@ -16,7 +16,7 @@ from OpenGL.GL.ARB.instanced_arrays import glInitInstancedArraysARB, glVertexAtt
 import gc
 from glob import glob
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
-from numpy import array, array_equal, empty, identity, float32, float64, int32
+from numpy import array, array_equal, dot, empty, identity, float32, float64, int32
 from os.path import basename, curdir, join
 from struct import unpack
 from sys import exc_info, exit, platform, version
@@ -299,8 +299,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.y=0
         self.z=0
         self.h=0
-        self.e=90
-        self.d=3333.25
+        self.e=45
+        self.d=2048.0
+        self.proj=identity(4, float64)
 
         # Must specify min sizes for glX? - see glXChooseVisual and GLXFBConfig
         try:
@@ -523,12 +524,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 gluPickMatrix(event.GetX(),
                               size[1]-1-event.GetY(), 5,5,
                               array([0.0, 0.0, size[0], size[1]],int32))
+                glMultMatrixd(self.proj)
                 glViewport(0, 0, 5, 5)
-                vd=self.d*size.y/size.x
-                glOrtho(-self.d, self.d, -vd, vd, -30*vd, 30*vd)
-                glRotatef(self.e, 1.0,0.0,0.0)
-                glRotatef(self.h, 0.0,1.0,0.0)
-                glTranslatef(-self.x, -self.y, -self.z)
                 self.glstate.set_texture(0)
                 self.glstate.set_color(COL_WHITE)	# Ensure colour indexing off
                 self.glstate.set_depthtest(False)	# Don't want to update depth buffer
@@ -632,14 +629,16 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if __debug__: print "OnPaint"
 
-        glMatrixMode(GL_PROJECTION)
         glViewport(0, 0, *size)
-        glLoadIdentity()
+
+        glMatrixMode(GL_PROJECTION)
         vd=self.d*size.y/size.x
-        glOrtho(-self.d, self.d, -vd, vd, -30*vd, 30*vd)	# 30 ~= 1/sin(2), where 2 is minimal elevation angle
-        glRotatef(self.e, 1.0,0.0,0.0)
-        glRotatef(self.h, 0.0,1.0,0.0)
-        glTranslatef(-self.x, -self.y, -self.z)
+        #glLoadIdentity()
+        proj=array([[1.0/self.d,0,0,0], [0,1.0/vd,0,0], [0,0,(-1.0/30)/vd,0], [0,0,0,1]], float64)	# glOrtho(-self.d, self.d, -vd, vd, -30*vd, 30*vd)	# 30 ~= 1/sin(2), where 2 is minimal elevation angle        
+        proj=dot(array([[1,0,0,0], [0,cos(radians(self.e)),sin(radians(self.e)),0], [0,-sin(radians(self.e)),cos(radians(self.e)),0], [0,0,0,1]], float64), proj)	# glRotatef(self.e, 1.0,0.0,0.0)
+        proj=dot(array([[cos(radians(self.h)),0,-sin(radians(self.h)),0], [0,1,0,0], [sin(radians(self.h)),0,cos(radians(self.h)),0], [0,0,0,1]], float64), proj)	# glRotatef(self.h, 0.0,1.0,0.0)
+        self.proj=dot(array([[1,0,0,0], [0,1,0,0], [0,0,1,0], [-self.x,-self.y,-self.z,1]], float64), proj)	# glTranslatef(-self.x, -self.y, -self.z)
+        glLoadMatrixd(self.proj)
 
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
@@ -909,11 +908,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                           size[1]-1-self.clickpos[1], 5,5,
                           array([0.0, 0.0, size[0], size[1]],int32))
             glViewport(0, 0, 5, 5)
-        vd=self.d*size.y/size.x
-        glOrtho(-self.d, self.d, -vd, vd, -30*vd, 30*vd)
-        glRotatef(self.e, 1.0,0.0,0.0)
-        glRotatef(self.h, 0.0,1.0,0.0)
-        glTranslatef(-self.x, -self.y, -self.z)
+        glMultMatrixd(self.proj)
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
 
@@ -2044,7 +2039,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnd()
         mz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
         if mz==1.0: mz=0.5	# treat off the tile edge as sea level
-        (x,y,z)=gluUnProject(mx,my,mz, model=identity(4,float64), view=array([0,0,size[0],size[1]], int32))
+        (x,y,z)=gluUnProject(mx,my,mz, identity(4, float64), self.proj, array([0,0,size[0],size[1]], int32))
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
         #self.SwapBuffers()	# debug
         glClear(GL_DEPTH_BUFFER_BIT)
