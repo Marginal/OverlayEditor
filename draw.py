@@ -489,6 +489,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Capture unreliable on Mac, so may have missed Up events. See
         # https://sourceforge.net/tracker/?func=detail&atid=109863&aid=1489131&group_id=9863
         #self.getworldloc(event.GetX(),event.GetY())	# debug
+        assert self.valid
+        if not self.valid: return
         if self.clickmode==ClickModes.Move:
             if not event.MiddleIsDown():
                 self.OnMiddleUp(event)
@@ -561,7 +563,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         assert (self.clickmode!=ClickModes.Undecided)
 
         if self.clickmode==ClickModes.Move:
-            if not self.valid: return
             (oldlat,oldlon)=self.getworldloc(*self.mousenow)
             self.mousenow=[event.GetX(),event.GetY()]
             (lat,lon)=self.getworldloc(*self.mousenow)
@@ -1498,7 +1499,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def goto(self, loc, hdg=None, elev=None, dist=None, prefs=None):
         if __debug__: print "goto", loc
-        if not self.vertexcache.dsfdirs: return	# Hack: can get spurious events on Mac during startup (progress dialogs aren't truly modal)
+        if not self.valid: return	# Hack: can get spurious events on Mac during startup (progress dialogs aren't truly modal)
         errdsf=None
         errobjs=[]
         errtexs=[]
@@ -1884,6 +1885,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.vertexcache.allocate_instance(array(varray,float32).flatten())
 
             progress.Update(14, 'Navaids')
+            assert self.tile==newtile
             if self.tile not in self.navaidplacements:
                 objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
                       3:  'lib/airport/NAVAIDS/VOR.obj',
@@ -2015,6 +2017,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             raise ArithmeticError
         
     def getlocalloc(self, mx, my):
+        if not self.valid: raise Exception        # MouseWheel can happen under MessageBox
         if wx.VERSION >= (2,9):
             self.SetCurrent(self.context)
         else:

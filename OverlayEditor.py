@@ -1113,14 +1113,17 @@ class MainWindow(wx.Frame):
         else:
             event.Skip(True)
             return
-        (mx,my,mz)=self.canvas.getlocalloc(event.GetX(),event.GetY())	# OpenGL coords of mouse / zoom point
-        (cx,cz)=(self.canvas.x, self.canvas.z)				# OpenGL coords of cursor
-        d=hypot(cx-mx, cz-mz)	# horizontal distance [m] between zoom point and cursor
-        self.loc = self.canvas.xz2latlon(mx+r*(cx-mx), mz+r*(cz-mz))
-        self.dist *= r
-        self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
-        self.Update()		# Let window draw first
-        self.ShowLoc()
+        try:
+            (mx,my,mz)=self.canvas.getlocalloc(event.GetX(),event.GetY())	# OpenGL coords of mouse / zoom point
+            (cx,cz)=(self.canvas.x, self.canvas.z)				# OpenGL coords of cursor
+            d=hypot(cx-mx, cz-mz)	# horizontal distance [m] between zoom point and cursor
+            self.loc = self.canvas.xz2latlon(mx+r*(cx-mx), mz+r*(cz-mz))
+            self.dist *= r
+            self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
+            self.Update()		# Let window draw first
+            self.ShowLoc()
+        except:
+            if __debug__: print_exc()
         event.Skip(True)
         
         
@@ -1519,6 +1522,7 @@ class MainWindow(wx.Frame):
         progress.Update(5, 'Done')
         progress.Destroy()
         
+        self.canvas.valid=True	# Allow goto() to do its stuff
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
         self.ShowLoc()
 
