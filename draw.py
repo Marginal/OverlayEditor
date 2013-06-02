@@ -87,7 +87,7 @@ class GLstate():
         self.cull=True
         glEnable(GL_CULL_FACE)
         self.depthtest=True
-        glEnable(GL_DEPTH_TEST)
+        glDepthFunc(GL_LESS)
         self.poly=False
         glDisable(GL_POLYGON_OFFSET_FILL)
         glDepthMask(GL_TRUE)
@@ -167,14 +167,16 @@ class GLstate():
                     print "set_color already (%.3f, %.3f. %.3f)" % color
 
     def set_depthtest(self, depthtest):
+        # Occlusion query counts "the number of samples that pass the depth and stencil tests", which ATI interpret
+        # as meaning that the depth test must be enabled. So control depth test via DepthFunc rather than glEnable.
         if self.depthtest!=depthtest:
             if __debug__:
                 if self.debug: print "set_depthtest", depthtest
             self.depthtest=depthtest
             if depthtest:
-                glEnable(GL_DEPTH_TEST)
+                glDepthFunc(GL_LESS)
             else:
-                glDisable(GL_DEPTH_TEST)
+                glDepthFunc(GL_ALWAYS)
         elif __debug__:
             if self.debug: print "set_depthtest already", depthtest
 
@@ -369,7 +371,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         #glClearDepth(1.0)
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glEnable(GL_DEPTH_TEST)
-        glDepthFunc(GL_LESS)
         glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
         if debugapt: glLineWidth(2.0)
@@ -528,8 +529,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glViewport(0, 0, 5, 5)
                 self.glstate.set_texture(0)
                 self.glstate.set_color(COL_WHITE)	# Ensure colour indexing off
-                self.glstate.set_depthtest(False)	# Don't want to update depth buffer
-                self.glstate.set_poly(False)		# Not strictly necessary, but possibly will avoid any driver issues
+                self.glstate.set_depthtest(False)	# Make selectable even if occluded
+                self.glstate.set_poly(True)		# Disable writing to depth buffer
                 if self.glstate.occlusion_query:
                     self.glstate.alloc_queries(len([item for sublist in poly.points for item in sublist]))
                     selections=False
@@ -651,9 +652,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.glstate.occlusion_query=hasGLExtension('GL_ARB_occlusion_query2') and GL_ANY_SAMPLES_PASSED or GL_SAMPLES_PASSED
             if self.glstate.occlusion_query:
                 self.glstate.set_texture(0)
-                self.glstate.set_color(COL_WHITE)
-                self.glstate.set_depthtest(False)
-                self.glstate.set_poly(False)
+                self.glstate.set_color(COL_WHITE)	# Ensure colour indexing off
+                self.glstate.set_depthtest(False)	# Draw even if occluded
+                self.glstate.set_poly(True)		# Disable writing to depth buffer
                 self.glstate.set_cull(False)
                 self.glstate.alloc_queries(1)
                 glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)
@@ -914,8 +915,8 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.glstate.set_texture(0)
         self.glstate.set_color(COL_WHITE)		# Ensure colour indexing off
-        self.glstate.set_depthtest(False)		# Don't want to update depth buffer
-        self.glstate.set_poly(False)			# Not strictly necessary, but possibly will avoid any driver issues
+        self.glstate.set_depthtest(False)		# Make selectable even if occluded
+        self.glstate.set_poly(True)			# Disable writing to depth buffer
         self.glstate.set_cull(False)			# Enable selection of "invisible" faces
 
         if self.frame.bkgd:	# Don't allow selection of other objects while background dialog is open
