@@ -790,6 +790,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnableVertexAttribArray(pos+1)
             glEnableVertexAttribArray(pos+2)
             glEnableVertexAttribArray(pos+3)
+            assert type(self.selected)==set
             selected = self.selected.copy()
             if selected:
                 glEnableVertexAttribArray(self.glstate.selected_pos)
@@ -1225,7 +1226,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.undostack.append(newundo)
         if not self.selectednode:
-            self.selected=[placement]
+            self.selected=set([placement])
         self.selectednode=newnode
 
         self.Refresh()
