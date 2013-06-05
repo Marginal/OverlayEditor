@@ -1612,7 +1612,7 @@ class MainWindow(wx.Frame):
         dlg.CenterOnParent()	# Otherwise is top-left on Mac
         if dlg.ShowModal()==wx.ID_OK:
             # apply to currently selected
-            self.canvas.selected=[x for x in self.canvas.selected if not x.definition.type & self.canvas.locked]
+            self.canvas.selected=set([x for x in self.canvas.selected if not x.definition.type & self.canvas.locked])
             self.canvas.Refresh()
             self.ShowSel()
 
