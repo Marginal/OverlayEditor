@@ -718,7 +718,7 @@ class VertexCache:
             self.instance_pending=[self.instance_data]	# so gets included in concatenate next time round
             self.instance_valid=True
             instance_vbo.set_array(self.instance_data)
-            if __debug__: print "%6.3f time to realize instance VBO" % (time.clock()-clock)
+            if __debug__: print "%6.3f time to realize instance VBO, size %dK" % (time.clock()-clock, self.instance_data.size/256)
             return True
         else:
             return False
@@ -752,7 +752,7 @@ class VertexCache:
                 self.dynamic_data=empty((0,6),float32)
             self.dynamic_valid=True
             dynamic_vbo.set_array(self.dynamic_data)
-            if __debug__: print "%6.3f time to realize dynamic VBO" % (time.clock()-clock)
+            if __debug__: print "%6.3f time to realize dynamic VBO, size %dK" % (time.clock()-clock, self.dynamic_data.size/256)
             return True
         else:
             return False

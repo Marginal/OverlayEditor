@@ -1079,14 +1079,29 @@ class MainWindow(wx.Frame):
         elif __debug__:
             if event.GetKeyCode()==ord('P'):
                 print '--- Textures'
+                t=0
                 for k,v in self.canvas.vertexcache.texcache.stats.iteritems():
-                    print '"%s" %d' % (k,v)
+                    print '%s,\t%d' % (k,v)
+                    t = t+v
+                print 'Total,\t%d' % t
+                print '--- VBO'
+                print 'Instance,\t%d' % (self.canvas.glstate.instance_vbo.data is not None and self.canvas.glstate.instance_vbo.size or 0)
+                print 'Dynamic,\t%d' % (self.canvas.glstate.dynamic_vbo.data  is not None and self.canvas.glstate.dynamic_vbo.size  or 0)
                 print '---'
                 from cProfile import runctx
                 runctx('self.canvas.OnPaint(None)', globals(), locals(), 'onpaint.dmp')
                 e=wx.MouseEvent()
                 e.m_x = e.m_y = 300
                 runctx('self.canvas.OnLeftDown(e)', globals(), locals(), 'select.dmp')
+            if event.GetKeyCode()==ord('H'):
+                print '--- Heap'
+                from guppy import hpy
+                h=hpy().heap()
+                print h
+                import code
+                code.interact(local=locals())
+                #import pdb
+                #pdb.set_trace()
             elif event.GetKeyCode()==ord('M'):
                 print '---', time.asctime(), '---'
         else:
