@@ -3,19 +3,24 @@
 from distutils.core import setup
 from os import getcwd, listdir, name
 from glob import glob
+import numpy	# pull in dependencies
+
+import platform
+win64 = (platform.architecture()[0]=='64bit')
+cpu = win64 and 'amd64' or 'x86'
+crt = 'Microsoft.VC90.CRT.'+cpu
 
 import sys
 sys.path.insert(0, getcwd())
 
 from version import appname, appversion
 
-
 # bogus crud to get WinXP "Visual Styles"
 manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
           '<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">\n'+
           '<assemblyIdentity\n'+
           '    version="%4.2f.0.0"\n' % appversion +
-          '    processorArchitecture="X86"\n'+
+          '    processorArchitecture="'+cpu+'"\n'+
           '    name="%s"\n' % appname +
           '    type="win32"\n'+
           '/>\n'+
@@ -26,7 +31,7 @@ manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
           '            type="win32"\n'+
           '            name="Microsoft.Windows.Common-Controls"\n'+
           '            version="6.0.0.0"\n'+
-          '            processorArchitecture="X86"\n'+
+          '            processorArchitecture="'+cpu+'"\n'+
           '            publicKeyToken="6595b64144ccf1df"\n'+
           '            language="*"\n'+
           '        />\n'+
@@ -37,8 +42,8 @@ manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
           '        <assemblyIdentity\n'+
           '            type="win32"\n'+
           '            name="Microsoft.VC90.CRT"\n'+
-          '            version="9.0.30729.1"\n'+
-          '            processorArchitecture="X86"\n'+
+          '            version="9.0.30729.4940"\n'+
+          '            processorArchitecture="'+cpu+'"\n'+
           '            publicKeyToken="1fc8b3b9a1e18e3b"\n'+
           '            language="*"\n'+
           '        />\n'+
@@ -53,9 +58,9 @@ if sys.platform=='win32':
                ['win32/DSFTool.exe',
                 ]),
               ('Microsoft.VC90.CRT',
-               ['win32/Microsoft.VC90.CRT.manifest',
-                'win32/msvcp90.dll',
-                'win32/msvcr90.dll'
+               ['win32/'+crt+'/Microsoft.VC90.CRT.manifest',
+                'win32/'+crt+'/msvcp90.dll',
+                'win32/'+crt+'/msvcr90.dll'
                 ]),
               ]
 
@@ -95,8 +100,9 @@ setup(name='OverlayEditor',
                   ] + platdata,
 
       options = {'py2exe': {'ascii':True,	# suppresss encodings?
-                            'dll_excludes':['w9xpopen.exe'],
-                            'bundle_files':2,	# don't bundle pythonX.dll - causes ctypes to fail
+                            'dist_dir':'dist.'+cpu,
+                            'dll_excludes':['msvcp90.dll', 'w9xpopen.exe'],
+                            #'bundle_files':win64 and 3 or 2,	# don't bundle pythonX.dll - causes ctypes to fail. Bundling doesn't work on win64, or woth Intel MKL lib
                             'compressed':True,
                             'includes':['OpenGL.platform.win32',
                                         'OpenGL.arrays',

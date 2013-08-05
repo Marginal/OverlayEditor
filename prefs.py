@@ -2,6 +2,7 @@ import codecs
 from os import getenv, makedirs
 from os.path import dirname, isdir, join, expanduser
 from sys import platform, getfilesystemencoding
+from time import sleep
 
 from version import appname, appversion
 
@@ -27,8 +28,11 @@ class Prefs:
         if platform=='win32':
             import ctypes.wintypes
             buf= ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
-            ctypes.windll.shell32.SHGetFolderPathW(0, 0x801a, 0, 0, buf)	# CSIDL_APPDATA
-            self.filename=join(buf.value,'marginal.org',appname)
+            if not ctypes.windll.shell32.SHGetFolderPathW(0, 0x801a, 0, 0, buf):	# CSIDL_FLAG_CREATE|CSIDL_APPDATA
+                self.filename=join(buf.value,'marginal.org',appname)
+            else:
+                # can fail on 64 bit - race condition?
+                self.filename=join(getenv('APPDATA', '.'),'marginal.org',appname)
             if not isdir(dirname(self.filename)):
                 makedirs(dirname(self.filename))
         if not self.filename:

@@ -1,4 +1,5 @@
-dist
+dist.amd64
+dist.x86
 build
 
 *.app

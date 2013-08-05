@@ -1,0 +1,13 @@
+Required packages
+-----------------
+
+Python 2.x
+numpy
+PIL or Pillow
+py2exe
+pylzma
+PyOpenGL >= 3.0.1
+wxPython >= 2.8
+
+All of these (other than Python itself) can be obtained from
+http://www.lfd.uci.edu/~gohlke/pythonlibs/
