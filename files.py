@@ -48,10 +48,10 @@ DDSCAPS_COMPLEX	= 0x00000008
 DDSCAPS_TEXTURE	= 0x00001000
 DDSCAPS_MIPMAP	= 0x00400000
 
-# 2.3 version of case-insensitive sort
-# 2.4-only version is faster: sort(cmp=lambda x,y: cmp(x.lower(), y.lower()))
+
+# 2.5-only version of case-insensitive sort for str or unicode
 def sortfolded(seq):
-    seq.sort(lambda x,y: cmp(x.lower(), y.lower()))
+    seq.sort(key=lambda x: x.lower())
 
 
 # Scan global airport list - assumes code is ASCII for speed
@@ -886,6 +886,26 @@ class VertexCache:
         self.meshdata[key]=meshdata
         return meshdata
             
+    # get all the tris in a given area for height-testing and draping
+    def getMeshtris(self, tile, options, abox):
+        meshtris=[]
+        for (bbox, bmeshtris) in self.getMeshdata(tile, options):
+            if not abox.intersects(bbox): continue
+            # This loop dominates execution time for the typical case of a small area
+            for meshtri in bmeshtris:
+                (meshpt, coeffs)=meshtri
+                (m0,m1,m2)=meshpt
+                # following code is unwrapped below for speed
+                #tbox=BBox()
+                #for m in meshpt:
+                #    tbox.include(m[0],m[2])
+                minx=min(m0[0], m1[0], m2[0])
+                maxx=max(m0[0], m1[0], m2[0])
+                minz=min(m0[2], m1[2], m2[2])
+                maxz=max(m0[2], m1[2], m2[2])
+                if abox.intersects(BBox(minx, maxx, minz, maxz)):
+                    meshtris.append(meshtri)
+        return meshtris
 
     def height(self, tile, options, x, z, likely=[]):
         # returns height of mesh at (x,z) using tri if supplied

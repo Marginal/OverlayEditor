@@ -66,7 +66,7 @@ class BBox:
 # __str__
 # layername
 # setlayer
-# allocate -> (re)allocate into instance VBO
+# allocate -> (re)allocate into instance VBO (including any children needed for preview)
 # flush -> forget instance VBO allocation
 #
 
@@ -88,13 +88,17 @@ def ClutterDefFactory(filename, vertexcache, lookup, defs):
         return ForestDef(filename, vertexcache, lookup, defs)
     elif ext==PolygonDef.LINE:
         return LineDef(filename, vertexcache, lookup, defs)
+    elif ext==PolygonDef.STRING:
+        return StringDef(filename, vertexcache, lookup, defs)
     elif ext in SkipDefs:
+        assert False, filename
         raise IOError		# what's this doing here?
     else:	# unknown polygon type
         return PolygonDef(filename, vertexcache, lookup, defs)
 
 
 class ClutterDef:
+
     LAYERNAMES=['terrain', 'beaches', 'shoulders', 'taxiways', 'runways', 'markings', 'roads', 'objects', 'light_objects', 'cars']
     LAYERCOUNT=len(LAYERNAMES)*11
     TERRAINLAYER=LAYERNAMES.index('terrain')*11+5
@@ -483,6 +487,9 @@ class ObjectDef(ClutterDef):
         if self.base==None and self.vdata is not None:
             self.base=vertexcache.allocate_instance(self.vdata)
 
+    def flush(self):
+        self.base=None
+
     def draw_instanced(self, canvas, selected):
         assert canvas.glstate.instanced_arrays
         if self.vdata is None or not self.instances:
@@ -512,9 +519,6 @@ class ObjectDef(ClutterDef):
         if self.nocull:
             canvas.glstate.set_cull(False)
             glDrawArraysInstanced(GL_TRIANGLES, self.base+self.culled, self.nocull, len(self.instances))
-
-    def flush(self):
-        self.base=None
 
     def preview(self, canvas, vertexcache):
         if not self.canpreview: return None
@@ -624,6 +628,7 @@ class ObjectDef(ClutterDef):
         
 
 class ObjectFallback(ObjectDef):
+
     def __init__(self, filename, vertexcache, lookup, defs):
         ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.DEFAULTLAYER
@@ -763,13 +768,9 @@ class AutoGenPointDef(ObjectDef):
         for p in self.children:
             p[1].allocate(vertexcache)
 
-    def flush(self):
-        ObjectDef.flush(self)
-        for p in self.children:
-            p[1].flush()
-
 
 class AutoGenFallback(ObjectFallback):
+
     def __init__(self, filename, vertexcache, lookup, defs):
         ObjectFallback.__init__(self, filename, vertexcache, lookup, defs)
         self.children=[]
@@ -781,6 +782,7 @@ class PolygonDef(ClutterDef):
     FACADE='.fac'
     FOREST='.for'
     LINE='.lin'
+    STRING='.str'
     DRAPED='.pol'
     BEACH='.bch'
 
@@ -873,6 +875,7 @@ class DrapedDef(PolygonDef):
 
 
 class DrapedFallback(DrapedDef):
+
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.DRAPEDLAYER
@@ -883,6 +886,7 @@ class DrapedFallback(DrapedDef):
     
 
 class ExcludeDef(PolygonDef):
+
     TABNAME='Exclusions'
 
     def __init__(self, filename, vertexcache, lookup, defs):
@@ -1110,15 +1114,6 @@ class FacadeDef(PolygonDef):
         h.close()
 
     # Skip allocation/deallocation of children - assumed that they're allocated on layout and flushed globally
-    #def allocate(self, vertexcache):
-    #    PolygonDef.allocate(self, vertexcache)
-    #    for p in self.children:
-    #        p[1].allocate(vertexcache)
-    #
-    #def flush(self):
-    #    PolygonDef.flush(self)
-    #    for p in self.children:
-    #        p[1].flush()
 
     def preview(self, canvas, vertexcache):
         if self.version>=1000:
@@ -1209,6 +1204,7 @@ class FacadeDef(PolygonDef):
 
 
 class FacadeFallback(FacadeDef):
+
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.type=Locked.FAC
@@ -1275,6 +1271,7 @@ class ForestDef(PolygonDef):
 
 
 class ForestFallback(ForestDef):
+
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.OUTLINELAYER
@@ -1284,13 +1281,30 @@ class ForestFallback(ForestDef):
 
 class LineDef(PolygonDef):
 
+    class Segment:
+        def __init__(self, texture, t_ratio, x_left, y1, s_left, x_right, y2, s_right):
+            self.texture = texture
+            self.t_ratio = t_ratio
+            self.x_left  = x_left
+            self.y1      = y1
+            self.s_left  = s_left
+            self.x_right = x_right
+            self.y2      = y2
+            self.s_right = s_right
+
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.MARKINGLAYER
         self.canpreview=True
-        self.offsets=[]
-        self.hscale=self.vscale=1
-        width=1
+        self.width=0
+        self.length=0
+        self.segments=[]	# [Segment]
+        self.color = None
+        self.even = False
+        hscale = 0
+        width = 0
+        texno = 0
+        offsets = []
         
         h=open(self.filename, 'rU')
         if not h.readline().strip()[0] in ['I','A']:
@@ -1306,33 +1320,206 @@ class LineDef(PolygonDef):
             if id=='TEXTURE':
                 texture=self.cleanpath(c[1])
                 try:
-                    self.texture=vertexcache.texcache.get(texture)
+                    texno=vertexcache.texcache.get(texture)
                 except EnvironmentError, e:
                     self.texerr=(texture, e.strerror)
                 except:
                     self.texerr=(texture, unicode(exc_info()[1]))
             elif id=='SCALE':
-                self.hscale=float(c[1])
-                self.vscale=float(c[2])
+                hscale = float(c[1])
+                self.length = float(c[2])
             elif id=='TEX_WIDTH':
                 width=float(c[1])
             elif id=='S_OFFSET':
-                offsets=[float(c[2]), float(c[3]), float(c[4])]
+                offsets.append((int(c[1]), float(c[2]), float(c[3]), float(c[4])))
             elif id=='LAYER_GROUP':
                 self.setlayer(c[1], int(c[2]))
         h.close()
-        self.offsets=[offsets[0]/width, offsets[1]/width, offsets[2]/width]
+        if not offsets or not self.length: raise IOError	# Empty
+        offsets.sort(key=lambda x: x[0])	# display in layer order
+        for (layer, s1, sm, s2) in offsets:
+            self.segments.append(LineDef.Segment(texno, 1, hscale*(s1-sm)/width, 0, s1/width, hscale*(s2-sm)/width, 0, s2/width))
+            self.width=max(self.width, -self.segments[-1].x_left, self.segments[-1].x_right)	# semi-width
+        self.width *= 2
                 
     def preview(self, canvas, vertexcache):
-        return PolygonDef.preview(self, canvas, vertexcache,
-                                  self.offsets[0], 0, self.offsets[2], 1,
-                                  self.vscale/self.hscale)
+        if not self.canpreview: return None
+        self.allocate(vertexcache)
+        glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
+        glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
+        canvas.glstate.set_color(COL_WHITE)
+        canvas.glstate.set_poly(True)
+        # canvas.glstate.set_cull(True)	# don't care
+        if self.even:
+            scale = 2.0 / (self.length * self.even)
+        else:
+            scale = 2.0 / self.length
+        for segment in self.segments:
+            canvas.glstate.set_texture(segment.texture)
+            glBegin(GL_QUADS)
+            glTexCoord2f(segment.s_left, segment.t_ratio)
+            glVertex3f(segment.x_left*scale,  -self.length*scale*0.5, segment.y1)
+            glTexCoord2f(segment.s_left, 0)
+            glVertex3f(segment.x_left*scale,   self.length*scale*0.5, segment.y1)
+            glTexCoord2f(segment.s_right, 0)
+            glVertex3f(segment.x_right*scale,  self.length*scale*0.5, segment.y2)
+            glTexCoord2f(segment.s_right, segment.t_ratio)
+            glVertex3f(segment.x_right*scale, -self.length*scale*0.5, segment.y2)
+            glEnd()
+        data=glReadPixels(0,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
+        img.SetData(data)
+
+        # Restore state for unproject & selection
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
+
+        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        canvas.Refresh()	# Mac draws from the back buffer w/out paint event
+        return img
         
 
 class LineFallback(LineDef):
+
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.layer=ClutterDef.MARKINGLAYER
+        self.width=1
+        self.length=8.0
+        self.segments=[LineDef.Segment(vertexcache.texcache.get(fallbacktexture), 8.0, -0.5, 0, 0, 0.5, 0, 1)]
+        self.even = 0.125
+
+
+class StringDef(PolygonDef):
+
+    class StringObj:
+        def __init__(self, name, definition, xdelta, hdelta):
+            self.name=name
+            self.definition=definition
+            self.xdelta=xdelta
+            self.hdelta=hdelta
+
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
+        self.canpreview=True
+        self.color = None
+        self.children=[]	# [StringObj]
+        self.alternate=True	# Whether to cycle through children (Strings) or superimpose (Networks)
+
+        offset = 0
+        children = []
+        h=open(self.filename, 'rU')
+        if not h.readline().strip()[0] in ['I','A']:
+            raise IOError
+        if not h.readline().split('#')[0].strip() in ['850']:
+            raise IOError
+        if not h.readline().strip() in ['OBJECT_STRING']:
+            raise IOError
+        for line in h:
+            c=line.split()
+            if not c: continue
+            id=c[0]
+            if id=='OFFSET':
+                offset = float(c[1])
+            elif id=='OBJECT':
+                childname=c[3][:-4].replace(':', '/').replace('\\','/')+c[3][-4:].lower()
+                if childname in lookup:
+                    childfilename=lookup[childname].file
+                else:
+                    childfilename=join(dirname(filename),childname)	# names are relative to this .str so may not be in global lookup
+                if childfilename in defs:
+                    definition=defs[childfilename]
+                else:
+                    try:
+                        gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
+                        defs[childfilename]=definition=ObjectDef(childfilename, vertexcache, lookup, defs, make_editable=False)
+                        gc.enable()
+                    except:
+                        gc.enable()
+                        if __debug__: print_exc()
+                        self.canpreview=False	# e.g. for lib/airport/lights/fast/*.str
+                        defs[childfilename]=definition=ObjectFallback(childfilename, vertexcache, lookup, defs)
+                children.append((childname, definition, (float(c[1])+float(c[2]))/2))
+        h.close()
+        if not children: raise IOError	# Empty!
+        for (childname,definition,hdelta) in children:
+            self.children.append(StringDef.StringObj(childname, definition, offset, hdelta))	# offset can be defined after objects
+
+    def allocate(self, vertexcache):
+        for p in self.children:
+            p.definition.allocate(vertexcache)
+
+    def preview(self, canvas, vertexcache):
+        if not self.canpreview: return None
+        self.allocate(vertexcache)
+        glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
+        glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        defn = self.children[0].definition	# Hack - just use first child for sizing
+        sizex=(defn.bbox.maxx-defn.bbox.minx)*0.5
+        sizez=(defn.bbox.maxz-defn.bbox.minz)*0.5
+        maxsize=max(defn.height*0.7,		# height
+                    sizez*0.88  + sizex*0.51,	# width at 30degrees
+                    sizez*0.255 + sizex*0.44)	# depth at 30degrees / 2
+        glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
+        glRotatef( 30, 1,0,0)
+        glRotatef(120, 0,1,0)
+        glTranslatef(sizex-defn.bbox.maxx, 0, sizez-defn.bbox.maxz)
+        canvas.glstate.set_instance(vertexcache)
+        canvas.glstate.set_color(COL_UNPAINTED)
+        canvas.glstate.set_depthtest(True)
+        canvas.glstate.set_poly(False)
+        for p in self.children:
+            child = p.definition
+            if child.vdata is not None:
+                canvas.glstate.set_texture(child.texture)
+                if child.culled:
+                    canvas.glstate.set_cull(True)
+                    glDrawArrays(GL_TRIANGLES, child.base, child.culled)
+                if child.nocull:
+                    canvas.glstate.set_cull(False)
+                    glDrawArrays(GL_TRIANGLES, child.base+child.culled, child.nocull)
+            if self.alternate: break	# just do the first one
+
+        data=glReadPixels(0,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
+        img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
+        img.SetData(data)
+
+        # Restore state for unproject & selection
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
+
+        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        canvas.Refresh()	# Mac draws from the back buffer w/out paint event
+        return img.Mirror(False)
+
+class StringFallback(StringDef):
+
+    OBJ='*stringfallback.obj'
+
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
+        if StringFallback.OBJ in defs:
+            fb = defs[StringFallback.OBJ]
+        else:
+            fb = defs[StringFallback.OBJ] = ObjectFallback(StringFallback.OBJ, vertexcache, lookup, defs)
+        self.children = [StringDef.StringObj(StringFallback.OBJ, fb, 0, 0)]
+        self.alternate = True
 
 
 class NetworkDef(PolygonDef):
@@ -1504,6 +1691,6 @@ class NetworkFallback(NetworkDef):
         self.even=False
 
 
-UnknownDefs=['.lin','.str','.agb','.ags']	# Known unknowns
-SkipDefs=['.bch','.net']			# Ignore in library
-KnownDefs=[ObjectDef.OBJECT, AutoGenPointDef.AGP, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.DRAPED]+UnknownDefs
+UnknownDefs=['.agb','.ags']	# Known unknowns
+SkipDefs = ['.bch','.net','.dcl']		# Ignore in library
+KnownDefs=[ObjectDef.OBJECT, AutoGenPointDef.AGP, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.LINE, PolygonDef.STRING, PolygonDef.DRAPED]+UnknownDefs

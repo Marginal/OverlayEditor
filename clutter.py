@@ -29,7 +29,7 @@ from OpenGL.GL.ARB.occlusion_query import *
 glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
 glEndQuery = alternate(glEndQuery, glEndQueryARB)
 
-from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, NetworkDef, NetworkFallback, ObjectFallback, AutoGenFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELNODE
+from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, StringDef, NetworkDef, ObjectFallback, AutoGenFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, StringFallback, NetworkFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELNODE
 
 from palette import PaletteEntry
 from prefs import Prefs
@@ -71,6 +71,8 @@ def PolygonFactory(name, param, nodes, lon=None, size=None, hdg=None):
         return Forest(name, param, nodes, lon, size, hdg)
     elif ext==PolygonDef.LINE:
         return Line(name, param, nodes, lon, size, hdg)
+    elif ext==PolygonDef.STRING:
+        return String(name, param, nodes, lon, size, hdg)
     elif ext==PolygonDef.BEACH:
         return Beach(name, param, nodes, lon, size, hdg)
     elif ext==ObjectDef.OBJECT:
@@ -359,29 +361,18 @@ class AutoGenPoint(Object):
         # We're likely to be doing a lot of height testing and draping, so pre-compute relevant mesh
         # triangles on the assumption that all children are contained in .agp's "floorplan"
         x,z=self.position(tile, self.lat, self.lon)
-        abox=BBox()
-        mymeshtris=[]
         h=radians(self.hdg)
         coshdg=cos(h)
         sinhdg=sin(h)
-        for v in self.definition.draped:
-            abox.include(x+v[0]*coshdg-v[2]*sinhdg, z+v[0]*sinhdg+v[2]*coshdg)
-        for (bbox, meshtris) in vertexcache.getMeshdata(tile,options):
-            if not abox.intersects(bbox): continue
-            for meshtri in meshtris:
-                (meshpt, coeffs)=meshtri
-                (m0,m1,m2)=meshpt
-                minx=min(m0[0], m1[0], m2[0])
-                maxx=max(m0[0], m1[0], m2[0])
-                minz=min(m0[2], m1[2], m2[2])
-                maxz=max(m0[2], m1[2], m2[2])
-                if abox.intersects(BBox(minx, maxx, minz, maxz)):
-                    mymeshtris.append(meshtri)
+        if options&Prefs.ELEVATION:
+            abox=BBox()
+            for v in self.definition.draped:
+                abox.include(x+v[0]*coshdg-v[2]*sinhdg, z+v[0]*sinhdg+v[2]*coshdg)
+            mymeshtris = vertexcache.getMeshtris(tile, options, abox)
+        else:
+            mymeshtris = None
 
         Object.layout(self, tile, options, vertexcache, x, None, z, self.hdg, mymeshtris)
-        h=radians(self.hdg)
-        coshdg=cos(h)
-        sinhdg=sin(h)
         assert len(self.placements)==len(self.definition.children), "%s %s %s %s" % (self, len(self.placements), self.definition, len(self.definition.children))
         for i in range(len(self.placements)):
             (childname, definition, xdelta, zdelta, hdelta)=self.definition.children[i]
@@ -524,6 +515,8 @@ class Polygon(Clutter):
 
     def flush(self, vertexcache):
         vertexcache.allocate_dynamic(self, False)
+        for p in self.placements:
+            p.flush(vertexcache)
 
     def layout_nodes(self, tile, options, vertexcache, selectednode):
         self.lat=self.lon=0
@@ -891,10 +884,8 @@ class Draped(Polygon):
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True, tls=None):
         if self.islaidout() and not recalc:
             # just ensure allocated
-            vertexcache.allocate_dynamic(self, True)
-            for p in self.placements:
-                p.layout(tile, options, vertexcache, recalc=False)
-            return selectednode
+            return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
+
         tess=tls and tls.tess or Draped.tess
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
         # Tessellate to generate tri vertices with UV data, and check polygon is simple
@@ -1007,22 +998,23 @@ class DrapedImage(Draped):
             glEndQuery(glstate.occlusion_query)
         return True
 
-class Exclude(Fitted):
+class Exclude(Polygon):
 
     NAMES={'sim/exclude_bch': PolygonDef.EXCLUDE+'Beaches',
            'sim/exclude_pol': PolygonDef.EXCLUDE+'Draped polygons',
            'sim/exclude_fac': PolygonDef.EXCLUDE+'Facades',
            'sim/exclude_for': PolygonDef.EXCLUDE+'Forests',
+           'sim/exclude_lin': PolygonDef.EXCLUDE+'Lines',
            'sim/exclude_obj': PolygonDef.EXCLUDE+'Objects',
            'sim/exclude_net': PolygonDef.EXCLUDE+ NetworkDef.TABNAME,
            'sim/exclude_str': PolygonDef.EXCLUDE+'Strings'}
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if lon==None:
-            Fitted.__init__(self, name, param, nodes)
+            Polygon.__init__(self, name, param, nodes)
         else:
             lat=nodes
-            Fitted.__init__(self, name, param, lat, lon, size, hdg)
+            Polygon.__init__(self, name, param, lat, lon, size, hdg)
             # Override default node placement
             self.nodes=[[]]
             size=0.000005*size
@@ -1169,7 +1161,7 @@ class Facade(Polygon):
             if node:
                 return Polygon.locationstr(self, dms, node)
             else:
-                return u'%s  Height\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+                return u'%s  Height\u2195 %-3dm  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
     def draw_dynamic(self, glstate, selected, picking, queryobj=None):
         assert self.islaidout() and self.base is not None, self
@@ -1341,16 +1333,9 @@ class Facade(Polygon):
         Polygon.clearlayout(self, vertexcache)
         self.datalen=self.rooflen=0
 
-    def flush(self, vertexcache):
-        Polygon.flush(self, vertexcache)
-        for p in self.placements:
-            p.flush(vertexcache)
-
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
         if self.islaidout() and not recalc:
             # just ensure allocated
-            for p in self.placements:
-                p.layout(tile, options, vertexcache, recalc=False)
             return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
 
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
@@ -1775,7 +1760,7 @@ class Facade(Polygon):
         return selectednode
 
 
-class Forest(Fitted):
+class Forest(Polygon):
 
     def tessvertex(vertex, data):
         data.append(vertex)
@@ -1791,7 +1776,7 @@ class Forest(Fitted):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if param==None: param=127
-        Fitted.__init__(self, name, param, nodes, lon, size, hdg)
+        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
         self.col=COL_FOREST
 
     def clone(self):
@@ -1893,9 +1878,10 @@ class Line(Polygon):
             h=radians(hdg)
             self.nodes=[[]]
             size=0.000005*size
-            for i in [h-piby2, h+piby2]:
-                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
-                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size)))))
+            for i,off in [(h-piby2,size), (h,0), (h+piby2,size)]:
+                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*off))),
+                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*off)))))
+        self.drawdata=[]	# [(texture,count)]
 
     def clone(self):
         return Line(self.name, self.param, [list(w) for w in self.nodes])
@@ -1932,10 +1918,266 @@ class Line(Polygon):
 
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
         self.closed=(self.param and True)
-        return Polygon.layout(self, tile, options, vertexcache, selectednode, recalc)
+        if self.islaidout() and not recalc:
+            # just ensure allocated
+            return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
+
+        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+        points=self.points[0]
+        n=len(points)
+
+        # may need to repeatedly drape, so pre-compute relevant mesh triangles
+        do_drape = options&Prefs.ELEVATION
+        if do_drape:
+            abox=BBox()
+            for node in range(n):
+                (x,y,z)=points[node]
+                abox.include(x, z)
+            abox.maxx += self.definition.width
+            abox.minx -= self.definition.width
+            abox.maxz += self.definition.width
+            abox.minz -= self.definition.width
+            mymeshtris = vertexcache.getMeshtris(tile, options, abox)
+        else:
+            mymeshtris = None
+
+        self.drawdata=[]
+        nsegs = len(self.definition.segments)
+        even = self.definition.even
+        segtris=[[]] * nsegs	# accumulate tris by segment
+        t1 = 0
+        for node in range(self.closed and n or n-1):
+            (x,y,z) = points[node]
+            (tox,toy,toz) = points[(node+1)%n]
+
+            size = hypot(tox-x, z-toz)
+            if size<=0: continue	# shouldn't happen
+            t2 = t1 + size / self.definition.length
+            if even: t2 = max(t1+even, round(t2/even) * even)	# nearest but at least one chunk
+
+            h = atan2(tox-x, z-toz) % twopi
+            sx1 = sx2 = 1	# near far width scale
+            h1 = h2 = h		# near far miter angle
+
+            if  self.closed or node!=0:
+                # miter joint between this and previous edge
+                (prvx,prvy,prvz) = points[(node-1)%n]
+                prvh = atan2(x-prvx, prvz-z) % twopi
+                sx1 = 1 / cos((h - prvh)/2)
+                if abs(sx1 * self.definition.width) < min(size,hypot(x-prvx, prvz-z))*2:
+                    h1 = (h + prvh) / 2
+                else:
+                    sx1 = 1	# too acute
+            if self.closed or node!=n-2:
+                # miter joint between this and next edge
+                (nxtx,nxty,nxtz) = points[(node+2)%n]
+                nxth = atan2(nxtx-tox, toz-nxtz) % twopi
+                sx2 = 1 / cos((h - nxth)/2)
+                if abs(sx2 * self.definition.width) < min(size,hypot(nxtx-tox, toz-nxtz))*2:
+                    h2 = (h + nxth) / 2
+                else:
+                    sx2 = 1	# too acute
+
+            cosh1 = cos(h1) * sx1
+            sinh1 = sin(h1) * sx1
+            cosh2 = cos(h2) * sx2
+            sinh2 = sin(h2) * sx2
+            for i in range(nsegs):
+                segment = self.definition.segments[i]
+                # near
+                vx = x + segment.x_right * cosh1
+                vz = z + segment.x_right * sinh1
+                v1 = [vx, vertexcache.height(tile,options,vx,vz,mymeshtris) + segment.y2, vz, segment.s_right, t1 * segment.t_ratio, 0]
+                vx = x + segment.x_left  * cosh1
+                vz = z + segment.x_left  * sinh1
+                v2 = [vx, vertexcache.height(tile,options,vx,vz,mymeshtris) + segment.y1, vz, segment.s_left,  t1 * segment.t_ratio, 0]
+                # far
+                vx = tox + segment.x_left  * cosh2
+                vz = toz + segment.x_left  * sinh2
+                v3 = [vx, vertexcache.height(tile,options,vx,vz,mymeshtris) + segment.y1, vz, segment.s_left,  t2 * segment.t_ratio, 0]
+                vx = tox + segment.x_right * cosh2
+                vz = toz + segment.x_right * sinh2
+                v4 = [vx, vertexcache.height(tile,options,vx,vz,mymeshtris) + segment.y2, vz, segment.s_right, t2 * segment.t_ratio, 0]
+                tris = [v1,v2,v3, v4,v1,v3]
+                if do_drape:
+                    # Have to drape each segment individually since UVs don't match
+                    tris = drape(tris, tile, options, vertexcache, mymeshtris)
+                segtris[i] = segtris[i] + tris
+            t1 = t2 % 1		# prevent UV coords growing without bound
+
+        for i in range(nsegs):
+            if i and self.definition.segments[i].texture == self.drawdata[-1][0]:
+                # merge consecutive tris that use the same texture for drawing speed
+                self.drawdata[-1] = (self.definition.segments[i].texture, self.drawdata[-1][1] + len(segtris[i]))
+            else:
+                self.drawdata.append((self.definition.segments[i].texture, len(segtris[i])))
+        self.dynamic_data = array(segtris, float32).flatten()
+        if self.definition.color:
+            self.dynamic_data = concatenate((self.dynamic_data, concatenate([array(p+self.definition.color,float32) for w in self.points for p in w])))
+        vertexcache.allocate_dynamic(self, True)
+        return selectednode
+
+    def draw_dynamic(self, glstate, selected, picking, queryobj=None):
+        assert self.islaidout() and self.base is not None, self
+        if picking:
+            if queryobj is not None:
+                glBeginQuery(glstate.occlusion_query, queryobj)
+                glBegin(GL_POINTS)
+                glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
+                glEnd()
+            base = self.base
+            for (texture, ntris) in self.drawdata:
+                glDrawArrays(GL_TRIANGLES, base, ntris)
+                base += ntris
+            if queryobj is not None:
+                glEndQuery(glstate.occlusion_query)
+        else:
+            glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            #glstate.set_cull(True)	# don't care
+            glstate.set_poly(True)
+            glstate.set_depthtest(True)
+            base = self.base
+            for (texture, ntris) in self.drawdata:
+                glstate.set_texture(texture)
+                glDrawArrays(GL_TRIANGLES, base, ntris)
+                base += ntris
+            if self.definition.color:
+                glstate.set_texture(None)
+                glstate.set_color(selected and COL_SELECTED or None)
+                glstate.set_depthtest(False)	# Need line to appear over terrain
+                if self.closed:
+                    for winding in self.points:
+                        glDrawArrays(GL_LINE_LOOP, base, len(winding))
+                        base+=len(winding)
+                else:
+                    for winding in self.points:
+                        glDrawArrays(GL_LINE_STRIP, base, len(winding))
+                        base+=len(winding)
+            assert base-self.base == len(self.dynamic_data)/6, "%s %s" % (base-self.base, len(self.dynamic_data)/6)
+        return True
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        dparam=min(dparam, 1-self.param)	# max 1
+        dparam = (dparam+self.param) % 2 - self.param	# toggle between 0 and 1
+        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
+        assert self.param in [0,1]
+
+
+class String(Polygon):
+
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
+        if param is None: param=5	# arbitrary
+        if lon==None:
+            Polygon.__init__(self, name, param, nodes)
+        else:
+            lat=nodes
+            Polygon.__init__(self, name, param, nodes, lon, size, hdg)
+            # Override default node placement
+            h=radians(hdg)
+            self.nodes=[[]]
+            size=0.000005*size
+            for i,off in [(h-piby2,size), (h,0), (h+piby2,size)]:
+                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*off))),
+                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*off)))))
+        self.closed=False
+
+    def clone(self):
+        return String(self.name, self.param, [list(w) for w in self.nodes])
+
+    def load(self, lookup, defs, vertexcache, usefallback=False):
+        try:
+            filename=lookup[self.name].file
+            if filename in defs:
+                self.definition=defs[filename]
+            else:
+                defs[filename]=self.definition=StringDef(filename, vertexcache, lookup, defs)
+            return True
+        except:
+            if __debug__: print_exc()
+            if usefallback:
+                if self.name in lookup:
+                    filename=lookup[self.name].file
+                else:
+                    filename=self.name
+                    lookup[self.name]=PaletteEntry(self.name)
+                if filename in defs:
+                    self.definition=defs[filename]
+                else:
+                    defs[filename]=self.definition=StringFallback(filename, vertexcache, lookup, defs)
+            return False
+
+    def locationstr(self, dms, node=None):
+        if node:
+            return Polygon.locationstr(self, dms, node)
+        else:
+            return u'%s  Spacing\u2195 %-3dm  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+
+    def draw_dynamic(self, glstate, selected, picking, queryobj=None):
+        if picking or self.nonsimple or self.definition.color:	# draw lines so selectable
+            return Polygon.draw_dynamic(self, glstate, selected, picking, queryobj)
+        for p in self.placements:
+            p.draw_dynamic(glstate, selected, picking)
+        return True
+
+    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
+        if self.islaidout() and not recalc:
+            # just ensure allocated
+            return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
+
+        # allocate lines for picking and for display if no children
+        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+        self.dynamic_data=concatenate([array(p + (self.definition.color or COL_NONSIMPLE),float32) for w in self.points for p in w])
+        vertexcache.allocate_dynamic(self, True)
+
+        for p in self.placements:
+            p.clearlayout(vertexcache)	# clear any dynamic allocation of children
+        self.placements=[]
+        repeat = self.param or 5	# arbitrary
+        size=0		# length of this edge
+        cumulative=0	# cumulative length up to this node
+        alternate=0	# object no.
+        node = -1
+        iteration = -0.261	# roughly what X-Plane appears to use!
+        points = self.points[0]
+        n = len(points)-1	# strings are always open
+        while True:
+            iteration += 1
+            sz = iteration*repeat - cumulative
+            while True:
+                if sz<size:
+                    break	# will fit on this edge
+                else:
+                    node += 1
+                    if node >= n:
+                        self.nonsimple = not self.placements	# so displayed
+                        return selectednode			# exit!
+                    cumulative += size
+                    sz = iteration*repeat - cumulative
+                (x,y,z)=points[node]
+                (tox,toy,toz)=points[node+1]
+                size=hypot(tox-x, z-toz)
+                if size<=0: size=0	# shouldn't happen
+                h=atan2(tox-x, z-toz) % twopi
+                coshdg=cos(h)
+                sinhdg=sin(h)
+                hdg=degrees(h)
+
+            if self.definition.alternate:
+                seq = range(alternate, alternate+1)
+                alternate = (alternate+1) % len(self.definition.children)
+            else:
+                seq = range(0, len(self.definition.children))
+            for objno in seq:
+                p = self.definition.children[objno]
+                child = p.definition
+                placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta)
+                placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
+                childx = x + p.xdelta*coshdg + sz*sinhdg
+                childz = z + p.xdelta*sinhdg - sz*coshdg
+                placement.layout(tile, options, vertexcache, childx, None, childz, hdg+p.hdelta)
+                self.placements.append(placement)
+
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
+        dparam=max(dparam, 1-self.param)	# zero spacing is undefined
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
 
 
@@ -2179,30 +2421,12 @@ def csgtedge(flag):
 # Output - list of tri vertices draped across terrain - [x,y,z,u,v,w]
 def drape(tris, tile, options, vertexcache, meshtris=None, csgt=None):
     if not csgt: csgt=drape.csgt
-    #if __debug__: clock=time.clock()
     # tesselator is expensive - minimise mesh triangles
     if not meshtris:
         abox=BBox()
-        meshtris=[]
         for tri in tris:
             abox.include(tri[0],tri[2])
-        for (bbox, bmeshtris) in vertexcache.getMeshdata(tile,options):
-            if not abox.intersects(bbox): continue
-            # This loop dominates execution time for the typical case of a small area
-            for meshtri in bmeshtris:
-                (meshpt, coeffs)=meshtri
-                (m0,m1,m2)=meshpt
-                # following code is unwrapped below for speed
-                #tbox=BBox()
-                #for m in meshpt:
-                #    tbox.include(m[0],m[2])
-                minx=min(m0[0], m1[0], m2[0])
-                maxx=max(m0[0], m1[0], m2[0])
-                minz=min(m0[2], m1[2], m2[2])
-                maxz=max(m0[2], m1[2], m2[2])
-                if abox.intersects(BBox(minx, maxx, minz, maxz)):
-                    meshtris.append(meshtri)
-    #if __debug__: clock2=time.clock()-clock
+        meshtris = vertexcache.getMeshtris(tile, options, abox)
 
     csgttris=[]
     for i in range(0,len(tris),3):

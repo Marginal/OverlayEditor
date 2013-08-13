@@ -181,15 +181,15 @@ To select objects:</p>
   <tbody>
     <tr>
       <td class="keys">Mouse click</td>
-      <td>Select object</td>
+      <td>Select an object under the mouse cursor.<br><small>Note: If you have multiple objects under the mouse cursor, click again to select the next one.</small></td>
     </tr>
     <tr>
       <td class="keys">Mouse drag</td>
-      <td>Select objects</td>
+      <td>Select objects.</td>
     </tr>
     <tr>
       <td class="keys"><kbd>Ctrl</kbd>/<kbd>Cmd</kbd> and click or drag</td>
-      <td>Toggle selected objects</td>
+      <td>Toggle selected objects.</td>
     </tr>
     <tr>
       <td class="keys"><kbd>Space</kbd></td>
@@ -197,14 +197,14 @@ To select objects:</p>
     </tr>
     <tr>
       <td class="keys"><kbd>Ctrl</kbd> <kbd>Space</kbd></td>
-      <td>Toggle selection of all objects in the main window</td>
+      <td>Toggle selection of all objects in the main window.</td>
     </tr>
   </tbody>
 </table>
 </div>
 <p>You can't select or otherwise manipulate runways, taxiways or navaids
 (ILS, VOR, DME etc).</p>
-<p>If you select a single polygon <small>(facade, forest, draped or exclusion region)</small> or network segment <small>(road, railway or powerline)</small> you can click on an individual node (<i>i.e.</i> corner) to select it. The selected node is highlighted in white.</p>
+<p>If you select a single polygon or network segment you can click on an individual node (<i>i.e.</i> corner) to select it. The selected node is highlighted in white.</p>
 <p>These keys affect the selected objects or the selected node. Hold down <kbd>Shift</kbd> for bigger steps or <kbd>Ctrl</kbd> for tiny steps:</p>
 <div style="margin-left: 40px;">
 <table class="kbdtable">
@@ -223,8 +223,16 @@ To select objects:</p>
     </tr>
     <tr>
       <td class="keys"><kbd>R</kbd>, <kbd>F</kbd></td>
-      <td>Increase/decrease selected facade's height, facade node's wall type, or forest's density, or rotate a draped polygon's texture.<br>
-The currently selected facade height, wall type, forest density, or texture heading is shown next to a &#x2195; symbol in the status bar.</td>
+      <td>Increase/decrease the selected:
+        <dl style="margin:0;">
+          <dd>Facade: Height</dd>
+          <dd>Facade node: Wall type</dd>
+          <dd>Forest: Density</dd>
+          <dd>Draped polygon: Texture heading</dd>
+          <dd>Line: Open or Close the line</dd>
+          <dd>String: Object spacing</dd>
+          </ul>
+        The currently selected facade height, wall type, forest density, texture heading, line open/closed status, string object spacing, or network bridge level is shown next to a &#x2195; symbol in the status bar.</td>
     </tr>
     <tr>
       <td class="keys"><kbd>C</kbd></td>
@@ -285,6 +293,8 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
   <dd><img class="inlsymbol" alt="for" src="Resources/for.png"> - Forest polygon (<code>.for</code>)</dd>
   <dd><img class="inlsymbol" alt="pol" src="Resources/pol.png"> - Draped polygon (<code>.pol</code>) with a <a target="_blank" href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later)</dd>
   <dd><img class="inlsymbol" alt="ortho" src="Resources/ortho.png"> - Draped polygon (<code>.pol</code>) for use as an <a target="_blank" href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later)</dd>
+  <dd><img class="inlsymbol" alt="lin" src="Resources/lin.png"> - Line polygon (<code>.lin</code>)</dd>
+  <dd><img class="inlsymbol" alt="str" src="Resources/str.png"> - String polygon (<code>.str</code>)</dd>
   <dd><img class="inlsymbol" alt="unknown" src="Resources/unknown.png"> - Other polygon</dd>
   <dd><img class="inlsymbol" alt="net" src="Resources/net.png"> - Road, Railway or Powerline network (requires X-Plane 9.00 or later)</dd>
   <dd><img class="inlsymbol" alt="exc" src="Resources/exc.png"> - Exclusion region</dd>
@@ -356,10 +366,7 @@ are of this latter type)</small>.
 <p>This application displays terrain and objects in orthogonal projection (no perspective) and in a simplified form. <i>i.e.</i>:</p>
 <ul>
   <li>No lights, lines, materials, shading or animation. 3D objects that only contain lights or lines are displayed as small &ldquo;placeholders&rdquo; so that they can be edited.</li>
-  <li>This application can only display 3D objects, facades and draped
-polygons.
-Other types of polygon (beaches, forests, lines, strings <i>etc</i>) are
-displayed as an outline. Beach polygons cannot be edited.</li>
+  <li>This application can only display 3D objects, facades, draped polygons, lines, strings and networks. Other types of polygon (beaches, forests, <i>etc</i>) are displayed as an outline. Beach polygons cannot be edited.</li>
   <li>When you add a new draped polygon this application behaves differently
 depending on the contents of the <code>.pol</code> file:
     <ul>

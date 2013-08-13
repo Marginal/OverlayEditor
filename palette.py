@@ -8,12 +8,6 @@ from clutterdef import ClutterDefFactory, ClutterDef, ObjectDef, PolygonDef, Dra
 from MessageBox import myMessageBox
 
 
-# 2.3 version of case-insensitive sort
-# 2.4-only version is faster: sort(cmp=lambda x,y: cmp(x.lower(), y.lower()))
-def sortfolded(seq):
-    seq.sort(lambda x,y: cmp(x.lower(), y.lower()))
-
-
 class PaletteEntry:
 
     def __init__(self, file):
@@ -49,11 +43,10 @@ class PaletteListBox(wx.VListBox):
         self.SetSelection(-1)
         self.choices=[]
         if self.tabname==NetworkDef.TABNAME:
-            for name,entry in objects.iteritems(): self.choices.append((7, name, name))
+            for name,entry in objects.iteritems(): self.choices.append((self.parent.imgno_net, name[:-4], name))
             self.SetItemCount(len(self.choices))
-            return
         elif self.tabname==ExcludeDef.TABNAME:
-            for name,entry in objects.iteritems(): self.choices.append((8, name, name))
+            for name,entry in objects.iteritems(): self.choices.append((self.parent.imgno_exc, name, name))
             self.SetItemCount(len(self.choices))
         else:
             names=objects.keys()
@@ -62,11 +55,11 @@ class PaletteListBox(wx.VListBox):
                     realname=name.encode()	# X-Plane only supports ASCII
                     ext=name[-4:].lower()
                     if ext in UnknownDefs:
-                        imgno=6
+                        imgno=self.parent.imgno_unknown
                     elif realname in self.parent.bad:
-                        imgno=16
+                        imgno=self.parent.imgno_bad
                     elif ext==PolygonDef.DRAPED:
-                        imgno=4
+                        imgno=self.parent.imgno_pol
                         if self.tabno==0 and self.pkgdir:
                             # find orthos - assume library objects aren't
                             try:
@@ -74,7 +67,7 @@ class PaletteListBox(wx.VListBox):
                                 for line in h:
                                     line=line.strip()
                                     if line.startswith('TEXTURE_NOWRAP') or line.startswith('TEXTURE_LIT_NOWRAP'):
-                                        imgno=5
+                                        imgno=self.parent.imgno_ortho
                                         break
                                     elif line.startswith('TEXTURE'):
                                         break
@@ -84,11 +77,11 @@ class PaletteListBox(wx.VListBox):
                     elif ext in KnownDefs:
                         imgno=KnownDefs.index(ext)
                     else:
-                        imgno=16	# wtf?
+                        imgno=self.parent.imgno_unknown	# wtf?
                 except:
                     realname=name
                     self.parent.bad[name]=True
-                    imgno=16	# non-ASCII
+                    imgno=self.parent.imgno_unknown	# non-ASCII
                 if not self.pkgdir:
                     # library object
                     if name.startswith('/'): name=name[1:]
@@ -101,7 +94,7 @@ class PaletteListBox(wx.VListBox):
                     name=name[15:-4]
                 else:
                     name=name[:-4]
-                if entry.multiple and imgno!=16: imgno+=9
+                if entry.multiple and imgno<=self.parent.imgno_multiple: imgno+=self.parent.imgno_multiple
                 self.choices.append((imgno, name, realname))
             self.SetItemCount(len(self.choices))
 
@@ -150,18 +143,29 @@ class PaletteChoicebook(wx.Choicebook):
         self.imgs.Add(wx.Bitmap("Resources/obj.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/fac.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/for.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/lin.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/str.png", wx.BITMAP_TYPE_PNG))
+        self.imgno_pol = self.imgs.GetImageCount()
         self.imgs.Add(wx.Bitmap("Resources/pol.png", wx.BITMAP_TYPE_PNG))
+        self.imgno_ortho = self.imgs.GetImageCount()
         self.imgs.Add(wx.Bitmap("Resources/ortho.png", wx.BITMAP_TYPE_PNG))
+        self.imgno_unknown = self.imgs.GetImageCount()
         self.imgs.Add(wx.Bitmap("Resources/unknown.png", wx.BITMAP_TYPE_PNG))
-        self.imgs.Add(wx.Bitmap("Resources/net.png", wx.BITMAP_TYPE_PNG))
-        self.imgs.Add(wx.Bitmap("Resources/exc.png", wx.BITMAP_TYPE_PNG))
+        self.imgno_multiple = self.imgs.GetImageCount()
         self.imgs.Add(wx.Bitmap("Resources/objs.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/objs.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/facs.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/fors.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/lins.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/strs.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/pols.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/orthos.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/unknowns.png", wx.BITMAP_TYPE_PNG))
+        self.imgno_net = self.imgs.GetImageCount()
+        self.imgs.Add(wx.Bitmap("Resources/net.png", wx.BITMAP_TYPE_PNG))
+        self.imgno_exc = self.imgs.GetImageCount()
+        self.imgs.Add(wx.Bitmap("Resources/exc.png", wx.BITMAP_TYPE_PNG))
+        self.imgno_bad = self.imgs.GetImageCount()
         self.imgs.Add(wx.Bitmap("Resources/bad.png", wx.BITMAP_TYPE_PNG))	# bad assumed below to be last
         wx.EVT_KEY_DOWN(self, self.OnKeyDown)	# appears to do nowt on Windows
         if 'GetChoiceCtrl' in dir(self):	# not available on wxMac 2.5
@@ -272,7 +276,7 @@ class PaletteChoicebook(wx.Choicebook):
                     (imgno, name, realname)=l.choices[i]
                     if realname in self.bad: return	# already bad
                     self.bad[realname]=True
-                    l.choices[i]=(16, name, realname)
+                    l.choices[i]=(self.imgno_bad, name, realname)
                     self.Refresh()
                     return
 
@@ -290,7 +294,7 @@ class PaletteChoicebook(wx.Choicebook):
             (ontab,ind)=self.lookup[name]
             (imgno, name, realname)=self.lists[ontab].choices[ind]
             self.bad[realname]=True
-            self.lists[ontab].choices[ind]=(16, name, realname)
+            self.lists[ontab].choices[ind]=(self.imgno_bad, name, realname)
             return
         
 
@@ -488,8 +492,8 @@ class Palette(wx.SplitterWindow):
                             i=l.GetSelection()
                             if i!=-1:
                                 (imgno, name, realname)=l.choices[i]
-                                if imgno!=5:
-                                    l.choices[i]=(5, name, realname)
+                                if imgno!=self.cb.imgno_ortho:
+                                    l.choices[i]=(self.cb.imgno_ortho, name, realname)
                                     self.Refresh()
                                 break
                     self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)

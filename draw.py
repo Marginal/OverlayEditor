@@ -378,7 +378,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glPointSize(4.0)			# for nodes
         glFrontFace(GL_CW)
         glPolygonMode(GL_FRONT, GL_FILL)
-        glPolygonOffset(-1, -1)
+        glPolygonOffset(-2, -2)
         glCullFace(GL_BACK)
         glPixelStorei(GL_UNPACK_ALIGNMENT,1)	# byte aligned glBitmap
         glPixelStorei(GL_PACK_ALIGNMENT,1)	# byte aligned glReadPixels
