@@ -497,11 +497,11 @@ class Polygon(Clutter):
         glBegin(GL_POINTS)
         for i in range(len(self.points)):
             for j in range(len(self.points[i])):
-                if selectednode==(i,j):
-                    glstate.set_color(COL_SELNODE)
-                else:
-                    glstate.set_color(COL_SELECTED)
                 glVertex3f(*self.points[i][j])
+        # draw selected on top
+        if selectednode:
+            glstate.set_color(COL_SELNODE)
+            glVertex3f(*self.points[selectednode[0]][selectednode[1]])
         glEnd()
         
     def clearlayout(self, vertexcache):
