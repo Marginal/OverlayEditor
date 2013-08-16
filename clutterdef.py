@@ -30,6 +30,7 @@ COL_SELECTED =(1.0, 0.5, 1.0)
 COL_DRAGBOX  =(0.75,0.325,0.75)
 COL_SELNODE  =(1.0, 1.0, 1.0)
 COL_CURSOR   =(1.0, 0.25,0.25)
+COL_NETWORK  =(0.5, 0.5, 0.5)
 
 fallbacktexture='Resources/fallback.png'
 
@@ -1522,173 +1523,109 @@ class StringFallback(StringDef):
         self.alternate = True
 
 
-class NetworkDef(PolygonDef):
-    TABNAME='Roads, Railways & Powerlines'
-    DEFAULTFILE='lib/g8/roads.net'
+class NetworkDef(StringDef,LineDef):
 
-    def __init__(self, filename, name, index, width, length, texture, poly, color):
-        PolygonDef.__init__(self, filename, None)
-        self.layer=ClutterDef.NETWORKLAYER
-        self.canpreview=True
-        self.type=Locked.NET
-        self.name=name
-        self.index=index
-        self.width=width
-        self.length=length
-        self.height=None	# (min,max) height
-        self.texname=texture
-        self.poly=poly
-        self.color=color
-        self.even=False
-        self.objs=[]		# (filename, lateral, onground, freq, offset)
-        self.objdefs=[]
-        self.segments=[]	# (lateral, vertical, s, lateral, vertical, s)
-        
-    def __str__(self):
-        return '<%s %s>' % (self.filename, self.name)
+    TABNAME='Roads, Railways & Powerlines'
+    NETWORK='.net'
+    DEFAULTFILE='lib/g10/roads.net'
+
+    def __init__(self, netdef, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, netdef.name, vertexcache, lookup, defs)
+        self.layer = ClutterDef.NETWORKLAYER
+        self.canpreview = True
+        self.type = Locked.NET
+        self.type_id = netdef.type_id
+        self.width = netdef.width
+        self.length = netdef.length
+        self.color = netdef.color
+        self.even = False
+        self.alternate = False
+        self.children = []	# [StringDef.StringObj]
+        self.segments = []	# [LineDef.Segment]
+
+        center = self.width/2
+        scale = 1
+        lines=[]		# [(shader#, tex_filename, t_ratio, lateral, vertical, s, lateral, vertical, s)]
+        h=open(netdef.filename, 'rU')
+        h.seek(netdef.offset)
+        for line in h:
+            c=line.split()
+            if not c: continue
+            id=c[0]
+            if id=='ROAD_CENTER':
+                center = float(c[1])
+            elif id=='SCALE':
+                scale=float(c[1])
+            elif id=='REQUIRE_EVEN':
+                self.even = len(c)>=2 and float(c[1]) or 1.0
+            elif id=='SEGMENT_DRAPED':	# texno lod_lo lod_hi t_ratio x_left    u_left x_right    u_right [surface]
+                if not float(c[2]):	# 0 LOD
+                    lines.append((int(c[1]), netdef.texs[int(c[1])], round(float(c[4]),4), round(float(c[5])-center,4), 0, float(c[6])/scale, round(float(c[7])-center,4), 0, float(c[8])/scale))
+            elif id=='SEGMENT_GRADED':	# texno lod_lo lod_hi t_ratio x_left y1 u_left x_right y2 u_right [surface]
+                if not float(c[2]):	# 0 LOD
+                    lines.append((int(c[1]), netdef.texs[int(c[1])], round(float(c[4]),4), round(float(c[5])-center,4), round(float(c[6]),4), float(c[7])/scale, round(float(c[8])-center,4), round(float(c[9]),4), float(c[10])/scale))
+            elif id=='OBJECT_GRADED':	# mode lat_offset? lat_offset? rot rot repeat_len repeat_len offsets?
+                if c[1]=='VERT':	# only support this mode
+                    assert float(c[7]) == float(c[8]) == self.length, self.name	# only handle repeat == length
+                    childname = c[2]
+                    if childname in lookup:
+                        childfilename = lookup[childname].file
+                    else:
+                        childfilename = join(dirname(netdef.filename),childname)	# names are relative to this .net so may not be in global lookup
+                    if childfilename in defs:
+                        definition = defs[childfilename]
+                    else:
+                        try:
+                            defs[childfilename] = definition = ObjectDef(childfilename, vertexcache, lookup, defs, make_editable=False)
+                        except:
+                            if __debug__: print_exc()
+                            defs[childfilename] = definition = ObjectFallback(childfilename, vertexcache, lookup, defs)
+                    self.children.append(StringDef.StringObj(childname[:-4], definition, round((float(c[3])+float(c[4]))/2-center,4), (float(c[5])+float(c[6]))/2))
+            elif id in ['ROAD_TYPE', 'JUNC_SHADER']:
+                break
+        h.close()
+
+        lines.sort(key=lambda x: x[0])	# display in shader# order
+        for (shader, texname, t2, lat1, vert1, s1, lat2, vert2, s2) in lines:
+            texture = 0
+            try:
+                texture = vertexcache.texcache.get(texname)
+            except EnvironmentError, e:
+                if __debug__: print_exc()
+                self.texerr=(texname, e.strerror)
+            except:
+                if __debug__: print_exc()
+                self.texerr=(texname, unicode(exc_info()[1]))
+            self.segments.append(LineDef.Segment(texture, t2, lat1, vert1, s1, lat2, vert2, s2))
 
     def allocate(self, vertexcache):
-        # load texture and objects
-        if not self.texture:
-            try:
-                self.texture=vertexcache.texcache.get(normpath(join(self.texpath, self.texname)))
-            except EnvironmentError, e:
-                self.texerr=(normpath(join(self.texpath, self.texname)), e.strerror)
-            except:
-                self.texerr=(normpath(join(self.texpath, self.texname)), unicode(exc_info()[1]))
-        if self.objdefs:
-            for o in self.objdefs:
-                o.allocate(vertexcache)
-        else:
-            height=0
-            for i in range(len(self.objs)):
-                (filename, lateral, onground, freq, offset)=self.objs[i]
-                if filename in defs:
-                    defn=defs[filename]
-                    defn.allocate(vertexcache)
-                else:
-                    defs[filename]=defn=ObjectDef(filename, vertexcache, lookup, defs)
-                self.objdefs.append(defn)
-                # Calculate height from objects
-                if self.height:
-                    pass
-                elif onground:
-                    for (x,y,z) in defn.vdata:
-                        height=max(height,y)
-                else:
-                    for (x,y,z) in defn.vdata:
-                        height=min(height,y)
-            if height:
-                if onground:
-                    self.height=(0,round(height,1))
-                else:
-                    self.height=(0,round(-height,1))
-                if __debug__: print "New height", self.height[1]
+        StringDef.allocate(self, vertexcache)	# Don't have anything ourselves
 
-        # Calculate height from segments eg LocalRoadBridge
-        if not self.objs:
-            height=0
-            for (lat1, vert1, s1, lat2, vert2, s2) in self.segments:
-                height=min(height,vert1,vert2)
-            if height<-2:	# arbitrary - allow for foundations
-                self.height=(0,round(-height,1))
-                if __debug__: print "New height", self.height[1]
-
-        self.fittomesh=(self.height!=None)
-            
-    def flush(self):
-        self.base=None
-        for o in self.objdefs:
-            o.flush()
-        
     def preview(self, canvas, vertexcache):
-        if __debug__: print "Preview", self.name, self.width, self.length, self.height
-        self.allocate(vertexcache)
-        canvas.glstate.set_instance(veretxcache)
-        glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
-        glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
-        glLoadIdentity()
-        if self.height:
-            height=self.height[1]
+        if not self.canpreview:
+            return None
+        elif self.segments:
+            return LineDef.preview(self, canvas, vertexcache)
+        elif self.children:
+            return StringDef.preview(self, canvas, vertexcache)
         else:
-            height=0
-        maxsize=max(height*0.7,
-                    self.length*2+self.width/4)	# eg PrimaryDividedWithSidewalksBridge
-        glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
-        glRotatef( 30, 1,0,0)
-        glRotatef(120, 0,1,0)
-        glTranslatef(0, height, -self.length*2)
-        canvas.glstate.set_texture(self.texture)
-        canvas.glstate.set_color(COL_UNPAINTED)
-        canvas.glstate.set_cull(False)
-        glBegin(GL_QUADS)
-        for (lat1, vert1, s1, lat2, vert2, s2) in self.segments:
-            #print lat1, vert1, s1, lat2, vert2, s2
-            # repeat 4 times to get pylons
-            length=0
-            for l in range(4):
-                glTexCoord2f(s1, 0)
-                glVertex3f(lat1, vert1, length)
-                glTexCoord2f(s2, 0)
-                glVertex3f(lat2, vert2, length)
-                length+=self.length
-                glTexCoord2f(s2, 1)
-                glVertex3f(lat2, vert2, length)
-                glTexCoord2f(s1, 1)
-                glVertex3f(lat1, vert1, length)
-        glEnd()
-        
-        canvas.glstate.set_cull(True)
-        for i in range(len(self.objs)):
-            (filename, lateral, onground, freq, offset)=self.objs[i]
-            #print lateral, freq, offset, filename
-            obj=self.objdefs[i]
-            if not freq: freq=self.length*4
-            glPushMatrix()
-            glTranslatef(lateral, -height*onground, offset)
-            dist=offset
-            while dist<=self.length*4:
-                glBindTexture(GL_TEXTURE_2D, obj.texture)
-                if obj.culled:
-                    glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
-                glTranslatef(0, 0, freq)
-                dist+=freq
-            glPopMatrix()
-
-        #glFinish()	# redundant
-        data=glReadPixels(0,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
-        img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
-        img.SetData(data)
-        
-        # Restore state for unproject & selection
-        glMatrixMode(GL_PROJECTION)
-        glPopMatrix()	
-        glMatrixMode(GL_MODELVIEW)
-
-        glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        canvas.Refresh()	# Mac draws from the back buffer w/out paint event
-        return img.Mirror(False)        
-
+            return None
 
 class NetworkFallback(NetworkDef):
-    def __init__(self, filename, name, index):
-        PolygonDef.__init__(self, filename, None)
-        self.layer=ClutterDef.NETWORKLAYER
-        self.canpreview=False
-        self.type=Locked.NET
-        self.name=name
-        self.index=index
-        self.width=1
-        self.length=1
-        self.height=None	# (min,max) height
-        self.color=(1.0,0.0,0.0)
-        self.even=False
+
+    def __init__(self, name, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, name, vertexcache, lookup, defs)
+        self.layer = ClutterDef.NETWORKLAYER
+        self.canpreview = False
+        self.type = Locked.NET
+        self.type_id = name
+        self.width = 16.0
+        self.length = 128.0
+        self.color = COL_NONSIMPLE
+        self.even = self.width/self.length
+        self.alternate = False
+        self.children = []
+        self.segments = [LineDef.Segment(vertexcache.texcache.get(fallbacktexture), self.length, -self.width/2, 0, 0, self.width/2, 0, 1)]
 
 
 UnknownDefs=['.agb','.ags']	# Known unknowns

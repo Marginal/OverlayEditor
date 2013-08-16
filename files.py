@@ -11,7 +11,7 @@ import codecs
 import gc
 from glob import glob
 from math import cos, log, pi, radians
-from numpy import array, concatenate, empty, ndarray, float32, uint32
+from numpy import array, concatenate, cumsum, empty, ndarray, float32, uint32
 from os import listdir, mkdir
 from os.path import basename, dirname, exists, join, normpath, pardir, splitext
 from struct import unpack
@@ -21,7 +21,7 @@ import time
 import wx
 
 from clutter import Clutter, onedeg, f2m
-from clutterdef import BBox, KnownDefs, SkipDefs, NetworkDef
+from clutterdef import BBox, SkipDefs, NetworkDef
 from DSFLib import readDSF
 from palette import PaletteEntry
 from prefs import Prefs
@@ -338,69 +338,65 @@ def readLib(filename, objects, terrain):
         if __debug__:
             print filename
             print_exc()
-            
 
+
+# Returns dict of network info by type_id
 def readNet(filename):
-    objs={#'highway_pylon.obj':		(0,20),
-          'highway_susp_twr.obj':	(41,41),	# fixed height
-          #'local_pylon.obj':		(0,15.8),
-          #'powerline_tower.obj':	(0,0),		# on ground          
-          #'railroad_pylon.obj':		(0,15.1),
-          #'ramp_pylon.obj':		(0,20.5),
-          #'secondary_oldpylon.obj':	(0,23.4),
-          #'secondary_pylon.obj':	(0,23),
-          }
+
+    class NetDef:
+        def __init__(self, name, type_id, filename, texs, offset, width, length, color):
+            self.name = name
+            self.type_id = type_id
+            self.filename = filename
+            self.texs = texs
+            self.offset = offset
+            self.width = width
+            self.length = length
+            self.color = color
+
     path=dirname(filename)
-    currentdef=None
-    defs=[]
-    texs=[]
-    h=codecs.open(filename, 'rU', 'latin1')
+    h=file(filename, 'rU')
     if not h.readline().strip()[0] in ['I','A']:
         raise IOError
     if not h.readline().split()[0]=='800':
         raise IOError
     if not h.readline().split()[0]=='ROADS':
         raise IOError
+
+    currentdef=None
     comment=None
-    scale=1
-    for line in h:
+    names={}	# road names by type_id
+    types={}	# preferred subtype_id by type_id
+    subtypes={}	# (file location, width, length, (r, g, b)) by subtype_id
+    texs=[]
+    while True:
+        line=h.readline()
+        if not line: break
         c=line.split()
-        if not c:
-            pass
-        elif c[0]=='#' and len(c)==2:
+        if not c: continue
+        id=c[0]
+        if id=='#VROAD':
             comment=c[1]
-            if comment.startswith('net_'): comment=comment[4:]
-            continue
-        elif c[0] in ['TEXTURE', 'TEXTURE_BRIDGE']:
-            texs.append((join(path,c[2]), int(float(c[1]))))
-        elif c[0]=='SCALE':
-            scale=int(c[1])
-        elif c[0]=='ROAD_TYPE':
-            n=int(c[1])
+        elif id=='TEXTURE':
+            texs.append(join(path,c[2]))
+        elif id=='ROAD_DRAPED':		# flags? type ? ?
+            currentdef = int(c[2])
             if comment:
-                name=comment
-                # detect duplicate names
-                for x in defs:
-                    if x and x.name==name:
-                        name="%03d" % n
-                        break
+                names[currentdef] = comment+NetworkDef.NETWORK
+                comment=None
             else:
-                name="%03d" % n
-            if n>=len(defs): defs.extend([None for i in range(n+1-len(defs))])
-            currentdef=defs[n]=NetworkDef(filename, name, n, float(c[2]), float(c[3]), texs[int(c[4])][0], texs[int(c[4])][1], (float(c[5]), float(c[6]), float(c[7])))
-        elif c[0]=='REQUIRE_EVEN':
-            currentdef.even=True
-        elif c[0] in ['SEGMENT', 'SEGMENT_HARD']:
-            if not float(c[1]):	# 0 LOD
-                currentdef.segments.append(((float(c[3])-0.5)*currentdef.width, float(c[4]), float(c[5])/scale, (float(c[6])-0.5)*currentdef.width, float(c[7]), float(c[8])/scale))
-        elif c[0]=='OBJECT':
-            if c[1] in objs: currentdef.height=objs[c[1]]
-            assert not float(c[3])	# don't handle rotation
-            currentdef.objs.append((join(path,c[1]), (float(c[2])-0.5)*currentdef.width, int(c[4]), float(c[5]), float(c[6])))
-        comment=None
+                names[currentdef] = '#%03d%s' % (currentdef, NetworkDef.NETWORK)
+        elif id=='ROAD_DRAPE_CHOICE':	# max_height? subtype
+            if not currentdef: raise IOError
+            subtype_id=int(c[2])
+            if subtype_id and currentdef not in types:
+                types[currentdef] = subtype_id
+        elif id=='ROAD_TYPE':		# subtype width length 0 r g b
+            offset=long(h.tell())		# cast to long for 64bit Linux
+            subtypes[int(c[1])] = (offset, float(c[2]), float(c[3]), (float(c[5]),float(c[6]),float(c[7])))
 
     h.close()
-    return defs
+    return dict([(type_id, NetDef(names[type_id], type_id, filename, texs, *subtypes[types[type_id]])) for type_id in types])
 
 
 class TexCache:
@@ -669,6 +665,7 @@ class VertexCache:
         self.nets={}		# tile -> [(type, [points])]
         self.currenttile=None
         self.meshcache=[]	# [indices] of current tile
+        self.netcache=None	# networks in current tile
         self.lasttri=None	# take advantage of locality of reference
 
         self.texcache=TexCache()
@@ -692,6 +689,7 @@ class VertexCache:
         # invalidate array indices
         self.currenttile=None
         self.meshcache=[]
+        self.netcache=None
         self.instance_data=empty((0,5),float32)
         self.instance_pending=[]
         self.instance_valid=False
@@ -757,10 +755,11 @@ class VertexCache:
         else:
             return False
 
-    def loadMesh(self, tile, options):
+    def loadMesh(self, tile, options, netdefs):
         key=(tile[0],tile[1],options&Prefs.TERRAIN)
         netkey=(tile[0],tile[1],options&Prefs.NETWORK)
         if key in self.mesh and netkey in self.nets:
+            if __debug__: print "loadMesh: already loaded"
             return	# don't reload
         dsfs=[]
         if options&Prefs.TERRAIN:
@@ -778,20 +777,19 @@ class VertexCache:
         gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
         for dsf in dsfs:
             try:
-                (lat, lon, placements, nets, mesh)=readDSF(dsf, False, False, self.ter)
+                (lat, lon, placements, nets, mesh)=readDSF(dsf, netdefs, self.ter)
                 if mesh:
                     self.mesh[key]=mesh
                     # post-process networks
                     centrelat=lat+0.5
                     centrelon=lon+0.5
-                    newnets=[]
-                    for (road, points) in nets:
-                        newpoints=[[(p[0]-centrelon)*onedeg*cos(radians(p[1])),
-                                    p[2],
-                                    (centrelat-p[1])*onedeg] for p in points]
-                        newnets.append((road, newpoints))
+                    newnets = []
+                    for color,chains in nets.iteritems():
+                        color = list(color)
+                        for chain in chains:
+                            newnets.append([[(p[0]-centrelon)*onedeg*cos(radians(p[1])), p[2], (centrelat-p[1])*onedeg]+color for p in chain])
                     self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
-                    self.nets[netkey]=newnets
+                    self.nets[(tile[0],tile[1],Prefs.NETWORK)] = newnets
                     break
             except:
                 if __debug__: print_exc()
@@ -819,10 +817,13 @@ class VertexCache:
         self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
         self.nets[(tile[0],tile[1],Prefs.NETWORK)]=[]
 
-    # return mesh data sorted by tex for drawing
+    # return mesh data sorted by tex and net data for drawing
     def getMesh(self, tile, options):
+
         if tile==self.currenttile:
-            return self.meshcache
+            if __debug__: print "getMesh: cached"
+            return (self.meshcache, self.netcache)
+
         # merge patches that use same texture
         bytex={}
         for texture, flags, v in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
@@ -833,19 +834,27 @@ class VertexCache:
         # add into array
         if __debug__: clock=time.clock()	# Processor time
 
+        self.meshcache = []
         for (texture, flags), v in bytex.iteritems():
             base=self.allocate_instance(array(v, float32).flatten())
             texno=self.texcache.get(texture, flags&8, False, flags&1)
             self.meshcache.append((base, len(v), texno, flags&2))
+
+        nets = self.nets[(tile[0],tile[1],options&Prefs.NETWORK)]
+        if nets:
+            self.netcache = Clutter('*networks')	# dynamic VBO expects Clutter objects
+            self.netcache.dynamic_data = concatenate([array(chain, float32) for chain in nets]).flatten()
+            self.netcache.counts = array([len(chain) for chain in nets], GLsizei)
+            self.netcache.indices = cumsum(concatenate((array([0], GLint), self.netcache.counts)))
+            self.allocate_dynamic(self.netcache, True)
+        else:
+            if self.netcache:
+                self.allocate_dynamic(self.netcache, False)	# de-allocate old
+            self.netcache = None
+
         if __debug__: print "%6.3f time in getMesh" % (time.clock()-clock)
         self.currenttile=tile
-        return self.meshcache
-
-
-    # return net data
-    def getNets(self, tile, options):
-        return self.nets[(tile[0],tile[1],options&Prefs.NETWORK)]
-
+        return (self.meshcache, self.netcache)
 
     # create sets of bounding boxes for height testing
     def getMeshdata(self, tile, options):

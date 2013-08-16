@@ -12,11 +12,13 @@ glGenQueries = alternate(glGenQueries, glGenQueriesARB)
 glGetQueryObjectuiv = alternate(glGetQueryObjectiv, glGetQueryObjectuivARB)
 GL_ANY_SAMPLES_PASSED=0x8C2F	# not in 3.0.1
 from OpenGL.GL.ARB.instanced_arrays import glInitInstancedArraysARB, glVertexAttribDivisorARB
+from OpenGL.GL.EXT.multi_draw_arrays import glMultiDrawArraysEXT
+glMultiDrawArrays = alternate(glMultiDrawArrays, glMultiDrawArraysEXT)
 
 import gc
 from glob import glob
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
-from numpy import array, array_equal, dot, empty, identity, float32, float64, int32
+from numpy import array, array_equal, dot, identity, float32, float64, int32
 from os.path import basename, curdir, join
 from struct import unpack
 from sys import exc_info, exit, platform, version
@@ -30,7 +32,7 @@ if __debug__:
 from files import VertexCache, sortfolded, readApt, glInitTextureCompressionS3TcEXT
 from fixed8x13 import fixed8x13
 from clutter import ObjectFactory, PolygonFactory, Draped, DrapedImage, Facade, Object, Polygon, Network, Exclude, onedeg, resolution, round2res, latlondisp
-from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
+from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef, NetworkDef, PolygonDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
 from imagery import Imagery
 from MessageBox import myMessageBox
 from prefs import Prefs
@@ -78,6 +80,8 @@ class GLstate():
         self.debug=__debug__ and False
         self.occlusion_query=None	# Will test for this later
         self.queries=[]
+        self.multi_draw_arrays = bool(glMultiDrawArrays)
+        if __debug__: print "multi_draw_arrays: %s" % self.multi_draw_arrays
         glEnableClientState(GL_VERTEX_ARRAY)
         self.texture=0
         glEnableClientState(GL_TEXTURE_COORD_ARRAY)
@@ -694,27 +698,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         
         if __debug__: clock=time.clock()
 
-        # Static stuff: mesh, networks
-        self.glstate.set_instance(self.vertexcache)
-        self.glstate.set_color(COL_UNPAINTED)
-        self.glstate.set_cull(True)
-        self.glstate.set_depthtest(True)
-
-        # Mesh
-        if not self.options&Prefs.ELEVATION:
-            glScalef(1,0,1)		# Defeat elevation data
-        if __debug__:
-            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
-        for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
-            self.glstate.set_poly(bool(poly))
-            self.glstate.set_texture(texno)
-            glDrawArrays(GL_TRIANGLES, base, number)
-        if __debug__:
-            if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
-        if not self.options&Prefs.ELEVATION:
-            glLoadIdentity()
-        if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
-
         # Map imagery & background
         imagery=self.imagery.placements(self.d, size)	# May allocate into dynamic VBO
         if __debug__: print "%6.3f time to get imagery" % (time.clock()-clock)
@@ -726,6 +709,39 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.selected=set()
         elif self.frame.bkgd:
             self.selected=set()
+
+        # Mesh and Nets
+        self.glstate.set_instance(self.vertexcache)
+        self.glstate.set_color(COL_UNPAINTED)
+        self.glstate.set_cull(True)
+        self.glstate.set_depthtest(True)
+        if not self.options&Prefs.ELEVATION:
+            glScalef(1,0,1)		# Defeat elevation data
+        if __debug__:
+            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+        (mesh, nets) = self.vertexcache.getMesh(self.tile,self.options)
+        for (base,number,texno,poly) in mesh:
+            self.glstate.set_poly(bool(poly))
+            self.glstate.set_texture(texno)
+            glDrawArrays(GL_TRIANGLES, base, number)
+        if __debug__:
+            if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
+        if nets:
+            self.glstate.set_dynamic(self.vertexcache)
+            self.glstate.set_texture(None)
+            self.glstate.set_color(None)
+            self.glstate.set_depthtest(False)	# Need line to appear over terrain
+            base = nets.base		# can change when dynamic VBO is (re)realized
+            if self.glstate.multi_draw_arrays:
+                glMultiDrawArrays(GL_LINE_STRIP, base + nets.indices, nets.counts, len(nets.counts))
+            else:
+                for count in nets.counts:
+                    glDrawArrays(GL_LINE_STRIP, base, count)
+                    base += count
+
+        if not self.options&Prefs.ELEVATION:
+            glLoadIdentity()
+        if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
 
         # Objects and Polygons
         self.glstate.set_color(COL_UNPAINTED)
@@ -1175,9 +1191,11 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 placement=PolygonFactory(name, None, lat, lon, size, hdg)
         except UnicodeError:
+            if __debug__: print_exc()
             myMessageBox('Filename "%s" uses non-ASCII characters' % name, 'Cannot add this object.', wx.ICON_ERROR|wx.OK, self.frame)
             return False
         except:
+            if __debug__: print_exc()
             myMessageBox("Can't read " + name, 'Cannot add this object.', wx.ICON_ERROR|wx.OK, self.frame)
             return False
         if __debug__: print "add", placement
@@ -1426,10 +1444,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         # return current height
         return self.y
 
-    def reload(self, prefs, airports, navaids, aptdatfile,
-               netdefs, netfile,
-               lookup, placements, networks,
-               terrain, dsfdirs):
+    def reload(self, prefs, airports, navaids, aptdatfile, netdefs, netfile, lookup, placements, terrain, dsfdirs):
         self.valid=False
         self.options=prefs.options
         self.airports=airports	# [runways] by code
@@ -1443,24 +1458,21 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.codeslist: glDeleteLists(self.codeslist, 1)
         self.codeslist=0
         self.lookup=lookup
-        self.defs=dict([(x.name, x) for x in netdefs[1:] if x])
+        self.defs={}
         self.vertexcache.reset(terrain, dsfdirs)
         self.imageryprovider=prefs.imageryprovider
         self.imageryopacity=prefs.imageryopacity
         self.imagery.reset(self.vertexcache)
         self.tile=(0,999)	# force reload on next goto
 
+        # load networks - have to do this every reload since texcache has been reset
+        if netdefs:
+            for netdef in self.netdefs.values():
+                self.defs[netdef.name] = NetworkDef(netdef, self.vertexcache, self.lookup, self.defs)
+
         if placements!=None:
             self.placements={}
             self.unsorted=placements
-            # turn networks into placements
-            for key in networks.keys():
-                for (road, points) in networks[key]:
-                    if road and road<len(netdefs) and netdefs[road]:
-                        name=netdefs[road].name
-                    else:
-                        name='Network #%03d    ' % road	# fallback
-                    self.unsorted[key].append(Network(name, road, [points]))
             self.locked=0	# reset locked on loading new
         else:
             # clear layers
@@ -1470,11 +1482,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                 # invalidate all allocations
                 for placement in placements:
                     placement.clearlayout(self.vertexcache)
-                    if isinstance(placement, Network):
-                        if placement.index and placement.index<len(netdefs) and netdefs[placement.index]:
-                            placement.name=netdefs[placement.index].name
-                        else:
-                            placement.name='Network #%03d    ' % placement.index	# fallback
 
         self.background=None	# Force reload of texture in next line
         self.setbackground(prefs)
@@ -1527,12 +1534,13 @@ class MyGL(wx.glcanvas.GLCanvas):
 
             progress=wx.ProgressDialog('Loading', 'Terrain', 16, self.frame)
             progress.SetSize
-            self.vertexcache.loadMesh(newtile, options)
+            self.vertexcache.loadMesh(newtile, options, self.netdefs)
 
             progress.Update(1, 'Terrain textures')
             try:
                 self.vertexcache.getMesh(newtile, options)	# allocates into VBO
             except EnvironmentError, e:
+                if __debug__: print_exc()
                 if e.filename:
                     errdsf=u"%s: %s" % (e.filename, e.strerror)
                 else:
@@ -1540,6 +1548,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.vertexcache.loadFallbackMesh(newtile, options)
                 self.vertexcache.getMesh(newtile, options)
             except:
+                if __debug__: print_exc()
                 errdsf=unicode(exc_info()[1])
                 self.vertexcache.loadFallbackMesh(newtile, options)
                 self.vertexcache.getMesh(newtile, options)
@@ -2029,7 +2038,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glLoadIdentity()
         glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)
         if self.options&Prefs.ELEVATION:
-            for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options):
+            for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options)[0]:
                 if not poly:
                     glDrawArrays(GL_TRIANGLES, base, number)
         else:

@@ -75,6 +75,8 @@ def PolygonFactory(name, param, nodes, lon=None, size=None, hdg=None):
         return String(name, param, nodes, lon, size, hdg)
     elif ext==PolygonDef.BEACH:
         return Beach(name, param, nodes, lon, size, hdg)
+    elif ext==NetworkDef.NETWORK:
+        return Network(name, param, nodes, lon, size, hdg)
     elif ext==ObjectDef.OBJECT:
         raise IOError		# not a polygon
     elif ext in SkipDefs:
@@ -708,17 +710,6 @@ class Beach(Polygon):
             return False	# Don't draw so can't be picked
         else:
             return Polygon.draw_dynamic(self, glstate, selected, picking)
-
-
-# Like Draped, but for lines
-class Fitted(Polygon):
-
-    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
-        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
-
-    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
-        # insert intermediate nodes XXX
-        return Polygon.layout(self, tile, options, vertexcache, selectednode, recalc)
 
 
 class Draped(Polygon):
@@ -1964,7 +1955,7 @@ class Line(Polygon):
                 (prvx,prvy,prvz) = points[(node-1)%n]
                 prvh = atan2(x-prvx, prvz-z) % twopi
                 sx1 = 1 / cos((h - prvh)/2)
-                if abs(sx1 * self.definition.width) < min(size,hypot(x-prvx, prvz-z))*2:
+                if abs(sx1 * self.definition.width) < max(size,hypot(x-prvx, prvz-z))*2:
                     h1 = (h + prvh) / 2
                 else:
                     sx1 = 1	# too acute
@@ -1973,7 +1964,7 @@ class Line(Polygon):
                 (nxtx,nxty,nxtz) = points[(node+2)%n]
                 nxth = atan2(nxtx-tox, toz-nxtz) % twopi
                 sx2 = 1 / cos((h - nxth)/2)
-                if abs(sx2 * self.definition.width) < min(size,hypot(nxtx-tox, toz-nxtz))*2:
+                if abs(sx2 * self.definition.width) < max(size,hypot(nxtx-tox, toz-nxtz))*2:
                     h2 = (h + nxth) / 2
                 else:
                     sx2 = 1	# too acute
@@ -2130,15 +2121,34 @@ class String(Polygon):
 
         for p in self.placements:
             p.clearlayout(vertexcache)	# clear any dynamic allocation of children
+
         self.placements=[]
+        points = self.points[0]
+        n = len(points)-1	# strings are always open
+
+        if not self.definition.alternate:
+            # Networks have placements at start and end, plus sometimes at ill-defined intervals which we don't simulate
+            for (node,to) in [(0,1),(-1,-2)]:
+                (x,y,z)=points[node]
+                (tox,toy,toz)=points[to]
+                h=atan2(tox-x, z-toz) % twopi
+                coshdg=cos(h)
+                sinhdg=sin(h)
+                hdg=degrees(h)
+                for p in self.definition.children:
+                    child = p.definition
+                    placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta)
+                    placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
+                    placement.layout(tile, options, vertexcache, x + p.xdelta*coshdg, None, z + p.xdelta*sinhdg, hdg+p.hdelta)
+                    self.placements.append(placement)
+            return selectednode
+
         repeat = self.param or 5	# arbitrary
         size=0		# length of this edge
         cumulative=0	# cumulative length up to this node
-        alternate=0	# object no.
+        objno=0	# object no.
         node = -1
         iteration = -0.261	# roughly what X-Plane appears to use!
-        points = self.points[0]
-        n = len(points)-1	# strings are always open
         while True:
             iteration += 1
             sz = iteration*repeat - cumulative
@@ -2161,162 +2171,146 @@ class String(Polygon):
                 sinhdg=sin(h)
                 hdg=degrees(h)
 
-            if self.definition.alternate:
-                seq = range(alternate, alternate+1)
-                alternate = (alternate+1) % len(self.definition.children)
-            else:
-                seq = range(0, len(self.definition.children))
-            for objno in seq:
-                p = self.definition.children[objno]
-                child = p.definition
-                placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta)
-                placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
-                childx = x + p.xdelta*coshdg + sz*sinhdg
-                childz = z + p.xdelta*sinhdg - sz*coshdg
-                placement.layout(tile, options, vertexcache, childx, None, childz, hdg+p.hdelta)
-                self.placements.append(placement)
+            p = self.definition.children[objno]
+            child = p.definition
+            placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta)
+            placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
+            childx = x + p.xdelta*coshdg + sz*sinhdg
+            childz = z + p.xdelta*sinhdg - sz*coshdg
+            placement.layout(tile, options, vertexcache, childx, None, childz, hdg+p.hdelta)
+            self.placements.append(placement)
+            objno = (objno+1) % len(self.definition.children)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam=max(dparam, 1-self.param)	# zero spacing is undefined
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
 
 
-class Network(Fitted):
+class Network(String,Line):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
-        self.index=param
-        if lon!=None:
-            # override default new nodes
+        if lon==None:
+            Polygon.__init__(self, name, param, nodes)
+        else:
             lat=nodes
+            Polygon.__init__(self, name, param, nodes, lon, size, hdg)
+            # Override default node placement
             h=radians(hdg)
             self.nodes=[[]]
-            size=0.000007071*size
-            for i in [h, h+pi]:
-                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
-                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size)))))	# note no elevation - filled in later
-            Fitted.__init__(self, name, param, self.nodes)
-        else:
-            Fitted.__init__(self, name, param, nodes, lon, size, hdg)
+            size=0.000005*size
+            for i,off in [(h-piby2,size), (h,0), (h+piby2,size)]:
+                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*off))),
+                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*off))), 0))
+        self.closed=False
             
-    def __str__(self):
-        return '<"%s" %d %s>' % (self.name,self.index,self.nodes)
-
     def clone(self):
-        return Network(self.name, self.index, [list(w) for w in self.nodes])
+        return Network(self.name, self.param, [list(w) for w in self.nodes])
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
-        try:
-            if not self.name: raise IOError	# not in roads.net
-            self.definition=defs[self.name]
-            notfallback=True
-        except:
-            if __debug__:
-                print_exc()
-            if usefallback:
-                self.definition=NetworkFallback('None', None, self.index)
-            notfallback=False
-
-        if False:#XXXself.definition.height==None:
-            # remove intermediate nodes
-            self.nodes[0][0]=self.nodes[0][0][:3]+[True]
-            self.nodes[0][-1]=self.nodes[0][-1][:3]+[True]
-            i=1
-            while i<len(self.nodes[0])-1:
-                if self.definition.height==None and abs(atan2(self.nodes[0][i-1][0]-self.nodes[0][i][0], self.nodes[0][i-1][1]-self.nodes[0][i][1]) - atan2(self.nodes[0][i][0]-self.nodes[0][i+1][0], self.nodes[0][i][1]-self.nodes[0][i+1][1])) < (pi/180):	# arbitrary - 1 degree
-                    self.nodes[0].pop(i)
-                else:
-                    self.nodes[0][i]=self.nodes[0][i][:3]+[True]
-                    print abs(atan2(self.nodes[0][i-1][0]-self.nodes[0][i][0], self.nodes[0][i-1][1]-self.nodes[0][i][1]) - atan2(self.nodes[0][i][0]-self.nodes[0][i+1][0], self.nodes[0][i][1]-self.nodes[0][i+1][1])) * 180/pi, min(hypot(self.nodes[0][i-1][0]-self.nodes[0][i][0], self.nodes[0][i-1][1]-self.nodes[0][i][1]), hypot(self.nodes[0][i][0]-self.nodes[0][i+1][0], self.nodes[0][i][1]-self.nodes[0][i+1][1]))
-                    i+=1
-        #else:
-        #    # all nodes are control nodes
-        #    self.nodes[0]=[i[:3]+[True] for i in self.nodes[0]]
-        return notfallback
+        # skip lookup, since defs is pre-populated with the valid NetworkDefs
+        if self.name in defs:
+            self.definition = defs[self.name]
+            return True
+        elif usefallback:
+            defs[filename] = self.definition = NetworkFallback(self.name, vertexcache, lookup, defs)
+            return False
 
     def locationstr(self, dms, node=None):
         if node:
             (i,j)=node
-            if self.definition.height!=None:
-                return '%s  Elv: %-6.1f  Height: %-6.1f  Node %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), self.points[i][j][1], self.nodes[i][j][2]-self.points[i][j][1], j)
+            if j==0 or j==len(self.nodes[i])-1:
+                return Polygon.locationstr(self, dms, node) + u'  Level\u2195 %s' % (self.nodes[i][j][2] or 'Ground')
             else:
-                return '%s  Elv: %-6.1f  Node %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), self.points[i][j][1], j)                
+                return Polygon.locationstr(self, dms, node)
         else:
-            return '%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes))
+            return u'%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
 
     def draw_dynamic(self, glstate, selected, picking, queryobj=None):
-        # just draw outline
-        if picking:
-            # Can't pick if no elevation
-            if not self.laidoutwithelevation: return False
-            if queryobj is not None:
-                glBeginQuery(glstate.occlusion_query, queryobj)
+        if self.definition.segments:
+            return Line.draw_dynamic(self, glstate, selected, picking, queryobj)
         else:
-            glstate.set_texture(None)
-            if selected:
-                glstate.set_color(COL_SELECTED)
+            return String.draw_dynamic(self, glstate, selected, picking, queryobj)
+
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
+        if len(self.nodes[0][0])!=3:	# Trash bezier points
+            for i in range(len(self.nodes)):
+                self.nodes[i] = [self.nodes[i][0][:3]] + [p for p in self.nodes[i][1:-1] if not p[2]] + [self.nodes[i][-1][:3]]
+        if dhdg:
+            # preserve level
+            for i in range(len(self.nodes)):
+                for j in range(len(self.nodes[i])):
+                    h = atan2(self.nodes[i][j][0]-loc[1], self.nodes[i][j][1]-loc[0]) + radians(dhdg)
+                    l = hypot(self.nodes[i][j][0]-loc[1], self.nodes[i][j][1]-loc[0])
+                    self.nodes[i][j] = (max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
+                                        max(tile[0], min(tile[0]+1, round2res(loc[0]+cos(h)*l))),
+                                        int(self.nodes[i][j][2]))
+        if dlat or dlon:
+            Polygon.move(self, dlat,dlon, 0,0, loc, tile, options, vertexcache)
+        elif dhdg:
+            self.layout(tile, options, vertexcache)
+
+    def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
+        # defer layout
+        if len(self.nodes[0][0])!=3:	# Convert bezier points to normal!
+            for i in range(len(self.nodes)):
+                self.nodes[i] = [self.nodes[i][0][:3]] + [(p[0],p[1],0) for p in self.nodes[i][1:-1]] + [self.nodes[i][-1][:3]]
+        (i,j)=node
+        # points can be on upper boundary of tile
+        self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
+                          max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)),
+                          (j==0 or j==len(self.nodes[i])-1) and min(max(int(self.nodes[i][j][2]) + darg, 0), 4) or 0)	# level 4 is arbitrary, but seems to match roads.net
+        if defer:
+            return node
+        else:
+            return self.layout(tile, options, vertexcache, node)
+
+    def updatenode(self, node, lat, lon, tile, options, vertexcache):
+        # update node height but defer full layout. Assumes lat,lon is valid
+        if len(self.nodes[0][0])!=3:	# Convert bezier points to normal!
+            for i in range(len(self.nodes)):
+                self.nodes[i] = [self.nodes[i][0][:3]] + [(p[0],p[1],0) for p in self.nodes[i][1:-1]] + [self.nodes[i][-1][:3]]
+        (i,j)=node
+        self.nodes[i][j]=(lon,lat,self.nodes[i][j][2])	# preserve level
+        (x,z)=self.position(tile, lat, lon)
+        if self.definition.fittomesh:
+            y=vertexcache.height(tile,options,x,z)
+        else:
+            y=self.points[i][j][1]	# assumes elevation already correct
+        self.points[i][j]=(x,y,z)
+        return node
+
+    def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
+        if len(self.nodes[0][0])!=3:	# Convert bezier points to normal!
+            for i in range(len(self.nodes)):
+                self.nodes[i] = [self.nodes[i][0][:3]] + [(p[0],p[1],0) for p in self.nodes[i][1:-1]] + [self.nodes[i][-1][:3]]
+        (i,j) = selectednode
+        n = len(self.nodes[i])
+        if (not self.closed) and (j==0 or j==n-1):
+            # Special handling for ends of open lines - add new node at cursor
+            if j:
+                newnode=nextnode=j+1
             else:
-                glstate.set_color(self.definition.color)
-        glstate.set_depthtest(False)
-        glBegin(GL_LINE_STRIP)
-        for p in self.points[0]:
-            glVertex3f(p[0],p[1],p[2])
-        glEnd()
-        for p in self.placements:
-            p.draw_dynamic(glstate, selected, picking)
-        if queryobj is not None:
-            glEndQuery(glstate.occlusion_query)
-        return True
-
-    def draw_nodes(self, glstate, selectednode):
-        glstate.set_texture(None)
-        glstate.set_depthtest(False)
-        glBegin(GL_POINTS)
-        for j in range(len(self.points[0])):
-            if selectednode==(0,j):
-                glstate.set_color(COL_SELNODE)
+                newnode=nextnode=0
+            level = self.nodes[i][j][2]
+            self.nodes[i][j] = self.nodes[i][j][:2] + (0,)
+            self.nodes[i].insert(newnode, (lon, lat, level))	# inherit level
+        else:
+            if (i and clockwise) or (not i and not clockwise):
+                newnode=j+1
+                nextnode=(j+1)%n
             else:
-                glstate.set_color(COL_SELECTED)
-            glVertex3f(*self.points[0][j])
-        glEnd()
-
-    def clearlayout(self, vertexcache):
-        self.laidoutwithelevation=False
-        self.points=[]
-        self.dynamic_data=None	# Can be removed from VBO
-        vertexcache.allocate_dynamic(self, False)
-        for p in self.placements:
-            p.clearlayout(vertexcache)
-
-    def islaidout(self):
-        return self.dynamic_data is not None
+                newnode=j
+                nextnode=(j-1)%n
+            self.nodes[i].insert(newnode,
+                                 (round2res((self.nodes[i][j][0]+self.nodes[i][nextnode][0])/2),
+                                  round2res((self.nodes[i][j][1]+self.nodes[i][nextnode][1])/2), 0))
+        return self.layout(tile, options, vertexcache, (i,newnode))
 
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
-        # XXX handle new
-        self.laidoutwithelevation=options&Prefs.ELEVATION
-        controlnodes=[i for i in self.nodes[0] if i[0]]
-
-        self.lat=self.lon=0
-        self.nodes=[[]]
-        self.points=[[]]
-
-        n=len(controlnodes)
-        for j in range(n):
-            self.lon+=controlnodes[j][0]
-            self.lat+=controlnodes[j][1]
-            (xj,zj)=self.position(tile, controlnodes[j][1], controlnodes[j][0])
-            yj=vertexcache.height(tile,options,xj,zj)
-            if j and self.definition.height==None:
-                # XXX insert intermediate nodes
-                pass
-            x=xj
-            y=yj
-            z=zj
-            self.nodes[0].append(controlnodes[j])
-            self.points[0].append((x,y,z))
-
-        self.lat=self.lat/n
-        self.lon=self.lon/n
-        return selectednode
+        if self.definition.segments:
+            return Line.layout(self, tile, options, vertexcache, selectednode, recalc)
+        else:
+            return String.layout(self, tile, options, vertexcache, selectednode, recalc)
 
 
 def latlondisp(dms, lat, lon):

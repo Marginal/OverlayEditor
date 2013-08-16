@@ -1,3 +1,4 @@
+from collections import defaultdict	# Requires Python 2.5
 from math import cos, floor, pi, radians
 from os import mkdir, popen3, rename, unlink, SEEK_CUR, SEEK_END
 from os.path import basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
@@ -15,6 +16,7 @@ if __debug__:
     from traceback import print_exc
 
 from clutter import PolygonFactory, ObjectFactory, Object, Polygon, Draped, Exclude, Network, divisions, minres, minhdg, onedeg
+from clutterdef import NetworkDef, COL_NETWORK
 from version import appname, appversion
 
 if platform=='win32':
@@ -36,11 +38,11 @@ else:	# Mac
 # Exceptions:
 #   IOError, IndexError
 #
-# If terrains is defined,  assume loading terrain and discard non-mesh data
+# If terrains is defined,  assume loading terrain and discard clutter
 # If terrains not defined, assume looking for an overlay DSF
 #
-def readDSF(path, wantoverlay, wantnetwork, terrains={}):
-    assert wantoverlay or terrains
+def readDSF(path, netdefs, terrains={}):
+    wantoverlay = not terrains
     baddsf=(0, "Invalid DSF file", path)
 
     h=file(path, 'rb')
@@ -91,7 +93,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
         raise IOError, baddsf
     (l,)=unpack('<I', h.read(4))
     placements=[]
-    nets=[]
+    nets = defaultdict(list)
     mesh=[]
     c=h.read(l-9).split('\0')
     h.read(1)
@@ -123,7 +125,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     h.seek(table['NFED'])
     (l,)=unpack('<I', h.read(4))
     defnend=h.tell()+l-8
-    terrain=objects=polygons=network=rasternames=[]
+    terrain=objects=polygons=networks=rasternames=[]
     while h.tell()<defnend:
         c=h.read(4)
         (l,)=unpack('<I', h.read(4))
@@ -147,6 +149,15 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
         else:
             h.seek(l-8, 1)
 
+    # We only understand a limited set of v10-style networks
+    if networks and networks!=[NetworkDef.DEFAULTFILE]:
+        if wantoverlay:
+            raise IOError, (0, 'Unsupported network: %s' % ', '.join(networks))
+        else:
+            skipnetworks = True
+    else:
+        skipnetworks = False
+
     # Geodata Atom
     if __debug__: clock=time.clock()	# Processor time
     h.seek(table['DOEG'])
@@ -159,7 +170,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     while h.tell()<geodend:
         c=h.read(4)
         (l,)=unpack('<I', h.read(4))
-        if not wantnetwork and c in ['23OP','23CS']:
+        if skipnetworks and c in ['23OP','23CS']:
             h.seek(l-8, 1)	# Skip network data
         elif c in ['LOOP','23OP']:
             if c=='LOOP':
@@ -298,6 +309,8 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     cmdsend=h.tell()+l-8
     curpool=0
     netbase=0
+    netcolor = COL_NETWORK
+    netname = '#000' + NetworkDef.NETWORK
     idx=0
     near=0
     far=-1
@@ -308,6 +321,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
     tercache={'terrain_Water':(join('Resources','Sea01.png'), 8, 0, 0.001,0.001)}
     while h.tell()<cmdsend:
         (c,)=unpack('<B', h.read(1))
+        #if __debug__: print "%08x %d" % (h.tell()-1, c)
         if c==1:	# Coordinate Pool Select
             (curpool,)=unpack('<H', h.read(2))
             
@@ -326,6 +340,8 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             
         elif c==6:	# Set Road Subtype
             (roadtype,)=unpack('<B', h.read(1))
+            netcolor = roadtype in netdefs and netdefs[roadtype].color or COL_NETWORK
+            netname  = roadtype in netdefs and netdefs[roadtype].name or '#%03d%s' % (roadtype, NetworkDef.NETWORK)
             #print "\nRoad type %d" % roadtype
             
         elif c==7:	# Object
@@ -343,48 +359,43 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
                     
         elif c==9:	# Network Chain
             (l,)=unpack('<B', h.read(1))
-            if not wantnetwork:
-                h.read(l*2)
-                continue
             #print "\nChain %d" % l
-            (d,)=unpack('<H', h.read(2))
-            thisnet=[po32[curpool][d+netbase]]
-            for i in range(l-1):
-                (d,)=unpack('<H', h.read(2))
-                p=po32[curpool][d+netbase]
-                thisnet.append(p)
-                if p[3]:	# this is a junction
-                    nets.append((roadtype, thisnet))
-                    thisnet=[p]
+            if skipnetworks:
+                h.read(l*2)
+            elif wantoverlay:
+                nodes = [tuple(po32[curpool][netbase+unpack('<H', h.read(2))[0]]) for d in range(l)]
+                if __debug__:	# Only handle single complete chain
+                    for node in nodes[1:-2]: assert len(node)==4 and node[3]==0.0, node
+                placements.append(Network(netname, 0, [nodes]))
+            else:
+                nets[netcolor].append([po32[curpool][netbase+unpack('<H', h.read(2))[0]] for d in range(l)])
             
         elif c==10:	# Network Chain Range
             (first,last)=unpack('<HH', h.read(4))
-            if not wantnetwork or last-first<2: continue
             #print "\nChain Range %d %d" % (first,last)
-            thisnet=[po32[curpool][first+netbase]]
-            for d in range(first+netbase+1, last+netbase):
-                p=po32[curpool][d]
-                thisnet.append(p)
-                if p[3]:	# this is a junction
-                    nets.append((roadtype, thisnet))
-                    thisnet=[p]
-            
+            if skipnetworks or last-first<2:
+                pass
+            elif wantoverlay:
+                nodes = [tuple(po32[curpool][d]) for d in range(netbase+first, netbase+last)]
+                if __debug__:	# Only handle single complete chain
+                    for node in nodes[1:-2]: assert len(node)==4 and node[3]==0.0, node
+                placements.append(Network(netname, 0, [nodes]))
+            else:
+                nets[netcolor].append([po32[curpool][d] for d in range(netbase+first, netbase+last)])
+
         elif c==11:	# Network Chain 32
             (l,)=unpack('<B', h.read(1))
-            if not wantnetwork:
-                h.read(l*4)
-                continue
             #print "\nChain32 %d" % l
-            (d,)=unpack('<I', h.read(4))
-            thisnet=[po32[curpool][d]]
-            for i in range(l-1):
-                (d,)=unpack('<I', h.read(4))
-                p=po32[curpool][d]
-                thisnet.append(p)
-                if p[3]:	# this is a junction
-                    nets.append((roadtype, thisnet))
-                    thisnet=[p]
-            
+            if skipnetworks:
+                h.read(l*4)
+            elif wantoverlay:
+                nodes = [tuple(po32[curpool][unpack('<I', h.read(4))[0]]) for d in range(l)]
+                if __debug__:	# Only handle single complete chain
+                    for node in nodes[1:-2]: assert len(node)==4 and node[3]==0.0, node
+                placements.append(Network(netname, 0, [nodes]))
+            else:
+                nets[netcolor].append([po32[curpool][unpack('<I', h.read(4))[0]] for d in range(l)])
+
         elif c==12:	# Polygon
             (param,l)=unpack('<HB', h.read(3))
             if not wantoverlay or l<2:
@@ -533,6 +544,7 @@ def readDSF(path, wantoverlay, wantnetwork, terrains={}):
             h.read(l)
             
         else:
+            if __debug__: print "Unrecognised command (%d) at %x" % (c, h.tell()-1)
             raise IOError, (c, "Unrecognised command (%d)" % c, path)
 
     # Last one
@@ -741,7 +753,7 @@ def writeDSF(dsfdir, key, placements, netfile):
         if not isinstance(poly, Network): continue
         if not junctions: h.write('NETWORK_DEF\t%s\n\n' % netfile)
         for node in [poly.nodes[0][0], poly.nodes[0][-1]]:
-            junctions[(node[0], node[1], node[2])]=True
+            junctions[(node[0], node[1])]=True
     jnum=1
     for j in junctions.keys():
         junctions[j]=jnum
@@ -781,16 +793,12 @@ def writeDSF(dsfdir, key, placements, netfile):
     for poly in polygons:
         if not isinstance(poly, Network): continue
         p=poly.nodes[0][0]
-        h.write('BEGIN_SEGMENT\t%d %d\t%d\t%14.9f %14.9f %11.6f\n' % (
-            0, poly.index, junctions[(p[0], p[1], p[2])],
-            p[0], p[1], p[2]))
+        h.write('BEGIN_SEGMENT\t%d %d\t%d\t%14.9f %14.9f %d\n' % (
+            0, poly.definition.type_id, junctions[(p[0], p[1])], p[0], p[1], p[2]))
         for p in poly.nodes[0][1:-1]:
-            h.write('SHAPE_POINT\t\t\t%14.9f %14.9f %11.6f\n' % (
-                p[0], p[1], p[2]))
+            h.write('SHAPE_POINT\t\t\t%14.9f %14.9f %d\n' % (p[0], p[1], p[2]))
         p=poly.nodes[0][-1]
-        h.write('END_SEGMENT\t\t%d\t%14.9f %14.9f %11.6f\n' % (
-            junctions[(p[0], p[1], p[2])],
-            p[0], p[1], p[2]))
+        h.write('END_SEGMENT\t\t%d\t%14.9f %14.9f %d\n' % (junctions[(p[0], p[1])], p[0], p[1], p[2]))
     if junctions: h.write('\n')
     
     h.close()

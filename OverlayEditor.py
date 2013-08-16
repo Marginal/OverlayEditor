@@ -392,11 +392,11 @@ class PreferencesDialog(wx.Dialog):
         panel1.SetSizer(box1)
 
         self.display = wx.RadioBox(panel2, -1, "Terrain", style=wx.VERTICAL,
-                                   choices=["No terrain", "Show terrain", "Show terrain and elevation"])
+                                   choices=["No terrain", "Show terrain", "Show terrain and elevation", "Show terrain and networks"])
         # "Show terrain, elevation, powerlines, railways, roads"])
-        #if prefs.options&Prefs.NETWORK:
-        #    self.display.SetSelection(3)
-        if prefs.options&Prefs.ELEVATION:
+        if prefs.options&Prefs.NETWORK:
+            self.display.SetSelection(3)
+        elif prefs.options&Prefs.ELEVATION:
             self.display.SetSelection(2)
         elif prefs.options&Prefs.TERRAIN:
             self.display.SetSelection(1)
@@ -633,9 +633,9 @@ class MainWindow(wx.Frame):
         self.dist=2048.0
         self.airports={}	# default apt.dat, by code
         self.nav=[]
-        self.defnetdefs=[]
-        self.goto=None	# goto dialog
-        self.bkgd=None	# background bitmap dialog
+        self.defnetdefs={}	# default network definitions
+        self.goto=None		# goto dialog
+        self.bkgd=None		# background bitmap dialog
 
         wx.Frame.__init__(self, parent, id, title)
         wx.EVT_CLOSE(self, self.OnClose)
@@ -1288,6 +1288,7 @@ class MainWindow(wx.Frame):
             self.loc=loc
             self.ShowSel()
             self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
+            self.SetModified(True)
             self.Update()		# Let window draw first
             self.ShowLoc()
         if not self.canvas.undostack:
@@ -1329,56 +1330,124 @@ class MainWindow(wx.Frame):
             pkgdir=None
 
         progress.Update(1, 'Global airports')
-        if not glob(join(prefs.xplane, gmain9aptdat)) and not glob(join(prefs.xplane, gmain8aptdat)):
+        if glob(join(prefs.xplane, gmain9aptdat)):
+            xpver=9
+            mainaptdat=glob(join(prefs.xplane, gmain9aptdat))[0]
+        elif glob(join(prefs.xplane, gmain8aptdat)):
+            xpver=8
+            mainaptdat=glob(join(prefs.xplane, gmain8aptdat))[0]
+        else:
+            mainaptdat = None
+        if not mainaptdat:
             self.nav=[]
             myMessageBox("Can't find the X-Plane global apt.dat file.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
-            mainaptdat=None
             xpver=8
-        else:
-            if glob(join(prefs.xplane, gmain9aptdat)):
-                xpver=9
-                mainaptdat=glob(join(prefs.xplane, gmain9aptdat))[0]
+        elif not self.airports:	# Default apt.dat
+            try:
+                if __debug__: clock=time.clock()	# Processor time
+                (self.airports,self.nav)=scanApt(mainaptdat)
+                if __debug__: print "%6.3f time in global apt" % (time.clock()-clock)
+            except:
+                if __debug__:
+                    print "Invalid apt.dat:"
+                    print_exc()
+                self.nav=[]
+                myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
+            try:
+                if xpver==9:
+                    self.nav.extend(readNav(glob(join(prefs.xplane,gmain9navdat))[0]))
+                else:
+                    self.nav.extend(readNav(glob(join(prefs.xplane,gmain8navdat))[0]))
+            except:
+                if __debug__:
+                    print "Invalid nav.dat:"
+                    print_exc()
+
+        # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
+        # search order is: custom libraries, default libraries, scenery package
+        progress.Update(2, 'Libraries')
+        lookupbylib={}	# {name: paletteentry} by libname
+        lookup={}	# {name: paletteentry}
+        terrain={}	# {name: path}
+
+        objects={}
+        if package:
+            for path, dirs, files in walk(pkgdir):
+                for f in files:
+                    if f[-4:].lower() in KnownDefs and f[0]!='.':
+                        name=join(path,f)[len(pkgdir)+1:-4].replace('\\','/')+f[-4:].lower()
+                        if name.lower().startswith('custom objects') and f[-4:].lower()==ObjectDef.OBJECT:
+                            name=name[15:]
+                        if not name.startswith('opensceneryx/placeholder.'):	# no point adding placeholders
+                            objects[name]=PaletteEntry(join(path,f))
+                    #elif f[-4:].lower()==NetworkDef.NETWORK:	# Don't support custom networks
+                    #    netfile=join(path,f)
+        self.palette.load('Objects in this package', objects, pkgdir)
+        lookup.update(objects)
+
+        clibs=glob(join(prefs.xplane, gcustom, '*', glibrary))
+        clibs.sort()	# asciibetical
+        glibs=glob(join(prefs.xplane, gglobal, '*', glibrary))
+        glibs.sort()	# asciibetical
+        dlibs=glob(join(prefs.xplane, gdefault, '*', glibrary))
+        dlibs.sort()	# asciibetical
+        libpaths=clibs+glibs+dlibs
+        if __debug__: print "libraries", libpaths
+        for lib in libpaths: readLib(lib, lookupbylib, terrain)
+        libs=lookupbylib.keys()
+        sortfolded(libs)	# dislay order in palette
+        for lib in libs: lookup.update(lookupbylib[lib])
+
+        # Networks
+        # lookup and palette need to be populated with human-readable names so that networks are browsable and searchable
+        # but lookup assumes each "object" maps to a file which isn't the case for netork "objects".
+        # Also, networks need to be findable by type_id, not human-readable name.
+        # So we make a separate lookup table and pass it to the canvas and to readDSF.
+        lookup.pop('lib/g8/roads.net',None)		# Not a usable file
+        netfile = None
+        netdefs = {}
+
+        # custom .net file
+        if netfile:
+            try:
+                netdefs = readNet(netfile)
+                if not netdefs: raise IOError	# empty
+                netfile = netfile[len(pkgdir)+1:].replace('\\','/')
+            except:
+                myMessageBox("The %s file in this package is invalid." % netfile[len(pkgdir)+1:], "Can't load network data.", wx.ICON_INFORMATION|wx.OK, self)
+                netfile = None
+                netdefs = {}
+
+        # standard v10 .net file
+        defnetfile = lookup.pop(NetworkDef.DEFAULTFILE,None)
+        if not netdefs:
+            if defnetfile and not self.defnetdefs:
+                try:
+                    netdefs = self.defnetdefs = readNet(defnetfile.file)
+                    netfile = NetworkDef.DEFAULTFILE
+                except:
+                    if __debug__:
+                        print defnetfile
+                        print_exc()
             else:
-                xpver=8
-                mainaptdat=glob(join(prefs.xplane, gmain8aptdat))[0]
-            if not self.airports:	# Default apt.dat
-                try:
-                    if __debug__: clock=time.clock()	# Processor time
-                    (self.airports,self.nav)=scanApt(mainaptdat)
-                    if __debug__: print "%6.3f time in global apt" % (time.clock()-clock)
-                except:
-                    if __debug__:
-                        print "Invalid apt.dat:"
-                        print_exc()
-                    self.nav=[]
-                    myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
-                try:
-                    if xpver==9:
-                        self.nav.extend(readNav(glob(join(prefs.xplane,gmain9navdat))[0]))
-                    else:
-                        self.nav.extend(readNav(glob(join(prefs.xplane,gmain8navdat))[0]))
-                except:
-                    if __debug__:
-                        print "Invalid nav.dat:"
-                        print_exc()
+                netdefs = self.defnetdefs	# don't bother re-loading
+                netfile = NetworkDef.DEFAULTFILE
 
         if not reload:
             # Load, not reload
-            progress.Update(2, 'Overlay DSFs')
+            progress.Update(3, 'Overlay DSFs')
             self.elev=45
             self.dist=2048.0
             placements={}
-            networks={}
             if pkgnavdata:
                 try:
                     dsfs=glob(join(pkgnavdata, '[+-][0-9]0[+-][01][0-9]0', '[+-][0-9][0-9][+-][01][0-9][0-9].[dD][sS][fF]'))
                     if not dsfs:
                         if glob(join(pkgnavdata, '[+-][0-9]0[+-][01][0-9]0', '[+-][0-9][0-9][+-][01][0-9][0-9].[eE][nN][vV]')): raise IOError, (0, 'This package uses v7 "ENV" files')
                     for f in dsfs:
-                        (lat, lon, p, nets, foo)=readDSF(f, True, xpver>=9)
+                        (lat, lon, p, nets, foo)=readDSF(f, netdefs)
                         tile=(lat,lon)
                         placements[tile]=p
-                        networks[tile]=nets
                 except IOError, e:	# Bad DSF - restore to unloaded state
                     progress.Destroy()
                     myMessageBox(e.strerror, "Can't edit this scenery package.",
@@ -1399,11 +1468,11 @@ class MainWindow(wx.Frame):
             else:
                 self.SetTitle("%s - %s" % (package, appname))
         else:
-            placements=networks=None	# keep existing
+            placements=None	# keep existing
         self.toolbar.EnableTool(wx.ID_UNDO, False)
         if self.menubar:
             self.menubar.Enable(wx.ID_UNDO, False)
-        progress.Update(3, 'Airports')
+        progress.Update(4, 'Airports')
         if __debug__: clock=time.clock()	# Processor time
         pkgapts={}
         nav=list(self.nav)
@@ -1438,74 +1507,16 @@ class MainWindow(wx.Frame):
 
         if self.goto: self.goto.Close()	# Needed on wxMac 2.5
         self.goto=GotoDialog(self, airports)	# build only
-        # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
-        # search order is: custom libraries, default libraries, scenery package
-        progress.Update(4, 'Libraries')
-        lookupbylib={}	# {name: paletteentry} by libname
-        lookup={}	# {name: paletteentry}
-        terrain={}	# {name: path}
 
-        clibs=glob(join(prefs.xplane, gcustom, '*', glibrary))
-        clibs.sort()	# asciibetical
-        glibs=glob(join(prefs.xplane, gglobal, '*', glibrary))
-        glibs.sort()	# asciibetical
-        dlibs=glob(join(prefs.xplane, gdefault, '*', glibrary))
-        dlibs.sort()	# asciibetical
-        libpaths=clibs+glibs+dlibs
-        if __debug__: print "libraries", libpaths
-        for lib in libpaths: readLib(lib, lookupbylib, terrain)
-        libs=lookupbylib.keys()
-        sortfolded(libs)	# dislay order in palette
-        for lib in libs: lookup.update(lookupbylib[lib])
-
-        objects={}
-        roadfile=None
-        if prefs.package:
-            for path, dirs, files in walk(pkgdir):
-                for f in files:
-                    if f[-4:].lower() in KnownDefs and f[0]!='.':
-                        name=join(path,f)[len(pkgdir)+1:-4].replace('\\','/')+f[-4:].lower()
-                        if name.lower().startswith('custom objects') and f[-4:].lower()==ObjectDef.OBJECT:
-                            name=name[15:]
-                        #if not name in lookup:	# library takes precedence
-                        if not name.startswith('opensceneryx/placeholder.'):	# no point adding placeholders
-                            objects[name]=PaletteEntry(join(path,f))
-                    elif f[-4:].lower()=='.net':
-                        roadfile=join(path,f)
-        self.palette.load('Objects in this package', objects, pkgdir)
-        lookup.update(objects)
-        for lib in libs: self.palette.load(lib, lookupbylib[lib])
-
-        if False: # xpver>=9: XXX disable networks
-            defroadfile=lookupbylib['g8'].pop(NetworkDef.DEFAULTFILE,None)
-            if defroadfile: defroadfile=defroadfile.file
-            if not self.defnetdefs:
-                try:
-                    self.defnetdefs=readNet(defroadfile)
-                except:
-                    if __debug__:
-                        print defroadfile
-                        print_exc()
-            netdefs=self.defnetdefs
-            if roadfile:	# custom .net file
-                try:
-                    netdefs=readNet(roadfile)
-                    if not netdefs: raise IOError	# empty
-                    roadfile=roadfile[len(pkgdir)+1:].replace('\\','/')
-                except:
-                    myMessageBox("The %s file in this package is invalid." % roadfile[len(pkgdir)+1:], "Can't load network data.", wx.ICON_INFORMATION|wx.OK, self)
-                    netdefs=self.defnetdefs
-                    roadfile=NetworkDef.DEFAULTFILE
-            else:
-                roadfile=NetworkDef.DEFAULTFILE
-            if False: # XXX disable networks
-                names={}
-                for x in netdefs:                
-                    if x and x.name: names[x.name]=lookup[x.name]=PaletteEntry(x.name)
-                self.palette.load(NetworkDef.TABNAME, names)
-        else:
-            netdefs=self.defnetdefs=[]
-            
+        # Populate palette with library items
+        for lib in libs:
+            self.palette.load(lib, lookupbylib[lib])
+        if netdefs:
+            names={}
+            for type_id,defn in netdefs.iteritems():
+                names[defn.name] = PaletteEntry(defn.name)
+            self.palette.load(NetworkDef.TABNAME, names)
+            lookup.update(names)
         self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], PaletteEntry(x)) for x in Exclude.NAMES.keys()]))
         self.palette.load('Search results', {})
 
@@ -1516,10 +1527,7 @@ class MainWindow(wx.Frame):
         else:
             dsfdirs=[join(prefs.xplane, gcustom),
                      join(prefs.xplane, gdefault)]
-        self.canvas.reload(prefs, airports, nav, mainaptdat,
-                           netdefs, roadfile,
-                           lookup, placements, networks,
-                           terrain, dsfdirs)
+        self.canvas.reload(prefs, airports, nav, mainaptdat, netdefs, netfile, lookup, placements, terrain, dsfdirs)
         if not reload:
             # Load, not reload
             if pkgloc:	# go to first airport by name
@@ -1639,7 +1647,7 @@ class MainWindow(wx.Frame):
             if x: dlg.Destroy()
             return
         if dlg.display.GetSelection()==3:
-            prefs.options=Prefs.TERRAIN|Prefs.ELEVATION|Prefs.NETWORK
+            prefs.options=Prefs.TERRAIN|Prefs.NETWORK
         elif dlg.display.GetSelection()==2:
             prefs.options=Prefs.TERRAIN|Prefs.ELEVATION
         elif dlg.display.GetSelection()==1:

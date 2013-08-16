@@ -74,6 +74,8 @@ class PaletteListBox(wx.VListBox):
                                 h.close()
                             except:
                                 pass
+                    elif ext==NetworkDef.NETWORK:
+                        imgno=self.parent.imgno_net
                     elif ext in KnownDefs:
                         imgno=KnownDefs.index(ext)
                     else:

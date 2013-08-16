@@ -137,7 +137,7 @@ Do not change the location of X-Plane's top-level folder while you are editing a
 
 <h4><a name="mainwindow">Main window</a></h4>
 <p>This shows the objects that have been placed in a 1&deg;&times;1&deg; region of the loaded scenery package.</p>
-<p>By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> and/or add mapping imagery with <a href="#background"><img class="inlbutton" alt="Background" src="Resources/background.png"></a>. Runways, taxiways and navaids are displayed in simplified form and cannot be edited. Scenery objects from other scenery packages and &ldquo;autogen&rdquo; scenery objects from the default scenery are not displayed at all.<p>
+<p>By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> and/or add mapping imagery with <a href="#background"><img class="inlbutton" alt="Background" src="Resources/background.png"></a>. Runways, taxiways, navaids and X-Plane's default road and rail networks are displayed in simplified form and cannot be edited. Scenery objects from other scenery packages and &ldquo;autogen&rdquo; scenery objects from the default scenery are not displayed at all.<p>
 <p>Navigate with the cursor keys or mouse. Hold down <kbd>Shift</kbd> for bigger steps or <kbd>Ctrl</kbd> for tiny steps:</p>
 <div style="margin-left: 40px;">
 <table class="kbdtable">
@@ -297,7 +297,7 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
   <dd><img class="inlsymbol" alt="lin" src="Resources/lin.png"> - Line polygon (<code>.lin</code>)</dd>
   <dd><img class="inlsymbol" alt="str" src="Resources/str.png"> - String polygon (<code>.str</code>)</dd>
   <dd><img class="inlsymbol" alt="unknown" src="Resources/unknown.png"> - Other polygon</dd>
-  <dd><img class="inlsymbol" alt="net" src="Resources/net.png"> - Road, Railway or Powerline network (requires X-Plane 9.00 or later)</dd>
+  <dd><img class="inlsymbol" alt="net" src="Resources/net.png"> - Road, Railway or Powerline network (requires X-Plane 10 or later)</dd>
   <dd><img class="inlsymbol" alt="exc" src="Resources/exc.png"> - Exclusion region</dd>
   <dd><img class="inlsymbol" alt="bad" src="Resources/bad.png"> - Missing or unreadable object or polygon</dd>
 </dl>
@@ -319,48 +319,21 @@ think of these lists as an artist's
 <p>A preview of the currently selected object is shown (when available) underneath the list of objects.</p>
 <p>You can drag the separators between the preview window and the other windows to make the preview picture larger or smaller.</p>
 
-<!--
 <h3>Road, Railway &amp; Powerline Networks</h3>
-<p>X-Plane handles roads, railways and powerlines (collectively "networks")
-a little differently from other objects;
-all of the types of network are defined in a single <code>.net</code> file.
-By default, OverlayEditor reads the network types from the X-Plane library file <code>lib/g8/roads.net</code>.
-You can create your own network types by creating a
-<a target="_blank" href="http://scenery.x-plane.com/library.php?doc=netspec.php"><code>.net</code></a>
-file inside of your scenery package
-<small>(it doesn't matter what you name it, but you can have only one <code>.net</code> file)</small>.</p>
+<p>Roads, railways and powerlines (collectively &ldquo;networks&rdquo;) work similarly to other kinds of polygons, but there are some additional points to bear in mind:</p>
 <ul>
-  <li>You can only edit network segments if you are developing against X-Plane
-v9 <small>(DSF overlay files that contain network segments can cause X-Plane v8 to crash)</small>,
-and if the OverlayEditor preferences are set to display terrain and elevation.</li>
-  <li>When you create a new network segment in OverlayEditor it has two nodes.
-You can extend the segment by selecting an end node and pressing <kbd>Enter</kbd> or <img class="inlbutton" alt="Add" src="Resources/add.png"></td>.</li>
-  <li>You can add additional intermediate nodes by selecting a node and pressing <kbd>Cmd</kbd> <kbd>Enter</kbd>.</li>
-  <li>You can join the node at each end of a segment to another segment of the
-same or of a different type -
-drag the node so that it snaps to the end of the other segment.
-X-Plane will try to draw a reasonable junction between the two segments.</li>
-  <li>X-Plane will not join network segments in your scenery package to
-segments in the default scenery.
-You can use an Exclusion region to remove network segments in the default scenery.</li>
+  <li>In order for traffic to flow across successive segments of road, the end node of one road segment must be at <u>exactly</u> the same location as the end node of the next road segment. (However the two segments don't have to be of the same road type).</li>
+  <li>When multiple roads meet at a junction, in order for X-Plane to draw the junction correctly the end nodes of all the road segments that meet at the junction must be in <u>exactly</u> the same location.</li>
+  <li>To construct a bridge over a road:
+    <ul>
+      <li>Create a four-way junction / crossroads - <i>i.e.</i> four road segments that all end at <u>exactly</u> the same location.</li>
+      <li>Select the end node of one of the &ldquo;bridge&rdquo; segments and use the <kbd>R</kbd> and <kbd>F</kbd> keys to set the node's <samp>level</samp> to 1 or more. The current level is shown in the status bar, and higher levels result in a higher bridge.</li>
+      <li>Repeat for the end node of the other &ldquo;bridge&rdquo; segment.</li>
+    </ul>
+    Note: OverlayEditor doesn't display the bridge segments as being raised, so you may have to experiment a little.</li>
+  <li>X-Plane will not join network segments in your scenery package to segments in the default scenery.</li>
+  <li>You can use an Exclusion region to remove network segments in the default scenery.</li>
 </ul>	
-<dl>
-  <dt>Ground-level network types - <i>eg</i> Roads & Railways</dt>
-  <dd>OverlayEditor always places road and railway segments at ground level - they follow the terrain mesh.<br>
-You can add additional nodes to a road or railway segment to change the direction.</dd>
-  <dt>Bridge network types - <i>eg</i> Road & Railway bridges</dd>
-  <dd>Bridge nodes can be placed at varying heights -
-from ground-level up to the maximum height of their supporting columns.
-OverlayEditor does not make bridge segments automatically follow the terrain mesh.<br>
-You can use the <kbd>R</kbd> and <kbd>F</kbd> keys to adjust the height
-of a bridge node - the height is shown in the status bar.<br>
-You can add additional nodes to a bridge segment to change the direction and
-to have more control over the height of the bridge.<br>
-Depending on how the bridge is defined, X-Plane may draw the supporting columns at a repeating interval, or just once at each node
-<small>(the suspension bridges defined in <code>lib/g8/roads.net</code>
-are of this latter type)</small>.
-  </dd>
-</dl>
 
 <h3>Differences between this application and X-Plane</h3>
 <p>This application displays terrain and objects in orthogonal projection (no perspective) and in a simplified form. <i>i.e.</i>:</p>
@@ -381,9 +354,10 @@ X-Plane lets you use the same draped polygon (<code>.pol</code>) file
 for either purpose but you will see visual artefacts if you use a
 <code>TEXTURE</code> statement in an orthophoto or use a
 <code>TEXTURE_NOWRAP</code> statement in a repeating texture.</li>
-  <li>X-Plane allows some types of polygons to use bezier curves,
-however this application does not understand or display bezier polygon curves.
-Any bezier control points will be deleted if you edit the polygon.</li>
+  <li>Network bridges can be constructed and edited, but all networks are displayed at ground level.</li>
+  <li>X-Plane allows some types of polygons and networks to use bezier curves,
+however this application does not understand or display bezier polygon or network curves.
+Any bezier control points will be deleted if you edit the polygon or network.</li>
   <li>Terrain textures are simplified - no beaches or overlay textures.</li>
   <li>No flattening of terrain around airports. Terrain is displayed as if the X-Plane &ldquo;allow sloped runways&rdquo; rendering setting is turned on.</li>
 </ul>
@@ -514,10 +488,10 @@ Rename one or both of the packages to change their relative priority.</dd>
 
 <h3>Limitations</h3>
 <ul>
-  <li>Does not display roads, railway or powerline networks.</li>
   <li>Does not display &ldquo;autogen&rdquo; scenery.</li>
   <li>Does not display lights or lines in 3D objects.</li>
   <li>Does not convert or edit X-Plane 7 and earlier <code>.env</code> files.</li>
+  <li>Does not edit scenery packages containing custom networks, or standard X-Plane v8 or v9 networks.</li>
   <li>Displays but does not edit runways, taxiways, navaids etc.</li>
   <li>In some cases facades may be displayed slightly differently to X-Plane - <i>e.g.</i> extra windows in a wall <i>etc</i>.</li>
   <li>Interlaced PNG files appear untextured.</li>
