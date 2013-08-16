@@ -2,7 +2,10 @@
 
 from distutils.core import setup
 from os import getcwd, listdir, name
+from os.path import join
 from glob import glob
+import re
+from tempfile import gettempdir
 import numpy	# pull in dependencies
 
 import platform
@@ -63,6 +66,20 @@ if sys.platform=='win32':
                 'win32/'+crt+'/msvcr90.dll'
                 ]),
               ]
+    # Substitute Macisms in documentation
+    hin = open('OverlayEditor.html', 'rU')
+    hout = open(join(gettempdir(),'OverlayEditor.html'), 'wt')
+    subs = { 'Cmd':     'Ctrl',
+             '&#8598;': 'Home',
+             '&#8600;': 'End',
+             '&#8670;': 'PageUp',
+             '&#8671;': 'PageDn' }
+    regex = re.compile("(%s)" % "|".join(map(re.escape, subs.keys())))
+    for line in hin:
+        hout.write(regex.sub(lambda mo: subs[mo.string[mo.start():mo.end()]], line) +'\n')
+    hin.close()
+    hout.close()
+
 
 elif sys.platform.lower().startswith('darwin'):
     # http://undefined.org/python/py2app.html  Invoke with: setup.py py2app
@@ -90,7 +107,7 @@ setup(name='OverlayEditor',
       author_email='x-plane@marginal.org.uk',
       url='http://marginal.org.uk/xplanescenery',
       data_files=[('',
-                   ['OverlayEditor.html',
+                   [join(gettempdir(),'OverlayEditor.html'),
                     ]),
                   ('Resources',
                    res),
