@@ -11,7 +11,7 @@ import codecs
 import gc
 from glob import glob
 from math import cos, log, pi, radians
-from numpy import array, concatenate, cumsum, empty, ndarray, float32, uint32
+from numpy import array, arange, concatenate, cumsum, empty, ndarray, repeat, float32, uint32
 from os import listdir, mkdir
 from os.path import basename, dirname, exists, join, normpath, pardir, splitext
 from struct import unpack
@@ -673,6 +673,10 @@ class VertexCache:
         self.instance_pending=[]		# Clutter not yet allocated into vbo
         self.instance_count=0			# Allocated and pending vertices
         self.instance_valid=False
+        self.vector_data=empty((0,6),float32)	# Copy of vbo data
+        self.vector_pending=[]			# Vector data not yet allocated into vbo
+        self.vector_count=0			# Allocated and pending vertices
+        self.vector_valid=False
         self.dynamic_data=empty((0,6),float32)
         self.dynamic_pending={}
         self.dynamic_valid=False
@@ -694,6 +698,10 @@ class VertexCache:
         self.instance_pending=[]
         self.instance_valid=False
         self.instance_count=0
+        self.vector_data=empty((0,6),float32)
+        self.vector_pending=[]
+        self.vector_count=0
+        self.vector_valid=False
         self.dynamic_data=empty((0,6),float32)
         self.dynamic_pending={}
         self.dynamic_valid=False
@@ -717,6 +725,28 @@ class VertexCache:
             self.instance_valid=True
             instance_vbo.set_array(self.instance_data)
             if __debug__: print "%6.3f time to realize instance VBO, size %dK" % (time.clock()-clock, self.instance_data.size/256)
+            return True
+        else:
+            return False
+
+    def allocate_vector(self, data):
+        # cache geometry data, but don't update OpenGL arrays yet
+        assert isinstance(data,ndarray), data
+        base=self.vector_count
+        self.vector_count+=len(data)/6
+        self.vector_pending.append(data)
+        self.vector_valid=False	# new geometry -> need to update OpenGL
+        return base
+
+    def realize_vector(self, vector_vbo):
+        # Allocate into VBO if required. Returns True if VBO updated.
+        if not self.vector_valid:
+            if __debug__: clock=time.clock()
+            self.vector_data=concatenate(self.vector_pending)
+            self.vector_pending=[self.vector_data]	# so gets included in concatenate next time round
+            self.vector_valid=True
+            vector_vbo.set_array(self.vector_data)
+            if __debug__: print "%6.3f time to realize vector VBO, size %dK" % (time.clock()-clock, self.vector_data.size/256)
             return True
         else:
             return False
@@ -842,14 +872,16 @@ class VertexCache:
 
         nets = self.nets[(tile[0],tile[1],options&Prefs.NETWORK)]
         if nets:
-            self.netcache = Clutter('*networks')	# dynamic VBO expects Clutter objects
-            self.netcache.dynamic_data = concatenate([array(chain, float32) for chain in nets]).flatten()
-            self.netcache.counts = array([len(chain) for chain in nets], GLsizei)
-            self.netcache.indices = cumsum(concatenate((array([0], GLint), self.netcache.counts)))
-            self.allocate_dynamic(self.netcache, True)
+            base = self.allocate_vector(concatenate([array(chain, float32) for chain in nets]).flatten())
+            # construct indices of pairs of elements in each chain
+            counts = array([len(chain) for chain in nets])
+            start  = cumsum(concatenate((array([base]), counts)))[:-1]
+            end    = start + counts - 1
+            indices= concatenate([repeat(arange(start[i],end[i],1,GLuint), 2) for i in range(len(counts))])
+            indices[1::2] += 1
+            assert (len(indices) == (sum(counts)-len(counts))*2)
+            self.netcache=(base, len(indices), indices)
         else:
-            if self.netcache:
-                self.allocate_dynamic(self.netcache, False)	# de-allocate old
             self.netcache = None
 
         if __debug__: print "%6.3f time in getMesh" % (time.clock()-clock)

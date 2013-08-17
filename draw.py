@@ -97,6 +97,7 @@ class GLstate():
         glDepthMask(GL_TRUE)
         self.current_vbo=None
         self.instance_vbo=vbo.VBO(None, GL_STATIC_DRAW)
+        self.vector_vbo  =vbo.VBO(None, GL_STATIC_DRAW)
         self.dynamic_vbo =vbo.VBO(None, GL_STATIC_DRAW)
         self.selected_vbo=vbo.VBO(None, GL_STREAM_DRAW)
         # Use of GL_ARB_instanced_arrays requires a shader. Just duplicate fixed pipeline shaders.
@@ -221,6 +222,18 @@ class GLstate():
             self.current_vbo=self.instance_vbo
         elif __debug__:
             if self.debug: print "set_instance already instance_vbo"
+
+    def set_vector(self, vertexcache):
+        if vertexcache.realize_vector(self.vector_vbo) or self.current_vbo!=self.vector_vbo:
+            if __debug__:
+                if self.debug: print "set_vector"
+            self.vector_vbo.bind()
+            vertexcache.realize_vector(self.vector_vbo)
+            glColorPointer(3, GL_FLOAT, 24, self.vector_vbo+12)
+            glVertexPointer(3, GL_FLOAT, 24, self.vector_vbo)
+            self.current_vbo=self.vector_vbo
+        elif __debug__:
+            if self.debug: print "set_vector already vector_vbo"
 
     def set_dynamic(self, vertexcache):
         if vertexcache.realize_dynamic(self.dynamic_vbo) or self.current_vbo!=self.dynamic_vbo:
@@ -727,17 +740,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         if __debug__:
             if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
         if nets:
-            self.glstate.set_dynamic(self.vertexcache)
+            self.glstate.set_vector(self.vertexcache)
             self.glstate.set_texture(None)
             self.glstate.set_color(None)
             self.glstate.set_depthtest(False)	# Need line to appear over terrain
-            base = nets.base		# can change when dynamic VBO is (re)realized
-            if self.glstate.multi_draw_arrays:
-                glMultiDrawArrays(GL_LINE_STRIP, base + nets.indices, nets.counts, len(nets.counts))
-            else:
-                for count in nets.counts:
-                    glDrawArrays(GL_LINE_STRIP, base, count)
-                    base += count
+            (base, number, indices) = nets
+            glDrawElements(GL_LINES, number, GL_UNSIGNED_INT, indices)
 
         if not self.options&Prefs.ELEVATION:
             glLoadIdentity()
