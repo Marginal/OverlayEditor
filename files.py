@@ -810,16 +810,8 @@ class VertexCache:
                 (lat, lon, placements, nets, mesh)=readDSF(dsf, netdefs, self.ter)
                 if mesh:
                     self.mesh[key]=mesh
-                    # post-process networks
-                    centrelat=lat+0.5
-                    centrelon=lon+0.5
-                    newnets = []
-                    for color,chains in nets.iteritems():
-                        color = list(color)
-                        for chain in chains:
-                            newnets.append([[(p[0]-centrelon)*onedeg*cos(radians(p[1])), p[2], (centrelat-p[1])*onedeg]+color for p in chain])
                     self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
-                    self.nets[(tile[0],tile[1],Prefs.NETWORK)] = newnets
+                    self.nets[(tile[0],tile[1],Prefs.NETWORK)] = nets
                     break
             except:
                 if __debug__: print_exc()
@@ -872,15 +864,9 @@ class VertexCache:
 
         nets = self.nets[(tile[0],tile[1],options&Prefs.NETWORK)]
         if nets:
-            base = self.allocate_vector(concatenate([array(chain, float32) for chain in nets]).flatten())
-            # construct indices of pairs of elements in each chain
-            counts = array([len(chain) for chain in nets])
-            start  = cumsum(concatenate((array([base]), counts)))[:-1]
-            end    = start + counts - 1
-            indices= concatenate([repeat(arange(start[i],end[i],1,GLuint), 2) for i in range(len(counts))])
-            indices[1::2] += 1
-            assert (len(indices) == (sum(counts)-len(counts))*2)
-            self.netcache=(base, len(indices), indices)
+            (points, indices) = nets
+            base = self.allocate_vector(points.flatten())
+            self.netcache = base+indices
         else:
             self.netcache = None
 

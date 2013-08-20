@@ -1,10 +1,13 @@
 from collections import defaultdict	# Requires Python 2.5
 from math import cos, floor, pi, radians
+from numpy import array, arange, concatenate, cumsum, empty, fromstring, insert, repeat, vstack, zeros, float32, uint16, uint32
 from os import mkdir, popen3, rename, unlink, SEEK_CUR, SEEK_END
 from os.path import basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 from struct import unpack
 from sys import platform, getfilesystemencoding, maxint
 from tempfile import gettempdir
+from OpenGL.GL import GLuint
+import numpy
 import types
 import time
 try:
@@ -176,85 +179,93 @@ def readDSF(path, netdefs, terrains={}):
             if c=='LOOP':
                 poolkind=pool
                 fmt='<H'
-                fmtd='<%dH'
+                ifmt=uint16
                 size=2
-                mask=0xffff
             else:
                 poolkind=po32
                 fmt='<I'
-                fmtd='<%dI'
+                ifmt=uint32
                 size=4
-                mask=0xffffffffL
-            thispool=[]
-            (n,)=unpack('<I', h.read(4))
-            (p,)=unpack('<B', h.read(1))
+            (n,p)=unpack('<IB', h.read(5))
             #if __debug__: print c,n,p
+            thispool = empty((n,p), ifmt)
+            # Pool data is supplied in column order (by "plane"), so use numpy slicing to assign
             for i in range(p):
-                thisplane=[]
-                (e,)=unpack('<B', h.read(1))
-                if e==3:	# RLE differenced, default terrain uses this
-                    last=0
-                    while(len(thisplane))<n:
+                (e,)=unpack('<B', h.read(1))	# encoding type - default DSFs use e=3
+                if e&2:		# RLE
+                    offset = 0
+                    while offset<n:
                         (r,)=unpack('<B', h.read(1))
                         if (r&128):	# repeat
                             (d,)=unpack(fmt, h.read(size))
-                            for j in range(r&127):
-                                last=(last+d)&mask
-                                thisplane.append(last)
-                        else:
-                            for d in unpack(fmtd % r, h.read(size*r)):
-                                last=(last+d)&mask
-                                thisplane.append(last)
-                elif e==2:	# RLE
-                    while(len(thisplane))<n:
-                        (r,)=unpack('<B', h.read(1))
-                        if (r&128):	# repeat
-                            (d,)=unpack(fmt, h.read(size))
-                            thisplane.extend([d for j in range(r&127)])
-                        else:
-                            thisplane.extend(unpack(fmtd % r, h.read(size*r)))
-                elif e==1:	# differenced
-                    last=0
-                    for d in unpack(fmtd % n, h.read(size*n)):
-                        last=(last+d)&mask
-                        thisplane.append(last)
-                elif e==0:	# raw
-                    thisplane=unpack(fmtd % n, h.read(size*n))
-                else:
-                    raise IOError, baddsf
-                thispool.append(thisplane)  
+                            thispool[offset:offset+(r&127),i] = d
+                            offset += (r&127)
+                        else:		# non-repeat
+                            thispool[offset:offset+r,i] = fromstring(h.read(r*size), fmt)
+                            offset += r
+                else:		# raw
+                    thispool[:,i] = fromstring(h.read(n*size), fmt)
+                if e&1:		# differenced
+                    thispool[:,i] = cumsum(thispool[:,i], dtype=ifmt)
             poolkind.append(thispool)
         elif c=='LACS':
-            scal.append([unpack('<2f', h.read(8)) for i in range(0, l-8, 8)])
+            scal.append(fromstring(h.read(l-8), '<f').reshape(-1,2))
             #if __debug__: print c,scal[-1]
         elif c=='23CS':
-            sc32.append([unpack('<2f', h.read(8)) for i in range(0, l-8, 8)])
+            sc32.append(fromstring(h.read(l-8), '<f').reshape(-1,2))
             #if __debug__: print c,sc32[-1]
         else:
             h.seek(l-8, 1)
     if __debug__: print "%6.3f time in GEOD atom" % (time.clock()-clock)
     
-    # Rescale pool and transform to one list per entry
+    # Rescale pools
     if __debug__: clock=time.clock()	# Processor time
-    for (poolkind,scalkind,mask) in [(pool,scal,0xffff), (po32,sc32,0xffffffffL)]:
-        assert len(poolkind)==len(scalkind)
-        for i in range(len(poolkind)):	# number of pools
-            curpool=poolkind[i]
-            if len(curpool)==0:		# empty
-                continue
-            n=len(curpool[0])		# number of entries in this pool
-            newpool=[[] for j in range(n)]
-            for plane in range(len(curpool)):	# number of planes in this pool
-                (scale,offset)=scalkind[i][plane]
-                if scale:
-                    scale=scale/mask
-                    for j in range(n):
-                        newpool[j].append(curpool[plane][j]*scale+offset)
-                else:	# network junction IDs are unscaled
-                    for j in range(n):
-                        newpool[j].append(curpool[plane][j]+offset)
-            poolkind[i]=newpool
-    if __debug__: print "%6.3f time in rescale" % (time.clock()-clock)
+    for i in range(len(pool)):			# number of pools
+        curpool = pool[i]
+        curscale= scal[i]
+        newpool = empty(curpool.shape, float32)
+        for plane in range(len(curscale)):	# number of planes in this pool
+            (scale,offset) = curscale[plane]
+            scale = scale/0xffff
+            newpool[:,plane] = curpool[:,plane].astype(float32) * scale + offset
+        # numpy doesn't work efficiently skipping around the variable sized pools, so don't consolidate
+        pool[i] = newpool
+
+    # Rescale network pool
+    while po32 and not len(po32[-1]): po32.pop()	# v10 DSFs have a bogus zero-dimensioned pool at the end
+    if po32:
+        if len(po32)!=1 or sc32[0].shape!=(4,2):
+            raise IOError, baddsf		# code below is optimized for one big pool
+        if wantoverlay:
+            newpool = empty((len(po32[0]),3), float32)	# drop junction IDs
+            for plane in range(3):
+                (scale,offset) = sc32[0][plane]
+                scale = scale/0xffffffffL
+                newpool[:,plane] = po32[0][:,plane].astype(float32) * scale + offset
+            po32 = newpool
+        else:
+            # convert to local coords if we just want network lines
+            centrelat = south+0.5
+            centrelon = west+0.5
+            newpool = empty((len(po32[0]),6), float32)		# drop junction IDs, add space for color
+            newpool[:,2] = po32[0][:,1].astype(float32) * sc32[0][1][0]/0xffffffffL + sc32[0][1][1]	# lat
+            newpool[:,0] =(po32[0][:,0].astype(float32) * onedeg*sc32[0][0][0]/0xffffffffL + onedeg*(sc32[0][0][1] - centrelon)) * numpy.cos(numpy.radians(newpool[:,2]))	# lon -> x
+            newpool[:,2] = onedeg*centrelat - onedeg*newpool[:,2]	# lat -> z
+            newpool[:,1] = po32[0][:,2].astype(float32) * sc32[0][2][0]/0xffffffffL + sc32[0][2][1]	# y
+            if __debug__:
+                assert not sc32[0][3].any()			# Junction IDs are unscaled
+                newpool[:,3] = po32[0][:,3].astype(float32)	# Junction ID for splitting (will be overwritten at consolidation stage)
+            po32 = newpool
+
+    if __debug__:
+        print "%6.3f time in rescale" % (time.clock()-clock)
+        total = 0
+        longest = 0
+        for p in pool:
+            total += len(p)
+            longest = max(longest, len(p))
+        print 'pool:', len(pool), 'Avg:', total/len(pool), 'Max:', longest
+        print 'po32:', len(po32)
 
     # X-Plane 10 raster data
     raster={}
@@ -289,9 +300,7 @@ def readDSF(path, netdefs, terrains={}):
                     raise IOError, baddsf
                 if flags&3==2:	# unsigned
                     fmt=fmt.upper()
-            data=[]
-            for i in range(height):
-                data.append(unpack('<%d%s' % (width, fmt), h.read(bpp*width)))
+            data = fromstring(h.read(bpp*width*height), '<'+fmt).reshape(width,height)
             raster[rasternames[layerno]]=data
             if rasternames[layerno]=='elevation':	# we're only interested in elevation
                 assert flags&4				# algorithm below assumes post-centric data
@@ -319,10 +328,93 @@ def readDSF(path, netdefs, terrains={}):
     curter='terrain_Water'
     curpatch=[]
     tercache={'terrain_Water':(join('Resources','Sea01.png'), 8, 0, 0.001,0.001)}
+    stripindices = MakeStripIndices()
+    fanindices   = MakeFanIndices()
+
+    if __debug__: cmds = defaultdict(int)
     while h.tell()<cmdsend:
         (c,)=unpack('<B', h.read(1))
+        if __debug__: cmds[c] += 1
         #if __debug__: print "%08x %d" % (h.tell()-1, c)
-        if c==1:	# Coordinate Pool Select
+
+        # Commands in rough order of frequency of use
+        if c==10:	# Network Chain Range (used by g2xpl and MeshTool)
+            (first,last)=unpack('<HH', h.read(4))
+            #print "\nChain Range %d %d" % (first,last)
+            if skipnetworks or last-first<2:
+                pass
+            elif wantoverlay:
+                assert curpool==0, curpool
+                placements.append(Network(netname, 0, [[tuple(p) for p in list(po32[netbase+first:netbase+last])]]))
+            else:
+                assert curpool==0, curpool
+                #assert not nodes[1:-2,3].any(), nodes	# Only handle single complete chain
+                nets[netcolor].append(po32[netbase+first:netbase+last])
+
+        elif c==9:	# Network Chain (KSEA demo terrain uses this one)
+            (l,)=unpack('<B', h.read(1))
+            #print "\nChain %d" % l
+            if skipnetworks:
+                h.read(l*2)
+            elif wantoverlay:
+                assert curpool==0, curpool
+                placements.append(Network(netname, 0, [[tuple(p) for p in list(po32[netbase+fromstring(h.read(l*2), '<H').astype(int)])]]))
+            else:
+                assert curpool==0, curpool
+                #assert not nodes[1:-2,3].any(), nodes	# Only handle single complete chain
+                nets[netcolor].append(po32[netbase+fromstring(h.read(l*2), '<H').astype(int)])
+
+        elif c==11:	# Network Chain 32 (KSEA demo terrain uses this one too)
+            (l,)=unpack('<B', h.read(1))
+            #print "\nChain32 %d" % l
+            if skipnetworks:
+                h.read(l*4)
+            elif wantoverlay:
+                assert curpool==0, curpool
+                placements.append(Network(netname, 0, [[tuple(p) for p in list(po32[fromstring(h.read(l*4), '<I')])]]))
+            else:
+                assert curpool==0, curpool
+                #assert not nodes[1:-2,3].any(), nodes	# Only handle single complete chain
+                nets[netcolor].append(po32[fromstring(h.read(l*4), '<I')])
+
+        elif c==13:	# Polygon Range (DSF2Text uses this one)
+            (param,first,last)=unpack('<HHH', h.read(6))
+            if not wantoverlay or last-first<2: continue
+            winding=[]
+            for d in range(first, last):
+                p=pool[curpool][d]
+                winding.append(tuple(p))
+            placements.append(PolygonFactory(polygons[idx], param, [winding]))
+
+        elif c==15:	# Nested Polygon Range (DSF2Text uses this one too)
+            (param,n)=unpack('<HB', h.read(3))
+            i=[]
+            for j in range(n+1):
+                (l,)=unpack('<H', h.read(2))
+                i.append(l)
+            if not wantoverlay: continue
+            windings=[]
+            for j in range(n):
+                winding=[]
+                for d in range(i[j],i[j+1]):
+                    p=pool[curpool][d]
+                    winding.append(tuple(p))
+                windings.append(winding)
+            placements.append(PolygonFactory(polygons[idx], param, windings))
+
+        elif c==27:	# Patch Triangle Strip - cross-pool (KSEA demo terrain uses this one)
+            (l,)=unpack('<B', h.read(1))
+            if flags&1:
+                curpatch.append(array([pool[p][d] for (p,d) in fromstring(h.read(l*4), '<H').reshape(-1,2)])[stripindices[l]])
+            else:
+                h.seek(l*4, 1)
+
+        elif c==28:	# Patch Triangle Strip Range (KSEA demo terrain uses this one too)
+            (first,last)=unpack('<HH', h.read(4))
+            if flags&1:
+                curpatch.append(pool[curpool][first:][stripindices[last-first]])
+
+        elif c==1:	# Coordinate Pool Select
             (curpool,)=unpack('<H', h.read(2))
             
         elif c==2:	# Junction Offset Select
@@ -356,45 +448,6 @@ def readDSF(path, netdefs, terrains={}):
                 for d in range(first, last):
                     p=pool[curpool][d]
                     placements.append(ObjectFactory(objects[idx], p[1],p[0], round(p[2],1)))
-                    
-        elif c==9:	# Network Chain
-            (l,)=unpack('<B', h.read(1))
-            #print "\nChain %d" % l
-            if skipnetworks:
-                h.read(l*2)
-            elif wantoverlay:
-                nodes = [tuple(po32[curpool][netbase+unpack('<H', h.read(2))[0]]) for d in range(l)]
-                if __debug__:	# Only handle single complete chain
-                    for node in nodes[1:-2]: assert len(node)==4 and node[3]==0.0, node
-                placements.append(Network(netname, 0, [nodes]))
-            else:
-                nets[netcolor].append([po32[curpool][netbase+unpack('<H', h.read(2))[0]] for d in range(l)])
-            
-        elif c==10:	# Network Chain Range
-            (first,last)=unpack('<HH', h.read(4))
-            #print "\nChain Range %d %d" % (first,last)
-            if skipnetworks or last-first<2:
-                pass
-            elif wantoverlay:
-                nodes = [tuple(po32[curpool][d]) for d in range(netbase+first, netbase+last)]
-                if __debug__:	# Only handle single complete chain
-                    for node in nodes[1:-2]: assert len(node)==4 and node[3]==0.0, node
-                placements.append(Network(netname, 0, [nodes]))
-            else:
-                nets[netcolor].append([po32[curpool][d] for d in range(netbase+first, netbase+last)])
-
-        elif c==11:	# Network Chain 32
-            (l,)=unpack('<B', h.read(1))
-            #print "\nChain32 %d" % l
-            if skipnetworks:
-                h.read(l*4)
-            elif wantoverlay:
-                nodes = [tuple(po32[curpool][unpack('<I', h.read(4))[0]]) for d in range(l)]
-                if __debug__:	# Only handle single complete chain
-                    for node in nodes[1:-2]: assert len(node)==4 and node[3]==0.0, node
-                placements.append(Network(netname, 0, [nodes]))
-            else:
-                nets[netcolor].append([po32[curpool][unpack('<I', h.read(4))[0]] for d in range(l)])
 
         elif c==12:	# Polygon
             (param,l)=unpack('<HB', h.read(3))
@@ -404,15 +457,6 @@ def readDSF(path, netdefs, terrains={}):
             winding=[]
             for i in range(l):
                 (d,)=unpack('<H', h.read(2))
-                p=pool[curpool][d]
-                winding.append(tuple(p))
-            placements.append(PolygonFactory(polygons[idx], param, [winding]))
-            
-        elif c==13:	# Polygon Range (DSF2Text uses this one)
-            (param,first,last)=unpack('<HHH', h.read(6))
-            if not wantoverlay or last-first<2: continue
-            winding=[]
-            for d in range(first, last):
                 p=pool[curpool][d]
                 winding.append(tuple(p))
             placements.append(PolygonFactory(polygons[idx], param, [winding]))
@@ -431,22 +475,6 @@ def readDSF(path, netdefs, terrains={}):
             if wantoverlay and n>0 and len(windings[0])>=2:
                 placements.append(PolygonFactory(polygons[idx], param, windings))
                 
-        elif c==15:	# Nested Polygon Range (DSF2Text uses this one too)
-            (param,n)=unpack('<HB', h.read(3))
-            i=[]
-            for j in range(n+1):
-                (l,)=unpack('<H', h.read(2))
-                i.append(l)
-            if not wantoverlay: continue
-            windings=[]
-            for j in range(n):
-                winding=[]
-                for d in range(i[j],i[j+1]):
-                    p=pool[curpool][d]
-                    winding.append(tuple(p))
-                windings.append(winding)
-            placements.append(PolygonFactory(polygons[idx], param, windings))
-            
         elif c==16:	# Terrain Patch
             if curpatch:
                 newmesh=makemesh(flags,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
@@ -473,63 +501,48 @@ def readDSF(path, netdefs, terrains={}):
 
         elif c==23:	# Patch Triangle
             (l,)=unpack('<B', h.read(1))
-            points=[]
-            for i in range(l):
-                (d,)=unpack('<H', h.read(2))
-                points.append(pool[curpool][d])
-            curpatch.extend(points)
-            
+            if flags&1:
+                curpatch.append(pool[curpool][fromstring(h.read(l*2), '<H')])
+            else:
+                h.seek(l*2, 1)
+
         elif c==24:	# Patch Triangle - cross-pool
             (l,)=unpack('<B', h.read(1))
-            points=[]
-            for i in range(l):
-                (p,d)=unpack('<HH', h.read(4))
-                points.append(pool[p][d])
-            curpatch.extend(points)
+            if flags&1:
+                curpatch.append(array([pool[p][d] for (p,d) in fromstring(h.read(l*4), '<H').reshape(-1,2)]))
+            else:
+                h.seek(l*4, 1)
 
         elif c==25:	# Patch Triangle Range
             (first,last)=unpack('<HH', h.read(4))
-            curpatch.extend(pool[curpool][first:last])
+            if flags&1:
+                curpatch.append(pool[curpool][first:last])
             
         elif c==26:	# Patch Triangle Strip (used by g2xpl and MeshTool)
             (l,)=unpack('<B', h.read(1))
-            points=[]
-            for i in range(l):
-                (d,)=unpack('<H', h.read(2))
-                points.append(pool[curpool][d])
-            curpatch.extend(meshstrip(points))
-
-        elif c==27:	# Patch Triangle Strip - cross-pool
-            (l,)=unpack('<B', h.read(1))
-            points=[]
-            for i in range(l):
-                (p,d)=unpack('<HH', h.read(4))
-                points.append(pool[p][d])
-            curpatch.extend(meshstrip(points))
-
-        elif c==28:	# Patch Triangle Strip Range
-            (first,last)=unpack('<HH', h.read(4))
-            curpatch.extend(meshstrip(pool[curpool][first:last]))
+            if flags&1:
+                curpatch.append(pool[curpool][fromstring(h.read(l*2), '<H')[stripindices[l]]])
+            else:
+                h.seek(l*2, 1)
 
         elif c==29:	# Patch Triangle Fan
             (l,)=unpack('<B', h.read(1))
-            points=[]
-            for i in range(l):
-                (d,)=unpack('<H', h.read(2))
-                points.append(pool[curpool][d])
-            curpatch.extend(meshfan(points))
+            if flags&1:
+                curpatch.append(pool[curpool][fromstring(h.read(l*2), '<H')[fanindices[l]]])
+            else:
+                h.seek(l*2, 1)
 
         elif c==30:	# Patch Triangle Fan - cross-pool
             (l,)=unpack('<B', h.read(1))
-            points=[]
-            for i in range(l):
-                (p,d)=unpack('<HH', h.read(4))
-                points.append(pool[p][d])
-            curpatch.extend(meshfan(points))
+            if flags&1:
+                curpatch.append(array([pool[p][d] for (p,d) in fromstring(h.read(l*4), '<H').reshape(-1,2)])[fanindices[l]])
+            else:
+                h.seek(l*4, 1)
 
         elif c==31:	# Patch Triangle Fan Range
             (first,last)=unpack('<HH', h.read(4))
-            curpatch.extend(meshfan(pool[curpool][first:last]))
+            if flags&1:
+                curpatch.append(pool[curpool][first:][fanindices[last-first]])
 
         elif c==32:	# Comment
             (l,)=unpack('<B', h.read(1))
@@ -551,56 +564,67 @@ def readDSF(path, netdefs, terrains={}):
     if curpatch:
         newmesh=makemesh(flags,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
         if newmesh: mesh.append(newmesh)
-    if __debug__: print "%6.3f time in CMDS atom" % (time.clock()-clock)
+
+    if __debug__:
+        print "%6.3f time in CMDS atom" % (time.clock()-clock)
+        print 'Stats:'
+        for cmd in sorted(cmds.keys()): print cmd, cmds[cmd]
+        if not wantoverlay: print "%d patches, avg subsize %s" % (makemesh.count, makemesh.total/makemesh.count)
 
     h.close()
+
+    # apply colors to network points, consolidate and create indices for drawing
+    # FIXME: speed this up
+    if nets:
+        counts = []	# points in each chain
+        newnets = []
+        for color, cnets in nets.iteritems():
+            counts.extend([len(chain) for chain in cnets])
+            cnets = vstack(cnets)
+            cnets[:,3:6] = color	# apply color across all points
+            newnets.append(cnets)
+        newnets = vstack(newnets)
+        counts = array(counts, int)
+        start  = cumsum(concatenate((zeros((1,), int), counts)))[:-1]
+        end    = start + counts - 1
+        indices= concatenate([repeat(arange(start[i],end[i],1,GLuint), 2) for i in range(len(counts))])
+        indices[1::2] += 1
+        assert (len(indices) == (sum(counts)-len(counts))*2)
+        nets = (newnets, indices)
+    else:
+        nets = None
+
     return (south, west, placements, nets, mesh)
 
 
-def meshstrip(points):
-    tris=[]
-    for i in range(len(points)-2):
-        if i%2:
-            tris.extend([points[i+2], points[i+1], points[i]])
+# Indices for making n-2 triangles out of n vertices of a tri strip
+class MakeStripIndices(dict):
+    def __missing__(self, n):
+        if n>3:
+            a = concatenate((insert(arange(((n+1)/2)*2-1),  slice(3,n,2), arange(2,n,2)),		# [0,1,2, 2,3,4, 4,5,6, ...]
+                             insert(arange((n/2)*2-1,0,-1), slice(3,n,2), arange((n/2)*2-3,0,-2))))	# [..., 7,6,5, 5,4,3, 3,2,1]
+        elif n==3:
+            a = arange(3)	# above algorithm doesn't work for n==3
         else:
-            tris.extend([points[i],   points[i+1], points[i+2]])
-    return tris
+            a = empty((0,),int)
+        self[n] = a
+        return a
 
-def meshfan(points):
-    tris=[]
-    for i in range(1,len(points)-1):
-        tris.extend([points[0], points[i], points[i+1]])
-    return tris
+# Indices for making n-2 triangles out of n vertices of a tri fan
+class MakeFanIndices(dict):
+    def __missing__(self, n):
+        a = zeros(3*(n-2), int)
+        a[1:n*3:3] += arange(1,n-1)
+        a[2:n*3:3] += arange(2,n)
+        self[n] = a
+        return a
+
 
 def makemesh(flags,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,tercache):
 
-    def elevation(lat,lon,south,west,elev,elevwidth,elevheight):
-        # elevation from raster data - see DEMGeo::value_linear in xptools
-        x_fract=(lon-west)*elevwidth
-        z_fract=(lat-south)*elevwidth
-        x=int(x_fract)
-        z=int(z_fract)
-        x_fract-=x
-        z_fract-=z
-        v1=elev[z][x]
-        if x>=elevwidth:
-            v2=v1		# east boundary
-            if z>=elevheight:
-                v4=v3=v2=v1	# north east corner
-            else:
-                v4=v3=elev[z+1][x]
-        elif z>=elevheight:
-            v3=v1		# north boundary
-            v4=v2=elev[z][x+1]
-        else:
-            v2=elev[z  ][x+1]
-            v3=elev[z+1][x  ]
-            v4=elev[z+1][x+1]
-        w1=(1.0 - x_fract) * (1.0 - z_fract)
-        w2=(      x_fract) * (1.0 - z_fract)
-        w3=(1.0 - x_fract) * (      z_fract)
-        w4=(      x_fract) * (      z_fract)
-        return (v1 * w1 + v2 * w2 + v3 * w3 + v4 * w4) / (w1 + w2 + w3 + w4)
+    if "count" not in makemesh.__dict__: makemesh.count = makemesh.total = 0
+    makemesh.count += 1
+    makemesh.total += len(patch)
 
     # Get terrain info
     if ter in tercache:
@@ -647,37 +671,60 @@ def makemesh(flags,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,
     # Make mesh
     centrelat=south+0.5
     centrelon=west+0.5
-    v=[]
-    if flags&1 and (len(patch[0])<7 or xscale):	# hard and no st coords
-        for p in patch:
-            x=(p[0]-centrelon)*onedeg*cos(radians(p[1]))
-            z=(centrelat-p[1])*onedeg
-            if p[2]!=-32768:
-                y=p[2]
-            else:	# elevation from raster data
-                y=elevation(p[1],p[0],south,west,elev,elevwidth,elevheight)
-            if not angle:
-                v.append([x, y, z, x*xscale, -z*zscale])
-            elif angle==90:
-                v.append([x, y, z, z*zscale, x*xscale])
-            elif angle==180:
-                v.append([x, y, z, -x*xscale, z*zscale])
-            elif angle==270:
-                v.append([x, y, z, -z*zscale, -x*xscale])
-            else: # not square - ignore rotation
-                v.append([x, y, z, x*xscale, -z*zscale])
-    elif not (len(patch[0])<7 or xscale):	# st coords but not projected
-        for p in patch:
-            if p[2]!=-32768:
-                y=p[2]
-            else:	# elevation from raster data
-                y=elevation(p[1],p[0],south,west,elev,elevwidth,elevheight)
-            v.append([(p[0]-centrelon)*onedeg*cos(radians(p[1])),
-                      y, (centrelat-p[1])*onedeg, p[5],p[6]])
+    v = vstack(patch)[:,0:7]
+
+    heights = v[:,2].copy()
+    e = (heights == -32768)	# indices of points that take elevation from raster data
+    if e.any():
+        # vectorised version of elevation from raster data - see DEMGeo::value_linear in xptools
+        n = (numpy.sum(e),)
+        x = empty(n, int)
+        x_frac = empty(n, float32)
+        z = empty(n, int)
+        z_frac = empty(n, float32)
+        numpy.modf((v[:,0][e] - west)  * elevwidth,  x_frac, x)
+        numpy.modf((v[:,1][e] - south) * elevheight, z_frac, z)
+        x1 = numpy.where(x < elevwidth-1,  x+1, elevwidth-1)
+        z1 = numpy.where(z < elevheight-1, z+1, elevheight-1)
+        v1 = elev[z,  x ]
+        v2 = elev[z,  x1]
+        v3 = elev[z1, x ]
+        v4 = elev[z1, x1]
+        w1 = (1-x_frac) * (1-z_frac)
+        w2 = (  x_frac) * (1-z_frac)
+        w3 = (1-x_frac) * (  z_frac)
+        w4 = (  x_frac) * (  z_frac)
+        v[:,0] = (onedeg*v[:,0] - onedeg*centrelon) * numpy.cos(numpy.radians(v[:,1]))	# lon -> x
+        v[:,2] = onedeg*centrelat - onedeg*v[:,1]	# lat -> z
+        v[:,1] = heights
+        v[:,1][e] = (v1 * w1 + v2 * w2 + v3 * w3 + v4 * w4) / (w1 + w2 + w3 + w4)	# y
     else:
-        # skip not hard and no st coords - complicated blending required
-        return None
-    return (texture,flags|texflags,v)
+        v[:,0] = (onedeg*v[:,0] - onedeg*centrelon) * numpy.cos(numpy.radians(v[:,1]))	# lon -> x
+        v[:,2] = onedeg*centrelat - onedeg*v[:,1]	# lat -> z
+        v[:,1] = heights
+
+    #if __debug__:
+    #    for i in range(len(patch)): assert -onedeg/2<=v[i][0]<=onedeg/2 and -onedeg/2<=v[i][2]<=onedeg/2, "%d\n%s\n%s" % (i, patch[i], v[i])
+    if xscale:	# projected
+        if not angle:
+            v[:,3] = v[:,0] *  xscale
+            v[:,4] = v[:,2] * -zscale
+        elif angle==90:
+            v[:,3] = v[:,2] *  zscale
+            v[:,4] = v[:,0] *  xscale
+        elif angle==180:
+            v[:,3] = v[:,0] * -xscale
+            v[:,4] = v[:,2] *  zscale
+        elif angle==270:
+            v[:,3] = v[:,2] * -zscale
+            v[:,4] = v[:,0] * -xscale
+        else: # not square - ignore rotation
+            v[:,3] = v[:,0] *  xscale
+            v[:,4] = v[:,2] * -zscale
+    else:	# explicit st co-ords
+        v[:,3:5] = v[:,5:7]
+
+    return (texture,flags|texflags,v[:,0:5].tolist())	# FIXME: Make heighttest, airport layout etc handle numpy arrays
 
 
 def writeDSF(dsfdir, key, placements, netfile):

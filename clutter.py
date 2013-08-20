@@ -2232,9 +2232,6 @@ class Network(String,Line):
             return String.draw_dynamic(self, glstate, selected, picking, queryobj)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        if len(self.nodes[0][0])!=3:	# Trash bezier points
-            for i in range(len(self.nodes)):
-                self.nodes[i] = [self.nodes[i][0][:3]] + [p for p in self.nodes[i][1:-1] if not p[2]] + [self.nodes[i][-1][:3]]
         if dhdg:
             # preserve level
             for i in range(len(self.nodes)):
@@ -2243,7 +2240,7 @@ class Network(String,Line):
                     l = hypot(self.nodes[i][j][0]-loc[1], self.nodes[i][j][1]-loc[0])
                     self.nodes[i][j] = (max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
                                         max(tile[0], min(tile[0]+1, round2res(loc[0]+cos(h)*l))),
-                                        int(self.nodes[i][j][2]))
+                                        (j==0 or j==len(self.nodes[i])-1) and self.nodes[i][j][2] or 0)	# preserve level, turn bezier hard
         if dlat or dlon:
             Polygon.move(self, dlat,dlon, 0,0, loc, tile, options, vertexcache)
         elif dhdg:
@@ -2251,14 +2248,11 @@ class Network(String,Line):
 
     def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
         # defer layout
-        if len(self.nodes[0][0])!=3:	# Convert bezier points to normal!
-            for i in range(len(self.nodes)):
-                self.nodes[i] = [self.nodes[i][0][:3]] + [(p[0],p[1],0) for p in self.nodes[i][1:-1]] + [self.nodes[i][-1][:3]]
         (i,j)=node
         # points can be on upper boundary of tile
         self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
                           max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)),
-                          (j==0 or j==len(self.nodes[i])-1) and min(max(int(self.nodes[i][j][2]) + darg, 0), 4) or 0)	# level 4 is arbitrary, but seems to match roads.net
+                          (j==0 or j==len(self.nodes[i])-1) and min(max(int(self.nodes[i][j][2]) + darg, 0), 5) or 0)	# level 5 is arbitrary
         if defer:
             return node
         else:
@@ -2266,11 +2260,8 @@ class Network(String,Line):
 
     def updatenode(self, node, lat, lon, tile, options, vertexcache):
         # update node height but defer full layout. Assumes lat,lon is valid
-        if len(self.nodes[0][0])!=3:	# Convert bezier points to normal!
-            for i in range(len(self.nodes)):
-                self.nodes[i] = [self.nodes[i][0][:3]] + [(p[0],p[1],0) for p in self.nodes[i][1:-1]] + [self.nodes[i][-1][:3]]
         (i,j)=node
-        self.nodes[i][j]=(lon,lat,self.nodes[i][j][2])	# preserve level
+        self.nodes[i][j] = (lon ,lat, (j==0 or j==len(self.nodes[i])-1) and self.nodes[i][j][2] or 0)	# preserve level, turn bezier hard
         (x,z)=self.position(tile, lat, lon)
         if self.definition.fittomesh:
             y=vertexcache.height(tile,options,x,z)
@@ -2280,9 +2271,6 @@ class Network(String,Line):
         return node
 
     def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
-        if len(self.nodes[0][0])!=3:	# Convert bezier points to normal!
-            for i in range(len(self.nodes)):
-                self.nodes[i] = [self.nodes[i][0][:3]] + [(p[0],p[1],0) for p in self.nodes[i][1:-1]] + [self.nodes[i][-1][:3]]
         (i,j) = selectednode
         n = len(self.nodes[i])
         if (not self.closed) and (j==0 or j==n-1):

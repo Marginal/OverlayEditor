@@ -732,20 +732,19 @@ class MyGL(wx.glcanvas.GLCanvas):
             glScalef(1,0,1)		# Defeat elevation data
         if __debug__:
             if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
-        (mesh, nets) = self.vertexcache.getMesh(self.tile,self.options)
+        (mesh, netindices) = self.vertexcache.getMesh(self.tile,self.options)
         for (base,number,texno,poly) in mesh:
             self.glstate.set_poly(bool(poly))
             self.glstate.set_texture(texno)
             glDrawArrays(GL_TRIANGLES, base, number)
         if __debug__:
             if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
-        if nets:
+        if netindices is not None:
             self.glstate.set_vector(self.vertexcache)
             self.glstate.set_texture(None)
             self.glstate.set_color(None)
             self.glstate.set_depthtest(False)	# Need line to appear over terrain
-            (base, number, indices) = nets
-            glDrawElements(GL_LINES, number, GL_UNSIGNED_INT, indices)
+            glDrawElements(GL_LINES, len(netindices), GL_UNSIGNED_INT, netindices)
 
         if not self.options&Prefs.ELEVATION:
             glLoadIdentity()
