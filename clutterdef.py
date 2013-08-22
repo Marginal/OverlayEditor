@@ -101,18 +101,20 @@ def ClutterDefFactory(filename, vertexcache, lookup, defs):
 class ClutterDef:
 
     LAYERNAMES=['terrain', 'beaches', 'shoulders', 'taxiways', 'runways', 'markings', 'roads', 'objects', 'light_objects', 'cars']
-    LAYERCOUNT=len(LAYERNAMES)*11
-    TERRAINLAYER=LAYERNAMES.index('terrain')*11+5
     BEACHESLAYER=LAYERNAMES.index('beaches')*11+5
     SHOULDERLAYER=LAYERNAMES.index('shoulders')*11+5
     TAXIWAYLAYER=LAYERNAMES.index('taxiways')*11+5
-    DRAPEDLAYER=TAXIWAYLAYER				# for draped polygons of all kinds
     RUNWAYSLAYER=LAYERNAMES.index('runways')*11+5
-    MARKINGLAYER=LAYERNAMES.index('markings')*11+5
     NETWORKLAYER=LAYERNAMES.index('roads')*11+5
-    OUTLINELAYER=LAYERNAMES.index('roads')*11+5	# for polygons
-    DRAPEDOBJLAYER=LAYERNAMES.index('objects')*11	# objects -5 for draped geometry
-    DEFAULTLAYER=LAYERNAMES.index('objects')*11+5
+    DRAPEDLAYER =LAYERNAMES.index('objects')*11		# objects -5 for draped geometry
+    OBJECTLAYER =LAYERNAMES.index('objects')*11+5
+    LAYERCOUNT      = len(LAYERNAMES)*11		# assignable X-Plane layers
+    OUTLINELAYER    = LAYERCOUNT			# for polygons
+    GEOMCULLEDLAYER = LAYERCOUNT+1			# for non-draped dynamic geometry (i.e. Facades)
+    GEOMNOCULLLAYER = LAYERCOUNT+2			# for non-draped dynamic geometry (i.e. Facades)
+    IMAGERYLAYER    = LAYERCOUNT+3			# for background imagery (actually drawn earlier)
+    DRAWLAYERCOUNT  = LAYERCOUNT+4			# including stuff lifted out of the X-Plane layers
+
     PREVIEWSIZE=400	# size of image in preview window
 
     def __init__(self, filename, vertexcache, lookup, defs):
@@ -130,7 +132,7 @@ class ClutterDef:
         else:
             self.texture=0
         self.texerr=None	# (filename, errorstring)
-        self.layer=ClutterDef.DEFAULTLAYER
+        self.layer=ClutterDef.OUTLINELAYER
         self.canpreview=False
         self.type=0	# for locking
         
@@ -159,7 +161,7 @@ class ClutterDef:
     def flush(self):
         pass
 
-    def draw_instanced(self, canvas, selected):
+    def draw_instanced(self, glstate, selected):
         pass
 
     # Normalise path, replacing : / and \ with os-specific separator, eliminating .. etc
@@ -174,6 +176,7 @@ class ObjectDef(ClutterDef):
     
     def __init__(self, filename, vertexcache, lookup, defs, make_editable=True):
         ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
+        self.layer=ClutterDef.OBJECTLAYER
         self.canpreview=True
         self.type=Locked.OBJ
         self.poly=0
@@ -367,7 +370,7 @@ class ObjectDef(ClutterDef):
                     if len(c)>1 and c[1].lower()!='none':
                         texture_draped=self.cleanpath(c[1])
                         # FIXME: Should have different layers for static and dynamic content
-                        self.layer=ClutterDef.DRAPEDOBJLAYER
+                        self.layer=ClutterDef.DRAPEDLAYER
                 elif id=='ATTR_LOD':
                     if float(c[1])!=0: break
                     current=last=culled	# State is reset per LOD
@@ -491,35 +494,51 @@ class ObjectDef(ClutterDef):
     def flush(self):
         self.base=None
 
-    def draw_instanced(self, canvas, selected):
-        assert canvas.glstate.instanced_arrays
+    def draw_instanced(self, glstate, selected):
         if self.vdata is None or not self.instances:
             #if __debug__: print "No data for instancing %s" % self
             return
-        canvas.glstate.set_texture(self.texture)
-        if selected:
-            canvas.glstate.set_attrib_selected(array([o in selected for o in self.instances],float32))
-        if not self.transform_valid:
-            if __debug__:
-                for o in self.instances: assert o.matrix is not None, "Empty matrix %s" % o
-            self.transform_vbo.set_array(concatenate([o.matrix for o in self.instances]))
-            self.transform_valid = True
-        self.transform_vbo.bind()
-        pos=canvas.glstate.transform_pos
-        glVertexAttribPointer(pos,   4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo)
-        glVertexAttribDivisorARB(pos,   1)
-        glVertexAttribPointer(pos+1, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 16)
-        glVertexAttribDivisorARB(pos+1, 1)
-        glVertexAttribPointer(pos+2, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 32)
-        glVertexAttribDivisorARB(pos+2, 1)
-        glVertexAttribPointer(pos+3, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 48)
-        glVertexAttribDivisorARB(pos+3, 1)
-        if self.culled:
-            canvas.glstate.set_cull(True)
-            glDrawArraysInstanced(GL_TRIANGLES, self.base, self.culled, len(self.instances))
-        if self.nocull:
-            canvas.glstate.set_cull(False)
-            glDrawArraysInstanced(GL_TRIANGLES, self.base+self.culled, self.nocull, len(self.instances))
+        glstate.set_texture(self.texture)
+        if glstate.instanced_arrays:
+            if selected:
+                glstate.set_attrib_selected(glstate.selected_pos, array([o in selected for o in self.instances],float32))
+            if not self.transform_valid:
+                if __debug__:
+                    for o in self.instances: assert o.matrix is not None, "Empty matrix %s" % o
+                self.transform_vbo.set_array(concatenate([o.matrix for o in self.instances]))
+                self.transform_valid = True
+            self.transform_vbo.bind()
+            pos=glstate.transform_pos
+            glVertexAttribPointer(pos,   4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo)
+            glVertexAttribPointer(pos+1, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 16)
+            glVertexAttribPointer(pos+2, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 32)
+            glVertexAttribPointer(pos+3, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 48)
+            if self.culled:
+                glstate.set_cull(True)
+                glDrawArraysInstanced(GL_TRIANGLES, self.base, self.culled, len(self.instances))
+            if self.nocull:
+                glstate.set_cull(False)
+                glDrawArraysInstanced(GL_TRIANGLES, self.base+self.culled, self.nocull, len(self.instances))
+        else:
+            selected = self.instances.intersection(selected)	# subset of selected that are instances of this def
+            unselected = self.instances.difference(selected)
+            if unselected:
+                glstate.set_color(COL_UNPAINTED)
+                for obj in unselected:
+                    glLoadMatrixf(obj.matrix)
+                    if self.culled:
+                        glstate.set_cull(True)
+                        glDrawArrays(GL_TRIANGLES, self.base, self.culled)
+                    if self.nocull:
+                        glstate.set_cull(False)
+                        glDrawArrays(GL_TRIANGLES, self.base+self.culled, self.nocull)
+            if selected:
+                glstate.set_color(COL_SELECTED)
+                glstate.set_cull(False)		# draw rear side of "invisible" faces when selected
+                for obj in selected:
+                    glLoadMatrixf(obj.matrix)
+                    glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
+
 
     def preview(self, canvas, vertexcache):
         if not self.canpreview: return None
@@ -632,7 +651,7 @@ class ObjectFallback(ObjectDef):
 
     def __init__(self, filename, vertexcache, lookup, defs):
         ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
-        self.layer=ClutterDef.DEFAULTLAYER
+        self.layer=ClutterDef.OBJECTLAYER
         self.type=Locked.OBJ
         self.vdata=array([0.5,1.0,-0.5, 1.0,1.0,
                           -0.5,1.0,0.5, 0.0,0.0,
@@ -672,7 +691,7 @@ class AutoGenPointDef(ObjectDef):
 
     def __init__(self, filename, vertexcache, lookup, defs):
         ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
-        self.layer=ClutterDef.DRAPEDOBJLAYER	# For the draped texture
+        self.layer=ClutterDef.DRAPEDLAYER	# For the draped texture
         self.canpreview=True
         self.type=Locked.OBJ
         self.vdata=None
@@ -789,6 +808,7 @@ class PolygonDef(ClutterDef):
 
     def __init__(self, filename, vertexcache, lookup, defs):
         ClutterDef.__init__(self, filename, vertexcache, lookup, defs)
+        self.layer=ClutterDef.OUTLINELAYER
         self.fittomesh=True	# nodes laid out at mesh elevation
         self.type=Locked.UNKNOWN
 
@@ -944,6 +964,7 @@ class FacadeDef(PolygonDef):
 
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
+        self.layer=ClutterDef.DRAPEDLAYER
         self.canpreview=True
         self.type=Locked.FAC
 
@@ -995,6 +1016,8 @@ class FacadeDef(PolygonDef):
                 self.two_sided=(int(c[1])!=0)
             elif id=='GRADED':
                 self.fittomesh=False
+            elif id=='ATTR_layer_group_draped':
+                self.setlayer(c[1], int(c[2]))
 
             # v8
             elif id=='LOD':
@@ -1208,6 +1231,7 @@ class FacadeFallback(FacadeDef):
 
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
+        self.layer=ClutterDef.OUTLINELAYER
         self.type=Locked.FAC
         self.ring=1
         self.version=800
@@ -1295,7 +1319,7 @@ class LineDef(PolygonDef):
 
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
-        self.layer=ClutterDef.MARKINGLAYER
+        self.layer=ClutterDef.DRAPEDLAYER
         self.canpreview=True
         self.width=0
         self.length=0
@@ -1392,7 +1416,7 @@ class LineFallback(LineDef):
 
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
-        self.layer=ClutterDef.MARKINGLAYER
+        self.layer=ClutterDef.DRAPEDLAYER
         self.width=1
         self.length=8.0
         self.segments=[LineDef.Segment(vertexcache.texcache.get(fallbacktexture), 8.0, -0.5, 0, 0, 0.5, 0, 1)]

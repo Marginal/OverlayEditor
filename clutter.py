@@ -2,20 +2,26 @@
 # __init__
 # __str__
 # clone -> make a new copy, minus layout
+# position -> returns (x,z) position relative to centre of enclosing tile
 # load -> read definition
 # location -> returns (average) lat/lon
+# locationstr -> returns info suitable for display in status bar
 # layout -> fit to terrain, allocate into VBO(s)
 # clearlayout -> clear above
 # flush -> clear dynamic VBO allocation (but retain layout) - note doesn't clear instance VBO allocation since def may be shared
 # move -> move and layout
 # movenode -> move - no layout
 # updatenode -> move node - no layout
+# draw_instance -> draw geometry in instance VBO, including child geometry
+# draw_dynamic -> draw geometry in dynamic VBO
+# draw_nodes -> draw highlighted
+# bucket_dynamic -> callback to enumerate drawing data in dynamic VBO
 
 # Clutter (except for DrapedImage) not in the current tile retain their layout, but not their VBO allocation.
 
 import gc
 from math import atan2, ceil, cos, degrees, floor, hypot, pi, radians, sin, tan
-from numpy import array, array_equal, concatenate, float32, float64
+from numpy import array, array_equal, concatenate, empty, float32, float64
 from os.path import join
 from sys import maxint
 if __debug__:
@@ -29,7 +35,7 @@ from OpenGL.GL.ARB.occlusion_query import *
 glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
 glEndQuery = alternate(glEndQuery, glEndQueryARB)
 
-from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, StringDef, NetworkDef, ObjectFallback, AutoGenFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, StringFallback, NetworkFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELNODE
+from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, StringDef, NetworkDef, ObjectFallback, AutoGenFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, StringFallback, NetworkFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELNODE
 
 from palette import PaletteEntry
 from prefs import Prefs
@@ -238,6 +244,11 @@ class Object(Clutter):
 
     def draw_nodes(self, glstate, selectednode):
         pass
+
+    def bucket_dynamic(self, base, buckets):
+        self.base = base
+        buckets.add(self.definition.layer, self.definition.texture_draped, base, len(self.dynamic_data)/6)
+        return self.dynamic_data
 
     def clearlayout(self, vertexcache):
         self.matrix=None
@@ -467,14 +478,9 @@ class Polygon(Clutter):
             glstate.set_color(selected and COL_SELECTED or None)
             glstate.set_depthtest(False)	# Need line to appear over terrain
         base=self.base
-        if self.closed:
-            for winding in self.points:
-                glDrawArrays(GL_LINE_LOOP, base, len(winding))
-                base+=len(winding)
-        else:
-            for winding in self.points:
-                glDrawArrays(GL_LINE_STRIP, base, len(winding))
-                base+=len(winding)
+        for winding in self.points:
+            glDrawArrays(GL_LINE_STRIP, base, len(winding))
+            base+=len(winding)
         for p in self.placements:
             p.draw_dynamic(glstate, selected, picking)
         if queryobj is not None:
@@ -484,13 +490,10 @@ class Polygon(Clutter):
     def draw_nodes(self, glstate, selectednode):
         # Just do it in immediate mode
         glstate.set_texture(None)
-        assert glstate.color==COL_SELECTED
+        glstate.set_color(COL_SELECTED)
         glstate.set_depthtest(False)
         for winding in self.points:
-            if self.closed:
-                glBegin(GL_LINE_LOOP)
-            else:
-                glBegin(GL_LINE_STRIP)
+            glBegin(GL_LINE_STRIP)
             for p in winding:
                 glVertex3f(p[0],p[1],p[2])
             glEnd()
@@ -504,6 +507,14 @@ class Polygon(Clutter):
             glVertex3f(*self.points[selectednode[0]][selectednode[1]])
         glEnd()
         
+    def bucket_dynamic(self, base, buckets):
+        # allocate for drawing, assuming outlines
+        self.base = base
+        for winding in self.points:
+            buckets.add(ClutterDef.OUTLINELAYER, None, base, len(winding))
+            base += len(winding)
+        return self.dynamic_data
+
     def clearlayout(self, vertexcache):
         self.points=[]
         self.dynamic_data=None	# Can be removed from VBO
@@ -550,12 +561,15 @@ class Polygon(Clutter):
                         self.lon+=nodes[j][0]
                         self.lat+=nodes[j][1]
                 points.append((x,y,z))
+                if not j: first = (x,y,z)	# repeat if closed
                 a+=nodes[j][0]*nodes[(j+1)%n][1]-nodes[(j+1)%n][0]*nodes[j][1]
-            if self.closed and ((i==0 and a<0) or (i and a>0)):
-                # Outer should be CCW, inner CW
-                nodes.reverse()
-                points.reverse()
-                if selectednode and selectednode[0]==i: selectednode=(i,n-1-selectednode[1])
+            if self.closed:
+                points.append(first)
+                if ((i==0 and a<0) or (i and a>0)):
+                    # Outer should be CCW, inner CW
+                    nodes.reverse()
+                    points.reverse()
+                    if selectednode and selectednode[0]==i: selectednode=(i,n-1-selectednode[1])
             self.points.append(points)
 
         if fittomesh:
@@ -678,7 +692,7 @@ class Polygon(Clutter):
         if glstate.occlusion_query:
             queryidx=0
             for i in range(len(self.points)):
-                for j in range(len(self.points[i])):
+                for j in range(self.closed and len(self.points[i])-1 or len(self.points[i])):
                     glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
                     glBegin(GL_POINTS)
                     glVertex3f(*self.points[i][j])
@@ -687,7 +701,7 @@ class Polygon(Clutter):
                     queryidx+=1
         else:
             for i in range(len(self.points)):
-                for j in range(len(self.points[i])):
+                for j in range(self.closed and len(self.points[i])-1 or len(self.points[i])):
                     glLoadName((i<<24)+j)
                     glBegin(GL_POINTS)
                     glVertex3f(*self.points[i][j])
@@ -781,6 +795,14 @@ class Draped(Polygon):
             glEndQuery(glstate.occlusion_query)
         return True
         
+    def bucket_dynamic(self, base, buckets):
+        if self.nonsimple:
+            return Polygon.bucket_dynamic(self, base, buckets)
+        else:
+            self.base = base
+            buckets.add(self.definition.layer, self.definition.texture, base, len(self.dynamic_data)/6)
+            return self.dynamic_data
+
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         if self.param==65535:
             n=len(self.nodes[0])
@@ -887,7 +909,7 @@ class Draped(Polygon):
         try:
             tris=[]
             gluTessBeginPolygon(tess, tris)
-            for i in range(len(self.nodes)):
+            for i in range(len(self.nodes)):	# always closed
                 gluTessBeginContour(tess)
                 for j in range(len(self.nodes[i])):
                     if self.param==65535:
@@ -961,6 +983,7 @@ class DrapedImage(Draped):
 
     def load(self, lookup, defs, vertexcache, usefallback=True):
         self.definition=DrapedFallback(self.name, vertexcache, lookup, defs)
+        self.definition.layer=ClutterDef.IMAGERYLAYER
         self.definition.texture=0
         self.definition.type=0	# override - we don't want this locked
 
@@ -1199,6 +1222,19 @@ class Facade(Polygon):
                 glVertex3f(*self.points[i][(j+1)%len(self.nodes[i])])
                 glEnd()
         
+    def bucket_dynamic(self, base, buckets):
+        if self.nonsimple:
+            return Polygon.bucket_dynamic(self, base, buckets)
+        else:
+            self.base = base
+            layer = self.definition.two_sided and ClutterDef.GEOMNOCULLLAYER or ClutterDef.GEOMCULLEDLAYER
+            buckets.add(layer, self.definition.texture, self.base, self.datalen)
+            if self.drapedlen:
+                buckets.add(self.definition.layer, self.definition.texture_roof, self.base+self.datalen, self.drapedlen)
+            if self.rooflen:
+                buckets.add(layer, self.definition.texture_roof, self.base+self.datalen+self.drapedlen, self.rooflen)
+            return self.dynamic_data
+
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         if self.definition.version<1000:
             dparam=max(dparam, 1-self.param)	# can't have height 0
@@ -1339,7 +1375,7 @@ class Facade(Polygon):
         tris=[]
         roofpts=[]
         points=self.points[0]
-        n=len(points)
+        n=len(self.nodes[0])
         for node in range(self.closed and n or n-1):
             (x,y,z)=points[node]
             (tox,toy,toz)=points[(node+1)%n]
@@ -1591,7 +1627,7 @@ class Facade(Polygon):
         tris=[]
         floor=self.definition.floors[self.floorno]
         points=self.points[0]
-        n=len(points)
+        n=len(self.nodes[0])
         for node in range(self.closed and n or n-1):
             (x,y,z)=points[node]
             (tox,toy,toz)=points[(node+1)%n]
@@ -1872,6 +1908,7 @@ class Line(Polygon):
             for i,off in [(h-piby2,size), (h,0), (h+piby2,size)]:
                 self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*off))),
                                       max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*off)))))
+        self.outlinelen = 0
         self.drawdata=[]	# [(texture,count)]
 
     def clone(self):
@@ -1915,7 +1952,7 @@ class Line(Polygon):
 
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
         points=self.points[0]
-        n=len(points)
+        n=len(self.nodes[0])
 
         # may need to repeatedly drape, so pre-compute relevant mesh triangles
         do_drape = options&Prefs.ELEVATION
@@ -1950,7 +1987,7 @@ class Line(Polygon):
             sx1 = sx2 = 1	# near far width scale
             h1 = h2 = h		# near far miter angle
 
-            if  self.closed or node!=0:
+            if self.closed or node!=0:
                 # miter joint between this and previous edge
                 (prvx,prvy,prvz) = points[(node-1)%n]
                 prvh = atan2(x-prvx, prvz-z) % twopi
@@ -2003,8 +2040,10 @@ class Line(Polygon):
             else:
                 self.drawdata.append((self.definition.segments[i].texture, len(segtris[i])))
         self.dynamic_data = array(segtris, float32).flatten()
-        if self.definition.color:
-            self.dynamic_data = concatenate((self.dynamic_data, concatenate([array(p+self.definition.color,float32) for w in self.points for p in w])))
+        if self.definition.color:	# Network line - prepend outline
+            outlinedata = concatenate([array(p+self.definition.color,float32) for w in self.points for p in w])
+            self.outlinelen = len(outlinedata)/6
+            self.dynamic_data = concatenate((outlinedata, self.dynamic_data))
         vertexcache.allocate_dynamic(self, True)
         return selectednode
 
@@ -2024,28 +2063,29 @@ class Line(Polygon):
                 glEndQuery(glstate.occlusion_query)
         else:
             glstate.set_color(selected and COL_SELECTED or COL_UNPAINTED)
+            if self.definition.color:
+                Polygon.draw_dynamic(self, glstate, selected, picking, queryobj)
             #glstate.set_cull(True)	# don't care
             glstate.set_poly(True)
             glstate.set_depthtest(True)
-            base = self.base
+            base = self.base + self.outlinelen
             for (texture, ntris) in self.drawdata:
                 glstate.set_texture(texture)
                 glDrawArrays(GL_TRIANGLES, base, ntris)
                 base += ntris
-            if self.definition.color:
-                glstate.set_texture(None)
-                glstate.set_color(selected and COL_SELECTED or None)
-                glstate.set_depthtest(False)	# Need line to appear over terrain
-                if self.closed:
-                    for winding in self.points:
-                        glDrawArrays(GL_LINE_LOOP, base, len(winding))
-                        base+=len(winding)
-                else:
-                    for winding in self.points:
-                        glDrawArrays(GL_LINE_STRIP, base, len(winding))
-                        base+=len(winding)
             assert base-self.base == len(self.dynamic_data)/6, "%s %s" % (base-self.base, len(self.dynamic_data)/6)
         return True
+
+    def bucket_dynamic(self, base, buckets):
+        self.base = base
+        if self.definition.color:	# Network lines
+            Polygon.bucket_dynamic(self, base, buckets)
+            base += self.outlinelen
+        for (texture, ntris) in self.drawdata:
+            buckets.add(self.definition.layer, texture, base, ntris)
+            base += ntris
+        assert base-self.base == len(self.dynamic_data)/6, "%s %s" % (base-self.base, len(self.dynamic_data)/6)
+        return self.dynamic_data
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         dparam = (dparam+self.param) % 2 - self.param	# toggle between 0 and 1
@@ -2103,11 +2143,18 @@ class String(Polygon):
             return u'%s  Spacing\u2195 %-3dm  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
     def draw_dynamic(self, glstate, selected, picking, queryobj=None):
-        if picking or self.nonsimple or self.definition.color:	# draw lines so selectable
+        if picking or self.nonsimple or self.definition.color:	# draw lines so selectable / snapable
             return Polygon.draw_dynamic(self, glstate, selected, picking, queryobj)
         for p in self.placements:
             p.draw_dynamic(glstate, selected, picking)
         return True
+
+    def bucket_dynamic(self, base, buckets):
+        if self.nonsimple or self.definition.color:	# draw lines so snapable
+            return Polygon.bucket_dynamic(self, base, buckets)
+        else:
+            self.base = base
+            return self.dynamic_data
 
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
         if self.islaidout() and not recalc:
@@ -2124,7 +2171,7 @@ class String(Polygon):
 
         self.placements=[]
         points = self.points[0]
-        n = len(points)-1	# strings are always open
+        n = len(self.nodes[0])-1	# strings are always open
 
         if not self.definition.alternate:
             # Networks have placements at start and end, plus sometimes at ill-defined intervals which we don't simulate
@@ -2230,6 +2277,12 @@ class Network(String,Line):
             return Line.draw_dynamic(self, glstate, selected, picking, queryobj)
         else:
             return String.draw_dynamic(self, glstate, selected, picking, queryobj)
+
+    def bucket_dynamic(self, base, buckets):
+        if self.definition.segments:
+            return Line.bucket_dynamic(self, base, buckets)
+        else:
+            return String.bucket_dynamic(self, base, buckets)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         if dhdg:

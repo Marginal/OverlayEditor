@@ -18,7 +18,7 @@ glMultiDrawArrays = alternate(glMultiDrawArrays, glMultiDrawArraysEXT)
 import gc
 from glob import glob
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
-from numpy import array, array_equal, dot, identity, float32, float64, int32
+from numpy import array, array_equal, dot, identity, zeros, float32, float64, int32
 from os.path import basename, curdir, join
 from struct import unpack
 from sys import exc_info, exit, platform, version
@@ -101,27 +101,32 @@ class GLstate():
         self.dynamic_vbo =vbo.VBO(None, GL_STATIC_DRAW)
         self.selected_vbo=vbo.VBO(None, GL_STREAM_DRAW)
         # Use of GL_ARB_instanced_arrays requires a shader. Just duplicate fixed pipeline shaders.
-        try:
-            if not glInitInstancedArraysARB(): raise Exception
-            vanilla   = open('Resources/vanilla.vs').read()
-            instanced = open('Resources/instanced.vs').read()
-            unlit     = open('Resources/unlit.fs').read()
-            colorvs   = open('Resources/color.vs').read()
-            colorfs   = open('Resources/color.fs').read()
-            self.textureshader   = compileProgram(compileShader(vanilla, GL_VERTEX_SHADER),
-                                                  compileShader(unlit, GL_FRAGMENT_SHADER))
-            self.colorshader     = compileProgram(compileShader(colorvs, GL_VERTEX_SHADER),
-                                                  compileShader(colorfs, GL_FRAGMENT_SHADER))
+        vanilla   = open('Resources/vanilla.vs').read()
+        instanced = open('Resources/instanced.vs').read()
+        unlit     = open('Resources/unlit.fs').read()
+        colorvs   = open('Resources/color.vs').read()
+        colorfs   = open('Resources/color.fs').read()
+        self.skip_pos = 1
+        self.textureshader = compileProgram(compileShader(vanilla, GL_VERTEX_SHADER),
+                                            compileShader(unlit, GL_FRAGMENT_SHADER))
+        glBindAttribLocation(self.textureshader, self.skip_pos, 'skip')
+        glLinkProgram(self.textureshader)	# re-link with above location
+        assert glGetProgramiv(self.textureshader, GL_LINK_STATUS), glGetProgramInfoLog(self.textureshader)
+        self.colorshader   = compileProgram(compileShader(colorvs, GL_VERTEX_SHADER),
+                                            compileShader(colorfs, GL_FRAGMENT_SHADER))
+        glBindAttribLocation(self.colorshader, self.skip_pos, 'skip')
+        glLinkProgram(self.colorshader)	# re-link with above location
+        assert glGetProgramiv(self.colorshader, GL_LINK_STATUS), glGetProgramInfoLog(self.colorshader)
+        if glInitInstancedArraysARB():
             self.instancedshader = compileProgram(compileShader(instanced, GL_VERTEX_SHADER),
                                                   compileShader(unlit, GL_FRAGMENT_SHADER))
             self.transform_pos = glGetAttribLocation(self.instancedshader, 'transform')
             self.selected_pos  = glGetAttribLocation(self.instancedshader, 'selected')
-            glUseProgram(self.textureshader)
             self.instanced_arrays = True
-        except:
-            if __debug__: print_exc()
-            self.textureshader = self.colorshader = self.instancedshader = None
+        else:
+            self.instancedshader = self.transform_pos = self.selected_pos = None
             self.instanced_arrays = False
+        glUseProgram(self.textureshader)
 
     def set_texture(self, id):
         if self.texture!=id:
@@ -131,7 +136,7 @@ class GLstate():
                 if __debug__:
                     if self.debug: print "set_texture disable GL_TEXTURE_COORD_ARRAY"
                 glDisableClientState(GL_TEXTURE_COORD_ARRAY)
-                if self.colorshader: glUseProgram(self.colorshader)
+                glUseProgram(self.colorshader)
                 if self.texture!=0:
                     glBindTexture(GL_TEXTURE_2D, 0)
             else:
@@ -139,7 +144,7 @@ class GLstate():
                     if __debug__:
                         if self.debug: print "set_texture enable GL_TEXTURE_COORD_ARRAY"
                     glEnableClientState(GL_TEXTURE_COORD_ARRAY)
-                    if self.textureshader: glUseProgram(self.textureshader)
+                    glUseProgram(self.textureshader)
                 glBindTexture(GL_TEXTURE_2D, id)
             self.texture=id
         elif __debug__:
@@ -247,11 +252,10 @@ class GLstate():
         elif __debug__:
             if self.debug: print "set_dynamic already dynamic_vbo"
 
-    def set_attrib_selected(self, selectflags):
+    def set_attrib_selected(self, pos, selectflags):
         self.selected_vbo.set_array(selectflags)
         self.selected_vbo.bind()
-        glVertexAttribPointer(self.selected_pos, 1, GL_FLOAT, GL_FALSE, 4, self.selected_vbo)
-        glVertexAttribDivisorARB(self.selected_pos, 1)
+        glVertexAttribPointer(pos, 1, GL_FLOAT, GL_FALSE, 4, self.selected_vbo)
 
     def alloc_queries(self, needed):
         if len(self.queries)<needed:
@@ -280,9 +284,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.centre=None	# [lat,lon] of centre
         self.airports={}	# [runways] by code
         self.runways={}		# [shoulder/taxiway/runway data] by tile
-        self.shoulderdata=None	# indices into cache (base, len)
-        self.taxiwaydata=None	# indices into cache (base, len)
-        self.runwaysdata=None	# indices into cache (base, len)
+        self.aptdata = {}	# indices into vertexcache (base, len), by layer
         self.navaids=[]		# (type, lat, lon, hdg)
         self.navaidplacements={}	# navaid placements by tile
         self.codes={}		# [(code, loc)] by tile
@@ -381,8 +383,15 @@ class MyGL(wx.glcanvas.GLCanvas):
                          wx.ICON_ERROR|wx.OK, self)
             exit(1)
 
+        try:
+            self.glstate=GLstate()
+        except:
+            if __debug__: print_exc()
+            myMessageBox('This application requires GLSL 1.20 or later, which is not supported by your graphics card.\nTry updating the drivers for your graphics card.',
+                         "Can't initialise OpenGL.", wx.ICON_ERROR|wx.OK, self)
+            exit(1)
+
         self.vertexcache=VertexCache()	# member so can free resources
-        self.glstate=GLstate()
         self.imagery=Imagery(self)
 
         #glClearDepth(1.0)
@@ -548,18 +557,19 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.glstate.set_color(COL_WHITE)	# Ensure colour indexing off
                 self.glstate.set_depthtest(False)	# Make selectable even if occluded
                 self.glstate.set_poly(True)		# Disable writing to depth buffer
+                n = len([item for sublist in poly.nodes for item in sublist])
                 if self.glstate.occlusion_query:
-                    self.glstate.alloc_queries(len([item for sublist in poly.points for item in sublist]))
+                    self.glstate.alloc_queries(n)
                     selections=False
                     glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
                     poly.pick_nodes(self.glstate)
-                    for queryidx in range(len([item for sublist in poly.points for item in sublist])):
+                    for queryidx in range(n):
                         if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
                             selections=True
                             break
                     glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
                 else:
-                    glSelectBuffer(len([item for sublist in poly.points for item in sublist])*4)	# 4 ints per hit record containing one name
+                    glSelectBuffer(n*4)	# 4 ints per hit record containing one name
                     glRenderMode(GL_SELECT)
                     glInitNames()
                     glPushName(0)
@@ -751,54 +761,29 @@ class MyGL(wx.glcanvas.GLCanvas):
         if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
 
         # Objects and Polygons
-        self.glstate.set_color(COL_UNPAINTED)
-        self.glstate.set_texture(0)
-        self.glstate.set_poly(False)
         placements=self.placements[self.tile]
         navaidplacements=self.navaidplacements[self.tile]
 
-        for layer in range(ClutterDef.LAYERCOUNT):
-            if placements[layer]:
-                self.glstate.set_dynamic(self.vertexcache)
-            for placement in placements[layer]:	# XXX Sort by texture / color?
-                if placement not in self.selected:
-                    placement.draw_dynamic(self.glstate, False, False)
-            # pavements
-            if layer in [ClutterDef.SHOULDERLAYER, ClutterDef.TAXIWAYLAYER, ClutterDef.RUNWAYSLAYER]:
-                data={ClutterDef.SHOULDERLAYER:self.shoulderdata,
-                      ClutterDef.TAXIWAYLAYER: self.taxiwaydata,
-                      ClutterDef.RUNWAYSLAYER: self.runwaysdata}[layer]
-                if data:
-                    self.glstate.set_instance(self.vertexcache)
-                    (base, length)=data
-                    self.glstate.set_texture(self.vertexcache.texcache.get('Resources/surfaces.png'))
-                    self.glstate.set_color(COL_UNPAINTED)
-                    self.glstate.set_depthtest(True)
-                    self.glstate.set_poly(True)
-                    if __debug__:
-                        if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
-                    glDrawArrays(GL_TRIANGLES, base, length)
-                    if __debug__:
-                        if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
-                if layer==ClutterDef.RUNWAYSLAYER and imagery:
-                    self.glstate.set_dynamic(self.vertexcache)
-                    if __debug__: self.glstate.set_color(COL_SELECTED)
-                    glColor4f(1.0, 1.0, 1.0, self.imageryopacity/100.0)	# not using glstate!
-                    for placement in imagery:
-                        placement.draw_dynamic(self.glstate, False, False)
-                        if __debug__: placement.draw_nodes(self.glstate, False)
-                    self.glstate.set_color(COL_SELECTED)		# tell glstate there's been a change in colour
-
-        # Selected dynamic - last so overwrites
+        self.glstate.set_dynamic(self.vertexcache)	# realize
         if self.selected:
-            self.glstate.set_dynamic(self.vertexcache)
-            self.glstate.set_color(COL_SELECTED)
-            for layer in range(ClutterDef.LAYERCOUNT):
-                for placement in placements[layer]:	# XXX Sort by texture / color?
-                    if placement in self.selected:
-                        placement.draw_dynamic(self.glstate, True, False)
-            if len(self.selected)==1:
-                list(self.selected)[0].draw_nodes(self.glstate, self.selectednode)
+            selected = zeros((len(self.vertexcache.dynamic_data)/6,), float32)
+            for placement in self.selected:
+                if placement.dynamic_data is not None:
+                    assert placement.base+len(placement.dynamic_data)/6 <= len(selected)
+                    selected[placement.base:placement.base+len(placement.dynamic_data)/6] = 1
+            glEnableVertexAttribArray(self.glstate.skip_pos)
+            glVertexAttribDivisorARB(self.glstate.skip_pos, 0)
+            self.glstate.set_attrib_selected(self.glstate.skip_pos, selected)
+            self.vertexcache.buckets.draw(self.glstate, False, self.aptdata, imagery, self.imageryopacity)
+
+            # Selected dynamic - last so overwrites unselected dynamic
+            selected = 1 - selected
+            self.glstate.set_attrib_selected(self.glstate.skip_pos, selected)
+            self.vertexcache.buckets.draw(self.glstate, True)
+            glDisableVertexAttribArray(self.glstate.skip_pos)
+        else:
+            glVertexAttrib1f(self.glstate.skip_pos, 0)
+            self.vertexcache.buckets.draw(self.glstate, None, self.aptdata, imagery, self.imageryopacity)
 
         # Draw clutter with static geometry and sorted by texture (ignoring layer ordering since it doesn't really matter so much for Objects)
         self.glstate.set_instance(self.vertexcache)
@@ -813,13 +798,20 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnableVertexAttribArray(pos+1)
             glEnableVertexAttribArray(pos+2)
             glEnableVertexAttribArray(pos+3)
+            glVertexAttribDivisorARB(pos,   1)
+            glVertexAttribDivisorARB(pos+1, 1)
+            glVertexAttribDivisorARB(pos+2, 1)
+            glVertexAttribDivisorARB(pos+3, 1)
             assert type(self.selected)==set
             selected = self.selected.copy()
             if selected:
                 glEnableVertexAttribArray(self.glstate.selected_pos)
+                glVertexAttribDivisorARB(self.glstate.selected_pos, 1)
                 for o in self.selected: selected.update(o.placements)	# include children
-            for objdef in self.defs.values():
-                objdef.draw_instanced(self, selected)
+            else:
+                glVertexAttrib1f(self.glstate.selected_pos, 0)
+            for objdef in self.defs.values():	# benefit of sorting by texture would be marginal
+                objdef.draw_instanced(self.glstate, selected)
             glDisableVertexAttribArray(pos)
             glDisableVertexAttribArray(pos+1)
             glDisableVertexAttribArray(pos+2)
@@ -827,17 +819,24 @@ class MyGL(wx.glcanvas.GLCanvas):
             glDisableVertexAttribArray(self.glstate.selected_pos)
         else:
             # Instancing not supported
-            objs=sorted([obj for l in placements for obj in l]+navaidplacements, key=lambda obj: obj.definition.texture)
-            for obj in objs: obj.draw_instance(self.glstate, obj in self.selected, False)
+            selected = self.selected.copy()
+            if selected:
+                for o in self.selected: selected.update(o.placements)	# include children
+            for objdef in self.defs.values():	# benefit of sorting by texture would be marginal
+                objdef.draw_instanced(self.glstate, selected)
+            glLoadIdentity()	# Drawing Objects alters the matrix
+
+        # Selected nodes - very last so overwrites everything
+        if len(self.selected)==1:
+            # don't bother setting VBO since this is done immediate
+            list(self.selected)[0].draw_nodes(self.glstate, self.selectednode)
 
         if __debug__: print "%6.3f time to draw" % (time.clock()-clock)
 
         # Overlays
         self.glstate.set_texture(None)
-        self.glstate.set_poly(False)
         self.glstate.set_depthtest(False)
         self.glstate.set_poly(True)
-        glLoadIdentity()	# Drawing Objects alters the matrix
 
         # labels
         if self.codeslist and self.d>2000:	# arbitrary
@@ -954,7 +953,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if self.glstate.occlusion_query:
             if checkpolynode:
-                queryidx=len([item for sublist in checkpolynode.points for item in sublist])
+                queryidx=len([item for sublist in checkpolynode.nodes for item in sublist])
             else:
                 queryidx=0
             needed=queryidx + len([item for sublist in placements for item in sublist])*2	# Twice as many for two-phase drawing
@@ -968,7 +967,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 checkpolynode.pick_nodes(self.glstate)
                 # We'll check on the status later
             else:
-                glSelectBuffer(len([item for sublist in checkpolynode.points for item in sublist])*4)			# 4 ints per hit record containing one name
+                glSelectBuffer(len([item for sublist in checkpolynode.nodes for item in sublist])*4)	# 4 ints per hit record containing one name
                 glRenderMode(GL_SELECT)
                 glInitNames()
                 glPushName(0)
@@ -1016,8 +1015,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             # First check poly node status
             queryidx=0
             if checkpolynode:
-                for i in range(len(checkpolynode.points)):
-                    for j in range(len(checkpolynode.points[i])):
+                for i in range(len(checkpolynode.nodes)):
+                    for j in range(len(checkpolynode.nodes[i])):
                         if not glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
                             queryidx+=1
                         else:
@@ -1590,7 +1589,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
             # load placements and assign to layers
             if not newtile in self.placements:
-                self.placements[newtile]=[[] for i in range(ClutterDef.LAYERCOUNT)]
+                self.placements[newtile]=[[] for i in range(ClutterDef.DRAWLAYERCOUNT)]
             if newtile in self.unsorted:
                 if __debug__: clock=time.clock()	# Processor time
                 placements=self.unsorted.pop(newtile)
@@ -1882,18 +1881,13 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if __debug__: print "%6.3f time in runways" % (time.clock()-clock)
             else:
                 (varray,shoulderlen,taxiwaylen,runwaylen)=self.runways[key]
+            self.aptdata = {}
             if shoulderlen:
-                self.shoulderdata=(self.vertexcache.instance_count, shoulderlen)
-            else:
-                self.shoulderdata=None
+                self.aptdata[ClutterDef.SHOULDERLAYER] = (self.vertexcache.instance_count, shoulderlen)
             if taxiwaylen:
-                self.taxiwaydata=(self.vertexcache.instance_count+shoulderlen, taxiwaylen)
-            else:
-                self.taxiwaydata=None
+                self.aptdata[ClutterDef.TAXIWAYLAYER]  = (self.vertexcache.instance_count+shoulderlen, taxiwaylen)
             if runwaylen:
-                self.runwaysdata=(self.vertexcache.instance_count+shoulderlen+taxiwaylen, runwaylen)
-            else:
-                self.runwaysdata=None
+                self.aptdata[ClutterDef.RUNWAYSLAYER]  = (self.vertexcache.instance_count+shoulderlen+taxiwaylen, runwaylen)
             if len(varray):
                 self.vertexcache.allocate_instance(array(varray,float32).flatten())
 

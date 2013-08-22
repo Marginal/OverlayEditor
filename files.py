@@ -20,6 +20,7 @@ from traceback import print_exc
 import time
 import wx
 
+from buckets import Buckets
 from clutter import Clutter, onedeg, f2m
 from clutterdef import BBox, SkipDefs, NetworkDef
 from DSFLib import readDSF
@@ -680,10 +681,16 @@ class VertexCache:
         self.dynamic_data=empty((0,6),float32)
         self.dynamic_pending={}
         self.dynamic_valid=False
+        self.buckets = Buckets(self)
         self.dsfdirs=None	# [custom, global, default]
 
     def reset(self, terrain, dsfdirs):
         # invalidate geometry and textures
+        if dsfdirs != self.dsfdirs:
+            # X-Plane location changed - invalidate loaded meshes too
+            self.mesh={}
+            self.meshdata={}
+            self.nets={}
         self.ter=terrain
         self.dsfdirs=dsfdirs
         self.flush()
@@ -694,6 +701,7 @@ class VertexCache:
         self.currenttile=None
         self.meshcache=[]
         self.netcache=None
+        self.lasttri=None
         self.instance_data=empty((0,5),float32)
         self.instance_pending=[]
         self.instance_valid=False
@@ -705,7 +713,7 @@ class VertexCache:
         self.dynamic_data=empty((0,6),float32)
         self.dynamic_pending={}
         self.dynamic_valid=False
-        self.lasttri=None
+        self.buckets = Buckets(self)
 
     def allocate_instance(self, data):
         # cache geometry data, but don't update OpenGL arrays yet
@@ -762,22 +770,23 @@ class VertexCache:
             assert placement.dynamic_data is not None
             assert placement.dynamic_data.size	# shouldn't have tried to allocate if no data
             self.dynamic_pending[placement]=True
-            self.dynamic_valid=False	# new geometry -> need to update OpenGL
+        self.dynamic_valid=False	# new geometry -> need to update OpenGL
 
     def realize_dynamic(self, dynamic_vbo):
         # Allocate into VBO if required. Returns True if VBO updated.
         if not self.dynamic_valid:
             if __debug__: clock=time.clock()
+            self.buckets = Buckets(self)	# reset
             data=[]
             dynamic_count=0
             for placement in self.dynamic_pending:
-                placement.base=dynamic_count
-                dynamic_count+=len(placement.dynamic_data)/6
-                data.append(placement.dynamic_data)
+                thisdata = placement.bucket_dynamic(dynamic_count, self.buckets)
+                dynamic_count += len(thisdata)/6
+                data.append(thisdata)
             if data:
                 self.dynamic_data=concatenate(data)
             else:
-                self.dynamic_data=empty((0,6),float32)
+                self.dynamic_data=empty((0,),float32)
             self.dynamic_valid=True
             dynamic_vbo.set_array(self.dynamic_data)
             if __debug__: print "%6.3f time to realize dynamic VBO, size %dK" % (time.clock()-clock, self.dynamic_data.size/256)
