@@ -829,7 +829,7 @@ class VertexCache:
                 break
         else:
             tex=join('Resources','Sea01.png')
-        self.mesh[key]=[(tex, 8,
+        self.mesh[key]=[(tex, 9,
                          [[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
                           [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100],
                           [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2,   0, 100],
@@ -895,7 +895,7 @@ class VertexCache:
         if __debug__: clock=time.clock()	# Processor time
         gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
         for texture, flags, v in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
-            if not flags&1: continue	# not interested in overlays
+            assert flags&1	# not interested in overlays
             minx=minz=maxint
             maxx=maxz=-maxint
             tris=[]
