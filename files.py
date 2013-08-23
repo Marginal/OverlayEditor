@@ -767,8 +767,9 @@ class VertexCache:
             self.dynamic_pending.pop(placement,False)
             placement.base=None
         else:
-            assert placement.dynamic_data is not None
-            assert placement.dynamic_data.size	# shouldn't have tried to allocate if no data
+            assert placement.islaidout(), placement
+            assert placement.dynamic_data is not None, placement
+            assert placement.dynamic_data.size, placement	# shouldn't have tried to allocate if no data
             self.dynamic_pending[placement]=True
         self.dynamic_valid=False	# new geometry -> need to update OpenGL
 

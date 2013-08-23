@@ -781,6 +781,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.glstate.set_attrib_selected(self.glstate.skip_pos, selected)
             self.vertexcache.buckets.draw(self.glstate, True)
             glDisableVertexAttribArray(self.glstate.skip_pos)
+            glVertexAttrib1f(self.glstate.skip_pos, 0)
         else:
             glVertexAttrib1f(self.glstate.skip_pos, 0)
             self.vertexcache.buckets.draw(self.glstate, None, self.aptdata, imagery, self.imageryopacity)
@@ -1000,14 +1001,14 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.glstate.set_instance(self.vertexcache)
             for i in range(len(placements)-1,-1,-1):	# favour higher layers
                 for j in range(len(placements[i])):
-                    if not placements[i][j].definition.type & self.locked and placements[i][j].draw_instance(self.glstate, False, True, self.glstate.queries[queryidx]):
+                    if not placements[i][j].definition.type & self.locked and placements[i][j].pick_instance(self.glstate, self.glstate.queries[queryidx]):
                         lookup.append((i,j))
                         queryidx+=1
             self.glstate.set_dynamic(self.vertexcache)
             glLoadIdentity()	# Drawing Objects alters the matrix
             for i in range(len(placements)-1,-1,-1):	# favour higher layers
                 for j in range(len(placements[i])):
-                    if not placements[i][j].definition.type & self.locked and placements[i][j].draw_dynamic(self.glstate, False, True, self.glstate.queries[queryidx]):
+                    if not placements[i][j].definition.type & self.locked and placements[i][j].pick_dynamic(self.glstate, self.glstate.queries[queryidx]):
                         lookup.append((i,j))
                         queryidx+=1
             gc.enable()
@@ -1053,14 +1054,14 @@ class MyGL(wx.glcanvas.GLCanvas):
                 for j in range(len(placements[i])):
                     if not placements[i][j].definition.type & self.locked:
                         glLoadName((i<<24)+j)
-                        placements[i][j].draw_instance(self.glstate, False, True)
+                        placements[i][j].pick_instance(self.glstate)
             self.glstate.set_dynamic(self.vertexcache)
             glLoadIdentity()
             for i in range(len(placements)-1,-1,-1):	# favour higher layers
                 for j in range(len(placements[i])):
                     if not placements[i][j].definition.type & self.locked:
                         glLoadName((i<<24)+j)
-                        placements[i][j].draw_dynamic(self.glstate, False, True)
+                        placements[i][j].pick_dynamic(self.glstate)
             # Now check for selections
             self.selectednode=None
             selections=set()
