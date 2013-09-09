@@ -644,15 +644,13 @@ class MainWindow(wx.Frame):
         
         if platform=='win32':
             self.SetIcon(wx.Icon(executable, wx.BITMAP_TYPE_ICO))
-            self.menubar=None
         elif platform.lower().startswith('linux'):	# PNG supported by GTK
             icons=wx.IconBundle()
             icons.AddIconFromFile('Resources/%s.png' % appname, wx.BITMAP_TYPE_PNG)
             icons.AddIconFromFile('Resources/%s-128.png'% appname, wx.BITMAP_TYPE_PNG)
             self.SetIcons(icons)
-            self.menubar=None
         
-        if platform=='darwin' or (__debug__ and False):
+        if platform=='darwin':
             # icon pulled from Resources via Info.plist (except for MessageBox icon). Need minimal menu
             # http://developer.apple.com/documentation/UserExperience/Conceptual/AppleHIGuidelines/XHIGMenus/XHIGMenus.html#//apple_ref/doc/uid/TP30000356-TPXREF103
             self.menubar = wx.MenuBar()
@@ -711,6 +709,8 @@ class MainWindow(wx.Frame):
             wx.EVT_MENU(self, wx.ID_ABOUT, self.OnAbout)
             self.menubar.Append(helpmenu, u'&Help')
             self.SetMenuBar(self.menubar)
+        else:
+            self.menubar=None
 
         self.toolbar=self.CreateToolBar(wx.TB_HORIZONTAL|wx.STATIC_BORDER|wx.TB_FLAT|wx.TB_NODIVIDER)
         # Note colours>~(245,245,245) get replaced by transparent on wxMac 2.5
@@ -720,78 +720,37 @@ class MainWindow(wx.Frame):
         self.iconsize=(newbitmap.GetWidth(),newbitmap.GetHeight())
         self.toolbar.SetToolBitmapSize(self.iconsize)
         #self.toolbar.SetToolSeparation(self.iconsize[0]/4)
-        self.toolbar.AddLabelTool(wx.ID_NEW, 'New',
-                                  newbitmap,
-                                  wx.NullBitmap, 0,
-                                  'New scenery package')
+        self.toolbar.AddLabelTool(wx.ID_NEW, 'New', newbitmap, wx.NullBitmap, 0, 'New scenery package')
         wx.EVT_TOOL(self.toolbar, wx.ID_NEW, self.OnNew)
-        self.toolbar.AddLabelTool(wx.ID_OPEN, 'Open',
-                                  self.icon(['document-open', 'fileopen'], 'open.png'),
-                                  wx.NullBitmap, 0,
-                                  'Open scenery package')
+        self.toolbar.AddLabelTool(wx.ID_OPEN, 'Open', self.icon(['document-open-folder', 'folder-open', 'document-open', 'folder_open', 'fileopen'], 'open.png'), wx.NullBitmap, 0, 'Open scenery package')
         wx.EVT_TOOL(self.toolbar, wx.ID_OPEN, self.OnOpen)
-        self.toolbar.AddLabelTool(wx.ID_SAVE, 'Save',
-                                  self.icon(['document-save', 'filesave'], 'save.png'),
-                                  wx.NullBitmap, 0,
-                                  'Save scenery package')
+        self.toolbar.AddLabelTool(wx.ID_SAVE, 'Save', self.icon(['document-save', 'filesave'], 'save.png'), wx.NullBitmap, 0, 'Save scenery package')
         wx.EVT_TOOL(self.toolbar, wx.ID_SAVE, self.OnSave)
-        self.toolbar.AddLabelTool(wx.ID_DOWN, 'Import',
-                                  self.icon(['fileimport'], 'import.png'),	# not in spec - KDE3 name
-                                  wx.NullBitmap, 0,
-                                  'Import objects from another package')
+        self.toolbar.AddLabelTool(wx.ID_DOWN, 'Import', self.icon(['folder-import'], 'import.png'), wx.NullBitmap, 0, 'Import objects from another package')	# not in spec - KDE4/3 name
         wx.EVT_TOOL(self.toolbar, wx.ID_DOWN, self.OnImport)
         self.toolbar.AddSeparator()
-        self.toolbar.AddLabelTool(wx.ID_ADD, 'Add',
-                                  self.icon(['list-add', 'add'], 'add.png'),
-                                  wx.NullBitmap, 0,
-                                  'Add new object')
+        self.toolbar.AddLabelTool(wx.ID_ADD, 'Add', self.icon(['list-add', 'add'], 'add.png'), wx.NullBitmap, 0, 'Add new object')
         wx.EVT_TOOL(self.toolbar, wx.ID_ADD, self.OnAdd)
-        self.toolbar.AddLabelTool(wx.ID_EDIT, 'Add',
-                                  self.icon([], 'addnode.png'),
-                                  wx.NullBitmap, 0,
-                                  'Add new polygon/network node or hole')
+        self.toolbar.AddLabelTool(wx.ID_EDIT, 'AddNode', self.icon(['list-add-node'], 'addnode.png'), wx.NullBitmap, 0, 'Add new polygon/network node or hole')
         wx.EVT_TOOL(self.toolbar, wx.ID_EDIT, self.OnAddNode)
-        self.toolbar.AddLabelTool(wx.ID_DELETE, 'Delete',
-                                  self.icon(['edit-delete', 'delete', 'editdelete'], 'delete.png'),
-                                  wx.NullBitmap, 0,
-                                  'Delete selected object(s)')
+        self.toolbar.AddLabelTool(wx.ID_DELETE, 'Delete', self.icon(['edit-delete', 'delete', 'editdelete'], 'delete.png'), wx.NullBitmap, 0, 'Delete selected object(s)')
         wx.EVT_TOOL(self.toolbar, wx.ID_DELETE, self.OnDelete)
-        self.toolbar.AddLabelTool(wx.ID_UNDO, 'Undo',
-                                  self.icon(['edit-undo', 'undo'], 'undo.png'),
-                                  wx.NullBitmap, 0,
-                                  'Undo last edit')
+        self.toolbar.AddLabelTool(wx.ID_UNDO, 'Undo', self.icon(['edit-undo', 'undo'], 'undo.png'), wx.NullBitmap, 0, 'Undo last edit')
         wx.EVT_TOOL(self.toolbar, wx.ID_UNDO, self.OnUndo)
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_PREVIEW, 'Background',
-                                  self.icon(['frame_image', 'image', 'image-x-generic'], 'background.png'),	# frame_image is KDE3
-                                  wx.NullBitmap, wx.ITEM_CHECK,
-                                  'Adjust background image')
+                                  self.icon(['frame_image', 'image', 'image-x-generic', 'insert-image'], 'background.png'), wx.NullBitmap, wx.ITEM_CHECK, 'Adjust background image')	# frame_image is KDE3, insert-image is 0.8
         wx.EVT_TOOL(self.toolbar, wx.ID_PREVIEW, self.OnBackground)
-        self.toolbar.AddLabelTool(wx.ID_REFRESH, 'Reload',
-                                  self.icon(['reload'], 'reload.png'),
-                                  wx.NullBitmap, 0,
-                                  "Reload package's objects, textures and airports")
+        self.toolbar.AddLabelTool(wx.ID_REFRESH, 'Reload', self.icon(['view-refresh', 'reload'], 'reload.png'), wx.NullBitmap, 0, "Reload package's objects, textures and airports")
         wx.EVT_TOOL(self.toolbar, wx.ID_REFRESH, self.OnReload)
-        self.toolbar.AddLabelTool(wx.ID_FORWARD, 'Go To',
-                                  self.icon(['goto'], 'goto.png'),
-                                  wx.NullBitmap, 0,
-                                  'Go to airport')
+        self.toolbar.AddLabelTool(wx.ID_FORWARD, 'Go To', self.icon(['goto'], 'goto.png'), wx.NullBitmap, 0, 'Go to airport')
         wx.EVT_TOOL(self.toolbar, wx.ID_FORWARD, self.OnGoto)
-        self.toolbar.AddLabelTool(wx.ID_APPLY, 'Lock object types',
-                                  self.icon(['stock_lock', 'security-medium'], 'padlock.png'),
-                                  wx.NullBitmap, 0,
-                                  'Lock object types')
+        self.toolbar.AddLabelTool(wx.ID_APPLY, 'Lock object types', self.icon(['object-locked', 'document-encrypt', 'stock_lock', 'security-medium'], 'padlock.png'), wx.NullBitmap, 0, 'Lock object types')
         wx.EVT_TOOL(self.toolbar, wx.ID_APPLY, self.OnLock)
         self.toolbar.AddSeparator()
-        self.toolbar.AddLabelTool(wx.ID_PREFERENCES, 'Preferences',
-                                  self.icon(['preferences-desktop', 'preferences-system', 'package-settings'], 'prefs.png'),
-                                  wx.NullBitmap, 0,
-                                  'Preferences')
+        self.toolbar.AddLabelTool(wx.ID_PREFERENCES, 'Preferences', self.icon(['preferences-system', 'preferences-other', 'preferences-desktop', 'package-settings'], 'prefs.png'), wx.NullBitmap, 0, 'Preferences')
         wx.EVT_TOOL(self.toolbar, wx.ID_PREFERENCES, self.OnPrefs)
-        self.toolbar.AddLabelTool(wx.ID_HELP, 'Help',
-                                  self.icon(['help-browser', 'system-help', 'khelpcenter'], 'help.png'),
-                                  wx.NullBitmap, 0,
-                                  'Help')
+        self.toolbar.AddLabelTool(wx.ID_HELP, 'Help', self.icon(['help-contents', 'help-about', 'help-browser', 'system-help', 'khelpcenter'], 'help.png'), wx.NullBitmap, 0, 'Help')
         wx.EVT_TOOL(self.toolbar, wx.ID_HELP, self.OnHelp)
         
         self.toolbar.Realize()
@@ -863,9 +822,9 @@ class MainWindow(wx.Frame):
             bmp=wx.ArtProvider.GetBitmap(stock, wx.ART_TOOLBAR, self.iconsize)
             if bmp.Ok(): return bmp
             
-        if stocklist==['fileimport']:
+        if stocklist==['folder-import']:
             # Hack - manually composite two bitmaps
-            for stock in ['folder-open', 'folder_open', 'document-open', 'fileopen']:
+            for stock in ['document-open-folder', 'folder-open', 'document-open', 'folder_open', 'fileopen']:
                 bmp=wx.ArtProvider.GetBitmap(stock, wx.ART_TOOLBAR, self.iconsize)
                 if bmp.Ok():
                     size2=int(self.iconsize[0]*0.7)
@@ -885,6 +844,29 @@ class MainWindow(wx.Frame):
                                     img.SetAlpha(x,y, max(img.GetAlpha(x,y), im2.GetAlpha(x2,y)))
                             return wx.BitmapFromImage(img)
                     break
+        elif stocklist==['list-add-node']:
+            # Hack - manually composite two bitmaps
+            for stock in ['list-add', 'add']:
+                bmp=wx.ArtProvider.GetBitmap(stock, wx.ART_TOOLBAR, self.iconsize)
+                if bmp.Ok():
+                    bm2 = wx.Bitmap(join('Resources', 'node.png'), wx.BITMAP_TYPE_PNG)
+                    if bm2.Ok():
+                        size2 = bm2.GetWidth()
+                        img=bmp.ConvertToImage()
+                        im2=bm2.ConvertToImage()
+                        for x2 in range(size2):
+                            x=x2+(self.iconsize[0]-size2)/2
+                            for y2 in range(size2):
+                                y=y2+(self.iconsize[1]-size2)/2
+                                alpha=im2.GetAlpha(x2,y2)/255.0
+                                img.SetRGB(x,y,
+                                           img.GetRed  (x,y)*(1-alpha)+im2.GetRed  (x2,y2)*alpha,
+                                           img.GetGreen(x,y)*(1-alpha)+im2.GetGreen(x2,y2)*alpha,
+                                           img.GetBlue (x,y)*(1-alpha)+im2.GetBlue (x2,y2)*alpha)
+                                img.SetAlpha(x,y, max(img.GetAlpha(x,y), im2.GetAlpha(x2,y2)))
+                        return wx.BitmapFromImage(img)
+                    break
+
 
         bmp=wx.Bitmap(join('Resources',rsrc), wx.BITMAP_TYPE_PNG)
         if self.iconsize not in [wx.DefaultSize,
