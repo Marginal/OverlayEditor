@@ -63,7 +63,7 @@ if not 'startfile' in dir(os):
     from urllib import quote
     import webbrowser
 
-from clutter import round2res, minres, latlondisp, Exclude	# for loading exclusions into palette
+from clutter import round2res, minres, latlondisp, Polygon, Exclude	# for loading exclusions into palette
 from clutterdef import ClutterDef, ObjectDef, KnownDefs, ExcludeDef, NetworkDef
 from draw import MyGL
 from files import scanApt, readApt, readNav, readLib, readNet, sortfolded
@@ -911,10 +911,13 @@ class MainWindow(wx.Frame):
                 self.palette.set(names[0])
             self.toolbar.EnableTool(wx.ID_DELETE, True)
             if self.menubar: self.menubar.Enable(wx.ID_DELETE, True)
-            if len(names)==1 and hdg is None:	# Hacky way to tell we have a single polygon
-                self.toolbar.EnableTool(wx.ID_EDIT,   True)
-                if self.menubar:
-                    self.menubar.Enable(wx.ID_EDIT,   True)
+            if len(names)==1 and isinstance(list(self.canvas.selected)[0], Polygon):
+                placement = list(self.canvas.selected)[0]
+                if ((self.canvas.selectednode and not placement.fixednodes and len(placement.nodes[self.canvas.selectednode[0]]) < 255) or
+                    (not self.canvas.selectednode and not placement.singlewinding)):
+                    self.toolbar.EnableTool(wx.ID_EDIT, True)
+                    if self.menubar:
+                        self.menubar.Enable(wx.ID_EDIT, True)
         else:
             self.palette.set(None)
             self.toolbar.EnableTool(wx.ID_EDIT,   False)

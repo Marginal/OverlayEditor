@@ -1215,6 +1215,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if isinstance(placement, Draped) and placement.definition.ortho:
             placement.param=65535
+            placement.singlewinding = placement.fixednodes = True
             for i in range(4):
                 placement.nodes[0][i]+=((i+1)/2%2,i/2)
                 

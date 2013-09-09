@@ -368,6 +368,8 @@ class Polygon(Clutter):
                                       max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size)))))
         self.param=param
         self.nonsimple=False	# True iff non-simple and the polygon type cares about it (i.e. not Facades)
+        self.singlewinding = True	# most polygon types don't support additional windings
+        self.fixednodes = False	# most polygon types support additional nodes
         self.closed=True	# Open or closed
         self.col=COL_POLYGON	# Outline colour
         self.points=[]		# list of windings in world space (x,y,z)
@@ -539,8 +541,10 @@ class Polygon(Clutter):
         return selectednode
 
     def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
+        if self.fixednodes: return False
         (i,j)=selectednode
         n=len(self.nodes[i])
+        if n>=255: return False	# node count is encoded as uint8 in DSF
         if (not self.closed) and (j==0 or j==n-1):
             # Special handling for ends of open lines and facades - add new node at cursor
             if j:
@@ -561,6 +565,7 @@ class Polygon(Clutter):
         return self.layout(tile, options, vertexcache, (i,newnode))
 
     def delnode(self, tile, options, vertexcache, selectednode, clockwise=False):
+        if self.fixednodes: return False
         (i,j)=selectednode
         if len(self.nodes[i])<=(self.closed and 3 or 2):	# Open lines and facades can have just two nodes
             return self.delwinding(tile, options, vertexcache, selectednode)
@@ -573,10 +578,23 @@ class Polygon(Clutter):
         return selectednode
 
     def addwinding(self, tile, options, vertexcache, size, hdg):
-        return False	# most polygon types don't support additional windings
-        
+        if self.singlewinding: return False
+        minrad=0.000007071*size
+        for j in self.nodes[0]:
+            minrad=min(minrad, abs(self.lon-j[0]), abs(self.lat-j[1]))
+        i=len(self.nodes)
+        h=radians(hdg)
+        self.nodes.append([])
+        for j in [h+5*pi/4, h+7*pi/4, h+pi/4, h+3*pi/4]:
+            self.nodes[i].append((round2res(self.lon+sin(j)*minrad),
+                                  round2res(self.lat+cos(j)*minrad)))
+        return self.layout(tile, options, vertexcache, (i,0))
+
     def delwinding(self, tile, options, vertexcache, selectednode):
-        return False	# most polygon types don't support additional windings
+        (i,j)=selectednode
+        if not i: return False	# don't delete outer winding
+        self.nodes.pop(i)
+        return self.layout(tile, options, vertexcache, (i-1,0))
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         # do layout if changed
@@ -681,6 +699,13 @@ class Draped(Polygon):
     gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
     gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
     gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
+
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
+        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
+        if self.param == 65535:
+            self.fixednodes = True	# we don't support new nodes in orthos
+        else:
+            self.singlewinding = False	# Can have holes if not an orthophoto
 
     def clone(self):
         return Draped(self.name, self.param, [list(w) for w in self.nodes])
@@ -879,37 +904,6 @@ class Draped(Polygon):
         return selectednode
 
 
-    def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
-        if self.param==65535:
-            return False	# we don't support new nodes in orthos
-        return Polygon.addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise)
-
-    def delnode(self, tile, options, vertexcache, selectednode, clockwise=False):
-        if self.param==65535:
-            return False	# we don't support new nodes in orthos
-        return Polygon.delnode(self, tile, options, vertexcache, selectednode, clockwise)
-
-    def addwinding(self, tile, options, vertexcache, size, hdg):
-        if self.param==65535:
-            return False	# we don't support holes in orthos
-        minrad=0.000007071*size
-        for j in self.nodes[0]:
-            minrad=min(minrad, abs(self.lon-j[0]), abs(self.lat-j[1]))
-        i=len(self.nodes)
-        h=radians(hdg)
-        self.nodes.append([])
-        for j in [h+5*pi/4, h+7*pi/4, h+pi/4, h+3*pi/4]:
-            self.nodes[i].append((round2res(self.lon+sin(j)*minrad),
-                                  round2res(self.lat+cos(j)*minrad)))
-        return self.layout(tile, options, vertexcache, (i,0))
-
-    def delwinding(self, tile, options, vertexcache, selectednode):
-        (i,j)=selectednode
-        if not i: return False	# don't delete outer winding
-        self.nodes.pop(i)
-        return self.layout(tile, options, vertexcache, (i-1,0))
-
-
 # For draping a map image directly. name is the basename of image filename.
 # Note isn't added to global defs, so has to be flushed separately.
 class DrapedImage(Draped):
@@ -951,6 +945,7 @@ class Exclude(Polygon):
                               (self.lon-size,self.lat+size)]:
                 self.nodes[0].append((max(floor(self.lon), min(floor(self.lon)+1, round2res(lon))),
                                       max(floor(self.lat), min(floor(self.lat)+1, round2res(lat)))))
+        self.fixednodes = True
         self.col=COL_EXCLUDE
 
     def clone(self):
@@ -967,12 +962,6 @@ class Exclude(Polygon):
             return '%s  Node %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), j)
         else:
             return '%s' % (latlondisp(dms, self.lat, self.lon))
-
-    def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
-        return False
-
-    def delnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
-        return False
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         # no rotation
@@ -1213,6 +1202,7 @@ class Facade(Polygon):
             return node
 
     def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
+        if self.fixednodes: return False
         if self.definition.version<1000:
             return Polygon.addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise)
         else:
@@ -1229,6 +1219,7 @@ class Facade(Polygon):
             # preserve/set wall type
             (i,j)=selectednode
             n=len(self.nodes[i])
+            if n>=255: return False	# node count is encoded as uint8 in DSF
             if (not self.closed) and (j==0 or j==n-1):
                 # Special handling for ends of open lines and facades - add new node at cursor
                 if j:
@@ -1697,6 +1688,7 @@ class Forest(Polygon):
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if param==None: param=127
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
+        self.singlewinding = False
         self.col=COL_FOREST
 
     def clone(self):
@@ -1734,24 +1726,6 @@ class Forest(Polygon):
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
         if self.param>255: self.param=255
-
-    def addwinding(self, tile, options, vertexcache, size, hdg):
-        minrad=0.000007071*size
-        for j in self.nodes[0]:
-            minrad=min(minrad, abs(self.lon-j[0]), abs(self.lat-j[1]))
-        i=len(self.nodes)
-        h=radians(hdg)
-        self.nodes.append([])
-        for j in [h+5*pi/4, h+7*pi/4, h+pi/4, h+3*pi/4]:
-            self.nodes[i].append((round2res(self.lon+sin(j)*minrad),
-                                  round2res(self.lat+cos(j)*minrad)))
-        return self.layout(tile, options, vertexcache, (i,0))
-
-    def delwinding(self, tile, options, vertexcache, selectednode):
-        (i,j)=selectednode
-        if not i: return False	# don't delete outer winding
-        self.nodes.pop(i)
-        return self.layout(tile, options, vertexcache, (i-1,0))
 
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
         if self.islaidout() and not recalc:
@@ -2196,8 +2170,10 @@ class Network(String,Line):
         return node
 
     def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
+        if self.fixednodes: return False
         (i,j) = selectednode
         n = len(self.nodes[i])
+        if n>=255: return False	# node count is encoded as uint8 in DSF
         if (not self.closed) and (j==0 or j==n-1):
             # Special handling for ends of open lines - add new node at cursor
             if j:
