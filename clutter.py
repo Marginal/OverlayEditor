@@ -212,7 +212,6 @@ class Object(Clutter):
         self.flush(vertexcache)
         for p in self.placements:
             p.clearlayout(vertexcache)
-        self.placements=[]
 
     def islaidout(self):
         return self.matrix is not None

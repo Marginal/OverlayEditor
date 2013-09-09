@@ -1238,7 +1238,7 @@ class MainWindow(wx.Frame):
 
         stuff=dict(self.canvas.unsorted)
         for (key,placements) in self.canvas.placements.iteritems():
-            stuff[key]=reduce(lambda x,y: x+y, placements)
+            stuff[key] = placements
         for key in stuff.keys():
             try:
                 writeDSF(dsfdir, key, stuff[key], self.canvas.netfile)
@@ -1719,7 +1719,7 @@ class MainWindow(wx.Frame):
         style=wx.YES_NO
         if cancancel: style|=wx.CANCEL
         # Untitled always has ID_SAVE enabled
-        if self.toolbar.GetToolEnabled(wx.ID_SAVE) and (prefs.package or reduce(lambda x,y: x+y, reduce(lambda x,y: x+y, self.canvas.placements.values()))):
+        if self.toolbar.GetToolEnabled(wx.ID_SAVE) and (prefs.package or reduce(lambda x,y: x+y, self.canvas.placements.values())):
             package=prefs.package or 'Untitled'
             if platform=='darwin':
                 r=myMessageBox("If you don't save, your changes will be lost.",

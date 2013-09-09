@@ -51,7 +51,7 @@ class UndoEntry:
     def __init__(self, tile, kind, data):
         self.tile=tile
         self.kind=kind
-        self.data=data		# [(layer, idx, placement)]
+        self.data=data		# [(idx, placement)]
 
     def equals(self, other):
         # ignore placement details
@@ -60,7 +60,7 @@ class UndoEntry:
         if not (self.data and other.data and len(self.data)==len(other.data)):
             return False
         for i in range(len(self.data)):
-            if self.data[i][0]!=other.data[i][0] or self.data[i][1]!=other.data[i][1]:
+            if self.data[i][0]!=other.data[i][0]:
                 return False
         return True
 
@@ -291,7 +291,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.codeslist=0	# airport labels
         self.lookup={}		# virtual name -> filename (may be duplicates)
         self.defs={}		# loaded ClutterDefs by filename
-        self.placements={}	# [Clutter] by layer and tile
+        self.placements={}	# [Clutter] by tile
         self.unsorted={}	# [Clutter] by tile
         self.background=None
         self.imageryprovider=None	# map image provider, eg 'Bing'
@@ -608,9 +608,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             (lat,lon)=self.getworldloc(event.GetX(), event.GetY())
             lat=max(self.tile[0], min(self.tile[0]+1, lat))
             lon=max(self.tile[1], min(self.tile[1]+1, lon))
-            layer=poly.definition.layer
             if not self.frame.bkgd:	# No undo for background image
-                newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(layer, self.placements[self.tile][layer].index(poly), poly.clone())])
+                newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(self.placements[self.tile].index(poly), poly.clone())])
                 if not (self.undostack and self.undostack[-1].equals(newundo)):
                     self.undostack.append(newundo)
                     self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
@@ -945,9 +944,9 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if self.frame.bkgd:	# Don't allow selection of other objects while background dialog is open
             if self.background and self.background.islaidout():
-                placements=[[self.background]]
+                placements=[self.background]
             else:
-                placements=[[]]
+                placements=[]
         else:
             placements=self.placements[self.tile]
         checkpolynode=(self.clickmode==ClickModes.Undecided and len(self.selected)==1 and isinstance(list(self.selected)[0], Polygon)) and list(self.selected)[0]
@@ -957,7 +956,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 queryidx=len([item for sublist in checkpolynode.nodes for item in sublist])
             else:
                 queryidx=0
-            needed=queryidx + len([item for sublist in placements for item in sublist])*2	# Twice as many for two-phase drawing
+            needed = queryidx + len(placements) * 2	# Twice as many for two-phase drawing
             self.glstate.alloc_queries(needed)
             glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
 
@@ -999,18 +998,16 @@ class MyGL(wx.glcanvas.GLCanvas):
             gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
             lookup = []
             self.glstate.set_instance(self.vertexcache)
-            for i in range(len(placements)-1,-1,-1):	# favour higher layers
-                for j in range(len(placements[i])):
-                    if not placements[i][j].definition.type & self.locked and placements[i][j].pick_instance(self.glstate, self.glstate.queries[queryidx]):
-                        lookup.append((i,j))
-                        queryidx+=1
+            for i in range(len(placements)):
+                if not placements[i].definition.type & self.locked and placements[i].pick_instance(self.glstate, self.glstate.queries[queryidx]):
+                    lookup.append(i)
+                    queryidx+=1
             self.glstate.set_dynamic(self.vertexcache)
             glLoadIdentity()	# Drawing Objects alters the matrix
-            for i in range(len(placements)-1,-1,-1):	# favour higher layers
-                for j in range(len(placements[i])):
-                    if not placements[i][j].definition.type & self.locked and placements[i][j].pick_dynamic(self.glstate, self.glstate.queries[queryidx]):
-                        lookup.append((i,j))
-                        queryidx+=1
+            for i in range(len(placements)):
+                if not placements[i].definition.type & self.locked and placements[i].pick_dynamic(self.glstate, self.glstate.queries[queryidx]):
+                    lookup.append(i)
+                    queryidx+=1
             gc.enable()
 
             # First check poly node status
@@ -1039,35 +1036,32 @@ class MyGL(wx.glcanvas.GLCanvas):
             selections=set()
             for k in range(len(lookup)):
                 if glGetQueryObjectuiv(self.glstate.queries[queryidx+k], GL_QUERY_RESULT):
-                    (i,j)=lookup[k]
-                    selections.add(placements[i][j])
+                    selections.add(placements[lookup[k]])
             glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
 
         else:	# not self.glstate.occlusion_query
-            glSelectBuffer(len([item for sublist in placements for item in sublist])*8)	# Twice as many for two-phase drawing
+            glSelectBuffer(len(placements)*8)	# Twice as many for two-phase drawing
             glRenderMode(GL_SELECT)
             glInitNames()
             glPushName(0)
 
             self.glstate.set_instance(self.vertexcache)
-            for i in range(len(placements)-1,-1,-1):	# favour higher layers
-                for j in range(len(placements[i])):
-                    if not placements[i][j].definition.type & self.locked:
-                        glLoadName((i<<24)+j)
-                        placements[i][j].pick_instance(self.glstate)
+            for i in range(len(placements)):
+                if not placements[i].definition.type & self.locked:
+                    glLoadName(i)
+                    placements[i].pick_instance(self.glstate)
             self.glstate.set_dynamic(self.vertexcache)
             glLoadIdentity()
-            for i in range(len(placements)-1,-1,-1):	# favour higher layers
-                for j in range(len(placements[i])):
-                    if not placements[i][j].definition.type & self.locked:
-                        glLoadName((i<<24)+j)
-                        placements[i][j].pick_dynamic(self.glstate)
+            for i in range(len(placements)):
+                if not placements[i].definition.type & self.locked:
+                    glLoadName(i)
+                    placements[i].pick_dynamic(self.glstate)
             # Now check for selections
             self.selectednode=None
             selections=set()
             try:
                 for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
-                    selections.add(placements[int(name)>>24][int(name)&0xffffff])
+                    selections.add(placements[int(name)])
             except:	# overflow
                 if __debug__: print_exc()
 
@@ -1220,9 +1214,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 placement.nodes[0][i]+=((i+1)/2%2,i/2)
                 
         placement.layout(self.tile, self.options, self.vertexcache)
-        layer=placement.definition.layer
-        placements=self.placements[self.tile][layer]
-        self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD, [(layer, len(placements), placement)]))
+        placements=self.placements[self.tile]
+        self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD, [(len(placements), placement)]))
         placements.append(placement)
         self.selected=set([placement])
         self.selectednode=None
@@ -1241,8 +1234,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if len(self.selected)!=1 or not isinstance(list(self.selected)[0], Polygon) or self.frame.bkgd:	# No additional nodes for background image
             return False
         placement=list(self.selected)[0]
-        layer=placement.definition.layer
-        newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
+        newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(self.placements[self.tile].index(placement), placement.clone())])
         if self.selectednode:
             newnode=placement.addnode(self.tile, self.options, self.vertexcache, self.selectednode, lat, lon)
         else:
@@ -1265,9 +1257,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         if not self.selected: return False
         if self.selectednode:
             placement=list(self.selected)[0]
-            layer=placement.definition.layer
             if not self.frame.bkgd:	# No undo for background image
-                newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
+                newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(self.placements[self.tile].index(placement), placement.clone())])
                 if not (self.undostack and self.undostack[-1].equals(newundo)):
                     self.undostack.append(newundo)
             self.selectednode=placement.movenode(self.selectednode, dlat, dlon, dparam, self.tile, self.options, self.vertexcache, False)
@@ -1276,9 +1267,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             moved=[]
             placements=self.placements[self.tile]
             for placement in self.selected:
-                layer=placement.definition.layer
                 if not self.frame.bkgd:	# No undo for background image
-                    moved.append((layer, placements[layer].index(placement), placement.clone()))
+                    moved.append((placements.index(placement), placement.clone()))
                 placement.move(dlat, dlon, dhdg, dparam, loc, self.tile, self.options, self.vertexcache)
             if moved:
                 newundo=UndoEntry(self.tile, UndoEntry.MOVE, moved)
@@ -1302,8 +1292,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         elif self.selectednode:
             # Delete node/winding
             placement=list(self.selected)[0]
-            layer=placement.definition.layer
-            newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(layer, self.placements[self.tile][layer].index(placement), placement.clone())])
+            newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(self.placements[self.tile].index(placement), placement.clone())])
             if shift:
                 newnode=placement.delwinding(self.tile, self.options, self.vertexcache, self.selectednode)
             else:
@@ -1317,10 +1306,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             placements=self.placements[self.tile]
             for placement in self.selected:
                 placement.clearlayout(self.vertexcache)	# no point taking up space in vbo
-                layer=placement.definition.layer
-                i=placements[layer].index(placement)
-                deleted.insert(0,(layer, i, placement))	# LIFO
-                placements[layer].pop(i)
+                i=placements.index(placement)
+                deleted.insert(0, (i, placement))	# LIFO
+                placements.pop(i)
             self.undostack.append(UndoEntry(self.tile, UndoEntry.DEL, deleted))
             self.selected=set()
 
@@ -1342,25 +1330,25 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if undo.kind==UndoEntry.ADD:
             assert len(undo.data)==1	# Naieve pop only works if just one item
-            (layer,i,placement)=undo.data[0]
+            (i,placement) = undo.data[0]
             placement.clearlayout(self.vertexcache)
-            placements[layer].pop(i)
+            placements.pop(i)
             avlat+=placement.lat
             avlon+=placement.lon
         elif undo.kind==UndoEntry.DEL:
-            for (layer, i, placement) in undo.data:
+            for (i, placement) in undo.data:
                 placement.load(self.lookup, self.defs, self.vertexcache, True)
                 placement.layout(undo.tile, self.options, self.vertexcache)
-                placements[layer].insert(i, placement)
+                placements.insert(i, placement)
                 avlat+=placement.lat
                 avlon+=placement.lon
                 self.selected.add(placement)
         else:
-            for (layer, i, placement) in undo.data:
+            for (i, placement) in undo.data:
                 placement.load(self.lookup, self.defs, self.vertexcache, True)
                 placement.layout(undo.tile, self.options, self.vertexcache)
-                placements[layer][i].clearlayout(self.vertexcache)
-                placements[layer][i]=placement
+                placements[i].clearlayout(self.vertexcache)
+                placements[i]=placement
                 avlat+=placement.lat
                 avlon+=placement.lon
                 self.selected.add(placement)
@@ -1392,7 +1380,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if name.startswith(PolygonDef.EXCLUDE) or not self.lookup[name].file in self.defs:
             return None	# Don't have an easy way of mapping to an ExcludeDef. Placement can't exist in this tile if not loaded.
         definition=self.defs[self.lookup[name].file]
-        placements=self.placements[self.tile][definition.layer]
+        placements=self.placements[self.tile]
         if withctrl and withshift:
             self.selected=set()
             for placement in placements:
@@ -1479,17 +1467,14 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.defs[netdef.name] = NetworkDef(netdef, self.vertexcache, self.lookup, self.defs)
 
         if placements!=None:
-            self.placements={}
-            self.unsorted=placements
-            self.locked=0	# reset locked on loading new
+            self.unsorted = placements
         else:
-            # clear layers
-            for key in self.placements.keys():
-                placements=reduce(lambda x,y: x+y, self.placements.pop(key))
-                self.unsorted[key]=placements
-                # invalidate all allocations
+            # invalidate all allocations (note: navaids just get trashed and re-loaded as required)
+            self.unsorted = self.placements
+            for placements in self.placements.values():
                 for placement in placements:
                     placement.clearlayout(self.vertexcache)
+        self.placements={}
 
         self.background=None	# Force reload of texture in next line
         self.setbackground(prefs)
@@ -1497,6 +1482,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.undostack=[]	# layers might have changed
         self.selected=set()	# may not have same indices in new list
         self.selectednode=None
+        self.locked=0		# reset locked on loading new
 
         if __debug__:
             print "Frame:\t%s"  % self.frame.GetId()
@@ -1566,35 +1552,22 @@ class MyGL(wx.glcanvas.GLCanvas):
 
             if options&Prefs.ELEVATION!=self.options&Prefs.ELEVATION:
                 # Elevation preference chaged - clear all layout (other than airports)
-                for key in self.placements.keys():
-                    placements=reduce(lambda x,y:x+y, self.placements.pop(key))
-                    self.unsorted[key]=placements
-                    # invalidate all layout
+                for placements in self.placements.values() + self.navaidplacements.values():
                     for placement in placements:
                         placement.clearlayout(self.vertexcache)
-                for key in self.navaidplacements.keys():
-                    # invalidate all layout
-                    for placement in self.navaidplacements.pop(key):
-                        placement.clearlayout(self.vertexcache)
             else:
-                # Just a new tile
-                for key in self.placements.keys():
-                    # forget all dynamic VBO allocation
-                    for placement in reduce(lambda x,y:x+y, self.placements[key]):
-                        placement.flush(self.vertexcache)
-                for key in self.navaidplacements.keys():
-                    # forget all dynamic VBO allocation
-                    for placement in self.navaidplacements[key]:
+                # Just a new tile - forget all dynamic VBO allocation
+                for placements in self.placements.values() + self.navaidplacements.values():
+                    for placement in placements:
                         placement.flush(self.vertexcache)
                 
             self.options=options
 
-            # load placements and assign to layers
-            if not newtile in self.placements:
-                self.placements[newtile]=[[] for i in range(ClutterDef.DRAWLAYERCOUNT)]
+            # load placements
+            progress.Update(3, 'Objects')
             if newtile in self.unsorted:
                 if __debug__: clock=time.clock()	# Processor time
-                placements=self.unsorted.pop(newtile)
+                placements = self.placements[newtile] = self.unsorted.pop(newtile)
                 # Limit progress dialog to 10 updates
                 p=len(placements)/10+1
                 n=0
@@ -1624,13 +1597,13 @@ class MyGL(wx.glcanvas.GLCanvas):
                         
                     if not placement.islaidout():
                         placement.layout(newtile, options, self.vertexcache)
-                    self.placements[newtile][placement.definition.layer].append(placement)
                 if __debug__: print "%6.3f time in load&layout" % (time.clock()-clock)
+            elif newtile not in self.placements:
+                self.placements[newtile]=[]
             else:
                 # This tile has been previously viewed - placements are already loaded
-                for placements in self.placements[newtile]:
-                    for placement in placements:
-                        placement.layout(newtile, options, self.vertexcache, recalc=False)	# ensure allocated
+                for placement in self.placements[newtile]:
+                    placement.layout(newtile, options, self.vertexcache, recalc=False)	# ensure allocated
 
             # Lay out runways
             progress.Update(13, 'Airports')
