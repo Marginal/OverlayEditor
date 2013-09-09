@@ -637,9 +637,9 @@ class ObjectDef(ClutterDef):
         img.SetData(data)
         
         # Restore state for unproject & selection
+        glLoadIdentity()
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()	
-        glMatrixMode(GL_MODELVIEW)
 
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
@@ -820,8 +820,6 @@ class PolygonDef(ClutterDef):
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
         glLoadIdentity()
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
         canvas.glstate.set_texture(self.texture)
         canvas.glstate.set_color(COL_WHITE)
         glBegin(GL_QUADS)
@@ -839,9 +837,7 @@ class PolygonDef(ClutterDef):
         img.SetData(data)
         
         # Restore state for unproject & selection
-        glMatrixMode(GL_PROJECTION)
         glPopMatrix()	
-        glMatrixMode(GL_MODELVIEW)
 
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
@@ -1217,9 +1213,9 @@ class FacadeDef(PolygonDef):
         img.SetData(data)
 
         # Restore state for unproject & selection
+        glLoadIdentity()
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()
-        glMatrixMode(GL_MODELVIEW)
 
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
@@ -1376,8 +1372,6 @@ class LineDef(PolygonDef):
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
         glLoadIdentity()
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
         canvas.glstate.set_color(COL_WHITE)
         canvas.glstate.set_poly(True)
         # canvas.glstate.set_cull(True)	# don't care
@@ -1402,9 +1396,7 @@ class LineDef(PolygonDef):
         img.SetData(data)
 
         # Restore state for unproject & selection
-        glMatrixMode(GL_PROJECTION)
         glPopMatrix()
-        glMatrixMode(GL_MODELVIEW)
 
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
@@ -1524,9 +1516,9 @@ class StringDef(PolygonDef):
         img.SetData(data)
 
         # Restore state for unproject & selection
+        glLoadIdentity()
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()
-        glMatrixMode(GL_MODELVIEW)
 
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)

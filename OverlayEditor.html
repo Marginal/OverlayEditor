@@ -137,7 +137,7 @@ Do not change the location of X-Plane's top-level folder while you are editing a
 
 <h4><a name="mainwindow">Main window</a></h4>
 <p>This shows the objects that have been placed in a 1&deg;&times;1&deg; region of the loaded scenery package.</p>
-<p>By default terrain is textured and displayed as flat - you can change this with <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> and/or add mapping imagery with <a href="#background"><img class="inlbutton" alt="Background" src="Resources/background.png"></a>. Runways, taxiways, navaids and X-Plane's default road and rail networks are displayed in simplified form and cannot be edited. Scenery objects from other scenery packages and &ldquo;autogen&rdquo; scenery objects from the default scenery are not displayed at all.<p>
+<p>By default terrain is textured, displayed as flat, and roads and taxiway markings are omitted - you can change this with <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> and/or add mapping imagery with <a href="#background"><img class="inlbutton" alt="Background" src="Resources/background.png"></a>. Runways, taxiways, navaids and X-Plane's default road and rail networks are displayed in simplified form and cannot be edited. Scenery objects from other scenery packages and &ldquo;autogen&rdquo; scenery objects from the default scenery are not displayed at all.<p>
 <p>Navigate with the cursor keys or mouse. Hold down <kbd>Shift</kbd> for bigger steps or <kbd>Ctrl</kbd> for tiny steps:</p>
 <div style="margin-left: 40px;">
 <table class="kbdtable">
@@ -322,18 +322,18 @@ think of these lists as an artist's
 <h3>Road, Railway &amp; Powerline Networks</h3>
 <p>Roads, railways and powerlines (collectively &ldquo;networks&rdquo;) work similarly to other kinds of polygons, but there are some additional points to bear in mind:</p>
 <ul>
-  <li>In order for traffic to flow across successive segments of road, the end node of one road segment must be at <u>exactly</u> the same location as the end node of the next road segment. (However the two segments don't have to be of the same road type).</li>
-  <li>When multiple roads meet at a junction, in order for X-Plane to draw the junction correctly the end nodes of all the road segments that meet at the junction must be in <u>exactly</u> the same location.</li>
-  <li>To construct a bridge over a road:
-    <ul>
-      <li>Create a four-way junction / crossroads - <i>i.e.</i> four road segments that all end at <u>exactly</u> the same location.</li>
-      <li>Select the end node of one of the &ldquo;bridge&rdquo; segments and use the <kbd>R</kbd> and <kbd>F</kbd> keys to set the node's <samp>level</samp> to 1 or more. The current level is shown in the status bar, and higher levels result in a higher bridge.</li>
-      <li>Repeat for the end node of the other &ldquo;bridge&rdquo; segment.</li>
-    </ul>
-    Note: OverlayEditor doesn't display the bridge segments as being raised, so you may have to experiment a little.</li>
-  <li>X-Plane will not join network segments in your scenery package to segments in the default scenery.</li>
-  <li>You can use an Exclusion region to remove network segments in the default scenery.</li>
-</ul>	
+  <li>In order for traffic to flow across successive segments of road or rail, the first or last node of one segment must be at <u>exactly</u> the same location as the first or last node of the next segment. (However the two segments don't have to be of the same type).</li>
+  <li>When multiple roads and/or railways meet at a junction, in order for X-Plane to draw the junction correctly the first or last nodes of all the segments that meet at the junction must be in <u>exactly</u> the same location.</li>
+</ul>
+<p>To help with this, when you drag the first or last node of a network segment it will &ldquo;snap&rdquo; to any nearby nodes in other segments. And if the &ldquo;snapped-to&rdquo; node is in the middle of its segment, that segment will be split in two.</p>
+<p>To construct a bridge over a road or railway:</p>
+<ul>
+  <li>Create a four-way junction / crossroads - <i>i.e.</i> four segments with their first or last nodes at <u>exactly</u> the same location.</li>
+  <li>Select the end node of one of the segments that you want to turn into a bridge and use the <kbd>R</kbd> and <kbd>F</kbd> keys to set the node's <samp>level</samp> to 1 or more. The current level is shown in the status bar, and higher levels result in a higher bridge.</li>
+  <li>Repeat for the end node of the other &ldquo;bridge&rdquo; segment.</li>
+</ul>
+<p>Note: OverlayEditor doesn't display the bridge segments as being raised, so you may have to experiment a little.</p>
+<p>You can use <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> to make OverlayEditor display networks from the default scenery (in outline form). But X-Plane will not join network segments in your scenery package to segments from the default scenery, and traffic will not flow between them. You can use an Exclusion region to remove network segments from the default scenery, and then replace them with your own.</p>
 
 <h3>Differences between this application and X-Plane</h3>
 <p>This application displays terrain and objects in orthogonal projection (no perspective) and in a simplified form. <i>i.e.</i>:</p>
@@ -373,11 +373,7 @@ all uses of these objects from the scenery.<p>
 and chooses which object to display at random.
 However, this application always displays the first version of an object
 that it comes across.
-Many objects in the <code>global8</code> library exist in multiple versions
-- <i>eg</i> the library object <code>/lib/global8/us/in_sq_90_30r.obj</code>
-exists in eight different versions in X-Plane 8.40; if you use that object
-in your scenery package then this application will always display the same
-version, but X-Plane will display one of the eight versions chosen at random.<p>
+Many objects in the default libraries exist in multiple versions - <i>e.g.</i> the library object <code>/lib/global8/us/in_sq_90_30r.obj</code> exists in at least eight different versions; if you use that object in your scenery package then this application will always display the same version, but X-Plane will display one of the eight versions chosen at random.<p>
 
 <h3><a name="other">Using OverlayEditor in conjunction with other scenery tools</a></h3>
 <p>There are a number of other applications that can create X-Plane scenery packages. Those applications that place scenery objects work by writing &ldquo;overlay&rdquo; <code>.dsf</code> files into a scenery package folder. OverlayEditor can read and edit &ldquo;overlay&rdquo; <code>.dsf</code> files produced by other applications; but of course if you re-run the other application you may overwrite any edits that you have made using OverlayEditor.</p>

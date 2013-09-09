@@ -48,6 +48,7 @@ class UndoEntry:
     DEL=1
     MODIFY=2
     MOVE=3
+    SPLIT=4
     def __init__(self, tile, kind, data):
         self.tile=tile
         self.kind=kind
@@ -306,6 +307,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.selectednode=None	# Selected node. Only if len(self.selected)==1
         self.selections=set()	# Hits for cycling picking
         self.selectsaved=set()	# Selection at start of ctrl drag box
+        self.snapnode = None	# (Polygon, idx) of node we snapped to in ClickModes.DragNode mode
         self.draginert=True
         self.dragx=wx.SystemSettings_GetMetric(wx.SYS_DRAG_X)
         self.dragy=wx.SystemSettings_GetMetric(wx.SYS_DRAG_Y)
@@ -418,7 +420,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glMatrixMode(GL_TEXTURE)
         glTranslatef(0, 1, 0)
         glScalef(1, -1, 1)			# OpenGL textures are backwards
-        glMatrixMode(GL_MODELVIEW)
+        glMatrixMode(GL_PROJECTION)		# We always leave the modelview matrix as identity and the active matrix mode as projection, unless drawing Objects
         wx.EVT_PAINT(self, self.OnPaint)	# start generating paint events only now we're set up
 
     def OnEraseBackground(self, event):
@@ -482,11 +484,29 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.clickmode==ClickModes.DragNode:
             assert len(self.selected)==1
             self.selectednode=list(self.selected)[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
+            if self.snapnode:
+                # split segment at snapped-to node
+                (poly,idx) = self.snapnode
+                if idx!=0 and idx!=len(poly.nodes[0])-1:
+                    poly2 = poly.clone()
+                    poly2.load(self.lookup, self.defs, self.vertexcache)
+                    placements = self.placements[self.tile]
+                    self.undostack.append(UndoEntry(self.tile, UndoEntry.SPLIT, [(placements.index(poly), poly.clone()),
+                                                                                 (len(placements), poly2)]))
+                    placements.append(poly2)
+                    poly.nodes[0] = poly.nodes[0][:idx+1]
+                    poly.layout(self.tile, self.options, self.vertexcache, recalc=True)
+                    poly2.nodes[0]= poly2.nodes[0][idx:]
+                    poly2.layout(self.tile, self.options, self.vertexcache, recalc=True)
+                    self.selected = set([poly,poly2])
+                    self.selectednode = None
+            self.snapnode = None
         elif self.clickmode==ClickModes.Drag:
             for placement in self.selected:
                 placement.layout(self.tile, self.options, self.vertexcache)
         self.clickmode=None
         self.Refresh()	# get rid of drag box
+        self.frame.ShowSel()
         event.Skip()
 
     def OnMiddleDown(self, event):
@@ -543,16 +563,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             # Change cursor if over a node
             if len(self.selected)==1 and isinstance(list(self.selected)[0], Polygon):
                 poly=list(self.selected)[0]
-                glMatrixMode(GL_MODELVIEW)
                 glLoadIdentity()
-                glMatrixMode(GL_PROJECTION)
-                glPushMatrix()
-                glLoadIdentity()
-                gluPickMatrix(event.GetX(),
-                              size[1]-1-event.GetY(), 5,5,
-                              array([0.0, 0.0, size[0], size[1]],int32))
+                gluPickMatrix(event.GetX(), size[1]-1-event.GetY(), 5,5, array([0, 0, size[0], size[1]], GLint))
                 glMultMatrixd(self.proj)
-                glViewport(0, 0, 5, 5)
                 self.glstate.set_texture(0)
                 self.glstate.set_color(COL_WHITE)	# Ensure colour indexing off
                 self.glstate.set_depthtest(False)	# Make selectable even if occluded
@@ -576,7 +589,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                     poly.pick_nodes(self.glstate)
                     selections=glRenderMode(GL_RENDER)
 
-                glPopMatrix()	# Restore state for unproject
+                glLoadMatrixd(self.proj)	# Restore state for unproject
+
                 self.needrefresh=True
                 if selections:
                     self.SetCursor(self.dragcursor)	# hovering over node
@@ -604,10 +618,56 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.clickmode==ClickModes.DragNode:
             # Start/continue node drag
             self.SetCursor(self.dragcursor)
+            self.snapnode = None
             poly=list(self.selected)[0]
-            (lat,lon)=self.getworldloc(event.GetX(), event.GetY())
-            lat=max(self.tile[0], min(self.tile[0]+1, lat))
-            lon=max(self.tile[1], min(self.tile[1]+1, lon))
+            if isinstance(poly, Network) and self.selectednode[1] in [0,len(poly.nodes[0])-1]:
+                # snap end nodes to nodes in other network segments
+                size = self.GetClientSize()
+                glLoadIdentity()
+                gluPickMatrix(event.GetX(), size[1]-1-event.GetY(), 13,13, array([0, 0, size[0], size[1]], GLint))
+                glMultMatrixd(self.proj)
+                self.glstate.set_texture(0)
+                self.glstate.set_color(COL_WHITE)	# Ensure colour indexing off
+                self.glstate.set_depthtest(False)	# Make selectable even if occluded
+                self.glstate.set_poly(True)		# Disable writing to depth buffer
+                nets = [p for p in self.placements[self.tile] if isinstance(p, Network) and p!=poly]
+                n = sum([len(net.nodes[0]) for net in nets])
+                queryidx = 0
+                lookup = []
+                if self.glstate.occlusion_query:
+                    self.glstate.alloc_queries(n)
+                    glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
+                    for p in nets:
+                        p.pick_nodes(self.glstate, queryidx)
+                        m = len(p.nodes[0])
+                        lookup.extend([(p,i) for i in range(m)])
+                        queryidx += m
+                    for queryidx in range(n):
+                        if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
+                            self.snapnode = lookup[queryidx]
+                            break
+                    glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
+                else:
+                    glSelectBuffer(n*4)	# 4 ints per hit record containing one name
+                    glRenderMode(GL_SELECT)
+                    glInitNames()
+                    glPushName(0)
+                    for p in nets:
+                        p.pick_nodes(self.glstate, queryidx)
+                        m = len(p.nodes[0])
+                        lookup.extend([(p,i) for i in range(m)])
+                        queryidx += m
+                    for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
+                        self.snapnode = lookup[int(name)]
+                        break
+                glLoadMatrixd(self.proj)	# Restore state for unproject
+
+            if self.snapnode:
+                (lon,lat) = self.snapnode[0].nodes[0][self.snapnode[1]][:2]	# snap to matching network node location
+            else:
+                (lat,lon)=self.getworldloc(event.GetX(), event.GetY())
+                lat=max(self.tile[0], min(self.tile[0]+1, lat))
+                lon=max(self.tile[1], min(self.tile[1]+1, lon))
             if not self.frame.bkgd:	# No undo for background image
                 newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(self.placements[self.tile].index(poly), poly.clone())])
                 if not (self.undostack and self.undostack[-1].equals(newundo)):
@@ -657,18 +717,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         if __debug__: print "OnPaint"
 
         glViewport(0, 0, *size)
-
-        glMatrixMode(GL_PROJECTION)
         vd=self.d*size.y/size.x
-        #glLoadIdentity()
         proj=array([[1.0/self.d,0,0,0], [0,1.0/vd,0,0], [0,0,(-1.0/30)/vd,0], [0,0,0,1]], float64)	# glOrtho(-self.d, self.d, -vd, vd, -30*vd, 30*vd)	# 30 ~= 1/sin(2), where 2 is minimal elevation angle        
         proj=dot(array([[1,0,0,0], [0,cos(radians(self.e)),sin(radians(self.e)),0], [0,-sin(radians(self.e)),cos(radians(self.e)),0], [0,0,0,1]], float64), proj)	# glRotatef(self.e, 1.0,0.0,0.0)
         proj=dot(array([[cos(radians(self.h)),0,-sin(radians(self.h)),0], [0,1,0,0], [sin(radians(self.h)),0,cos(radians(self.h)),0], [0,0,0,1]], float64), proj)	# glRotatef(self.h, 0.0,1.0,0.0)
         self.proj=dot(array([[1,0,0,0], [0,1,0,0], [0,0,1,0], [-self.x,-self.y,-self.z,1]], float64), proj)	# glTranslatef(-self.x, -self.y, -self.z)
         glLoadMatrixd(self.proj)
-
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
 
         # Workaround for buggy ATI drivers: Check that occlusion queries actually work
         if self.glstate.occlusion_query is None:
@@ -738,6 +792,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.glstate.set_cull(True)
         self.glstate.set_depthtest(True)
         if not self.options&Prefs.ELEVATION:
+            glMatrixMode(GL_MODELVIEW)
             glScalef(1,0,1)		# Defeat elevation data
         if __debug__:
             if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
@@ -757,6 +812,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if not self.options&Prefs.ELEVATION:
             glLoadIdentity()
+            glMatrixMode(GL_PROJECTION)
         if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
 
         # Objects and Polygons
@@ -786,6 +842,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.vertexcache.buckets.draw(self.glstate, None, self.aptdata, imagery, self.imageryopacity)
 
         # Draw clutter with static geometry and sorted by texture (ignoring layer ordering since it doesn't really matter so much for Objects)
+        glMatrixMode(GL_MODELVIEW)	# Temporarily change matrix mode for drawing rotated objects
+        glLoadIdentity()
         self.glstate.set_instance(self.vertexcache)
         self.glstate.set_poly(False)
         self.glstate.set_depthtest(True)
@@ -824,7 +882,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 for o in self.selected: selected.update(o.placements)	# include children
             for objdef in self.defs.values():	# benefit of sorting by texture would be marginal
                 objdef.draw_instanced(self.glstate, selected)
-            glLoadIdentity()	# Drawing Objects alters the matrix
+        glLoadIdentity()	# Drawing Objects alters the matrix
+        glMatrixMode(GL_PROJECTION)
 
         # Selected nodes - very last so overwrites everything
         if len(self.selected)==1:
@@ -861,9 +920,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         # 2D stuff
         if self.clickmode==ClickModes.DragBox or self.imagery.provider_logo:
             glLoadIdentity()
-            glMatrixMode(GL_PROJECTION)
-            glPushMatrix()
-            glLoadIdentity()
 
             # drag box
             if self.clickmode==ClickModes.DragBox:
@@ -896,10 +952,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glVertex3f(-1+width*2.0/size.x,-1, -0.9)
                 glEnd()
 
-            glPopMatrix()
-            glMatrixMode(GL_MODELVIEW)
-
-
+        glLoadMatrixd(self.proj)	# Restore state for unproject
         self.glstate.set_poly(False)
 
         # Display
@@ -915,26 +968,17 @@ class MyGL(wx.glcanvas.GLCanvas):
         #    self.selections=[]	# Can't remember
         if __debug__: clock=time.clock()
         size = self.GetClientSize()
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
         glLoadIdentity()
         if self.clickmode==ClickModes.DragBox:
             # maths goes wrong if zero-sized box
             if self.clickpos[0]==self.mousenow[0]: self.mousenow[0]+=1
             if self.clickpos[1]==self.mousenow[1]: self.mousenow[1]-=1
-            gluPickMatrix((self.clickpos[0]+self.mousenow[0])/2,
-                          size[1]-1-(self.clickpos[1]+self.mousenow[1])/2,
-                          abs(self.clickpos[0]-self.mousenow[0]),
-                          abs(self.clickpos[1]-self.mousenow[1]),
-                          array([0.0, 0.0, size[0], size[1]],int32))
+            gluPickMatrix((self.clickpos[0]+self.mousenow[0])/2, size[1]-1-(self.clickpos[1]+self.mousenow[1])/2,
+                          abs(self.clickpos[0]-self.mousenow[0]), abs(self.clickpos[1]-self.mousenow[1]),
+                          array([0, 0, size[0], size[1]], GLint))
         else:	# at point
-            gluPickMatrix(self.clickpos[0],
-                          size[1]-1-self.clickpos[1], 5,5,
-                          array([0.0, 0.0, size[0], size[1]],int32))
-            glViewport(0, 0, 5, 5)
+            gluPickMatrix(self.clickpos[0], size[1]-1-self.clickpos[1], 5,5, array([0, 0, size[0], size[1]], GLint))
         glMultMatrixd(self.proj)
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
 
         self.glstate.set_texture(0)
         self.glstate.set_color(COL_WHITE)		# Ensure colour indexing off
@@ -983,9 +1027,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     self.clickmode=ClickModes.DragNode
                     self.selectednode=selectnodes[0]
 
-                    # Restore state for unproject
-                    glMatrixMode(GL_PROJECTION)
-                    glPopMatrix()
+                    glLoadMatrixd(self.proj)	# Restore state for unproject
 
                     self.Refresh()
                     self.frame.ShowSel()
@@ -994,6 +1036,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                     self.selectednode=None
 
         # Select placements
+        glMatrixMode(GL_MODELVIEW)	# Temporarily change matrix mode for drawing rotated objects
+        glLoadIdentity()
         if self.glstate.occlusion_query:
             gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
             lookup = []
@@ -1025,7 +1069,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                             # Restore state for unproject
                             glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
                             glMatrixMode(GL_PROJECTION)
-                            glPopMatrix()
+                            glLoadMatrixd(self.proj)
 
                             self.Refresh()
                             self.frame.ShowSel()
@@ -1051,7 +1095,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     glLoadName(i)
                     placements[i].pick_instance(self.glstate)
             self.glstate.set_dynamic(self.vertexcache)
-            glLoadIdentity()
+            glLoadIdentity()	# Drawing Objects alters the matrix
             for i in range(len(placements)):
                 if not placements[i].definition.type & self.locked:
                     glLoadName(i)
@@ -1067,7 +1111,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Restore state for unproject
         glMatrixMode(GL_PROJECTION)
-        glPopMatrix()
+        glLoadMatrixd(self.proj)
 
         if self.frame.bkgd:	# Don't allow selection of other objects while background dialog is open
             if self.clickmode==ClickModes.Drag or self.background in selections:
@@ -1343,7 +1387,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 avlat+=placement.lat
                 avlon+=placement.lon
                 self.selected.add(placement)
-        else:
+        elif undo.kind in [UndoEntry.MOVE, UndoEntry.MODIFY]:
             for (i, placement) in undo.data:
                 placement.load(self.lookup, self.defs, self.vertexcache, True)
                 placement.layout(undo.tile, self.options, self.vertexcache)
@@ -1352,6 +1396,22 @@ class MyGL(wx.glcanvas.GLCanvas):
                 avlat+=placement.lat
                 avlon+=placement.lon
                 self.selected.add(placement)
+        elif undo.kind==UndoEntry.SPLIT:
+            # SPLIT is like a MOVE and ADD
+            assert len(undo.data)==2
+            (i, placement) = undo.data[0]
+            placement.load(self.lookup, self.defs, self.vertexcache, True)
+            placement.layout(undo.tile, self.options, self.vertexcache)
+            placements[i].clearlayout(self.vertexcache)
+            placements[i] = placement
+            avlat = placement.lat*2	# Hack!
+            avlon = placement.lon*2
+            self.selected.add(placement)
+            (i, placement) = undo.data[1]
+            placement.clearlayout(self.vertexcache)
+            placements.pop(i)
+        else:
+            assert False, undo.kind
         avlat/=len(undo.data)
         avlon/=len(undo.data)
         self.goto((avlat,avlon))
@@ -2011,7 +2071,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.glstate.set_texture(0)
         self.glstate.set_depthtest(True)
         self.glstate.set_poly(False)	# DepthMask=True
-        glLoadIdentity()
         glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)
         if self.options&Prefs.ELEVATION:
             for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options)[0]:
@@ -2026,7 +2085,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnd()
         mz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
         if mz==1.0: mz=0.5	# treat off the tile edge as sea level
-        (x,y,z)=gluUnProject(mx,my,mz, identity(4, float64), self.proj, array([0,0,size[0],size[1]], int32))
+        (x,y,z)=gluUnProject(mx,my,mz, identity(4, float64), self.proj, array([0,0,size[0],size[1]], GLint))
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
         #self.SwapBuffers()	# debug
         glClear(GL_DEPTH_BUFFER_BIT)
