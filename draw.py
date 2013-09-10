@@ -413,7 +413,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glPixelStorei(GL_PACK_ALIGNMENT,1)	# byte aligned glReadPixels
         glReadBuffer(GL_BACK)			# for unproject
         #glPixelStorei(GL_UNPACK_LSB_FIRST,1)
-        glEnable(GL_TEXTURE_2D)
+        #glEnsable(GL_TEXTURE_2D)		# Don't need fixed function texturing
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glEnable(GL_BLEND)
         glAlphaFunc(GL_GREATER, 1.0/256)	# discard wholly transparent
@@ -828,7 +828,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     assert placement.base+len(placement.dynamic_data)/6 <= len(selected)
                     selected[placement.base:placement.base+len(placement.dynamic_data)/6] = 1
             glEnableVertexAttribArray(self.glstate.skip_pos)
-            glVertexAttribDivisorARB(self.glstate.skip_pos, 0)
+            if self.glstate.instanced_arrays: glVertexAttribDivisorARB(self.glstate.skip_pos, 0)
             self.glstate.set_attrib_selected(self.glstate.skip_pos, selected)
             self.vertexcache.buckets.draw(self.glstate, False, self.aptdata, imagery, self.imageryopacity)
 
