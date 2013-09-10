@@ -83,7 +83,7 @@ class PaletteListBox(wx.VListBox):
                 except:
                     realname=name
                     self.parent.bad[name]=True
-                    imgno=self.parent.imgno_unknown	# non-ASCII
+                    imgno=self.parent.imgno_bad		# non-ASCII
                 if not self.pkgdir:
                     # library object
                     if name.startswith('/'): name=name[1:]
