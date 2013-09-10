@@ -72,8 +72,8 @@ if sys.platform=='win32':
     subs = { 'Cmd':     'Ctrl',
              '&#8598;': 'Home',
              '&#8600;': 'End',
-             '&#8670;': 'PageUp',
-             '&#8671;': 'PageDn' }
+             '&nbsp;&#8670;&nbsp;': 'PageUp',
+             '&nbsp;&#8671;&nbsp;': 'PageDn' }
     regex = re.compile("(%s)" % "|".join(map(re.escape, subs.keys())))
     for line in hin:
         hout.write(regex.sub(lambda mo: subs[mo.string[mo.start():mo.end()]], line) +'\n')

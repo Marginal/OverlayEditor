@@ -39,7 +39,7 @@ cp -p Resources/${APPNAME}.png $RPMRT/usr/local/share/icons/hicolor/48x48/apps/$
 cp -p linux/${APPNAME}-128.png $RPMRT/usr/local/share/icons/hicolor/128x128/apps/${APPLINUX}.png
 cp -p linux/${APPNAME}-128.png $RPMRT/usr/local/lib/${APPLINUX}/Resources/
 for i in $PY; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/; done
-sed -e 's/Cmd/Ctrl/g' -e 's/&#8598;/Home/g' -e 's/&#8600;/End/g' -e 's/&#8670;/PageUp/g' -e 's/&#8671;/PageDn/g' OverlayEditor.html > $RPMRT/usr/local/lib/${APPLINUX}/OverlayEditor.html
+sed -e 's/Cmd/Ctrl/g' -e 's/&#8598;/Home/g' -e 's/&#8600;/End/g' -e 's/&nbsp;&#8670;&nbsp;/PageUp/g' -e 's/&nbsp;&#8671;&nbsp;/PageDn/g' OverlayEditor.html > $RPMRT/usr/local/lib/${APPLINUX}/OverlayEditor.html
 for i in $RSRC; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/Resources/; done
 for i in $PREV; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/Resources/previews/; done
 cp -p linux/DSFTool $RPMRT/usr/local/lib/${APPLINUX}/linux/
