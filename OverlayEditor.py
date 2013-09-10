@@ -455,7 +455,7 @@ class BackgroundDialog(wx.Dialog):
             self.parent.menubar.Disable()
             self.parent.menubar.Enable(wx.ID_PREFERENCES, False)	# needs to be disabled individually on wxMac Carbon
         #self.parent.toolbar.Disable()	# Doesn't do anything on wxMac Carbon - do it by individual tool
-        ids=[wx.ID_NEW,wx.ID_OPEN,wx.ID_SAVE,wx.ID_DOWN,wx.ID_ADD,wx.ID_EDIT,wx.ID_DELETE,wx.ID_UNDO,wx.ID_REFRESH,wx.ID_PREFERENCES,wx.ID_FORWARD,wx.ID_APPLY]
+        ids=[wx.ID_NEW,wx.ID_OPEN,wx.ID_SAVE,wx.ID_DOWN,wx.ID_ADD,wx.ID_EDIT,wx.ID_DELETE,wx.ID_CUT,wx.ID_COPY,wx.ID_PASTE,wx.ID_UNDO,wx.ID_REFRESH,wx.ID_PREFERENCES,wx.ID_FORWARD,wx.ID_APPLY]
         self.toolbarstate=[(id,self.parent.toolbar.GetToolEnabled(id)) for id in ids]
         for id in ids: self.parent.toolbar.EnableTool(id,False)
 
@@ -673,12 +673,13 @@ class MainWindow(wx.Frame):
             editmenu.Append(wx.ID_UNDO, u'Undo\tCtrl-Z')
             wx.EVT_MENU(self, wx.ID_UNDO, self.OnUndo)
             editmenu.AppendSeparator()
-            #editmenu.Append(wx.ID_CUT, u'Cut\tCtrl-X')
-            #wx.EVT_MENU(self, wx.ID_CUT, self.OnCut)
-            #editmenu.Append(wx.ID_COPY, u'Copy\tCtrl-C')
-            #wx.EVT_MENU(self, wx.ID_COPY, self.OnCopy)
-            #editmenu.Append(wx.ID_PASTE, u'Paste\tCtrl-V')
-            #wx.EVT_MENU(self, wx.ID_PASTE, self.OnPaste)
+            editmenu.Append(wx.ID_CUT, u'Cut\tCtrl-X')
+            wx.EVT_MENU(self, wx.ID_CUT, self.OnCut)
+            editmenu.Append(wx.ID_COPY, u'Copy\tCtrl-C')
+            wx.EVT_MENU(self, wx.ID_COPY, self.OnCopy)
+            editmenu.Append(wx.ID_PASTE, u'Paste\tCtrl-V')
+            wx.EVT_MENU(self, wx.ID_PASTE, self.OnPaste)
+            editmenu.AppendSeparator()
             editmenu.Append(wx.ID_ADD, u'Add\tEnter')
             wx.EVT_MENU(self, wx.ID_ADD, self.OnAdd)
             editmenu.Append(wx.ID_EDIT, u'Add Node/Hole\tCtrl-Enter')
@@ -726,7 +727,7 @@ class MainWindow(wx.Frame):
         wx.EVT_TOOL(self.toolbar, wx.ID_OPEN, self.OnOpen)
         self.toolbar.AddLabelTool(wx.ID_SAVE, 'Save', self.icon(['document-save', 'filesave'], 'save.png'), wx.NullBitmap, 0, 'Save scenery package')
         wx.EVT_TOOL(self.toolbar, wx.ID_SAVE, self.OnSave)
-        self.toolbar.AddLabelTool(wx.ID_DOWN, 'Import', self.icon(['folder-import'], 'import.png'), wx.NullBitmap, 0, 'Import objects from another package')	# not in spec - KDE4/3 name
+        self.toolbar.AddLabelTool(wx.ID_DOWN, 'Import', self.icon(['folder-import'], 'import.png'), wx.NullBitmap, 0, 'Import objects from another package')
         wx.EVT_TOOL(self.toolbar, wx.ID_DOWN, self.OnImport)
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_ADD, 'Add', self.icon(['list-add', 'add'], 'add.png'), wx.NullBitmap, 0, 'Add new object')
@@ -735,6 +736,15 @@ class MainWindow(wx.Frame):
         wx.EVT_TOOL(self.toolbar, wx.ID_EDIT, self.OnAddNode)
         self.toolbar.AddLabelTool(wx.ID_DELETE, 'Delete', self.icon(['edit-delete', 'delete', 'editdelete'], 'delete.png'), wx.NullBitmap, 0, 'Delete selected object(s)')
         wx.EVT_TOOL(self.toolbar, wx.ID_DELETE, self.OnDelete)
+        if not self.menubar:
+            # Mac apps typically don't include cut/copy/paste icons
+            self.toolbar.AddSeparator()
+            self.toolbar.AddLabelTool(wx.ID_CUT,   'Cut',   self.icon(['edit-cut'],   'cut.png'),   wx.NullBitmap, 0, 'Cut')
+            wx.EVT_TOOL(self.toolbar, wx.ID_CUT,   self.OnCut)
+            self.toolbar.AddLabelTool(wx.ID_COPY,  'Copy',  self.icon(['edit-copy'],  'copy.png'),  wx.NullBitmap, 0, 'Copy')
+            wx.EVT_TOOL(self.toolbar, wx.ID_COPY,  self.OnCopy)
+            self.toolbar.AddLabelTool(wx.ID_PASTE, 'Paste', self.icon(['edit-paste'], 'paste.png'), wx.NullBitmap, 0, 'Paste')
+            wx.EVT_TOOL(self.toolbar, wx.ID_PASTE, self.OnPaste)
         self.toolbar.AddLabelTool(wx.ID_UNDO, 'Undo', self.icon(['edit-undo', 'undo'], 'undo.png'), wx.NullBitmap, 0, 'Undo last edit')
         wx.EVT_TOOL(self.toolbar, wx.ID_UNDO, self.OnUndo)
         self.toolbar.AddSeparator()
@@ -755,13 +765,13 @@ class MainWindow(wx.Frame):
         
         self.toolbar.Realize()
         # Disable all toolbar buttons until app has loaded to prevent callbacks before app has initialised data
-        for id in [wx.ID_NEW,wx.ID_OPEN,wx.ID_SAVE,wx.ID_DOWN,wx.ID_ADD,wx.ID_EDIT,wx.ID_DELETE,wx.ID_UNDO,wx.ID_REFRESH,wx.ID_PREFERENCES,wx.ID_FORWARD,wx.ID_APPLY]:
+        for id in [wx.ID_NEW,wx.ID_OPEN,wx.ID_SAVE,wx.ID_DOWN,wx.ID_ADD,wx.ID_EDIT,wx.ID_DELETE,wx.ID_CUT,wx.ID_COPY,wx.ID_PASTE,wx.ID_UNDO,wx.ID_REFRESH,wx.ID_PREFERENCES,wx.ID_FORWARD,wx.ID_APPLY]:
             self.toolbar.EnableTool(id, False)
         if self.menubar:
             self.menubar.Enable(wx.ID_DOWN,   False)
-            #self.menubar.Enable(wx.ID_CUT,    False)
-            #self.menubar.Enable(wx.ID_COPY,   False)
-            #self.menubar.Enable(wx.ID_PASTE,  False)
+            self.menubar.Enable(wx.ID_CUT,    False)
+            self.menubar.Enable(wx.ID_COPY,   False)
+            self.menubar.Enable(wx.ID_PASTE,  False)
             self.menubar.Enable(wx.ID_ADD,    False)
             self.menubar.Enable(wx.ID_EDIT,   False)
             self.menubar.Enable(wx.ID_DELETE, False)
@@ -891,8 +901,26 @@ class MainWindow(wx.Frame):
                     break
             else:
                 self.palette.set(names[0])
+
+            self.toolbar.EnableTool(wx.ID_EDIT,   False)
             self.toolbar.EnableTool(wx.ID_DELETE, True)
-            if self.menubar: self.menubar.Enable(wx.ID_DELETE, True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_EDIT,   False)
+                self.menubar.Enable(wx.ID_DELETE, True)
+                if self.canvas.selectednode:	# don't support copy and paste of nodes
+                    self.menubar.Enable(wx.ID_CUT,  False)
+                    self.menubar.Enable(wx.ID_COPY, False)
+                else:
+                    self.menubar.Enable(wx.ID_CUT,  True)
+                    self.menubar.Enable(wx.ID_COPY, True)
+            else:
+                if self.canvas.selectednode:	# don't support copy and paste of nodes
+                    self.toolbar.EnableTool(wx.ID_CUT,  False)
+                    self.toolbar.EnableTool(wx.ID_COPY, False)
+                else:
+                    self.toolbar.EnableTool(wx.ID_CUT,  True)
+                    self.toolbar.EnableTool(wx.ID_COPY, True)
+
             if len(names)==1 and isinstance(list(self.canvas.selected)[0], Polygon):
                 placement = list(self.canvas.selected)[0]
                 if ((self.canvas.selectednode and not placement.fixednodes and len(placement.nodes[self.canvas.selectednode[0]]) < 255) or
@@ -902,9 +930,13 @@ class MainWindow(wx.Frame):
                         self.menubar.Enable(wx.ID_EDIT, True)
         else:
             self.palette.set(None)
+            self.toolbar.EnableTool(wx.ID_CUT,    False)
+            self.toolbar.EnableTool(wx.ID_COPY,   False)
             self.toolbar.EnableTool(wx.ID_EDIT,   False)
             self.toolbar.EnableTool(wx.ID_DELETE, False)
             if self.menubar:
+                self.menubar.Enable(wx.ID_CUT,    False)
+                self.menubar.Enable(wx.ID_COPY,   False)
                 self.menubar.Enable(wx.ID_EDIT,   False)
                 self.menubar.Enable(wx.ID_DELETE, False)
         self.statusbar.SetStatusText(string, 2)
@@ -1032,15 +1064,15 @@ class MainWindow(wx.Frame):
         elif event.GetKeyCode()==ord('Z') and event.CmdDown():
             self.OnUndo(event)
             return
-        #elif event.GetKeyCode()==ord('X') and event.CmdDown():
-        #    self.OnCut()
-        #    return
-        #elif event.GetKeyCode()==ord('C') and event.CmdDown():
-        #    self.OnCopy()
-        #    return
-        #elif event.GetKeyCode()==ord('V') and event.CmdDown():
-        #    self.OnPaste()
-        #    return
+        elif event.GetKeyCode()==ord('X') and event.CmdDown():
+            self.OnCut(event)
+            return
+        elif event.GetKeyCode()==ord('C') and event.CmdDown():
+            self.OnCopy(event)
+            return
+        elif event.GetKeyCode()==ord('V') and event.CmdDown():
+            self.OnPaste(event)
+            return
         elif event.GetKeyCode()==wx.WXK_SPACE:
             # not Cmd because Cmd-Space = Spotlight
             self.canvas.allsel(event.ControlDown())
@@ -1135,14 +1167,17 @@ class MainWindow(wx.Frame):
             self.SetModified(False)
             self.toolbar.EnableTool(wx.ID_ADD,  False)
             self.toolbar.EnableTool(wx.ID_EDIT, False)
+            self.toolbar.EnableTool(wx.ID_CUT,  False)
+            self.toolbar.EnableTool(wx.ID_COPY, False)
+            self.toolbar.EnableTool(wx.ID_PASTE,False)
             self.toolbar.EnableTool(wx.ID_UNDO, False)
             self.toolbar.EnableTool(wx.ID_DOWN, True)
             self.toolbar.EnableTool(wx.ID_REFRESH, True)
             if self.menubar:
                 self.menubar.Enable(wx.ID_UNDO,  False)
-                #self.menubar.Enable(wx.ID_CUT,   False)
-                #self.menubar.Enable(wx.ID_COPY,  False)
-                #self.menubar.Enable(wx.ID_PASTE, False)
+                self.menubar.Enable(wx.ID_CUT,   False)
+                self.menubar.Enable(wx.ID_COPY,  False)
+                self.menubar.Enable(wx.ID_PASTE, False)
                 self.menubar.Enable(wx.ID_ADD,   False)
                 self.menubar.Enable(wx.ID_EDIT,  False)
                 self.menubar.Enable(wx.ID_DOWN,  True)
@@ -1181,16 +1216,19 @@ class MainWindow(wx.Frame):
                 self.SetModified(False)
                 self.toolbar.EnableTool(wx.ID_ADD,  False)
                 self.toolbar.EnableTool(wx.ID_EDIT, False)
+                self.toolbar.EnableTool(wx.ID_CUT,  False)
+                self.toolbar.EnableTool(wx.ID_COPY, False)
+                self.toolbar.EnableTool(wx.ID_PASTE,False)
                 self.toolbar.EnableTool(wx.ID_UNDO, False)
                 self.toolbar.EnableTool(wx.ID_DOWN, True)
                 self.toolbar.EnableTool(wx.ID_REFRESH, True)
                 if self.menubar:
-                    self.menubar.Enable(wx.ID_ADD,  False)
-                    self.menubar.Enable(wx.ID_EDIT, False)
-                    self.menubar.Enable(wx.ID_UNDO, False)
-                    #self.menubar.Enable(wx.ID_CUT,   False)
-                    #self.menubar.Enable(wx.ID_COPY,  False)
-                    #self.menubar.Enable(wx.ID_PASTE, False)
+                    self.menubar.Enable(wx.ID_ADD,   False)
+                    self.menubar.Enable(wx.ID_EDIT,  False)
+                    self.menubar.Enable(wx.ID_UNDO,  False)
+                    self.menubar.Enable(wx.ID_CUT,   False)
+                    self.menubar.Enable(wx.ID_COPY,  False)
+                    self.menubar.Enable(wx.ID_PASTE, False)
                     self.menubar.Enable(wx.ID_DOWN,  True)
                     self.menubar.Enable(wx.ID_REFRESH, True)
         else:
@@ -1281,14 +1319,22 @@ class MainWindow(wx.Frame):
             if self.menubar: self.menubar.Enable(wx.ID_UNDO, False)
 
     def OnCut(self, event):
-        self.onCopy(event)
-        self.onDelete(event)
+        self.OnCopy(event)
+        self.OnDelete(event)
 
     def OnCopy(self, event):
-        event.skip()
+        if self.canvas.copysel():
+            self.toolbar.EnableTool(wx.ID_PASTE, True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_PASTE, True)
 
     def OnPaste(self, event):
-        event.skip()
+        if self.canvas.paste(*self.loc):
+            self.SetModified(True)
+            self.toolbar.EnableTool(wx.ID_UNDO, True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_UNDO, True)
+            self.ShowSel()
 
     def OnBackground(self, event):
         self.canvas.clearsel()
@@ -1650,15 +1696,18 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_DOWN,   False)
             self.toolbar.EnableTool(wx.ID_ADD,    False)
             self.toolbar.EnableTool(wx.ID_EDIT,   False)
+            self.toolbar.EnableTool(wx.ID_CUT,    False)
+            self.toolbar.EnableTool(wx.ID_COPY,   False)
+            self.toolbar.EnableTool(wx.ID_PASTE,  False)
             self.toolbar.EnableTool(wx.ID_DELETE, False)
             self.toolbar.EnableTool(wx.ID_UNDO,   False)
             self.toolbar.EnableTool(wx.ID_REFRESH,False)
             if self.menubar:
                 self.menubar.Enable(wx.ID_SAVE,   True)
                 self.menubar.Enable(wx.ID_DOWN,   False)
-                #self.menubar.Enable(wx.ID_CUT,    False)
-                #self.menubar.Enable(wx.ID_COPY,   False)
-                #self.menubar.Enable(wx.ID_PASTE,  False)
+                self.menubar.Enable(wx.ID_CUT,    False)
+                self.menubar.Enable(wx.ID_COPY,   False)
+                self.menubar.Enable(wx.ID_PASTE,  False)
                 self.menubar.Enable(wx.ID_ADD,    False)
                 self.menubar.Enable(wx.ID_EDIT,   False)
                 self.menubar.Enable(wx.ID_DELETE, False)

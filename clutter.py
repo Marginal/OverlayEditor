@@ -264,6 +264,11 @@ class Object(Clutter):
         vertexcache.allocate_dynamic(self, True)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
+        if not tile:	# don't round or layout, e.g. if taking a copy
+            assert not dhdg
+            self.lat += dlat
+            self.lon += dlon
+            return
         self.lat=max(tile[0], min(tile[0]+maxres, self.lat+dlat))
         self.lon=max(tile[1], min(tile[1]+maxres, self.lon+dlon))
         if dhdg:
@@ -601,6 +606,7 @@ class Polygon(Clutter):
             for j in range(len(self.nodes[i])):
                 self.movenode((i,j), dlat, dlon, 0, tile, options, vertexcache)
         if dhdg:
+            assert tile
             for i in range(len(self.nodes)):
                 for j in range(len(self.nodes[i])):
                     h=atan2(self.nodes[i][j][0]-loc[1],
@@ -613,7 +619,7 @@ class Polygon(Clutter):
             self.param+=dparam
             if self.param<0: self.param=0
             elif self.param>65535: self.param=65535	# uint16
-        if dlat or dlon or dhdg or dparam:
+        if tile and (dlat or dlon or dhdg or dparam):
             self.layout(tile, options, vertexcache)
 
     def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
@@ -626,8 +632,11 @@ class Polygon(Clutter):
                     self.nodes[i][j]=self.nodes[i][j][:2]
         (i,j)=node
         # points can be on upper boundary of tile
-        self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
-                          max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))
+        if tile:
+            self.nodes[i][j] = (max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
+                                max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))
+        else:	# don't round, e.g. if taking a copy
+            self.nodes[i][j] = (self.nodes[i][j][0]+dlon, self.nodes[i][j][1]+dlat)
         if defer:
             return node
         else:
@@ -792,6 +801,7 @@ class Draped(Polygon):
             self.param=(self.param+dparam+dhdg)%360
         if dhdg:
             # preserve textures
+            assert tile
             for i in range(len(self.nodes)):
                 for j in range(len(self.nodes[i])):
                     if len(self.nodes[i][j])>=6:
@@ -820,8 +830,11 @@ class Draped(Polygon):
                     for j in range(len(self.nodes[i])):
                         self.nodes[i][j]=self.nodes[i][j][:2]+self.nodes[i][j][4:6]
             (i,j)=node
-            self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
-                              max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))+self.nodes[i][j][2:4]
+            if tile:
+                self.nodes[i][j] = (max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
+                                    max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat))) + self.nodes[i][j][2:4]
+            else:	# don't round, e.g. if taking a copy
+                self.nodes[i][j] = (self.nodes[i][j][0]+dlon, self.nodes[i][j][1]+dlat) + self.nodes[i][j][2:4]
             if defer:
                 return node
             else:
@@ -962,8 +975,12 @@ class Exclude(Polygon):
             return '%s' % (latlondisp(dms, self.lat, self.lon))
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        # no rotation
-        Polygon.move(self, dlat, dlon, 0, 0, loc, tile, options, vertexcache)
+        for i in range(len(self.nodes)):
+            for j in range(len(self.nodes[i])):
+                Polygon.movenode(self, (i,j), dlat, dlon, 0, tile, options, vertexcache)	# use superclass to prevent complication
+        # no rotation or param
+        if tile and (dlat or dlon):
+            self.layout(tile, options, vertexcache)
 
     def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=False):
         # changes adjacent nodes, so always do full layout immediately
@@ -1122,6 +1139,7 @@ class Facade(Polygon):
         else:
             if dhdg:
                 # preserve wall type
+                assert tile
                 for i in range(len(self.nodes)):
                     for j in range(len(self.nodes[i])):
                         h=atan2(self.nodes[i][j][0]-loc[1],
@@ -1165,9 +1183,11 @@ class Facade(Polygon):
                 wallno=min(len(floor.walls)-1, max(0, wallno+1))
             elif darg<0:
                 wallno=min(len(floor.walls)-1, max(0, wallno-1))
-            self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
-                              max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)),
-                              wallno)
+            if tile:
+                self.nodes[i][j] = (max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
+                                    max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)), wallno)
+            else:	# don't round, e.g. if taking a copy
+                self.nodes[i][j] = (self.nodes[i][j][0]+dlon, self.nodes[i][j][1]+dlat, wallno)
             if defer:
                 return node
             else:
@@ -2131,6 +2151,7 @@ class Network(String,Line):
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         if dhdg:
             # preserve level
+            assert tile
             for i in range(len(self.nodes)):
                 for j in range(len(self.nodes[i])):
                     h = atan2(self.nodes[i][j][0]-loc[1], self.nodes[i][j][1]-loc[0]) + radians(dhdg)
@@ -2146,10 +2167,12 @@ class Network(String,Line):
     def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
         # defer layout
         (i,j)=node
-        # points can be on upper boundary of tile
-        self.nodes[i][j]=(max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
-                          max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)),
-                          (j==0 or j==len(self.nodes[i])-1) and min(max(int(self.nodes[i][j][2]) + darg, 0), 5) or 0)	# level 5 is arbitrary
+        if tile:
+            self.nodes[i][j] = (max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
+                                max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)),
+                                (j==0 or j==len(self.nodes[i])-1) and min(max(int(self.nodes[i][j][2]) + darg, 0), 5) or 0)	# level 5 is arbitrary
+        else:	# don't round, e.g. if taking a copy
+            self.nodes[i][j] = (self.nodes[i][j][0]+dlon, self.nodes[i][j][1]+dlat, self.nodes[i][j][2]+darg)
         if defer:
             return node
         else:

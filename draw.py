@@ -49,6 +49,7 @@ class UndoEntry:
     MODIFY=2
     MOVE=3
     SPLIT=4
+
     def __init__(self, tile, kind, data):
         self.tile=tile
         self.kind=kind
@@ -314,7 +315,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.dragx<=1 or self.dragx>8 or self.dragy<=1 or self.dragy>8:
             self.dragx=self.dragy=5	# Finder on Mac appears to use 5
 
-        self.clipboard=[]
+        self.clipboard = set()
         self.undostack=[]
 
         # Values during startup
@@ -1361,6 +1362,37 @@ class MyGL(wx.glcanvas.GLCanvas):
         return True
 
 
+    def copysel(self):
+        if self.selectednode or not self.selected: return None	# can't copy and paste nodes
+        self.clipboard = set()
+        avlat = sum([placement.location()[0] for placement in self.selected]) / len(self.selected)
+        avlon = sum([placement.location()[1] for placement in self.selected]) / len(self.selected)
+        for placement in self.selected:
+            # Centre copied objects relative to average location
+            clone = placement.clone()
+            clone.move(-avlat, -avlon, 0, 0, None, None, self.options, self.vertexcache)
+            self.clipboard.add(clone)
+        return (avlat,avlon)
+
+
+    def paste(self, lat, lon):
+        if not self.clipboard: return None
+        newplacements = []
+        for placement in self.clipboard:
+            clone = placement.clone()
+            clone.load(self.lookup, self.defs, self.vertexcache, True)
+            clone.move(lat, lon, 0, 0, None, self.tile, self.options, self.vertexcache)
+            newplacements.append(clone)
+        placements = self.placements[self.tile]
+        self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD, [(len(placements), placement) for placement in newplacements]))
+        placements.extend(newplacements)
+        self.selected = set(newplacements)
+        self.selectednode = None
+        self.Refresh()
+        self.frame.ShowSel()
+        return (lat,lon)
+
+
     def undo(self):
         # returns new location
         if not self.undostack: return False	# can't happen
@@ -1373,12 +1405,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         placements=self.placements[undo.tile]
 
         if undo.kind==UndoEntry.ADD:
-            assert len(undo.data)==1	# Naieve pop only works if just one item
-            (i,placement) = undo.data[0]
-            placement.clearlayout(self.vertexcache)
-            placements.pop(i)
-            avlat+=placement.lat
-            avlon+=placement.lon
+            for (i, placement) in undo.data:
+                placement.clearlayout(self.vertexcache)
+                placements.pop(i)	# assumes all were added at the same index
+                avlat+=placement.lat
+                avlon+=placement.lon
         elif undo.kind==UndoEntry.DEL:
             for (i, placement) in undo.data:
                 placement.load(self.lookup, self.defs, self.vertexcache, True)
@@ -1538,7 +1569,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.background=None	# Force reload of texture in next line
         self.setbackground(prefs)
-        self.clipboard=[]	# layers might have changed
+        self.clipboard = set()	# layers might have changed
         self.undostack=[]	# layers might have changed
         self.selected=set()	# may not have same indices in new list
         self.selectednode=None
