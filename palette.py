@@ -263,11 +263,15 @@ class PaletteChoicebook(wx.Choicebook):
 
     def _postselection(self, found):
         # Do stuff after a selection
-        self.frame.toolbar.EnableTool(wx.ID_ADD,  found)
-        self.frame.toolbar.EnableTool(wx.ID_EDIT, False)
+        self.frame.toolbar.EnableTool(wx.ID_ADD,    found)
+        self.frame.toolbar.EnableTool(wx.ID_CUT,    False)
+        self.frame.toolbar.EnableTool(wx.ID_COPY,   False)
+        self.frame.toolbar.EnableTool(wx.ID_EDIT,   False)
         if self.frame.menubar:
-            self.frame.menubar.Enable(wx.ID_ADD,  found)
-            self.frame.menubar.Enable(wx.ID_EDIT, False)
+            self.frame.menubar.Enable(wx.ID_ADD,    found)
+            self.frame.menubar.Enable(wx.ID_CUT,    False)
+            self.frame.menubar.Enable(wx.ID_COPY,   False)
+            self.frame.menubar.Enable(wx.ID_EDIT,   False)
 
     def markbad(self, name=None):
         # Mark name as bad, or current selection if no name. Adds name if not already present.

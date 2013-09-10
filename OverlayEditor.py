@@ -455,9 +455,8 @@ class BackgroundDialog(wx.Dialog):
             self.parent.menubar.Disable()
             self.parent.menubar.Enable(wx.ID_PREFERENCES, False)	# needs to be disabled individually on wxMac Carbon
         #self.parent.toolbar.Disable()	# Doesn't do anything on wxMac Carbon - do it by individual tool
-        ids=[wx.ID_NEW,wx.ID_OPEN,wx.ID_SAVE,wx.ID_DOWN,wx.ID_ADD,wx.ID_EDIT,wx.ID_DELETE,wx.ID_CUT,wx.ID_COPY,wx.ID_PASTE,wx.ID_UNDO,wx.ID_REFRESH,wx.ID_PREFERENCES,wx.ID_FORWARD,wx.ID_APPLY]
-        self.toolbarstate=[(id,self.parent.toolbar.GetToolEnabled(id)) for id in ids]
-        for id in ids: self.parent.toolbar.EnableTool(id,False)
+        self.toolbarstate=[(id,self.parent.toolbar.GetToolEnabled(id)) for id in self.parent.toolids]
+        for id in self.parent.toolids: self.parent.toolbar.EnableTool(id,False)
 
         if prefs.package:
             self.prefix=glob(join(prefs.xplane,gcustom,prefs.package))[0]
@@ -664,6 +663,8 @@ class MainWindow(wx.Frame):
             filemenu.AppendSeparator()
             filemenu.Append(wx.ID_DOWN, u'Import\u2026')
             wx.EVT_MENU(self, wx.ID_DOWN, self.OnImport)
+            filemenu.Append(wx.ID_FIND, u'Import Region')
+            wx.EVT_MENU(self, wx.ID_FIND, self.OnImportRegion)
             # ID_EXIT moved to application menu
             filemenu.Append(wx.ID_EXIT, u'Quit %s\tCtrl-Q' % appname)
             wx.EVT_MENU(self, wx.ID_EXIT, self.OnClose)
@@ -727,8 +728,11 @@ class MainWindow(wx.Frame):
         wx.EVT_TOOL(self.toolbar, wx.ID_OPEN, self.OnOpen)
         self.toolbar.AddLabelTool(wx.ID_SAVE, 'Save', self.icon(['document-save', 'filesave'], 'save.png'), wx.NullBitmap, 0, 'Save scenery package')
         wx.EVT_TOOL(self.toolbar, wx.ID_SAVE, self.OnSave)
+        self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_DOWN, 'Import', self.icon(['folder-import'], 'import.png'), wx.NullBitmap, 0, 'Import objects from another package')
         wx.EVT_TOOL(self.toolbar, wx.ID_DOWN, self.OnImport)
+        self.toolbar.AddLabelTool(wx.ID_FIND, 'Import Region', self.icon(['region-import'], 'import-region.png'), wx.NullBitmap, 0, 'Import objects from the default scenery')
+        wx.EVT_TOOL(self.toolbar, wx.ID_FIND, self.OnImportRegion)
         self.toolbar.AddSeparator()
         self.toolbar.AddLabelTool(wx.ID_ADD, 'Add', self.icon(['list-add', 'add'], 'add.png'), wx.NullBitmap, 0, 'Add new object')
         wx.EVT_TOOL(self.toolbar, wx.ID_ADD, self.OnAdd)
@@ -765,10 +769,13 @@ class MainWindow(wx.Frame):
         
         self.toolbar.Realize()
         # Disable all toolbar buttons until app has loaded to prevent callbacks before app has initialised data
-        for id in [wx.ID_NEW,wx.ID_OPEN,wx.ID_SAVE,wx.ID_DOWN,wx.ID_ADD,wx.ID_EDIT,wx.ID_DELETE,wx.ID_CUT,wx.ID_COPY,wx.ID_PASTE,wx.ID_UNDO,wx.ID_REFRESH,wx.ID_PREFERENCES,wx.ID_FORWARD,wx.ID_APPLY]:
+        self.toolids = [wx.ID_NEW,wx.ID_OPEN,wx.ID_SAVE,wx.ID_DOWN,wx.ID_FIND,wx.ID_ADD,wx.ID_EDIT,wx.ID_DELETE,wx.ID_UNDO,wx.ID_REFRESH,wx.ID_PREFERENCES,wx.ID_FORWARD,wx.ID_APPLY]
+        if not self.menubar: self.toolids += [wx.ID_CUT,wx.ID_COPY,wx.ID_PASTE]
+        for id in self.toolids:
             self.toolbar.EnableTool(id, False)
         if self.menubar:
             self.menubar.Enable(wx.ID_DOWN,   False)
+            self.menubar.Enable(wx.ID_FIND,   False)
             self.menubar.Enable(wx.ID_CUT,    False)
             self.menubar.Enable(wx.ID_COPY,   False)
             self.menubar.Enable(wx.ID_PASTE,  False)
@@ -832,28 +839,33 @@ class MainWindow(wx.Frame):
             bmp=wx.ArtProvider.GetBitmap(stock, wx.ART_TOOLBAR, self.iconsize)
             if bmp.Ok(): return bmp
             
-        if stocklist==['folder-import']:
+        if stocklist in [['folder-import'], ['region-import']]:
             # Hack - manually composite two bitmaps
-            for stock in ['document-open-folder', 'folder-open', 'document-open', 'folder_open', 'fileopen']:
-                bmp=wx.ArtProvider.GetBitmap(stock, wx.ART_TOOLBAR, self.iconsize)
-                if bmp.Ok():
-                    size2=int(self.iconsize[0]*0.7)
-                    for stock in ['go-down', '1downarrow', 'down']:
-                        bm2=wx.ArtProvider.GetBitmap(stock, wx.ART_TOOLBAR, (size2,size2))
-                        if bm2.Ok():
-                            img=bmp.ConvertToImage()
-                            im2=bm2.ConvertToImage()
-                            for x2 in range(size2):
-                                x=x2+(self.iconsize[0]-size2)/2
-                                for y in range(size2):
-                                    alpha=im2.GetAlpha(x2,y)/255.0
-                                    img.SetRGB(x,y,
-                                               img.GetRed  (x,y)*(1-alpha)+im2.GetRed  (x2,y)*alpha,
-                                               img.GetGreen(x,y)*(1-alpha)+im2.GetGreen(x2,y)*alpha,
-                                               img.GetBlue (x,y)*(1-alpha)+im2.GetBlue (x2,y)*alpha)
-                                    img.SetAlpha(x,y, max(img.GetAlpha(x,y), im2.GetAlpha(x2,y)))
-                            return wx.BitmapFromImage(img)
-                    break
+            if stocklist==['folder-import']:
+                for stock in ['document-open-folder', 'folder-open', 'document-open', 'folder_open', 'fileopen']:
+                    bmp = wx.ArtProvider.GetBitmap(stock, wx.ART_TOOLBAR, self.iconsize)
+                    if bmp.Ok(): break
+            else:
+                bmp = wx.Bitmap(join('Resources', 'region.png'), wx.BITMAP_TYPE_PNG)
+                if bmp.Ok() and self.iconsize != (bmp.GetWidth(),bmp.GetHeight()):
+                    bmp = wx.BitmapFromImage(bmp.ConvertToImage().Rescale(*self.iconsize))
+            if bmp and bmp.Ok():
+                size2=int(self.iconsize[0]*0.7)
+                for stock in ['go-down', '1downarrow', 'down']:
+                    bm2=wx.ArtProvider.GetBitmap(stock, wx.ART_TOOLBAR, (size2,size2))
+                    if bm2.Ok():
+                        img=bmp.ConvertToImage()
+                        im2=bm2.ConvertToImage()
+                        for x2 in range(size2):
+                            x=x2+(self.iconsize[0]-size2)/2
+                            for y in range(size2):
+                                alpha=im2.GetAlpha(x2,y)/255.0
+                                img.SetRGB(x,y,
+                                           img.GetRed  (x,y)*(1-alpha)+im2.GetRed  (x2,y)*alpha,
+                                           img.GetGreen(x,y)*(1-alpha)+im2.GetGreen(x2,y)*alpha,
+                                           img.GetBlue (x,y)*(1-alpha)+im2.GetBlue (x2,y)*alpha)
+                                img.SetAlpha(x,y, max(img.GetAlpha(x,y), im2.GetAlpha(x2,y)))
+                        return wx.BitmapFromImage(img)
         elif stocklist==['list-add-node']:
             # Hack - manually composite two bitmaps
             for stock in ['list-add', 'add']:
@@ -902,9 +914,11 @@ class MainWindow(wx.Frame):
             else:
                 self.palette.set(names[0])
 
+            self.toolbar.EnableTool(wx.ID_FIND,   False)
             self.toolbar.EnableTool(wx.ID_EDIT,   False)
             self.toolbar.EnableTool(wx.ID_DELETE, True)
             if self.menubar:
+                self.menubar.Enable(wx.ID_FIND,   False)
                 self.menubar.Enable(wx.ID_EDIT,   False)
                 self.menubar.Enable(wx.ID_DELETE, True)
                 if self.canvas.selectednode:	# don't support copy and paste of nodes
@@ -926,15 +940,19 @@ class MainWindow(wx.Frame):
                 if ((self.canvas.selectednode and not placement.fixednodes and len(placement.nodes[self.canvas.selectednode[0]]) < 255) or
                     (not self.canvas.selectednode and not placement.singlewinding)):
                     self.toolbar.EnableTool(wx.ID_EDIT, True)
-                    if self.menubar:
-                        self.menubar.Enable(wx.ID_EDIT, True)
+                    if self.menubar: self.menubar.Enable(wx.ID_EDIT, True)
+                if not self.canvas.selectednode and isinstance(list(self.canvas.selected)[0], Exclude):
+                    self.toolbar.EnableTool(wx.ID_FIND, True)
+                    if self.menubar: self.menubar.Enable(wx.ID_FIND, True)
         else:
             self.palette.set(None)
+            self.toolbar.EnableTool(wx.ID_FIND,   False)
             self.toolbar.EnableTool(wx.ID_CUT,    False)
             self.toolbar.EnableTool(wx.ID_COPY,   False)
             self.toolbar.EnableTool(wx.ID_EDIT,   False)
             self.toolbar.EnableTool(wx.ID_DELETE, False)
             if self.menubar:
+                self.menubar.Enable(wx.ID_FIND,   False)
                 self.menubar.Enable(wx.ID_CUT,    False)
                 self.menubar.Enable(wx.ID_COPY,   False)
                 self.menubar.Enable(wx.ID_EDIT,   False)
@@ -1172,6 +1190,7 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_PASTE,False)
             self.toolbar.EnableTool(wx.ID_UNDO, False)
             self.toolbar.EnableTool(wx.ID_DOWN, True)
+            self.toolbar.EnableTool(wx.ID_FIND, False)
             self.toolbar.EnableTool(wx.ID_REFRESH, True)
             if self.menubar:
                 self.menubar.Enable(wx.ID_UNDO,  False)
@@ -1181,6 +1200,7 @@ class MainWindow(wx.Frame):
                 self.menubar.Enable(wx.ID_ADD,   False)
                 self.menubar.Enable(wx.ID_EDIT,  False)
                 self.menubar.Enable(wx.ID_DOWN,  True)
+                self.menubar.Enable(wx.ID_FIND,  False)
                 self.menubar.Enable(wx.ID_REFRESH, True)
         
 
@@ -1221,6 +1241,7 @@ class MainWindow(wx.Frame):
                 self.toolbar.EnableTool(wx.ID_PASTE,False)
                 self.toolbar.EnableTool(wx.ID_UNDO, False)
                 self.toolbar.EnableTool(wx.ID_DOWN, True)
+                self.toolbar.EnableTool(wx.ID_FIND, False)
                 self.toolbar.EnableTool(wx.ID_REFRESH, True)
                 if self.menubar:
                     self.menubar.Enable(wx.ID_ADD,   False)
@@ -1230,6 +1251,7 @@ class MainWindow(wx.Frame):
                     self.menubar.Enable(wx.ID_COPY,  False)
                     self.menubar.Enable(wx.ID_PASTE, False)
                     self.menubar.Enable(wx.ID_DOWN,  True)
+                    self.menubar.Enable(wx.ID_FIND,  False)
                     self.menubar.Enable(wx.ID_REFRESH, True)
         else:
             dlg.Destroy()
@@ -1650,6 +1672,9 @@ class MainWindow(wx.Frame):
                 self.palette.add(name)
             self.palette.set(name)	# show last added
 
+    def OnImportRegion(self, event):
+        event.skip()
+
     def OnGoto(self, event):
         self.goto.CenterOnParent()	# Otherwise is centred on screen
         choice=self.goto.show(self.loc)
@@ -1694,6 +1719,7 @@ class MainWindow(wx.Frame):
             self.SetModified(False)
             self.toolbar.EnableTool(wx.ID_SAVE,   True)
             self.toolbar.EnableTool(wx.ID_DOWN,   False)
+            self.toolbar.EnableTool(wx.ID_FIND,   False)
             self.toolbar.EnableTool(wx.ID_ADD,    False)
             self.toolbar.EnableTool(wx.ID_EDIT,   False)
             self.toolbar.EnableTool(wx.ID_CUT,    False)
@@ -1705,6 +1731,7 @@ class MainWindow(wx.Frame):
             if self.menubar:
                 self.menubar.Enable(wx.ID_SAVE,   True)
                 self.menubar.Enable(wx.ID_DOWN,   False)
+                self.menubar.Enable(wx.ID_FIND,   False)
                 self.menubar.Enable(wx.ID_CUT,    False)
                 self.menubar.Enable(wx.ID_COPY,   False)
                 self.menubar.Enable(wx.ID_PASTE,  False)
