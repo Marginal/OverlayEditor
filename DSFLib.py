@@ -226,7 +226,7 @@ def readDSF(path, netdefs, terrains={}):
         newpool = empty(curpool.shape, float32)
         for plane in range(len(curscale)):	# number of planes in this pool
             (scale,offset) = curscale[plane]
-            scale = scale/0xffff
+            scale = scale/0xffff or 1
             newpool[:,plane] = curpool[:,plane].astype(float32) * scale + offset
         # numpy doesn't work efficiently skipping around the variable sized pools, so don't consolidate
         pool[i] = newpool
