@@ -1428,7 +1428,7 @@ class StringDef(PolygonDef):
     def __init__(self, filename, vertexcache, lookup, defs):
         PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
         self.canpreview=True
-        self.color = None
+        self.color = COL_POLYGON
         self.children=[]	# [StringObj]
         self.alternate=True	# Whether to cycle through children (Strings) or superimpose (Networks)
 

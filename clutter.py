@@ -2135,21 +2135,13 @@ class String(Polygon):
         else:
             return u'%s  Spacing\u2195 %-3dm  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def bucket_dynamic(self, base, buckets):
-        self.base = base
-        if self.nonsimple or self.definition.color:	# draw lines so visible / snappable
-            buckets.add(ClutterDef.OUTLINELAYER, None, self.base, len(self.dynamic_data)/6)	# can't have holes
-        return self.dynamic_data
-
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
         if self.islaidout() and not recalc:
             # just ensure allocated
             return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
 
-        # allocate lines for picking and for display if no children
+        # allocate lines for picking and for display
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
-        self.dynamic_data=concatenate([array(p + (self.definition.color or COL_NONSIMPLE),float32) for w in self.points for p in w])
-        vertexcache.allocate_dynamic(self, True)
 
         for p in self.placements:
             p.clearlayout(vertexcache)	# clear any dynamic allocation of children
@@ -2173,6 +2165,8 @@ class String(Polygon):
                     placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
                     placement.layout(tile, options, vertexcache, x + p.xdelta*coshdg, None, z + p.xdelta*sinhdg, hdg+p.hdelta)
                     self.placements.append(placement)
+            self.dynamic_data=concatenate([array(p + (self.nonsimple and COL_NONSIMPLE or self.definition.color),float32) for w in self.points for p in w])
+            vertexcache.allocate_dynamic(self, True)
             return selectednode
 
         repeat = self.param or 5	# arbitrary
@@ -2190,7 +2184,9 @@ class String(Polygon):
                 else:
                     node += 1
                     if node >= n:
-                        self.nonsimple = not self.placements	# so displayed
+                        self.nonsimple = not self.placements
+                        self.dynamic_data=concatenate([array(p + (self.nonsimple and COL_NONSIMPLE or self.definition.color),float32) for w in self.points for p in w])
+                        vertexcache.allocate_dynamic(self, True)
                         return selectednode			# exit!
                     cumulative += size
                     sz = iteration*repeat - cumulative
