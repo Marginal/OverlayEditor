@@ -16,6 +16,7 @@ if __debug__:
     from prefs import Prefs
 
 from clutter import Draped, DrapedImage, Polygon, tessvertex, tessedge, csgtvertex, csgtcombined, csgtcombine, csgtedge	# no strips
+from nodes import Node
 from version import appname, appversion
 
 try:
@@ -396,7 +397,7 @@ class Imagery:
             # Make a new one. We could also do this if the image file is available, but don't since layout is expensive.
             (north,west)=self.xy2latlon(x,y,level)
             (south,east)=self.xy2latlon(x+1,y+1,level)
-            placement=DrapedImage(name, 65535, [[(west,north,1,1),(east,north,1,0),(east,south,0,0),(west,south,0,1)]])
+            placement=DrapedImage(name, 65535, [[Node([west,north,0,1]),Node([east,north,1,1]),Node([east,south,1,0]),Node([west,south,0,0])]])
             placement.load(self.canvas.lookup, self.canvas.defs, self.canvas.vertexcache)
             self.placementcache[name]=placement
             # Initiate fetch of image and do layout. Prioritise more detail.

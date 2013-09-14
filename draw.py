@@ -31,10 +31,11 @@ if __debug__:
 
 from files import VertexCache, sortfolded, readApt, glInitTextureCompressionS3TcEXT
 from fixed8x13 import fixed8x13
-from clutter import ObjectFactory, PolygonFactory, Draped, DrapedImage, Facade, Object, Polygon, Network, Exclude, onedeg, resolution, round2res, latlondisp
+from clutter import Object, Polygon, Draped, DrapedImage, Facade, Network, Exclude, onedeg, latlondisp
 from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef, NetworkDef, PolygonDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
 from imagery import Imagery
 from MessageBox import myMessageBox
+from nodes import round2res
 from prefs import Prefs
 from version import appname
 
@@ -306,6 +307,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.clickpos=None	# Location of mouse down
         self.clickctrl=False	# Ctrl was held down
         self.selectednode=None	# Selected node. Only if len(self.selected)==1
+        self.selectedhandle=None	# Selected node control handle.
         self.selections=set()	# Hits for cycling picking
         self.selectsaved=set()	# Selection at start of ctrl drag box
         self.snapnode = None	# (Polygon, idx) of node we snapped to in ClickModes.DragNode mode
@@ -404,7 +406,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_LINE_SMOOTH)
         if debugapt: glLineWidth(2.0)
         #glLineStipple(1, 0x0f0f)		# for selection drag
-        glPointSize(4.0)			# for nodes
+        glPointSize(5.0)			# for nodes
         glFrontFace(GL_CW)
         glPolygonMode(GL_FRONT, GL_FILL)
         glPolygonOffset(-2, -2)
@@ -500,7 +502,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     poly2.nodes[0]= poly2.nodes[0][idx:]
                     poly2.layout(self.tile, self.options, self.vertexcache, recalc=True)
                     self.selected = set([poly,poly2])
-                    self.selectednode = None
+                    self.selectednode = self.selectedhandle = None
             self.snapnode = None
         elif self.clickmode==ClickModes.Drag:
             for placement in self.selected:
@@ -572,11 +574,12 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.glstate.set_depthtest(False)	# Make selectable even if occluded
                 self.glstate.set_poly(True)		# Disable writing to depth buffer
                 n = len([item for sublist in poly.nodes for item in sublist])
+                if poly.canbezier and poly.isbezier: n *= 3
                 if self.glstate.occlusion_query:
                     self.glstate.alloc_queries(n)
                     selections=False
                     glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
-                    poly.pick_nodes(self.glstate)
+                    poly.pick_nodes(self.glstate, poly.canbezier and poly.isbezier)
                     for queryidx in range(n):
                         if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
                             selections=True
@@ -587,7 +590,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     glRenderMode(GL_SELECT)
                     glInitNames()
                     glPushName(0)
-                    poly.pick_nodes(self.glstate)
+                    poly.pick_nodes(self.glstate, poly.canbezier and poly.isbezier)
                     selections=glRenderMode(GL_RENDER)
 
                 glLoadMatrixd(self.proj)	# Restore state for unproject
@@ -621,7 +624,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.SetCursor(self.dragcursor)
             self.snapnode = None
             poly=list(self.selected)[0]
-            if isinstance(poly, Network) and self.selectednode[1] in [0,len(poly.nodes[0])-1]:
+            if isinstance(poly, Network) and not self.selectedhandle and self.selectednode[1] in [0,len(poly.nodes[0])-1]:
                 # snap end nodes to nodes in other network segments
                 size = self.GetClientSize()
                 glLoadIdentity()
@@ -639,7 +642,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     self.glstate.alloc_queries(n)
                     glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
                     for p in nets:
-                        p.pick_nodes(self.glstate, queryidx)
+                        p.pick_nodes(self.glstate, False, queryidx)
                         m = len(p.nodes[0])
                         lookup.extend([(p,i) for i in range(m)])
                         queryidx += m
@@ -654,7 +657,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     glInitNames()
                     glPushName(0)
                     for p in nets:
-                        p.pick_nodes(self.glstate, queryidx)
+                        p.pick_nodes(self.glstate, False, queryidx)
                         m = len(p.nodes[0])
                         lookup.extend([(p,i) for i in range(m)])
                         queryidx += m
@@ -664,7 +667,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glLoadMatrixd(self.proj)	# Restore state for unproject
 
             if self.snapnode:
-                (lon,lat) = self.snapnode[0].nodes[0][self.snapnode[1]][:2]	# snap to matching network node location
+                node = self.snapnode[0].nodes[0][self.snapnode[1]]
+                (lon,lat) = (node.lon,node.lat)	# snap to matching network node location
             else:
                 (lat,lon)=self.getworldloc(event.GetX(), event.GetY())
                 lat=max(self.tile[0], min(self.tile[0]+1, lat))
@@ -678,7 +682,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                     if self.frame.menubar:
                         self.frame.menubar.Enable(wx.ID_SAVE, True)
                         self.frame.menubar.Enable(wx.ID_UNDO, True)
-            poly.updatenode(self.selectednode, lat, lon, self.tile, self.options, self.vertexcache)
+            if self.selectedhandle:
+                poly.updatehandle(self.selectednode, self.selectedhandle, event.CmdDown(), lat, lon, self.tile, self.options, self.vertexcache)
+            else:
+                poly.updatenode(self.selectednode, lat, lon, self.tile, self.options, self.vertexcache)
             self.Refresh()	# show updated node
             self.frame.ShowSel()
             return
@@ -777,7 +784,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Map imagery & background
         imagery=self.imagery.placements(self.d, size)	# May allocate into dynamic VBO
-        if __debug__: print "%6.3f time to get imagery" % (time.clock()-clock)
+        #if __debug__: print "%6.3f time to get imagery" % (time.clock()-clock)
         if self.background and self.background.islaidout():
             imagery.append(self.background)
             if self.frame.bkgd:
@@ -814,7 +821,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if not self.options&Prefs.ELEVATION:
             glLoadIdentity()
             glMatrixMode(GL_PROJECTION)
-        if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
+        #if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
 
         # Objects and Polygons
         placements=self.placements[self.tile]
@@ -891,7 +898,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             # don't bother setting VBO since this is done immediate
             list(self.selected)[0].draw_nodes(self.glstate, self.selectednode)
 
-        if __debug__: print "%6.3f time to draw" % (time.clock()-clock)
+        #if __debug__: print "%6.3f time to draw" % (time.clock()-clock)
 
         # Overlays
         self.glstate.set_texture(None)
@@ -999,6 +1006,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.glstate.occlusion_query:
             if checkpolynode:
                 queryidx=len([item for sublist in checkpolynode.nodes for item in sublist])
+                if checkpolynode.canbezier and checkpolynode.isbezier: queryidx *= 3
             else:
                 queryidx=0
             needed = queryidx + len(placements) * 2	# Twice as many for two-phase drawing
@@ -1009,32 +1017,28 @@ class MyGL(wx.glcanvas.GLCanvas):
         if checkpolynode:
             #print "selnodes",
             if self.glstate.occlusion_query:
-                checkpolynode.pick_nodes(self.glstate)
+                checkpolynode.pick_nodes(self.glstate, checkpolynode.canbezier and checkpolynode.isbezier)
                 # We'll check on the status later
             else:
                 glSelectBuffer(len([item for sublist in checkpolynode.nodes for item in sublist])*4)	# 4 ints per hit record containing one name
                 glRenderMode(GL_SELECT)
                 glInitNames()
                 glPushName(0)
-                checkpolynode.pick_nodes(self.glstate)
+                checkpolynode.pick_nodes(self.glstate, checkpolynode.canbezier and checkpolynode.isbezier)
                 selectnodes=[]
                 try:
                     for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
-                        selectnodes.append((int(name)>>24, int(name)&0xffffff))
+                        # No need to look further if user has clicked on a node or handle within selected polygon
+                        self.clickmode = ClickModes.DragNode
+                        self.selectednode = ((int(name)>>24, int(name)&0xffff))
+                        self.selectedhandle = self.nodes[int(name)>>24][int(name)&0xffff].bezier and ((int(name)&0xff0000) >> 16) or None
+                        glLoadMatrixd(self.proj)	# Restore state for unproject
+                        self.Refresh()
+                        self.frame.ShowSel()
+                        return
                 except:	# overflow
                     if __debug__: print_exc()
-                if selectnodes:
-                    # No need to look further if user has clicked on a node within selected polygon
-                    self.clickmode=ClickModes.DragNode
-                    self.selectednode=selectnodes[0]
-
-                    glLoadMatrixd(self.proj)	# Restore state for unproject
-
-                    self.Refresh()
-                    self.frame.ShowSel()
-                    return
-                else:
-                    self.selectednode=None
+                self.selectednode = self.selectedhandle = None
 
         # Select placements
         glMatrixMode(GL_MODELVIEW)	# Temporarily change matrix mode for drawing rotated objects
@@ -1056,16 +1060,29 @@ class MyGL(wx.glcanvas.GLCanvas):
             gc.enable()
 
             # First check poly node status
+            self.selectednode = self.selectedhandle = None
             queryidx=0
             if checkpolynode:
                 for i in range(len(checkpolynode.nodes)):
                     for j in range(len(checkpolynode.nodes[i])):
-                        if not glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
+                        if checkpolynode.canbezier and checkpolynode.isbezier:
+                            if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
+                                self.selectednode = (i,j)
+                                if checkpolynode.nodes[i][j].bezier:
+                                    self.selectedhandle = 1
                             queryidx+=1
-                        else:
-                            # No need to look further if user has clicked on a node within selected polygon
+                            if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
+                                self.selectednode = (i,j)
+                                if checkpolynode.nodes[i][j].bezier:
+                                    self.selectedhandle = 2
+                            queryidx+=1
+                        if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
+                            self.selectednode = (i,j)
+                        queryidx+=1
+
+                        if self.selectednode:
+                            # No need to look further if user has clicked on a node or handle within selected polygon
                             self.clickmode=ClickModes.DragNode
-                            self.selectednode=(i,j)
 
                             # Restore state for unproject
                             glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
@@ -1233,9 +1250,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         texerr=None
         try:
             if name.lower()[-4:] in [ObjectDef.OBJECT, AutoGenPointDef.AGP]:
-                placement=ObjectFactory(name, lat, lon, hdg)
+                placement = Object.factory(name, lat, lon, hdg)
             else:
-                placement=PolygonFactory(name, None, lat, lon, size, hdg)
+                placement = Polygon.factory(name, None, lat, lon, size, hdg)
         except UnicodeError:
             if __debug__: print_exc()
             myMessageBox('Filename "%s" uses non-ASCII characters' % name, 'Cannot add this object.', wx.ICON_ERROR|wx.OK, self.frame)
@@ -1252,11 +1269,16 @@ class MyGL(wx.glcanvas.GLCanvas):
         texerr=placement.definition.texerr
         placement.definition.texerr=None	# Don't report again
 
-        if isinstance(placement, Draped) and placement.definition.ortho:
-            placement.param=65535
-            placement.singlewinding = placement.fixednodes = True
-            for i in range(4):
-                placement.nodes[0][i]+=((i+1)/2%2,i/2)
+        # Hack! Can only decide nature of new draped polygon once we've loaded its definition
+        if isinstance(placement, Draped):
+            if placement.definition.ortho:
+                placement.param = 65535
+                placement.singlewinding = placement.fixednodes = True
+                placement.canbezier = False
+                for i in range(4):
+                    placement.nodes[0][i].rest = [(i+1)/2%2, i/2]	# ST coords
+            else:
+                placement.canbezier = True
                 
         placement.layout(self.tile, self.options, self.vertexcache)
         placements=self.placements[self.tile]
@@ -1292,6 +1314,23 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.selected=set([placement])
         self.selectednode=newnode
 
+        self.Refresh()
+        self.frame.ShowSel()
+        return True
+
+
+    def togglebezier(self):
+        # Add new node/winding
+        if len(self.selected)!=1 or not self.selectednode: return False
+        placement = list(self.selected)[0]
+        newundo = UndoEntry(self.tile, UndoEntry.MODIFY, [(self.placements[self.tile].index(placement), placement.clone())])
+        newnode = placement.togglebezier(self.tile, self.options, self.vertexcache, self.selectednode)
+        if not newnode:
+            return False
+        else:
+            self.selectednode = newnode
+        if not (self.undostack and self.undostack[-1].equals(newundo)):
+            self.undostack.append(newundo)
         self.Refresh()
         self.frame.ShowSel()
         return True
@@ -1369,9 +1408,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         avlon = sum([placement.location()[1] for placement in self.selected]) / len(self.selected)
         for placement in self.selected:
             # Centre copied objects relative to average location
-            clone = placement.clone()
-            clone.move(-avlat, -avlon, 0, 0, None, None, self.options, self.vertexcache)
-            self.clipboard.add(clone)
+            self.clipboard.add(placement.copy(avlat, avlon))
         return (avlat,avlon)
 
 
@@ -1508,7 +1545,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.selectednode:
             placement=list(self.selected)[0]
             (i,j)=self.selectednode
-            return ([placement.name], placement.locationstr(dms, self.selectednode), placement.nodes[i][j][1], placement.nodes[i][j][0], None)
+            return ([placement.name], placement.locationstr(dms, self.selectednode), placement.nodes[i][j].lat, placement.nodes[i][j].lon, None)
         elif len(self.selected)==1:
             placement=list(self.selected)[0]
             if isinstance(placement, Polygon):
@@ -2074,7 +2111,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.imagery.exit()
 
     def bez(self, p, mu):
-        # http://local.wasp.uwa.edu.au/~pbourke/curves/bezier/index.html
+        # http://paulbourke.net/geometry/bezier/
         mum1=1-mu
         if len(p)==3:
             mu2  = mu*mu

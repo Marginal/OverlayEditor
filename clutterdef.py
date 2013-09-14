@@ -27,8 +27,10 @@ COL_FOREST   =(0.25,0.75,0.25)
 COL_EXCLUDE  =(0.75,0.25,0.25)
 COL_NONSIMPLE=(1.0, 0.25,0.25)
 COL_SELECTED =(1.0, 0.5, 1.0)
+COL_SELBEZ   =(0.75,0.325,0.75)
 COL_DRAGBOX  =(0.75,0.325,0.75)
 COL_SELNODE  =(1.0, 1.0, 1.0)
+COL_SELBEZHANDLE   =(1.0, 0.75, 1.0)
 COL_CURSOR   =(1.0, 0.25,0.25)
 COL_NETWORK  =(0.5, 0.5, 0.5)
 
@@ -71,33 +73,6 @@ class BBox:
 # flush -> forget instance VBO allocation
 #
 
-def ClutterDefFactory(filename, vertexcache, lookup, defs):
-    "creates and initialises appropriate PolgonDef subclass based on file extension"
-    # would like to have made this a 'static' method of PolygonDef
-    if filename.startswith(PolygonDef.EXCLUDE):
-        return ExcludeDef(filename, vertexcache, lookup, defs)
-    ext=filename.lower()[-4:]
-    if ext==ObjectDef.OBJECT:
-        return ObjectDef(filename, vertexcache, lookup, defs)
-    elif ext==AutoGenPointDef.AGP:
-        return AutoGenPointDef(filename, vertexcache, lookup, defs)
-    elif ext==PolygonDef.DRAPED:
-        return DrapedDef(filename, vertexcache, lookup, defs)
-    elif ext==PolygonDef.FACADE:
-        return FacadeDef(filename, vertexcache, lookup, defs)
-    elif ext==PolygonDef.FOREST:
-        return ForestDef(filename, vertexcache, lookup, defs)
-    elif ext==PolygonDef.LINE:
-        return LineDef(filename, vertexcache, lookup, defs)
-    elif ext==PolygonDef.STRING:
-        return StringDef(filename, vertexcache, lookup, defs)
-    elif ext in SkipDefs:
-        assert False, filename
-        raise IOError		# what's this doing here?
-    else:	# unknown polygon type
-        return PolygonDef(filename, vertexcache, lookup, defs)
-
-
 class ClutterDef:
 
     LAYERNAMES=['terrain', 'beaches', 'shoulders', 'taxiways', 'runways', 'markings', 'roads', 'objects', 'light_objects', 'cars']
@@ -116,6 +91,32 @@ class ClutterDef:
     DRAWLAYERCOUNT  = LAYERCOUNT+4			# including stuff lifted out of the X-Plane layers
 
     PREVIEWSIZE=400	# size of image in preview window
+
+    @staticmethod
+    def factory(filename, vertexcache, lookup, defs):
+        "creates and initialises appropriate PolgonDef subclass based on file extension"
+        if filename.startswith(PolygonDef.EXCLUDE):
+            return ExcludeDef(filename, vertexcache, lookup, defs)
+        ext=filename.lower()[-4:]
+        if ext==ObjectDef.OBJECT:
+            return ObjectDef(filename, vertexcache, lookup, defs)
+        elif ext==AutoGenPointDef.AGP:
+            return AutoGenPointDef(filename, vertexcache, lookup, defs)
+        elif ext==PolygonDef.DRAPED:
+            return DrapedDef(filename, vertexcache, lookup, defs)
+        elif ext==PolygonDef.FACADE:
+            return FacadeDef(filename, vertexcache, lookup, defs)
+        elif ext==PolygonDef.FOREST:
+            return ForestDef(filename, vertexcache, lookup, defs)
+        elif ext==PolygonDef.LINE:
+            return LineDef(filename, vertexcache, lookup, defs)
+        elif ext==PolygonDef.STRING:
+            return StringDef(filename, vertexcache, lookup, defs)
+        elif ext in SkipDefs:
+            assert False, filename
+            raise IOError		# what's this doing here?
+        else:	# unknown polygon type
+            return PolygonDef(filename, vertexcache, lookup, defs)
 
     def __init__(self, filename, vertexcache, lookup, defs):
         self.filename=filename
@@ -1008,7 +1009,7 @@ class FacadeDef(PolygonDef):
                     self.texerr=(texture, unicode(exc_info()[1]))
             elif id=='RING':
                 self.ring=int(c[1])
-            elif id=='TWO_SIDED':
+            elif id in ['TWO_SIDED', 'DOUBLED']:
                 self.two_sided=(int(c[1])!=0)
             elif id=='GRADED':
                 self.fittomesh=False

@@ -74,13 +74,18 @@ All the packages in X-Plane's<code> Custom&nbsp;Scenery </code>folder are listed
 <small>Note: Any existing <code>.dsf</code> files are backed up with the extension <code>.dsf.bak</code></small></td>
     </tr>
     <tr>
-      <td class="button"><a name="import"><img class="tlbbutton" alt="Go To" src="Resources/import.png"></td>
+      <td class="button"><a name="import"><img class="tlbbutton" alt="Import" src="Resources/import.png"></td>
       <td>Import objects (and their textures) from another scenery package and add them to the <a href="#objectlist">list of objects</a>. Or import textures directly to generate draped polygons in the <a href="#objectlist">list of objects</a>.<br>
 The imported objects are placed in<code> custom&nbsp;objects </code>or<code> objects </code>if either of these folders exist, otherwise in the package's top-level folder.
 <small>(So this button is only available once you have saved the scenery package).</small><br>
 Before you import objects from another scenery package you should first check
 the license terms; these often prohibit re-distribution of individual
 objects.</td>
+    </tr>
+    <tr>
+      <td class="button"><a name="import-region"><img class="tlbbutton" alt="Import Region" src="Resources/import-region.png"></td>
+      <td>Import objects from the default scenery and place them in your scenery package.<br>
+This is most useful for &ldquo;tweaking&rdquo; small areas of roads; place an Exclusion region of type &ldquo;Roads, Railways &amp; Powerlines&rdquo; and use this button to pull in the roads from the default scenery that are within the area of the Exclusion region.</td>
     </tr>
     <tr>
       <td class="button"><img class="tlbbutton" alt="Add" src="Resources/add.png"></td>
@@ -91,7 +96,11 @@ The object is added at the current cursor location and with the current heading.
       <td class="button"><img class="tlbbutton" alt="AddNode" src="Resources/addnode.png"></td>
       <td>
 If you have a forest or draped polygon selected - Add a hole in it.<br>
-If you have a polygon/network <u>node</u> selected - Add new polygon/network node next to it.</td>
+If you have a polygon <u>node</u> selected - Add new polygon node next to it.</td>
+    </tr>
+    <tr>
+      <td class="button"><img class="tlbbutton" alt="AddBezier" src="Resources/bezier.png"></td>
+      <td>Add curve control handles to the selected polygon node.</td>
     </tr>
     <tr>
       <td class="button"><img class="tlbbutton" alt="Delete" src="Resources/delete.png"></td>
@@ -204,18 +213,19 @@ To select objects:</p>
 </div>
 <p>You can't select or otherwise manipulate runways, taxiways or navaids
 (ILS, VOR, DME etc).</p>
-<p>If you select a single polygon or network segment you can click on an individual node (<i>i.e.</i> corner) to select it. The selected node is highlighted in white.</p>
+<p>If you select a single polygon  you can click on an individual node (<i>i.e.</i> corner) to select it. The selected node is highlighted in white.</p>
 <p><a name="manipkeys">These keys affect the selected objects or the selected node. Hold down <kbd>Shift</kbd> for bigger steps or <kbd>Ctrl</kbd> for tiny steps:</a></p>
 <div style="margin-left: 40px;">
 <table class="kbdtable">
   <tbody>
     <tr>
       <td class="keys">Mouse click and drag</td>
-      <td>Move selected object(s) or polygon/network node.</td>
+      <td>Move selected object(s), polygon node, or polygon curve control handle.<br>
+Hold down <kbd>Cmd</kbd> to move a pair of curve control handles independently of each other.</td>
     </tr>
     <tr>
       <td class="keys"><kbd>W</kbd>, <kbd>S</kbd>, <kbd>A</kbd>, <kbd>D</kbd></td>
-      <td>Move selected object(s) or polygon/network node. <small>Note: You can also use the keys on the numeric keypad (if your keyboard has one) - ensure that <kbd>NumLock</kbd> is on.</small></td>
+      <td>Move selected object(s) or polygon node. <small>Note: You can also use the keys on the numeric keypad (if your keyboard has one) - ensure that <kbd>NumLock</kbd> is on.</small></td>
     </tr>
     <tr>
       <td class="keys"><kbd>Q</kbd>, <kbd>E</kbd></td>
@@ -237,7 +247,7 @@ To select objects:</p>
     </tr>
     <tr>
       <td class="keys"><kbd>C</kbd></td>
-      <td>Centre the cursor on the selected object(s) or polygon/network node.</td>
+      <td>Centre the cursor on the selected object(s) or polygon node.</td>
     </tr>
     <tr>
       <td class="keys"><kbd>Shift</kbd> <kbd>C</kbd></td>
@@ -258,15 +268,15 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
     </tr>
     <tr>
       <td class="keys"><kbd>Enter</kbd> or <img class="inlbutton" alt="Add" src="Resources/add.png"></td>
-      <td>Add new object.</td>
+      <td>Add the object that is highlighted in the <a href="#objectlist">list of objects</a> to the scenery.</td>
     </tr>
     <tr>
       <td class="keys"><kbd>Cmd</kbd> <kbd>Enter</kbd> or <img class="inlbutton" alt="Add" src="Resources/addnode.png"></td>
-      <td>Add new polygon/network node next to the currently selected node, or add hole in the selected forest or draped polygon.</td>
+      <td>Add new polygon node next to the currently selected node, or add hole in the selected forest or draped polygon.</td>
     </tr>
     <tr>
       <td class="keys"><kbd>Delete</kbd> or <img class="inlbutton" alt="Delete" src="Resources/delete.png"></td>
-      <td>Delete selected object(s) or polygon/network node.</td>
+      <td>Delete selected object(s) or polygon node.</td>
     </tr>
     <tr>
       <td class="keys"><kbd>Cmd</kbd> <kbd>Z</kbd> or <img class="inlbutton" alt="Undo" src="Resources/undo.png"></td>
@@ -323,7 +333,8 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
   <li>Repeat for the end node of the other &ldquo;bridge&rdquo; segment.</li>
 </ul>
 <p>Note: OverlayEditor doesn't display the bridge segments as being raised, so you may have to experiment a little.</p>
-<p>You can use <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> to make OverlayEditor display networks from the default scenery (in outline form). But X-Plane will not join network segments in your scenery package to segments from the default scenery, and traffic will not flow between them. You can use an Exclusion region to remove network segments from the default scenery, and then replace them with your own.</p>
+<p>You can use <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> to make OverlayEditor display networks from the default scenery (in outline form). But X-Plane will not join network segments in your scenery package to segments from the default scenery, and traffic will not flow between them.</p>
+<p>You can use an Exclusion region to hide network segments from the default scenery, use <a href="#import-region"><img class="inlbutton" alt="Import Region" src="Resources/import-region.png"></a> to pull the hidden segments into your scenery package, and then edit them.</p>
 
 <h3>Differences between this application and X-Plane</h3>
 <p>This application displays terrain and objects in orthogonal projection (no perspective) and in a simplified form. <i>i.e.</i>:</p>
@@ -345,9 +356,6 @@ for either purpose but you will see visual artefacts if you use a
 <code>TEXTURE</code> statement in an orthophoto or use a
 <code>TEXTURE_NOWRAP</code> statement in a repeating texture.</li>
   <li>Network bridges can be constructed and edited, but all networks are displayed at ground level.</li>
-  <li>X-Plane allows some types of polygons and networks to use bezier curves,
-however this application does not understand or display bezier polygon or network curves.
-Any bezier control points will be deleted if you edit the polygon or network.</li>
   <li>Terrain textures are simplified - no beaches or overlay textures.</li>
   <li>No flattening of terrain around airports. Terrain is displayed as if the X-Plane &ldquo;allow sloped runways&rdquo; rendering setting is turned on.</li>
 </ul>
@@ -383,7 +391,6 @@ This is particularly noticable when editing polygons because OverlayEditor
 has to fit the polygons to the terrain mesh. OverlayEditor runs much
 faster if you tell it not to display elevation; press
 <a href="#preferences"><img class="inlbutton" alt="Prefs" src="Resources/prefs.png"></a> and select &ldquo;No terrain&rdquo; or &ldquo;Show terrain&rdquo;.
-<!-- But note that you need to display elevation in order to edit network segments. --></p>
 
 <h4>OverlayEditor complains that it &ldquo;Can't read one or more objects&rdquo;</h4>
 <p>Your scenery package uses objects that are either missing or unreadable. Missing or unreadable 3D objects are displayed as small &ldquo;placeholders&rdquo;. Missing or unreadable polygons are displayed as &ldquo;placeholder&rdquo; shapes.</p>
@@ -415,7 +422,7 @@ reload a scenery package, and when you first add an object to the scenery.</p>
 <p>This is a limitation of the DSF file format as currently used by X-Plane.<br>
 Laminar's scenery tools encode DSF files with a precision of approximately 0.0000005&deg;, which at the equator is about 5 cm or 2 inches. To avoid objects and nodes shifting when you save and re-open your scenery package, or when you view your scenery package in X-Plane, OverlayEditor doesn't let you place objects or polygon nodes with finer precision than that supported by the DSF files.</p>
     
-<h4>I want to remove some scenery objects from the default scenery</h4>
+<h4><a name="exclusion">I want to remove some scenery objects from the default scenery</a></h4>
 <dl>
   <dt>You can use an exclusion region:</dt>
   <dd>Navigate to the area from which you want to remove the scenery objects.</dd>
@@ -428,12 +435,8 @@ Laminar's scenery tools encode DSF files with a precision of approximately 0.000
 <p>Exclusion regions are always rectangular (you can't add or delete nodes) and can't be rotated. You can make up more complex shapes by adding multiple exclusion regions.</p>
 
 <h4>I want to remove some scenery objects from another scenery package</h4>
-<p>Follow the above procedure. In addition, your scenery package must have a
-<a href="#priority">higher priority</a> than the other package.
-So you may need to rename one of the two packages to change their relative
-priority.</p>
-<p>Exclusion regions exclude objects from <u>other</u>, lower priority,
-scenery packages, not from the scenery package that contains them.</p>
+<p>Follow the <a href="#exclusion">above procedure</a>. In addition, your scenery package must have a <a href="#priority">higher priority</a> than the other package. So you may need to rename one of the two packages to change their relative priority.</p>
+<p>Exclusion regions exclude objects from <u>other</u>, lower priority, scenery packages, not from the scenery package that contains them.</p>
 
 <h4>I want to change the elevation of a scenery object</h4>
 <p>OverlayEditor just places scenery objects (other than network segments)

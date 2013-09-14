@@ -2,6 +2,7 @@
 # __init__
 # __str__
 # clone -> make a new copy, minus layout
+# copy -> make a new copy, minus layout, moved offset
 # position -> returns (x,z) position relative to centre of enclosing tile
 # load -> read definition
 # location -> returns (average) lat/lon
@@ -12,6 +13,7 @@
 # move -> move and layout
 # movenode -> move - no layout
 # updatenode -> move node - no layout
+# updatehandle -> move node bezier control - no layout
 # pick_instance -> pick geometry in instance VBO, including child geometry
 # pick_dynamic -> pick geometry in dynamic VBO, including child geometry
 # pick_nodes -> pick nodes of selected polygon
@@ -37,8 +39,8 @@ from OpenGL.GL.ARB.occlusion_query import *
 glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
 glEndQuery = alternate(glEndQuery, glEndQueryARB)
 
-from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, StringDef, NetworkDef, ObjectFallback, AutoGenFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, StringFallback, NetworkFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELNODE
-
+from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, StringDef, NetworkDef, ObjectFallback, AutoGenFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, StringFallback, NetworkFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELBEZ, COL_SELBEZHANDLE, COL_SELNODE
+from nodes import Node, BezierNode, ParamNode, BezierParamNode, NetworkNode, maxres, minres, minhdg, resolution, round2res
 from palette import PaletteEntry
 from prefs import Prefs
 
@@ -46,51 +48,6 @@ f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use for airpo
 twopi=pi*2
 piby2=pi/2
 onedeg=111320	# approx 1 degree of longitude at equator (60nm) [m]. Radius from sim/physics/earth_radius_m
-divisions=32	# WED 1.1 encodes at 8. WED 1.2 encodes at 32
-resolution=divisions*65535
-minres=1.0/resolution
-maxres=1-minres
-minhdg=360.0/65535
-
-def round2res(x):
-    i=floor(x)
-    return i+round((x-i)*resolution,0)*minres
-
-
-def ObjectFactory(name, lat, lon, hdg, y=None):
-    "creates and initialises appropriate Object subclass based on file extension"
-    if name.lower()[-4:]==AutoGenPointDef.AGP:
-        return AutoGenPoint(name, lat, lon, hdg, y)
-    else:
-        return Object(name, lat, lon, hdg, y)
-
-
-def PolygonFactory(name, param, nodes, lon=None, size=None, hdg=None):
-    "creates and initialises appropriate Polygon subclass based on file extension"
-    # would like to have made this a 'static' method of Polygon
-    if name.startswith(PolygonDef.EXCLUDE):
-        return Exclude(name, param, nodes, lon, size, hdg)
-    ext=name.lower()[-4:]
-    if ext==PolygonDef.DRAPED:
-        return Draped(name, param, nodes, lon, size, hdg)
-    elif ext==PolygonDef.FACADE:
-        return Facade(name, param, nodes, lon, size, hdg)
-    elif ext==PolygonDef.FOREST:
-        return Forest(name, param, nodes, lon, size, hdg)
-    elif ext==PolygonDef.LINE:
-        return Line(name, param, nodes, lon, size, hdg)
-    elif ext==PolygonDef.STRING:
-        return String(name, param, nodes, lon, size, hdg)
-    elif ext==PolygonDef.BEACH:
-        return Beach(name, param, nodes, lon, size, hdg)
-    elif ext==NetworkDef.NETWORK:
-        return Network(name, param, nodes, lon, size, hdg)
-    elif ext==ObjectDef.OBJECT:
-        raise IOError		# not a polygon
-    elif ext in SkipDefs:
-        raise IOError		# what's this doing here?
-    else:	# unknown polygon type
-        return Polygon(name, param, nodes, lon, size, hdg)
 
 
 class Clutter:
@@ -115,6 +72,14 @@ class Object(Clutter):
 
     origin=array([0,0,0],float32)
 
+    @staticmethod
+    def factory(name, lat, lon, hdg, y=None):
+        "creates and initialises appropriate Object subclass based on file extension"
+        if name.lower()[-4:]==AutoGenPointDef.AGP:
+            return AutoGenPoint(name, lat, lon, hdg, y)
+        else:
+            return Object(name, lat, lon, hdg, y)
+
     def __init__(self, name, lat, lon, hdg, y=None):
         Clutter.__init__(self, name, lat, lon)
         self.hdg=hdg
@@ -126,7 +91,13 @@ class Object(Clutter):
             self.name, self.lat, self.lon, self.hdg, self.y)
 
     def clone(self):
-        return Object(self.name, self.lat, self.lon, self.hdg, self.y)
+        return self.__class__(self.name, self.lat, self.lon, self.hdg, self.y)
+
+    def copy(self, dlat, dlon):
+        copy = self.clone()
+        copy.lat -= dlat
+        copy.lon -= dlon
+        return copy
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
@@ -264,11 +235,6 @@ class Object(Clutter):
         vertexcache.allocate_dynamic(self, True)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        if not tile:	# don't round or layout, e.g. if taking a copy
-            assert not dhdg
-            self.lat += dlat
-            self.lon += dlon
-            return
         self.lat=max(tile[0], min(tile[0]+maxres, self.lat+dlat))
         self.lon=max(tile[1], min(tile[1]+maxres, self.lon+dlon))
         if dhdg:
@@ -278,12 +244,13 @@ class Object(Clutter):
             self.lon=max(tile[1], min(tile[1]+maxres, round2res(loc[1]+sin(h)*l)))
             self.hdg=(self.hdg+dhdg)%360
         self.layout(tile, options, vertexcache)
+
+    def write(self, idx, south, west):
+        # DSFTool rounds down, so round up here first
+        return 'OBJECT\t%d\t%14.9f %14.9f %5.1f\n' % (idx, min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4), round(self.hdg,1)+minhdg/4)
         
 
 class AutoGenPoint(Object):
-
-    def clone(self):
-        return AutoGenPoint(self.name, self.lat, self.lon, self.hdg, self.y)
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
@@ -356,11 +323,46 @@ class AutoGenPoint(Object):
 
 class Polygon(Clutter):
 
+    BEZPTS = 8		# X-Plane stops at or before 8?
+    NETBEZPTS = 4	# X-Plane seems lazier about networks
+
+    @staticmethod
+    def factory(name, param, nodes, lon=None, size=None, hdg=None):
+        "creates and initialises appropriate Polygon subclass based on file extension"
+        if lon==None:
+            assert isinstance(nodes[0][0], tuple)
+            nodes = [[Node(coords) for coords in winding] for winding in nodes]
+        if name.startswith(PolygonDef.EXCLUDE):
+            return Exclude(name, param, nodes, lon, size, hdg)
+        ext=name.lower()[-4:]
+        if ext==PolygonDef.DRAPED:
+            return Draped(name, param, nodes, lon, size, hdg)
+        elif ext==PolygonDef.FACADE:
+            return Facade(name, param, nodes, lon, size, hdg)
+        elif ext==PolygonDef.FOREST:
+            return Forest(name, param, nodes, lon, size, hdg)
+        elif ext==PolygonDef.LINE:
+            return Line(name, param, nodes, lon, size, hdg)
+        elif ext==PolygonDef.STRING:
+            return String(name, param, nodes, lon, size, hdg)
+        elif ext==PolygonDef.BEACH:
+            return Beach(name, param, nodes, lon, size, hdg)
+        elif ext==NetworkDef.NETWORK:
+            return Network(name, param, nodes, lon, size, hdg)
+        elif ext==ObjectDef.OBJECT:
+            raise IOError		# not a polygon
+        elif ext in SkipDefs:
+            raise IOError		# what's this doing here?
+        else:	# unknown polygon type
+            return Polygon(name, param, nodes, lon, size, hdg)
+
+
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if param==None: param=0
         if lon==None:
             Clutter.__init__(self, name)
-            self.nodes=nodes		# [[(lon,lat,...)]]
+            assert isinstance(nodes[0][0], Node)
+            self.nodes = nodes
         else:
             lat=nodes
             Clutter.__init__(self, name, lat, lon)
@@ -368,21 +370,31 @@ class Polygon(Clutter):
             self.nodes=[[]]
             size=0.000007071*size
             for i in [h+5*pi/4, h+3*pi/4, h+pi/4, h+7*pi/4]:
-                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
-                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size)))))
+                self.nodes[0].append(Node([max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*size))),
+                                           max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*size)))]))
         self.param=param
         self.nonsimple=False	# True iff non-simple and the polygon type cares about it (i.e. not Facades)
         self.singlewinding = True	# most polygon types don't support additional windings
         self.fixednodes = False	# most polygon types support additional nodes
+        self.canbezier = False	# support for bezier control points
+        self.isbezier = False	# nodes are derived from BezierNode, not just Node
         self.closed=True	# Open or closed
         self.col=COL_POLYGON	# Outline colour
-        self.points=[]		# list of windings in world space (x,y,z)
+        self.points=[]		# list of windings in world space (x,y,z), including points generated by bezier curves
 
     def __str__(self):
         return '<"%s" %d %s>' % (self.name,self.param,self.points)
 
     def clone(self):
-        return Polygon(self.name, self.param, [list(w) for w in self.nodes])
+        return self.__class__(self.name, self.param, [[p.clone() for p in w] for w in self.nodes])
+
+    def copy(self, dlat, dlon):
+        copy = self.clone()
+        # move manually to avoid rounding etc and complications while not loaded
+        for w in copy.nodes:
+            for node in w:
+                node.move(-dlat, -dlon, None)
+        return copy
 
     def load(self, lookup, defs, vertexcache, usefallback=True):
         if self.name in lookup:
@@ -394,23 +406,18 @@ class Polygon(Clutter):
         
     def location(self):
         if self.lat==None:
-            self.lat=self.lon=0
-            n=len(self.nodes[0])
-            for i in range(n):
-                self.lon+=self.nodes[0][i][0]
-                self.lat+=self.nodes[0][i][1]
-            self.lat=self.lat/n
-            self.lon=self.lon/n
+            self.lon = sum([node.lon for node in self.nodes[0]]) / len(self.nodes[0])
+            self.lat = sum([node.lat for node in self.nodes[0]]) / len(self.nodes[0])
         return [self.lat, self.lon]
 
     def locationstr(self, dms, node=None):
         if node:
             (i,j)=node
             hole=['', 'Hole '][i and 1]
-            if self.points[i][j][1]:
-                return '%s  Elv: %-6.1f  %sNode %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), self.points[i][j][1], hole, j)
+            if self.nodes[i][j].loc[1]:
+                return '%s  Elv: %-6.1f  %sNode %d' % (latlondisp(dms, self.nodes[i][j].lat, self.nodes[i][j].lon), self.nodes[i][j].loc[1], hole, j)
             else:
-                return '%s  %sNode %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), hole, j)
+                return '%s  %sNode %d' % (latlondisp(dms, self.nodes[i][j].lat, self.nodes[i][j].lon), hole, j)
         else:
             return u'%s  Param\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
@@ -441,22 +448,59 @@ class Polygon(Clutter):
     def draw_nodes(self, glstate, selectednode):
         # Just do it in immediate mode
         glstate.set_texture(None)
-        glstate.set_color(COL_SELECTED)
         glstate.set_depthtest(False)
+
+        # bezier control handles
+        if self.canbezier:
+            glstate.set_color(COL_SELBEZ)
+            glBegin(GL_LINES)
+            for winding in self.nodes:
+                for node in winding:
+                    if node.bezier:
+                        glVertex3f(*node.bezloc)
+                        glVertex3f(*node.loc)
+                        glVertex3f(*node.loc)
+                        glVertex3f(*node.bz2loc)
+            glEnd()
+            glBegin(GL_POINTS)
+            for winding in self.nodes:
+                for node in winding:
+                    if node.bezier:
+                        glVertex3f(*node.bezloc)
+                        glVertex3f(*node.bz2loc)
+            glEnd()
+
+        glstate.set_color(COL_SELECTED)
         for winding in self.points:
             glBegin(GL_LINE_STRIP)
             for p in winding:
-                glVertex3f(p[0],p[1],p[2])
+                glVertex3f(*p)
             glEnd()
         glBegin(GL_POINTS)
-        for i in range(len(self.points)):
-            for j in range(len(self.points[i])):
-                glVertex3f(*self.points[i][j])
+        for winding in self.nodes:
+            for node in winding:
+                glVertex3f(*node.loc)
+        glEnd()
+
         # draw selected on top
         if selectednode:
+            (i,j) = selectednode
+            node = self.nodes[i][j]
+            if self.canbezier and node.bezier:
+                glstate.set_color(COL_SELBEZHANDLE)
+                glBegin(GL_LINES)
+                glVertex3f(*node.bezloc)
+                glVertex3f(*node.loc)
+                glVertex3f(*node.loc)
+                glVertex3f(*node.bz2loc)
+                glEnd()
             glstate.set_color(COL_SELNODE)
-            glVertex3f(*self.points[selectednode[0]][selectednode[1]])
-        glEnd()
+            glBegin(GL_POINTS)
+            glVertex3f(*node.loc)
+            if self.canbezier and node.bezier:
+                glVertex3f(*node.bezloc)
+                glVertex3f(*node.bz2loc)
+            glEnd()
         
     def bucket_dynamic(self, base, buckets):
         # allocate for drawing, assuming outlines
@@ -491,41 +535,70 @@ class Polygon(Clutter):
         if not fittomesh:
             # elevation determined by mid-point of nodes 0 and 1
             if len(self.nodes[0])>1:
-                self.lon=(self.nodes[0][0][0]+self.nodes[0][1][0])/2
-                self.lat=(self.nodes[0][0][1]+self.nodes[0][1][1])/2
+                self.lon=(self.nodes[0][0].lon+self.nodes[0][1].lon)/2
+                self.lat=(self.nodes[0][0].lat+self.nodes[0][1].lat)/2
             else:	# shouldn't happen
-                self.lon=self.nodes[0][0][0]
-                self.lat=self.nodes[0][0][1]
+                self.lon=self.nodes[0][0].lon
+                self.lat=self.nodes[0][0].lat
             (x,z)=self.position(tile, self.lat, self.lon)
             y=vertexcache.height(tile,options,x,z)
+        else:
+            self.lon = sum([node.lon for node in self.nodes[0]]) / len(self.nodes[0])
+            self.lat = sum([node.lat for node in self.nodes[0]]) / len(self.nodes[0])
 
-        for i in range(len(self.nodes)):
+        i = 0
+        while i < len(self.nodes):
             nodes=self.nodes[i]
-            points=[]
             n=len(nodes)
             a=0
             for j in range(n):
-                (x,z)=self.position(tile, nodes[j][1], nodes[j][0])
+                node = nodes[j]
+                (x,z) = self.position(tile, node.lat, node.lon)
                 if fittomesh:
                     y=vertexcache.height(tile,options,x,z)
-                    if i==0:
-                        self.lon+=nodes[j][0]
-                        self.lat+=nodes[j][1]
-                points.append((x,y,z))
-                if not j: first = (x,y,z)	# repeat if closed
-                a+=nodes[j][0]*nodes[(j+1)%n][1]-nodes[(j+1)%n][0]*nodes[j][1]
-            if self.closed:
-                points.append(first)
-                if ((i==0 and a<0) or (i and a>0)):
-                    # Outer should be CCW, inner CW
-                    nodes.reverse()
-                    points.reverse()
-                    if selectednode and selectednode[0]==i: selectednode=(i,n-1-selectednode[1])
-            self.points.append(points)
+                node.setloc(x,y,z)
+                if node.bezier:
+                    (x,z) = self.position(tile, node.lat+node.bezlat, node.lon+node.bezlon)
+                    node.setbezloc(x,y,z)
+                    (x,z) = self.position(tile, node.lat+node.bz2lat, node.lon+node.bz2lon)
+                    node.setbz2loc(x,y,z)
+                a += node.lon * nodes[(j+1)%n].lat - nodes[(j+1)%n].lon * node.lat
 
-        if fittomesh:
-            self.lat=self.lat/len(self.nodes[0])
-            self.lon=self.lon/len(self.nodes[0])
+            if self.closed and ((i==0 and a<0) or (i and a>0)):
+                # Outer should be CCW, inner CW
+                nodes.reverse()
+                if selectednode and selectednode[0]==i: selectednode=(i,n-1-selectednode[1])
+                if self.isbezier:
+                    for node in nodes: node.swapbez()
+                    continue	# re-do layout with updated beziers
+
+            points=[]
+            for j in range(n):
+                node = nodes[j]
+                nxt  = nodes[(j+1)%n]
+                node.pointidx = len(points)	# which point corresponds to this node
+                points.append(node.loc)
+                if self.canbezier and (self.closed or j!=n-1) and (node.bezier or nxt.bezier):	# only do beziers from last point if closed
+                    bezpts = isinstance(self, Network) and Polygon.NETBEZPTS or Polygon.BEZPTS
+                    if fittomesh:
+                        for u in range(1,bezpts):
+                            if node.bezier and nxt.bezier:
+                                (bx,by,bz) = self.bez4([node.loc, node.bezloc, nxt.bz2loc, nxt.loc], float(u)/bezpts)
+                            elif node.bezier:
+                                (bx,by,bz) = self.bez3([node.loc, node.bezloc, nxt.loc], float(u)/bezpts)
+                            else:
+                                (bx,by,bz) = self.bez3([node.loc,  nxt.bz2loc, nxt.loc], float(u)/bezpts)
+                            points.append((bx, vertexcache.height(tile,options,bx,bz), bz))
+                    else:
+                        if node.bezier and nxt.bezier:
+                            points.extend([self.bez4([node.loc, node.bezloc, nxt.bz2loc, nxt.loc], float(u)/bezpts) for u in range(1,bezpts)])
+                        elif node.bezier:
+                            points.extend([self.bez3([node.loc, node.bezloc, nxt.loc], float(u)/bezpts) for u in range(1,bezpts)])
+                        else:
+                            points.extend([self.bez3([node.loc,  nxt.bz2loc, nxt.loc], float(u)/bezpts) for u in range(1,bezpts)])
+            if self.closed: points.append(points[0]) # repeat first if closed
+            self.points.append(points)
+            i += 1
 
         return selectednode
 
@@ -555,7 +628,7 @@ class Polygon(Clutter):
                 newnode=nextnode=j+1
             else:
                 newnode=nextnode=0
-            self.nodes[i].insert(newnode, (lon, lat))
+            self.nodes[i].insert(newnode, self.nodes[0][0].__class__([lon, lat]))
         else:
             if (i and clockwise) or (not i and not clockwise):
                 newnode=j+1
@@ -563,9 +636,8 @@ class Polygon(Clutter):
             else:
                 newnode=j
                 nextnode=(j-1)%n
-            self.nodes[i].insert(newnode,
-                                 (round2res((self.nodes[i][j][0]+self.nodes[i][nextnode][0])/2),
-                                  round2res((self.nodes[i][j][1]+self.nodes[i][nextnode][1])/2)))
+            self.nodes[i].insert(newnode, self.nodes[0][0].__class__([round2res((self.nodes[i][j].lon + self.nodes[i][nextnode].lon)/2),
+                                                                      round2res((self.nodes[i][j].lat + self.nodes[i][nextnode].lat)/2)]))
         return self.layout(tile, options, vertexcache, (i,newnode))
 
     def delnode(self, tile, options, vertexcache, selectednode, clockwise=False):
@@ -585,13 +657,12 @@ class Polygon(Clutter):
         if self.singlewinding: return False
         minrad=0.000007071*size
         for j in self.nodes[0]:
-            minrad=min(minrad, abs(self.lon-j[0]), abs(self.lat-j[1]))
+            minrad=min(minrad, abs(self.lon-j.lon), abs(self.lat-j.lat))
         i=len(self.nodes)
         h=radians(hdg)
         self.nodes.append([])
         for j in [h+5*pi/4, h+7*pi/4, h+pi/4, h+3*pi/4]:
-            self.nodes[i].append((round2res(self.lon+sin(j)*minrad),
-                                  round2res(self.lat+cos(j)*minrad)))
+            self.nodes[i].append(self.nodes[0][0].__class__([round2res(self.lon+sin(j)*minrad), round2res(self.lat+cos(j)*minrad)]))
         return self.layout(tile, options, vertexcache, (i,0))
 
     def delwinding(self, tile, options, vertexcache, selectednode):
@@ -600,43 +671,61 @@ class Polygon(Clutter):
         self.nodes.pop(i)
         return self.layout(tile, options, vertexcache, (i-1,0))
 
+    def togglebezier(self, tile, options, vertexcache, selectednode):
+        # Add or delete bezier control points
+        (i,j) = selectednode
+        node = self.nodes[i][j]
+        n = len(self.nodes[i])
+        if not self.canbezier:
+            return False
+        elif node.bezier:
+            node.bezier = False		# retain bezier co-ordinates in case user changes their mind
+            node.split = False		# but unsplit
+            node.bz2lon = -node.bezlon
+            node.bz2lat = -node.bezlat
+        elif self.isbezier and (node.bezlat or node.bezlon):
+            node.bezier = True		# use retained co-ordinates
+        else:
+            if not self.isbezier:
+                self.nodes = [[BezierNode(p) for p in w] for w in self.nodes]	# trashes layout
+                self.isbezier = True
+                node = self.nodes[i][j]
+            node.bezier = True
+            if not self.closed and j==0:
+                (node.bezlon, node.bezlat) = ((self.nodes[i][j+1].lon - node.lon) / 2, (self.nodes[i][j+1].lat - node.lat) / 2)
+                (node.bz2lon, node.bz2lat) = (-node.bezlon, -node.bezlat)
+            elif not self.closed and j==n-1:
+                (node.bz2lon, node.bz2lat) = ((self.nodes[i][j-1].lon - node.lon) / 2, (self.nodes[i][j-1].lat - node.lat) / 2)
+                (node.bezlon, node.bezlat) = (-node.bz2lon, -node.bz2lat)
+            else:
+                (node.bezlon, node.bezlat) = ((self.nodes[i][(j+1)%n].lon - self.nodes[i][(j-1)%n].lon) / 4, (self.nodes[i][(j+1)%n].lat - self.nodes[i][(j-1)%n].lat) / 4)
+                (node.bz2lon, node.bz2lat) = (-node.bezlon, -node.bezlat)
+        return self.layout(tile, options, vertexcache, selectednode, True)
+
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        # do layout if changed
         for i in range(len(self.nodes)):
             for j in range(len(self.nodes[i])):
                 self.movenode((i,j), dlat, dlon, 0, tile, options, vertexcache)
         if dhdg:
-            assert tile
-            for i in range(len(self.nodes)):
-                for j in range(len(self.nodes[i])):
-                    h=atan2(self.nodes[i][j][0]-loc[1],
-                            self.nodes[i][j][1]-loc[0])+radians(dhdg)
-                    l=hypot(self.nodes[i][j][0]-loc[1],
-                            self.nodes[i][j][1]-loc[0])
-                    self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
-                                      max(tile[0], min(tile[0]+1, round2res(loc[0]+cos(h)*l))))	# trashes other parameters
+            for w in self.nodes:
+                for p in w:
+                    p.rotate(dhdg, loc, tile)
         if dparam:
             self.param+=dparam
             if self.param<0: self.param=0
             elif self.param>65535: self.param=65535	# uint16
-        if tile and (dlat or dlon or dhdg or dparam):
+        # do layout if changed
+        if dlat or dlon or dhdg or dparam:
             self.layout(tile, options, vertexcache)
 
     def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
-        # defer layout
-        # Most polygons don't have co-ordinate arguments other than lat/lon & beziers, so darg ignored.
-        if len(self.nodes[0][0])!=2:
-            # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
-            for i in range(len(self.nodes)):
-                for j in range(len(self.nodes[i])):
-                    self.nodes[i][j]=self.nodes[i][j][:2]
+        # Most polygons don't have co-ordinate arguments other than lat/lon & beziers, so darg ignored here.
+        if not self.canbezier:
+            # Trash additional co-ordinates of unknown types, and of types (e.g. v8 Facades) that don't meaningfully support them
+            self.nodes = [[Node(p) for p in w] for w in self.nodes]	# trashes layout
+            self.isbezier = False
         (i,j)=node
-        # points can be on upper boundary of tile
-        if tile:
-            self.nodes[i][j] = (max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
-                                max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)))
-        else:	# don't round, e.g. if taking a copy
-            self.nodes[i][j] = (self.nodes[i][j][0]+dlon, self.nodes[i][j][1]+dlat)
+        self.nodes[i][j].move(dlat, dlon, tile)
         if defer:
             return node
         else:
@@ -644,38 +733,139 @@ class Polygon(Clutter):
         
     def updatenode(self, node, lat, lon, tile, options, vertexcache):
         # update node height but defer full layout. Assumes lat,lon is valid
-        if len(self.nodes[0][0])!=2:
-            # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
-            for i in range(len(self.nodes)):
-                for j in range(len(self.nodes[i])):
-                    self.nodes[i][j]=self.nodes[i][j][:2]
-        (i,j)=node
-        self.nodes[i][j]=(lon,lat)	# trashes other parameters
-        (x,z)=self.position(tile, lat, lon)
+        (i,j) = node
+        p = self.nodes[i][j]
+        p.lon = lon
+        p.lat = lat
+        (x,z) = self.position(tile, lat, lon)
+
+        if not self.canbezier:
+            # Trash additional co-ordinates of unknown types, and of types (e.g. v8 Facades) that don't meaningfully support them
+            if self.isbezier:
+                p.setloc(x, None, z)
+                self.nodes = [[Node(p) for p in w] for w in self.nodes]	# trashes layout
+                self.isbezier = False
+                return self.layout(tile, options, vertexcache, node)
+            else:
+                for w in self.nodes:
+                    for p in w:
+                        p.rest = []
+
         if self.definition.fittomesh:
-            y=vertexcache.height(tile,options,x,z)
+            p.setloc(x, vertexcache.height(tile, options, x, z), z)
         else:
-            y=self.points[i][j][1]	# assumes elevation already correct
-        self.points[i][j]=(x,y,z)
+            p.setloc(x, None, z)	# assumes elevation already correct
+        if p.bezier:
+            (x,z) = self.position(tile, p.lat+p.bezlat, p.lon+p.bezlon)
+            p.setbezloc(x, None, z)
+            (x,z) = self.position(tile, p.lat+p.bz2lat, p.lon+p.bz2lon)
+            p.setbz2loc(x, None, z)
         return node
 
-    def pick_nodes(self, glstate, queryidx=0):
+    def updatehandle(self, node, handle, split, lat, lon, tile, options, vertexcache):
+        # Defer full layout
+        assert handle in [1,2], handle
+        assert self.isbezier and self.canbezier	# shouldn't be able to manuipulate control handles on types we think shouldn't have them
+        (i,j) = node
+        p = self.nodes[i][j]
+        assert p.bezier
+        (x,z) = self.position(tile, lat, lon)
+        if split: p.split = True
+        if handle==1:
+            (p.bezlon, p.bezlat) = (lon - p.lon, lat - p.lat)
+            p.setbezloc(x, None, z)
+            if not p.split:
+                (p.bz2lon, p.bz2lat) = (-p.bezlon, -p.bezlat)
+                (x,z) = self.position(tile, p.lat + p.bz2lat, p.lon + p.bz2lon)
+                p.setbz2loc(x, None, z)
+        else:
+            (p.bz2lon, p.bz2lat) = (lon - p.lon, lat - p.lat)
+            p.setbz2loc(x, None, z)
+            if not p.split:
+                (p.bezlon, p.bezlat) = (-p.bz2lon, -p.bz2lat)
+                (x,z) = self.position(tile, p.lat + p.bezlat, p.lon + p.bezlon)
+                p.setbezloc(x, None, z)
+        return node
+
+    def pick_nodes(self, glstate, withhandles, queryidx=0):
+        assert not (withhandles and queryidx)	# non occlusion_query version can't handle both
+        withhandles = withhandles and self.isbezier
         if glstate.occlusion_query:
-            for i in range(len(self.points)):
-                for j in range(self.closed and len(self.points[i])-1 or len(self.points[i])):
+            for w in self.nodes:
+                for node in w:
+                    if withhandles:
+                        glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
+                        glBegin(GL_POINTS)
+                        if node.bezier:
+                            glVertex3f(*node.bezloc)
+                        else:
+                            glVertex3f(*node.loc)	# Have to provide something
+                        glEnd()
+                        glEndQuery(glstate.occlusion_query)
+                        queryidx+=1
+                        glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
+                        glBegin(GL_POINTS)
+                        if node.bezier:
+                            glVertex3f(*node.bz2loc)
+                        else:
+                            glVertex3f(*node.loc)
+                        glEnd()
+                        glEndQuery(glstate.occlusion_query)
+                        queryidx+=1
                     glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
                     glBegin(GL_POINTS)
-                    glVertex3f(*self.points[i][j])
+                    glVertex3f(*node.loc)
                     glEnd()
                     glEndQuery(glstate.occlusion_query)
                     queryidx+=1
         else:
             for i in range(len(self.points)):
                 for j in range(self.closed and len(self.points[i])-1 or len(self.points[i])):
+                    node = self.nodes[i][j]
+                    if withhandles:
+                        glLoadName((i<<24) + (1<<16) + j)
+                        glBegin(GL_POINTS)
+                        if node.bezier:
+                            glVertex3f(*node.bezloc)
+                        else:
+                            glVertex3f(*node.loc)	# Have to provide something
+                        glEnd()
+                        glLoadName((i<<24) + (2<<16) + j)
+                        glBegin(GL_POINTS)
+                        if node.bezier:
+                            glVertex3f(*node.bz2loc)
+                        else:
+                            glVertex3f(*node.loc)
+                        glEnd()
                     glLoadName((i<<24) + j + queryidx)
                     glBegin(GL_POINTS)
-                    glVertex3f(*self.points[i][j])
+                    glVertex3f(*node.loc)
                     glEnd()
+
+    def write(self, idx, south, west):
+        # DSFTool rounds down, so round up here first
+        s = 'BEGIN_POLYGON\t%d\t%d %d\n' % (idx, self.param, self.nodes[0][0].coordcount())
+        for w in self.nodes:
+            s += 'BEGIN_WINDING\n'
+            for p in w:
+                s += p.write(south,west)
+            s += 'END_WINDING\n'
+        s += 'END_POLYGON\n'
+        return s
+
+    def bez3(self, p, mu):
+        # http://paulbourke.net/geometry/bezier/
+        mum1 = 1-mu
+        mu2  = mu*mu
+        mum12= mum1*mum1
+        return (p[0][0]*mum12 + 2*p[1][0]*mum1*mu + p[2][0]*mu2, p[0][1], p[0][2]*mum12 + 2*p[1][2]*mum1*mu + p[2][2]*mu2)
+
+    def bez4(self, p, mu):
+        # http://paulbourke.net/geometry/bezier/
+        mum1 = 1-mu
+        mu3  = mu*mu*mu
+        mum13= mum1*mum1*mum1
+        return (p[0][0]*mum13 + 3*p[1][0]*mu*mum1*mum1 + 3*p[2][0]*mu*mu*mum1 + p[3][0]*mu3, p[0][1], p[0][2]*mum13 + 3*p[1][2]*mu*mum1*mum1 + 3*p[2][2]*mu*mu*mum1 + p[3][2]*mu3)
 
 
 class Beach(Polygon):
@@ -711,12 +901,20 @@ class Draped(Polygon):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
         if self.param == 65535:
             self.fixednodes = True	# we don't support new nodes in orthos
+            self.canbezier = False
+            if len(self.nodes[0][0].rest)==6:	# Has bezier coords but DSFTool can't write them, so demote
+                for w in self.nodes:
+                    for p in w:
+                        p.rest = p.rest[4:6]
         else:
             self.singlewinding = False	# Can have holes if not an orthophoto
+            self.canbezier = True	# can have curves if not an orthophoto
+            if len(self.nodes[0][0].rest)==2:	# Has bezier coords - promote
+                self.nodes = BezierNode.fromNodes(self.nodes)
+                self.isbezier = True
+            elif isinstance(self.nodes[0][0], BezierNode):
+                self.isbezier = True		# already promoted
 
-    def clone(self):
-        return Draped(self.name, self.param, [list(w) for w in self.nodes])
-        
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
             filename=lookup[self.name].file
@@ -773,95 +971,49 @@ class Draped(Polygon):
             n=len(self.nodes[0])
             if dparam>0:
                 # rotate texture co-ords.
-                if len(self.nodes[0][0])>=6:
-                    uv0=self.nodes[0][0][4:6]
-                else:
-                    uv0=self.nodes[0][0][2:4]
+                uv0 = self.nodes[0][0].rest
                 for j in range(n-1):
-                    if len(self.nodes[0][j+1])>=6:
-                        uv=self.nodes[0][j+1][4:6]
-                    else:
-                        uv=self.nodes[0][j+1][2:4]
-                    self.nodes[0][j]=self.nodes[0][j][:2]+uv
-                self.nodes[0][n-1]=self.nodes[0][n-1][:2]+uv0
+                    self.nodes[0][j].rest = self.nodes[0][j+1].rest
+                self.nodes[0][n-1].rest = uv0
             elif dparam<0:
-                if len(self.nodes[0][n-1])>=6:
-                    uv0=self.nodes[0][n-1][4:6]
-                else:
-                    uv0=self.nodes[0][n-1][2:4]
+                uv0 = self.nodes[0][n-1].rest
                 for j in range(n-1,0,-1):
-                    if len(self.nodes[0][j-1])>=6:
-                        uv=self.nodes[0][j-1][4:6]
-                    else:
-                        uv=self.nodes[0][j-1][2:4]
-                    self.nodes[0][j]=self.nodes[0][j][:2]+uv
-                self.nodes[0][0]=self.nodes[0][0][:2]+uv0
+                    self.nodes[0][j].rest = self.nodes[0][j].rest
+                self.nodes[0][0].rest = uv0
         else:
             # rotate texture
-            self.param=(self.param+dparam+dhdg)%360
-        if dhdg:
-            # preserve textures
-            assert tile
-            for i in range(len(self.nodes)):
-                for j in range(len(self.nodes[i])):
-                    if len(self.nodes[i][j])>=6:
-                        # Ben says: a bezier polygon has 8 coords (lon lat of point, lon lat of control, ST of point, ST of control)
-                        uv=self.nodes[i][j][4:6]
-                    else:
-                        uv=self.nodes[i][j][2:4]
-                    h=atan2(self.nodes[i][j][0]-loc[1],
-                            self.nodes[i][j][1]-loc[0])+radians(dhdg)
-                    l=hypot(self.nodes[i][j][0]-loc[1],
-                            self.nodes[i][j][1]-loc[0])
-                    self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
-                                      max(tile[0], min(tile[0]+1, round2res(loc[0]+cos(h)*l))))+uv
-        if dlat or dlon:
-            Polygon.move(self, dlat,dlon, 0,0, loc, tile, options, vertexcache)
-        elif dhdg or dparam:
+            self.param = (self.param + dparam + dhdg) % 360
+        if dlat or dlon or dhdg:
+            Polygon.move(self, dlat,dlon,dhdg, 0, loc, tile, options, vertexcache)
+        elif dparam:
             self.layout(tile, options, vertexcache)
 
     def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
-        # defer layout
-        if self.param==65535:
-            # Preserve node texture co-ords
-            if len(self.nodes[0][0])!=4:
-                # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
-                for i in range(len(self.nodes)):
-                    for j in range(len(self.nodes[i])):
-                        self.nodes[i][j]=self.nodes[i][j][:2]+self.nodes[i][j][4:6]
-            (i,j)=node
-            if tile:
-                self.nodes[i][j] = (max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
-                                    max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat))) + self.nodes[i][j][2:4]
-            else:	# don't round, e.g. if taking a copy
-                self.nodes[i][j] = (self.nodes[i][j][0]+dlon, self.nodes[i][j][1]+dlat) + self.nodes[i][j][2:4]
-            if defer:
-                return node
-            else:
-                return self.layout(tile, options, vertexcache, node)
-        else:
-            return Polygon.movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer)
-
-    def updatenode(self, node, lat, lon, tile, options, vertexcache):
-        # update node height but defer full layout. Assumes lat,lon is valid
-        if self.param==65535:
-            # Preserve node texture co-ords
-            (i,j)=node
-            if len(self.nodes[0][0])!=4:
-                # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
-                for i in range(len(self.nodes)):
-                    for j in range(len(self.nodes[i])):
-                        self.nodes[i][j]=self.nodes[i][j][:2]+self.nodes[i][j][4:6]
-            self.nodes[i][j]=(lon,lat)+self.nodes[i][j][2:4]
-            (x,z)=self.position(tile, lat, lon)
-            if self.definition.fittomesh:
-                y=vertexcache.height(tile,options,x,z)
-            else:
-                y=self.points[i][j][1]	# assumes elevation already correct
-            self.points[i][j]=(x,y,z)
+        # Override super because it will trash ortho UV coords
+        (i,j) = node
+        self.nodes[i][j].move(dlat, dlon, tile)
+        if defer:
             return node
         else:
-            return Polygon.updatenode(self, node, lat, lon, tile, options, vertexcache)
+            return self.layout(tile, options, vertexcache, node)
+
+    def updatenode(self, node, lat, lon, tile, options, vertexcache):
+        # Override super because it will trash ortho UV coords
+        (i,j) = node
+        p = self.nodes[i][j]
+        p.lon = lon
+        p.lat = lat
+        (x,z) = self.position(tile, lat, lon)
+        if self.definition.fittomesh:
+            p.setloc(x, vertexcache.height(tile, options, x, z), z)
+        else:
+            p.setloc(x, None, z)	# assumes elevation already correct
+        if p.bezier:
+            (x,z) = self.position(tile, p.lat+p.bezlat, p.lon+p.bezlon)
+            p.setbezloc(x, None, z)
+            (x,z) = self.position(tile, p.lat+p.bz2lat, p.lon+p.bz2lon)
+            p.setbz2loc(x, None, z)
+        return node
 
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True, tls=None):
         if self.islaidout() and not recalc:
@@ -878,14 +1030,11 @@ class Draped(Polygon):
         try:
             tris=[]
             gluTessBeginPolygon(tess, tris)
-            for i in range(len(self.nodes)):	# always closed
+            for i in range(len(self.points)):
                 gluTessBeginContour(tess)
-                for j in range(len(self.nodes[i])):
+                for j in range(len(self.points[i])-1):	# always closed
                     if self.param==65535:
-                        if len(self.nodes[i][j])>=6:
-                            gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [self.nodes[i][j][4], self.nodes[i][j][5], 0])
-                        else:
-                            gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [self.nodes[i][j][2], self.nodes[i][j][3], 0])
+                        gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [self.nodes[i][j].rest[0], self.nodes[i][j].rest[1], 0])
                     else:	# projected
                         gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [(self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale, (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale, 0])
                 gluTessEndContour(tess)
@@ -954,13 +1103,10 @@ class Exclude(Polygon):
                               (self.lon+size,self.lat-size),
                               (self.lon+size,self.lat+size),
                               (self.lon-size,self.lat+size)]:
-                self.nodes[0].append((max(floor(self.lon), min(floor(self.lon)+1, round2res(lon))),
-                                      max(floor(self.lat), min(floor(self.lat)+1, round2res(lat)))))
+                self.nodes[0].append(Node([max(floor(self.lon), min(floor(self.lon)+1, round2res(lon))),
+                                           max(floor(self.lat), min(floor(self.lat)+1, round2res(lat)))]))
         self.fixednodes = True
         self.col=COL_EXCLUDE
-
-    def clone(self):
-        return Exclude(self.name, self.param, [list(w) for w in self.nodes])
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         self.definition=ExcludeDef(self.name, vertexcache, lookup, defs)	# just create a new one
@@ -970,7 +1116,7 @@ class Exclude(Polygon):
         # no elevation
         if node:
             (i,j)=node
-            return '%s  Node %d' % (latlondisp(dms, self.nodes[i][j][1], self.nodes[i][j][0]), j)
+            return '%s  Node %d' % (latlondisp(dms, self.nodes[i][j].lat, self.nodes[i][j].lon), j)
         else:
             return '%s' % (latlondisp(dms, self.lat, self.lon))
 
@@ -979,25 +1125,30 @@ class Exclude(Polygon):
             for j in range(len(self.nodes[i])):
                 Polygon.movenode(self, (i,j), dlat, dlon, 0, tile, options, vertexcache)	# use superclass to prevent complication
         # no rotation or param
-        if tile and (dlat or dlon):
+        if dlat or dlon:
             self.layout(tile, options, vertexcache)
 
     def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=False):
         # changes adjacent nodes, so always do full layout immediately
-        (i,j)=node
-        lon=max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon))
-        lat=max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat))
+        (i,j) = node
+        lon = max(tile[1], min(tile[1]+1, self.nodes[i][j].lon + dlon))
+        lat = max(tile[0], min(tile[0]+1, self.nodes[i][j].lat + dlat))
         return self.updatenode(node, lat, lon, tile, options, vertexcache)
 
     def updatenode(self, node, lat, lon, tile, options, vertexcache):
         (i,j)=node
-        self.nodes[i][j]=(lon,lat)
+        self.nodes[i][j].lon = lon
+        self.nodes[i][j].lat = lat
         if j&1:
-            self.nodes[i][(j-1)%4]=(self.nodes[i][(j-1)%4][0], lat)
-            self.nodes[i][(j+1)%4]=(lon, self.nodes[i][(j+1)%4][1])
+            self.nodes[i][(j-1)%4].lon = self.nodes[i][(j-1)%4].lon
+            self.nodes[i][(j-1)%4].lat = lat
+            self.nodes[i][(j+1)%4].lon = lon
+            self.nodes[i][(j+1)%4].lat = self.nodes[i][(j+1)%4].lat
         else:
-            self.nodes[i][(j+1)%4]=(self.nodes[i][(j+1)%4][0], lat)
-            self.nodes[i][(j-1)%4]=(lon, self.nodes[i][(j-1)%4][1])
+            self.nodes[i][(j+1)%4].lon = self.nodes[i][(j+1)%4].lon
+            self.nodes[i][(j+1)%4].lat = lat
+            self.nodes[i][(j-1)%4].lon = lon
+            self.nodes[i][(j-1)%4].lat = self.nodes[i][(j-1)%4].lat
         # changed adjacent nodes, so do full layout immediately
         return self.layout(tile, options, vertexcache, node)
 
@@ -1018,16 +1169,10 @@ class Facade(Polygon):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
-        if param==None:	# New placement - add wall type
-            for j in range(len(self.nodes[0])):
-                self.nodes[0][j]+=(0,)
         self.floorno=0		# for v10 - must keep in sync with self.param
         self.datalen=0
         self.drapedlen=0
         self.rooflen=0
-
-    def clone(self):
-        return Facade(self.name, self.param, [list(w) for w in self.nodes])
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
@@ -1037,6 +1182,16 @@ class Facade(Polygon):
             else:
                 defs[filename]=self.definition=FacadeDef(filename, vertexcache, lookup, defs)
             if self.definition.version>=1000:
+                self.canbezier = True
+                if isinstance(self.nodes[0][0], BezierParamNode):
+                    self.isbezier = True	# already promoted
+                elif isinstance(self.nodes[0][0], ParamNode):
+                    pass	# already promoted
+                elif len(self.nodes[0][0].rest)<2:
+                    self.nodes = [[ParamNode(node) for node in w] for w in self.nodes]	# add wall type
+                else:
+                    self.nodes = BezierParamNode.fromNodes(self.nodes)
+                    self.isbezier = True
                 floors=self.definition.floors
                 if self.param:
                     bestdelta=maxint
@@ -1047,12 +1202,20 @@ class Facade(Polygon):
                             self.floorno=i
                 else:
                     self.param=min(65535, max(1, int(round(floors[self.floorno].height))))
-            elif not self.param:	# old-style
-                wall=self.definition.walls[0]	# just use first wall
-                vpanels=wall.vpanels
-                self.param=sum([p.width for p in vpanels[0]+vpanels[2]])		# all bottom & top panels
-                if not self.param: self.param=sum([p.width for p in vpanels[1]])	# else all middle panels
-                self.param=max(int(0.5+self.param+wall.basement*wall.scale[1]),1)
+            else:	# old-style
+                self.canbezier = False
+                if len(self.nodes[0][0].rest)>=2:
+                    # WED can encode v8-style facades with wall type and beziers even though these have no meaning
+                    self.nodes = BezierNode.fromNodes(self.nodes)	# drop wall type if present
+                    self.isbezier = True
+                elif isinstance(self.nodes[0][0], BezierNode):
+                    self.isbezier = True	# already promoted
+                if not self.param:
+                    wall = self.definition.walls[0]	# just use first wall
+                    vpanels = wall.vpanels
+                    self.param = sum([p.width for p in vpanels[0]+vpanels[2]])		# all bottom & top panels
+                    if not self.param: self.param = sum([p.width for p in vpanels[1]])	# else all middle panels
+                    self.param = max(int(0.5 + self.param + wall.basement*wall.scale[1]), 1)
             self.closed=(self.definition.ring and True)
             return True
         except:
@@ -1079,7 +1242,7 @@ class Facade(Polygon):
             if node:
                 (i,j)=node
                 if len(floor.walls)>1 and (self.closed or j<len(self.nodes[i])-1):
-                    wallno=len(self.nodes[i][j]) not in [3,5] and -1 or int(self.nodes[i][j][2])
+                    wallno = self.nodes[i][j].param
                     return Polygon.locationstr(self, dms, node) + u'  Wall\u2195 ' + (0<=wallno<len(floor.walls) and floor.walls[wallno].name or 'undefined')
                 else:	# Can't change wall type if only one wall, or if final node
                     return Polygon.locationstr(self, dms, node)
@@ -1112,11 +1275,12 @@ class Facade(Polygon):
         if self.definition.version>=1000 and selectednode:
             floor=self.definition.floors[self.floorno]
             (i,j)=selectednode
-            if len(floor.walls)>1 and (self.closed or j<len(self.nodes[i])-1):
+            n = len(self.nodes[i])
+            if len(floor.walls)>1 and (self.closed or j<n-1):
                 glstate.set_color(COL_SELNODE)
-                glBegin(GL_LINES)
-                glVertex3f(*self.points[i][j])
-                glVertex3f(*self.points[i][(j+1)%len(self.nodes[i])])
+                glBegin(GL_LINE_STRIP)
+                for k in range(self.nodes[i][j].pointidx, j<n-1 and (self.nodes[i][(j+1)].pointidx + 1) or (len(self.points) + 1)):
+                    glVertex3f(*self.points[i][k])
                 glEnd()
         
     def bucket_dynamic(self, base, buckets):
@@ -1137,126 +1301,69 @@ class Facade(Polygon):
             dparam=max(dparam, 1-self.param)	# can't have height 0
             Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
         else:
-            if dhdg:
-                # preserve wall type
-                assert tile
-                for i in range(len(self.nodes)):
-                    for j in range(len(self.nodes[i])):
-                        h=atan2(self.nodes[i][j][0]-loc[1],
-                                self.nodes[i][j][1]-loc[0])+radians(dhdg)
-                        l=hypot(self.nodes[i][j][0]-loc[1],
-                                self.nodes[i][j][1]-loc[0])
-                        self.nodes[i][j]=(max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
-                                          max(tile[0], min(tile[0]+1, round2res(loc[0]+cos(h)*l))),
-                                          len(self.nodes[i][j]) in [3,5] and int(self.nodes[i][j][2]) or 0)
             if dparam:
                 if dparam>0:
                     self.floorno=min(self.floorno+1, len(self.definition.floors)-1)
                 else:
                     self.floorno=max(self.floorno-1, 0)
                 self.param=min(65535, max(1, int(round(self.definition.floors[self.floorno].height))))
-            if dlat or dlon:
-                Polygon.move(self, dlat,dlon, 0,0, loc, tile, options, vertexcache)
-            elif dhdg or dparam:
+            if dlat or dlon or dhdg:
+                Polygon.move(self, dlat,dlon,dhdg, 0, loc, tile, options, vertexcache)
+            elif dparam:
                 self.layout(tile, options, vertexcache)
 
     def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
-        # defer layout
         if self.definition.version<1000:
-            return Polygon.movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer)
+            return Polygon.movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer)	# trashes any spurious coords
         else:
-            if len(self.nodes[0][0])==5:
-                # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
-                for i in range(len(self.nodes)):
-                    for j in range(len(self.nodes[i])):
-                        self.nodes[i][j]=self.nodes[i][j][:3]
-            elif len(self.nodes[0][0])!=3:
-                # Number of coordinates must be the same for all nodes in the polygon. Add a wall type
-                for i in range(len(self.nodes)):
-                    for j in range(len(self.nodes[i])):
-                        self.nodes[i][j]=self.nodes[i][j][:2]+(0,)
-            # preserve/set wall type
-            (i,j)=node
-            floor=self.definition.floors[self.floorno]
-            wallno=int(self.nodes[i][j][2])
+            (i,j) = node
+            # set wall type
+            floor = self.definition.floors[self.floorno]
+            wallno= self.nodes[i][j].param
             if darg>0:
-                wallno=min(len(floor.walls)-1, max(0, wallno+1))
+                self.nodes[i][j].param = min(len(floor.walls)-1, max(0, wallno+1))
             elif darg<0:
-                wallno=min(len(floor.walls)-1, max(0, wallno-1))
-            if tile:
-                self.nodes[i][j] = (max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
-                                    max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)), wallno)
-            else:	# don't round, e.g. if taking a copy
-                self.nodes[i][j] = (self.nodes[i][j][0]+dlon, self.nodes[i][j][1]+dlat, wallno)
-            if defer:
-                return node
-            else:
+                self.nodes[i][j].param = min(len(floor.walls)-1, max(0, wallno-1))
+            if dlat or dlon:
+                return Polygon.movenode(self, node, dlat, dlon, 0, tile, options, vertexcache, defer)
+            elif darg and not defer:
                 return self.layout(tile, options, vertexcache, node)
-
-    def updatenode(self, node, lat, lon, tile, options, vertexcache):
-        # update node height but defer full layout. Assumes lat,lon is valid
-        if self.definition.version<1000:
-            return Polygon.updatenode(self, node, lat, lon, tile, options, vertexcache)
-        else:
-            if len(self.nodes[0][0])==5:
-                # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
-                for i in range(len(self.nodes)):
-                    for j in range(len(self.nodes[i])):
-                        self.nodes[i][j]=self.nodes[i][j][:3]
-            elif len(self.nodes[0][0])!=3:
-                # Number of coordinates must be the same for all nodes in the polygon. Add a wall type
-                for i in range(len(self.nodes)):
-                    for j in range(len(self.nodes[i])):
-                        self.nodes[i][j]=self.nodes[i][j][:2]+(0,)
-            # preserve wall type
-            (i,j)=node
-            self.nodes[i][j]=(lon,lat,self.nodes[i][j][2])
-            (x,z)=self.position(tile, lat, lon)
-            if self.definition.fittomesh:
-                y=vertexcache.height(tile,options,x,z)
             else:
-                y=self.points[i][j][1]	# assumes elevation already correct
-            self.points[i][j]=(x,y,z)
-            return node
+                return node
 
     def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
         if self.fixednodes: return False
         if self.definition.version<1000:
             return Polygon.addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise)
-        else:
-            if len(self.nodes[0][0])==5:
-                # Number of coordinates must be the same for all nodes in the polygon. Trash other coordinates e.g. bezier
-                for i in range(len(self.nodes)):
-                    for j in range(len(self.nodes[i])):
-                        self.nodes[i][j]=self.nodes[i][j][:3]
-            elif len(self.nodes[0][0])!=3:
-                # Number of coordinates must be the same for all nodes in the polygon. Add a wall type
-                for i in range(len(self.nodes)):
-                    for j in range(len(self.nodes[i])):
-                        self.nodes[i][j]=self.nodes[i][j][:2]+(0,)
-            # preserve/set wall type
-            (i,j)=selectednode
-            n=len(self.nodes[i])
-            if n>=255: return False	# node count is encoded as uint8 in DSF
-            if (not self.closed) and (j==0 or j==n-1):
-                # Special handling for ends of open lines and facades - add new node at cursor
-                if j:
-                    newnode=nextnode=j+1
-                else:
-                    newnode=nextnode=0
-                self.nodes[i].insert(newnode, (lon, lat, self.nodes[i][j][2]))	# inherit wall type
+        (i,j)=selectednode
+        n=len(self.nodes[i])
+        if n>=255: return False	# node count is encoded as uint8 in DSF
+        if (not self.closed) and (j==0 or j==n-1):
+            # Special handling for ends of open lines and facades - add new node at cursor
+            if j:
+                newnode=nextnode=j+1
             else:
-                if (i and clockwise) or (not i and not clockwise):
-                    newnode=j+1
-                    nextnode=(j+1)%n
-                else:
-                    newnode=j
-                    nextnode=(j-1)%n
-                self.nodes[i].insert(newnode,
-                                     (round2res((self.nodes[i][j][0]+self.nodes[i][nextnode][0])/2),
-                                      round2res((self.nodes[i][j][1]+self.nodes[i][nextnode][1])/2),
-                                      self.nodes[i][j][2]))	# inherit wall type
+                newnode=nextnode=0
+            self.nodes[i].insert(newnode, self.nodes[0][0].__class__([lon, lat, self.nodes[i][j].param]))	# inherit wall type
+        else:
+            if (i and clockwise) or (not i and not clockwise):
+                newnode=j+1
+                nextnode=(j+1)%n
+            else:
+                newnode=j
+                nextnode=(j-1)%n
+            self.nodes[i].insert(newnode, self.nodes[0][0].__class__([round2res((self.nodes[i][j].lon + self.nodes[i][nextnode].lon)/2),
+                                                                      round2res((self.nodes[i][j].lat + self.nodes[i][nextnode].lat)/2),
+                                                                      self.nodes[i][j].param]))	# inherit wall type
         return self.layout(tile, options, vertexcache, (i,newnode))
+
+    def togglebezier(self, tile, options, vertexcache, selectednode):
+        if not self.canbezier:
+            return False	# old-style Facades don't support beziers
+        elif not self.isbezier:
+            self.nodes = [[BezierParamNode(p) for p in w] for w in self.nodes]	# trashes layout
+            self.isbezier = True
+        return Polygon.togglebezier(self, tile, options, vertexcache, selectednode)
 
     def clearlayout(self, vertexcache):
         Polygon.clearlayout(self, vertexcache)
@@ -1479,14 +1586,11 @@ class Facade(Polygon):
                 h=atan2(tox-x, z-toz) + piby2	# texture heading determined by nodes 0->1
                 coshdg=cos(h)
                 sinhdg=sin(h)
-                minx=minz=maxint
-                maxx=maxz=-maxint
-                for j in range(n):
-                    # UV boundary taken from building footprint, not roof footprint
-                    minx=min(minx, (points[j][0]*coshdg+points[j][2]*sinhdg))
-                    maxx=max(maxx, (points[j][0]*coshdg+points[j][2]*sinhdg))
-                    minz=min(minz, (points[j][0]*sinhdg-points[j][2]*coshdg))
-                    maxz=max(maxz, (points[j][0]*sinhdg-points[j][2]*coshdg))
+                # UV boundary taken from building footprint, not roof footprint
+                minx = min([(p[0]*coshdg + p[2]*sinhdg) for p in points])
+                maxx = max([(p[0]*coshdg + p[2]*sinhdg) for p in points])
+                minz = min([(p[0]*sinhdg - p[2]*coshdg) for p in points])
+                maxz = max([(p[0]*sinhdg - p[2]*coshdg) for p in points])
                 # don't know what these numbers repreent, but 1st and 3rd pair look like tex coords
                 minu=min(self.definition.roof[0][0], self.definition.roof[2][0])
                 maxu=max(self.definition.roof[0][0], self.definition.roof[2][0])
@@ -1528,16 +1632,17 @@ class Facade(Polygon):
         self.placements=[]
         tris=[]
         floor=self.definition.floors[self.floorno]
-        points=self.points[0]
-        n=len(self.nodes[0])
-        for node in range(self.closed and n or n-1):
-            (x,y,z)=points[node]
-            (tox,toy,toz)=points[(node+1)%n]
+        nodes = self.nodes[0]
+        n = len(nodes)
+        # can't draw curved facades, so just draw straight
+        for j in range(self.closed and n or n-1):
+            (x,y,z) = nodes[j].loc
+            (tox,toy,toz) = nodes[(j+1)%n].loc
             size=hypot(tox-x, z-toz)	# target wall length
             if size<=0: continue
             h=atan2(tox-x, z-toz) % twopi
             hdg=degrees(h)
-            wallno=len(self.nodes[0][node]) in [3,5] and int(self.nodes[0][node][2]) or 0
+            wallno = nodes[j].param
             wall=floor.walls[0<=wallno<len(floor.walls) and wallno or 0]
 
             # Work out minimum number of segments (actually spellings) needed to fill the wall.
@@ -1573,9 +1678,9 @@ class Facade(Polygon):
             s=len(segments)
             for segno in range(s):
                 segment=segments[segno]
-                if segno==0 and (self.closed or node!=0):
+                if segno==0 and (self.closed or j!=0):
                     # miter joint between first segment and previous wall
-                    (prvx,prvy,prvz)=points[(node-1)%n]
+                    (prvx,prvy,prvz) = nodes[(j-1)%n].loc
                     sm=tan((atan2(prvx-x, z-prvz)%twopi + h)/2 - h+piby2)	# miter angle
                     for v in segment.mesh:
                         sz=hoffset+v[2]*hscale+v[0]*sm*(1+v[2]/segment.width)
@@ -1583,9 +1688,9 @@ class Facade(Polygon):
                         vy=y+v[1]+sz*vscale
                         vz=z+v[0]*sinhdg+sz*coshdg
                         tris.append([vx,vy,vz,v[3],v[4],0])
-                elif segno==s-1 and (self.closed or node!=n-2):
+                elif segno==s-1 and (self.closed or j!=n-2):
                     # miter joint between last segment and next wall
-                    (nxtx,nxty,nxtz)=points[(node+2)%n]
+                    (nxtx,nxty,nxtz) = nodes[(j+2)%n].loc
                     sm=tan((atan2(nxtx-tox, toz-nxtz)%twopi + h-pi)/2 - h+piby2)	# miter angle
                     for v in segment.mesh:
                         sz=hoffset+v[2]*hscale-v[0]*sm*(v[2]/segment.width)
@@ -1625,17 +1730,14 @@ class Facade(Polygon):
         if floor.roofs:
             # Tessellate to generate tri vertices with UV data, and check polygon is simple
             try:
-                (x,y,z)=points[0]
-                (tox,toy,toz)=points[1]
+                (x,y,z) = nodes[0].loc
+                (tox,toy,toz) = nodes[1].loc
                 h=atan2(tox-x, z-toz) + piby2	# texture heading determined by nodes 0->1
                 coshdg=cos(h)
                 sinhdg=sin(h)
                 s=self.definition.roofscale
-                maxu=-maxint
-                minv=maxint
-                for j in range(n):
-                    maxu=max(maxu, (points[j][0]*coshdg+points[j][2]*sinhdg)/s)
-                    minv=min(minv, (points[j][0]*sinhdg-points[j][2]*coshdg)/s)
+                maxu = max([((node.loc[0]*coshdg + node.loc[2]*sinhdg) / s) for node in nodes])
+                minv = min([((node.loc[0]*sinhdg - node.loc[2]*coshdg) / s) for node in nodes])
                 if floor.roofs[0]==0:
                     # "Roof" at height 0 is special and always gets draped (irrespective of "GRADED" setting in .fac)
                     tris=[]
@@ -1643,12 +1745,13 @@ class Facade(Polygon):
                     gluTessBeginContour(Facade.tess)
                     if self.definition.fittomesh:
                         for j in range(n):
-                            gluTessVertex(Facade.tess, array([points[j][0], 0, points[j][2]],float64), list(points[j]) + [(points[j][0]*coshdg+points[j][2]*sinhdg)/s-maxu, (points[j][0]*sinhdg-points[j][2]*coshdg)/s-minv, 0])
+                            (x,y,z) = nodes[j].loc
+                            gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, y, z, (x*coshdg+z*sinhdg)/s-maxu, (x*sinhdg-z*coshdg)/s-minv, 0])
                     else:
                         # Facade as a whole isn't draped but this floor at height 0 should be, so find elevations
                         for j in range(n):
-                            gluTessVertex(Facade.tess, array([points[j][0], 0, points[j][2]],float64),
-                                          [points[j][0], vertexcache.height(tile,options,points[j][0],points[j][2]), points[j][2], (points[j][0]*coshdg+points[j][2]*sinhdg)/s-maxu, (points[j][0]*sinhdg-points[j][2]*coshdg)/s-minv, 0])
+                            (x,y,z) = nodes[j].loc
+                            gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, vertexcache.height(tile,options,x,z), z, (x*coshdg+z*sinhdg)/s-maxu, (x*sinhdg-z*coshdg)/s-minv, 0])
                     gluTessEndContour(Facade.tess)
                     gluTessEndPolygon(Facade.tess)
                     if __debug__:
@@ -1661,7 +1764,8 @@ class Facade(Polygon):
                 gluTessBeginPolygon(Facade.tess, tris)
                 gluTessBeginContour(Facade.tess)
                 for j in range(n):
-                    gluTessVertex(Facade.tess, array([points[j][0], 0, points[j][2]],float64), list(points[j]) + [(points[j][0]*coshdg+points[j][2]*sinhdg)/s-maxu, (points[j][0]*sinhdg-points[j][2]*coshdg)/s-minv, 0])
+                    (x,y,z) = nodes[j].loc
+                    gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, y, z, (x*coshdg+z*sinhdg)/s-maxu, (x*sinhdg-z*coshdg)/s-minv, 0])
                 gluTessEndContour(Facade.tess)
                 gluTessEndPolygon(Facade.tess)
                 if __debug__:
@@ -1708,9 +1812,6 @@ class Forest(Polygon):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
         self.singlewinding = False
         self.col=COL_FOREST
-
-    def clone(self):
-        return Forest(self.name, self.param, [list(w) for w in self.nodes])
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
@@ -1783,6 +1884,11 @@ class Line(Polygon):
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if lon==None:
             Polygon.__init__(self, name, param, nodes)
+            if len(self.nodes[0][0].rest)==2:	# Has bezier coords - promote
+                self.nodes = BezierNode.fromNodes(self.nodes)
+                self.isbezier = True
+            elif isinstance(self.nodes[0][0], BezierNode):
+                self.isbezier = True		# already promoted
         else:
             lat=nodes
             Polygon.__init__(self, name, param, nodes, lon, size, hdg)
@@ -1791,13 +1897,11 @@ class Line(Polygon):
             self.nodes=[[]]
             size=0.000005*size
             for i,off in [(h-piby2,size), (h,0), (h+piby2,size)]:
-                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*off))),
-                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*off)))))
+                self.nodes[0].append(Node([max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*off))),
+                                           max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*off)))]))
+        self.canbezier = True
         self.outlinelen = 0
         self.drawdata=[]	# [(layer,texture,count)]
-
-    def clone(self):
-        return Line(self.name, self.param, [list(w) for w in self.nodes])
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
@@ -1837,7 +1941,7 @@ class Line(Polygon):
 
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
         points=self.points[0]
-        n=len(self.nodes[0])
+        n = self.closed and len(points)-1 or len(points)
 
         # may need to repeatedly drape, so pre-compute relevant mesh triangles
         do_drape = options&Prefs.ELEVATION
@@ -1866,7 +1970,8 @@ class Line(Polygon):
             size = hypot(tox-x, z-toz)
             if size<=0: continue	# shouldn't happen
             t2 = t1 + size / self.definition.length
-            if even: t2 = max(t1+even, round(t2/even) * even)	# nearest but at least one chunk
+            # FIXME: even distance should apply between nodes, not between bezier fragments
+            #if even: t2 = max(t1+even, round(t2/even) * even)	# nearest but at least one chunk
 
             h = atan2(tox-x, z-toz) % twopi
             sx1 = sx2 = 1	# near far width scale
@@ -1971,6 +2076,11 @@ class String(Polygon):
         if param is None: param=5	# arbitrary
         if lon==None:
             Polygon.__init__(self, name, param, nodes)
+            if len(self.nodes[0][0].rest)==2:	# Has bezier coords - promote
+                self.nodes = BezierNode.fromNodes(self.nodes)
+                self.isbezier = True
+            elif isinstance(self.nodes[0][0], BezierNode):
+                self.isbezier = True		# already promoted
         else:
             lat=nodes
             Polygon.__init__(self, name, param, nodes, lon, size, hdg)
@@ -1979,12 +2089,10 @@ class String(Polygon):
             self.nodes=[[]]
             size=0.000005*size
             for i,off in [(h-piby2,size), (h,0), (h+piby2,size)]:
-                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*off))),
-                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*off)))))
+                self.nodes[0].append(Node([max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*off))),
+                                           max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*off)))]))
         self.closed=False
-
-    def clone(self):
-        return String(self.name, self.param, [list(w) for w in self.nodes])
+        self.canbezier = True
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         try:
@@ -2035,7 +2143,7 @@ class String(Polygon):
 
         self.placements=[]
         points = self.points[0]
-        n = len(self.nodes[0])-1	# strings are always open
+        n = len(points) - 1	# strings are always open
 
         if not self.definition.alternate:
             # Networks have placements at start and end, plus sometimes at ill-defined intervals which we don't simulate
@@ -2102,6 +2210,8 @@ class Network(String,Line):
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if lon==None:
             Polygon.__init__(self, name, param, nodes)
+            if not isinstance(self.nodes[0][0], NetworkNode):	# Not already NetworkNodes?
+                self.nodes = NetworkNode.fromNodes(self.nodes)
         else:
             lat=nodes
             Polygon.__init__(self, name, param, nodes, lon, size, hdg)
@@ -2110,13 +2220,12 @@ class Network(String,Line):
             self.nodes=[[]]
             size=0.000005*size
             for i,off in [(h-piby2,size), (h,0), (h+piby2,size)]:
-                self.nodes[0].append((max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*off))),
-                                      max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*off))), 0))
+                self.nodes[0].append(NetworkNode([max(floor(lon), min(floor(lon)+1, round2res(self.lon+sin(i)*off))),
+                                                  max(floor(lat), min(floor(lat)+1, round2res(self.lat+cos(i)*off))), 0]))
         self.closed=False
+        self.canbezier = True
+        self.isbezier = True	# nodes always stored as bezier for simplicity
             
-    def clone(self):
-        return Network(self.name, self.param, [list(w) for w in self.nodes])
-
     def load(self, lookup, defs, vertexcache, usefallback=False):
         # skip lookup, since defs is pre-populated with the valid NetworkDefs
         if self.name in defs:
@@ -2130,7 +2239,7 @@ class Network(String,Line):
         if node:
             (i,j)=node
             if j==0 or j==len(self.nodes[i])-1:
-                return Polygon.locationstr(self, dms, node) + u'  Level\u2195 %s' % (self.nodes[i][j][2] or 'Ground')
+                return Polygon.locationstr(self, dms, node) + u'  Level\u2195 %s' % (self.nodes[i][j].param or 'Ground')
             else:
                 return Polygon.locationstr(self, dms, node)
         else:
@@ -2149,46 +2258,19 @@ class Network(String,Line):
             return String.bucket_dynamic(self, base, buckets)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        if dhdg:
-            # preserve level
-            assert tile
-            for i in range(len(self.nodes)):
-                for j in range(len(self.nodes[i])):
-                    h = atan2(self.nodes[i][j][0]-loc[1], self.nodes[i][j][1]-loc[0]) + radians(dhdg)
-                    l = hypot(self.nodes[i][j][0]-loc[1], self.nodes[i][j][1]-loc[0])
-                    self.nodes[i][j] = (max(tile[1], min(tile[1]+1, round2res(loc[1]+sin(h)*l))),
-                                        max(tile[0], min(tile[0]+1, round2res(loc[0]+cos(h)*l))),
-                                        (j==0 or j==len(self.nodes[i])-1) and self.nodes[i][j][2] or 0)	# preserve level, turn bezier hard
-        if dlat or dlon:
-            Polygon.move(self, dlat,dlon, 0,0, loc, tile, options, vertexcache)
-        elif dhdg:
-            self.layout(tile, options, vertexcache)
+        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
 
     def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
-        # defer layout
-        (i,j)=node
-        if tile:
-            self.nodes[i][j] = (max(tile[1], min(tile[1]+1, self.nodes[i][j][0]+dlon)),
-                                max(tile[0], min(tile[0]+1, self.nodes[i][j][1]+dlat)),
-                                (j==0 or j==len(self.nodes[i])-1) and min(max(int(self.nodes[i][j][2]) + darg, 0), 5) or 0)	# level 5 is arbitrary
-        else:	# don't round, e.g. if taking a copy
-            self.nodes[i][j] = (self.nodes[i][j][0]+dlon, self.nodes[i][j][1]+dlat, self.nodes[i][j][2]+darg)
-        if defer:
-            return node
-        else:
+        (i,j) = node
+        if darg:
+            # elevation
+            self.nodes[i][j].param = (j==0 or j==len(self.nodes[i])-1) and min(max(self.nodes[i][j].param + darg, 0), 5) or 0	# level 5 is arbitrary
+        if dlat or dlon:
+            return Polygon.movenode(self, node, dlat, dlon, 0, tile, options, vertexcache, defer)
+        elif darg and not defer:
             return self.layout(tile, options, vertexcache, node)
-
-    def updatenode(self, node, lat, lon, tile, options, vertexcache):
-        # update node height but defer full layout. Assumes lat,lon is valid
-        (i,j)=node
-        self.nodes[i][j] = (lon ,lat, (j==0 or j==len(self.nodes[i])-1) and self.nodes[i][j][2] or 0)	# preserve level, turn bezier hard
-        (x,z)=self.position(tile, lat, lon)
-        if self.definition.fittomesh:
-            y=vertexcache.height(tile,options,x,z)
         else:
-            y=self.points[i][j][1]	# assumes elevation already correct
-        self.points[i][j]=(x,y,z)
-        return node
+            return node
 
     def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
         if self.fixednodes: return False
@@ -2201,9 +2283,9 @@ class Network(String,Line):
                 newnode=nextnode=j+1
             else:
                 newnode=nextnode=0
-            level = self.nodes[i][j][2]
-            self.nodes[i][j] = self.nodes[i][j][:2] + (0,)
-            self.nodes[i].insert(newnode, (lon, lat, level))	# inherit level
+            level = self.nodes[i][j].param
+            self.nodes[i][j].param = 0
+            self.nodes[i].insert(newnode, NetworkNode([lon, lat, level]))	# inherit level
         else:
             if (i and clockwise) or (not i and not clockwise):
                 newnode=j+1
@@ -2211,9 +2293,8 @@ class Network(String,Line):
             else:
                 newnode=j
                 nextnode=(j-1)%n
-            self.nodes[i].insert(newnode,
-                                 (round2res((self.nodes[i][j][0]+self.nodes[i][nextnode][0])/2),
-                                  round2res((self.nodes[i][j][1]+self.nodes[i][nextnode][1])/2), 0))
+            self.nodes[i].insert(newnode, NetworkNode([round2res((self.nodes[i][j].lon + self.nodes[i][nextnode].lon)/2),
+                                                       round2res((self.nodes[i][j].lat + self.nodes[i][nextnode].lat)/2), 0]))
         return self.layout(tile, options, vertexcache, (i,newnode))
 
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):

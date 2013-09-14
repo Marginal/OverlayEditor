@@ -4,7 +4,7 @@ from os.path import dirname, exists, join
 if __debug__:
     from traceback import print_exc
 
-from clutterdef import ClutterDefFactory, ClutterDef, ObjectDef, PolygonDef, DrapedDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
+from clutterdef import ClutterDef, ObjectDef, PolygonDef, DrapedDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
 from MessageBox import myMessageBox
 
 
@@ -267,11 +267,15 @@ class PaletteChoicebook(wx.Choicebook):
         self.frame.toolbar.EnableTool(wx.ID_CUT,    False)
         self.frame.toolbar.EnableTool(wx.ID_COPY,   False)
         self.frame.toolbar.EnableTool(wx.ID_EDIT,   False)
+        self.frame.toolbar.EnableTool(wx.ID_ITALIC, False)
+        self.frame.toolbar.ToggleTool(wx.ID_ITALIC, False)
         if self.frame.menubar:
             self.frame.menubar.Enable(wx.ID_ADD,    found)
             self.frame.menubar.Enable(wx.ID_CUT,    False)
             self.frame.menubar.Enable(wx.ID_COPY,   False)
             self.frame.menubar.Enable(wx.ID_EDIT,   False)
+            self.frame.menubar.Enable(wx.ID_ITALIC, False)
+            self.frame.menubar.Check (wx.ID_ITALIC, False)
 
     def markbad(self, name=None):
         # Mark name as bad, or current selection if no name. Adds name if not already present.
@@ -491,7 +495,7 @@ class Palette(wx.SplitterWindow):
                     if filename in self.frame.canvas.defs:
                         definition=self.frame.canvas.defs[filename]
                     else:
-                        self.frame.canvas.defs[filename]=definition=ClutterDefFactory(filename, self.frame.canvas.vertexcache, self.frame.canvas.lookup, self.frame.canvas.defs)
+                        self.frame.canvas.defs[filename] = definition = ClutterDef.factory(filename, self.frame.canvas.vertexcache, self.frame.canvas.lookup, self.frame.canvas.defs)
                     # Special handling to mark orthos
                     if isinstance(definition, DrapedDef) and definition.ortho:
                         for l in self.cb.lists:

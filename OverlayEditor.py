@@ -63,12 +63,13 @@ if not 'startfile' in dir(os):
     from urllib import quote
     import webbrowser
 
-from clutter import round2res, minres, latlondisp, Polygon, Exclude	# for loading exclusions into palette
+from clutter import latlondisp, Polygon, Exclude	# for loading exclusions into palette
 from clutterdef import ClutterDef, ObjectDef, KnownDefs, ExcludeDef, NetworkDef
 from draw import MyGL
 from files import scanApt, readApt, readNav, readLib, readNet, sortfolded
 from importobjs import importpaths, importobjs
 from lock import LockDialog
+from nodes import minres, round2res
 from palette import Palette, PaletteEntry
 from DSFLib import readDSF, writeDSF
 from MessageBox import myCreateStdDialogButtonSizer, myMessageBox, AboutBox
@@ -685,6 +686,8 @@ class MainWindow(wx.Frame):
             wx.EVT_MENU(self, wx.ID_ADD, self.OnAdd)
             editmenu.Append(wx.ID_EDIT, u'Add Node/Hole\tCtrl-Enter')
             wx.EVT_MENU(self, wx.ID_EDIT, self.OnAddNode)
+            editmenu.AppendCheckItem(wx.ID_ITALIC, u'Node Control Handles')
+            wx.EVT_MENU(self, wx.ID_ITALIC, self.OnBezier)
             editmenu.Append(wx.ID_DELETE, u'Delete\tDelete')
             wx.EVT_MENU(self, wx.ID_DELETE, self.OnDelete)
             # ID_PREFERENCES moved to application menu
@@ -738,6 +741,8 @@ class MainWindow(wx.Frame):
         wx.EVT_TOOL(self.toolbar, wx.ID_ADD, self.OnAdd)
         self.toolbar.AddLabelTool(wx.ID_EDIT, 'AddNode', self.icon(['list-add-node'], 'addnode.png'), wx.NullBitmap, 0, 'Add new polygon/network node or hole')
         wx.EVT_TOOL(self.toolbar, wx.ID_EDIT, self.OnAddNode)
+        self.toolbar.AddLabelTool(wx.ID_ITALIC, 'Bezier', self.icon([], 'bezier.png'), wx.NullBitmap, wx.ITEM_CHECK, 'Add or delete curve control handles')
+        wx.EVT_TOOL(self.toolbar, wx.ID_ITALIC, self.OnBezier)
         self.toolbar.AddLabelTool(wx.ID_DELETE, 'Delete', self.icon(['edit-delete', 'delete', 'editdelete'], 'delete.png'), wx.NullBitmap, 0, 'Delete selected object(s)')
         wx.EVT_TOOL(self.toolbar, wx.ID_DELETE, self.OnDelete)
         if not self.menubar:
@@ -769,7 +774,7 @@ class MainWindow(wx.Frame):
         
         self.toolbar.Realize()
         # Disable all toolbar buttons until app has loaded to prevent callbacks before app has initialised data
-        self.toolids = [wx.ID_NEW,wx.ID_OPEN,wx.ID_SAVE,wx.ID_DOWN,wx.ID_FIND,wx.ID_ADD,wx.ID_EDIT,wx.ID_DELETE,wx.ID_UNDO,wx.ID_REFRESH,wx.ID_PREFERENCES,wx.ID_FORWARD,wx.ID_APPLY]
+        self.toolids = [wx.ID_NEW,wx.ID_OPEN,wx.ID_SAVE,wx.ID_DOWN,wx.ID_FIND,wx.ID_ADD,wx.ID_EDIT,wx.ID_ITALIC,wx.ID_DELETE,wx.ID_UNDO,wx.ID_REFRESH,wx.ID_PREFERENCES,wx.ID_FORWARD,wx.ID_APPLY]
         if not self.menubar: self.toolids += [wx.ID_CUT,wx.ID_COPY,wx.ID_PASTE]
         for id in self.toolids:
             self.toolbar.EnableTool(id, False)
@@ -781,6 +786,7 @@ class MainWindow(wx.Frame):
             self.menubar.Enable(wx.ID_PASTE,  False)
             self.menubar.Enable(wx.ID_ADD,    False)
             self.menubar.Enable(wx.ID_EDIT,   False)
+            self.menubar.Enable(wx.ID_ITALIC, False)
             self.menubar.Enable(wx.ID_DELETE, False)
             self.menubar.Enable(wx.ID_UNDO,   False)
             self.menubar.Enable(wx.ID_REFRESH,False)
@@ -916,10 +922,14 @@ class MainWindow(wx.Frame):
 
             self.toolbar.EnableTool(wx.ID_FIND,   False)
             self.toolbar.EnableTool(wx.ID_EDIT,   False)
+            self.toolbar.EnableTool(wx.ID_ITALIC, False)
+            self.toolbar.ToggleTool(wx.ID_ITALIC, False)
             self.toolbar.EnableTool(wx.ID_DELETE, True)
             if self.menubar:
                 self.menubar.Enable(wx.ID_FIND,   False)
                 self.menubar.Enable(wx.ID_EDIT,   False)
+                self.menubar.Enable(wx.ID_ITALIC, False)
+                self.menubar.Check( wx.ID_ITALIC, False)
                 self.menubar.Enable(wx.ID_DELETE, True)
                 if self.canvas.selectednode:	# don't support copy and paste of nodes
                     self.menubar.Enable(wx.ID_CUT,  False)
@@ -941,6 +951,13 @@ class MainWindow(wx.Frame):
                     (not self.canvas.selectednode and not placement.singlewinding)):
                     self.toolbar.EnableTool(wx.ID_EDIT, True)
                     if self.menubar: self.menubar.Enable(wx.ID_EDIT, True)
+                if self.canvas.selectednode:
+                    hasbez = placement.nodes[self.canvas.selectednode[0]][self.canvas.selectednode[1]].bezier
+                    self.toolbar.EnableTool(wx.ID_ITALIC, placement.canbezier)
+                    self.toolbar.ToggleTool(wx.ID_ITALIC, hasbez)
+                    if self.menubar:
+                        self.menubar.Enable(wx.ID_ITALIC, placement.canbezier)
+                        self.menubar.Check( wx.ID_ITALIC, hasbez)
                 if not self.canvas.selectednode and isinstance(list(self.canvas.selected)[0], Exclude):
                     self.toolbar.EnableTool(wx.ID_FIND, True)
                     if self.menubar: self.menubar.Enable(wx.ID_FIND, True)
@@ -950,12 +967,16 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_CUT,    False)
             self.toolbar.EnableTool(wx.ID_COPY,   False)
             self.toolbar.EnableTool(wx.ID_EDIT,   False)
+            self.toolbar.EnableTool(wx.ID_ITALIC, False)
+            self.toolbar.ToggleTool(wx.ID_ITALIC, False)
             self.toolbar.EnableTool(wx.ID_DELETE, False)
             if self.menubar:
                 self.menubar.Enable(wx.ID_FIND,   False)
                 self.menubar.Enable(wx.ID_CUT,    False)
                 self.menubar.Enable(wx.ID_COPY,   False)
                 self.menubar.Enable(wx.ID_EDIT,   False)
+                self.menubar.Enable(wx.ID_ITALIC, False)
+                self.menubar.Check (wx.ID_ITALIC, False)
                 self.menubar.Enable(wx.ID_DELETE, False)
         self.statusbar.SetStatusText(string, 2)
 
@@ -1185,6 +1206,7 @@ class MainWindow(wx.Frame):
             self.SetModified(False)
             self.toolbar.EnableTool(wx.ID_ADD,  False)
             self.toolbar.EnableTool(wx.ID_EDIT, False)
+            self.toolbar.EnableTool(wx.ID_ITALIC, False)
             self.toolbar.EnableTool(wx.ID_CUT,  False)
             self.toolbar.EnableTool(wx.ID_COPY, False)
             self.toolbar.EnableTool(wx.ID_PASTE,False)
@@ -1199,6 +1221,7 @@ class MainWindow(wx.Frame):
                 self.menubar.Enable(wx.ID_PASTE, False)
                 self.menubar.Enable(wx.ID_ADD,   False)
                 self.menubar.Enable(wx.ID_EDIT,  False)
+                self.menubar.Enable(wx.ID_ITALIC, False)
                 self.menubar.Enable(wx.ID_DOWN,  True)
                 self.menubar.Enable(wx.ID_FIND,  False)
                 self.menubar.Enable(wx.ID_REFRESH, True)
@@ -1236,6 +1259,7 @@ class MainWindow(wx.Frame):
                 self.SetModified(False)
                 self.toolbar.EnableTool(wx.ID_ADD,  False)
                 self.toolbar.EnableTool(wx.ID_EDIT, False)
+                self.toolbar.EnableTool(wx.ID_ITALIC, False)
                 self.toolbar.EnableTool(wx.ID_CUT,  False)
                 self.toolbar.EnableTool(wx.ID_COPY, False)
                 self.toolbar.EnableTool(wx.ID_PASTE,False)
@@ -1246,6 +1270,7 @@ class MainWindow(wx.Frame):
                 if self.menubar:
                     self.menubar.Enable(wx.ID_ADD,   False)
                     self.menubar.Enable(wx.ID_EDIT,  False)
+                    self.menubar.Enable(wx.ID_ITALIC, False)
                     self.menubar.Enable(wx.ID_UNDO,  False)
                     self.menubar.Enable(wx.ID_CUT,   False)
                     self.menubar.Enable(wx.ID_COPY,  False)
@@ -1315,6 +1340,13 @@ class MainWindow(wx.Frame):
     def OnAddNode(self, event):
         # Assumes that only one object selected
         if self.canvas.addnode(self.palette.get(), self.loc[0], self.loc[1], self.hdg, self.dist):
+            self.SetModified(True)
+            self.toolbar.EnableTool(wx.ID_UNDO, True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_UNDO, True)
+
+    def OnBezier(self, event):
+        if self.canvas.togglebezier():
             self.SetModified(True)
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:
@@ -1722,6 +1754,7 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_FIND,   False)
             self.toolbar.EnableTool(wx.ID_ADD,    False)
             self.toolbar.EnableTool(wx.ID_EDIT,   False)
+            self.toolbar.EnableTool(wx.ID_ITALIC, False)
             self.toolbar.EnableTool(wx.ID_CUT,    False)
             self.toolbar.EnableTool(wx.ID_COPY,   False)
             self.toolbar.EnableTool(wx.ID_PASTE,  False)
@@ -1737,6 +1770,7 @@ class MainWindow(wx.Frame):
                 self.menubar.Enable(wx.ID_PASTE,  False)
                 self.menubar.Enable(wx.ID_ADD,    False)
                 self.menubar.Enable(wx.ID_EDIT,   False)
+                self.menubar.Enable(wx.ID_ITALIC, False)
                 self.menubar.Enable(wx.ID_DELETE, False)
                 self.menubar.Enable(wx.ID_UNDO,   False)
                 self.menubar.Enable(wx.ID_REFRESH,False)
