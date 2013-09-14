@@ -33,6 +33,7 @@ from files import VertexCache, sortfolded, readApt, glInitTextureCompressionS3Tc
 from fixed8x13 import fixed8x13
 from clutter import Object, Polygon, Draped, DrapedImage, Facade, Network, Exclude, onedeg, latlondisp
 from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef, NetworkDef, PolygonDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
+from DSFLib import readDSF
 from imagery import Imagery
 from MessageBox import myMessageBox
 from nodes import round2res
@@ -1428,6 +1429,48 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.Refresh()
         self.frame.ShowSel()
         return (lat,lon)
+
+
+    def importregion(self, dsfdirs, netdefs):
+        if len(self.selected)!=1 or not isinstance(list(self.selected)[0], Exclude):
+            return False
+
+        exc = list(self.selected)[0]
+        bbox = BBox()
+        for node in exc.nodes[0]:
+            bbox.include(node.lon, node.lat)
+
+        dsfs = []
+        for path in dsfdirs:
+            if not glob(path): continue
+            pathlen=len(glob(path)[0])+1
+            thisdsfs=glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(self.tile[0]/10), int(self.tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (self.tile[0], self.tile[1])))
+            # asciibetical, except global is last
+            thisdsfs.sort(lambda x,y: ((x[pathlen:].lower().startswith('-global ') and 1) or
+                                       (y[pathlen:].lower().startswith('-global ') and -1) or
+                                       cmp(x,y)))
+            dsfs += thisdsfs
+
+        gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
+        for dsf in dsfs:
+            try:
+                (lat, lon, newplacements, nets, mesh) = readDSF(dsf, netdefs, {}, bbox, Exclude.TYPES[exc.name])
+                for placement in newplacements:
+                    placement.load(self.lookup, self.defs, self.vertexcache, True)
+                    placement.layout(self.tile, self.options, self.vertexcache)
+                if newplacements:
+                    placements = self.placements[self.tile]
+                    self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD, [(len(placements), placement) for placement in newplacements]))
+                    placements.extend(newplacements)
+                    self.selected = set(newplacements)
+                    self.selectednode = None
+                    self.Refresh()
+                    gc.enable()
+                    return True
+            except:
+                if __debug__: print_exc()
+        gc.enable()
+        return False
 
 
     def undo(self):

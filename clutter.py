@@ -7,6 +7,7 @@
 # load -> read definition
 # location -> returns (average) lat/lon
 # locationstr -> returns info suitable for display in status bar
+# inside -> whether inside a bounding box
 # layout -> fit to terrain, allocate into VBO(s)
 # clearlayout -> clear above
 # flush -> clear dynamic VBO allocation (but retain layout) - note doesn't clear instance VBO allocation since def may be shared
@@ -137,6 +138,9 @@ class Object(Clutter):
             return '%s  Hdg: %-5.1f  Elv: %-6.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg, self.y)
         else:
             return '%s  Hdg: %-5.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg)
+
+    def inside(self, bbox):
+        return bbox.inside(self.lon, self.lat)
 
     def pick_instance(self, glstate, queryobj=None):
         obj=self.definition
@@ -420,6 +424,13 @@ class Polygon(Clutter):
                 return '%s  %sNode %d' % (latlondisp(dms, self.nodes[i][j].lat, self.nodes[i][j].lon), hole, j)
         else:
             return u'%s  Param\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+
+    def inside(self, bbox):
+        for w in self.nodes:
+            for node in w:
+                if bbox.inside(node.lon, node.lat):
+                    return True
+        return False
 
     def pick_instance(self, glstate, queryobj=None):
         if not self.placements:
@@ -1089,6 +1100,8 @@ class Exclude(Polygon):
            'sim/exclude_obj': PolygonDef.EXCLUDE+'Objects',
            'sim/exclude_net': PolygonDef.EXCLUDE+ NetworkDef.TABNAME,
            'sim/exclude_str': PolygonDef.EXCLUDE+'Strings'}
+
+    TYPES = {}	# Filled in later
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if lon==None:
@@ -2324,6 +2337,18 @@ def latlondisp(dms, lat, lon):
     else:
         return "Lat: %.7f  Lon: %.7f" % (lat, lon)
 
+
+# Have to do this after classes are defined. Yuck.
+Exclude.TYPES={PolygonDef.EXCLUDE+'Beaches': Beach,
+               PolygonDef.EXCLUDE+'Draped polygons': Draped,
+               PolygonDef.EXCLUDE+'Facades': Facade,
+               PolygonDef.EXCLUDE+'Forests': Forest,
+               PolygonDef.EXCLUDE+'Lines': Line,
+               PolygonDef.EXCLUDE+'Objects': Object,
+               PolygonDef.EXCLUDE+ NetworkDef.TABNAME: Network,
+               PolygonDef.EXCLUDE+'Strings': String}
+if __debug__:	# check we have a type for every name
+    for name in Exclude.NAMES.values(): assert name in Exclude.TYPES
 
 
 # Tessellators for draped polygons

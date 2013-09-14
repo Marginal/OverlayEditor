@@ -255,7 +255,7 @@ class NetworkNode(BezierParamNode):
                     if prv.bezier:
                         # previous node already a bezier, so this is a quadratic curve. attach control point to next node
                         nxt = nodes[j+1]
-                        assert not nxt.param
+                        # assert not nxt.param
                         if j<len(nodes)-2 and nodes[j+2].param:
                             # next node will be a bezier anyway
                             nxt.param = 0

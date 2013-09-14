@@ -45,8 +45,9 @@ else:	# Mac
 # If terrains is defined,  assume loading terrain and discard clutter
 # If terrains not defined, assume looking for an overlay DSF
 #
-def readDSF(path, netdefs, terrains={}):
+def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
     wantoverlay = not terrains
+    wantmesh = not wantoverlay
     baddsf=(0, "Invalid DSF file", path)
 
     h=file(path, 'rb')
@@ -112,11 +113,11 @@ def readDSF(path, netdefs, terrains={}):
             else:
                 v=[float(x) for x in c[i+1].split('/')]
             placements.append(Exclude(Exclude.NAMES[c[i]], 0, [[Node([v[0],v[1]]), Node([v[2],v[1]]), Node([v[2],v[3]]), Node([v[0],v[3]])]]))
-    if wantoverlay and not overlay:
+    if wantoverlay and not overlay and not bbox:
         # Not an Overlay DSF - bail early
         h.close()
         raise IOError (0, "%s is not an overlay." % basename(path))
-    if not wantoverlay and overlay:
+    if overlay and (bbox or wantmesh):
         # only interested in mesh data - bail early
         h.close()
         return (south, west, placements, nets, mesh)
@@ -153,7 +154,7 @@ def readDSF(path, netdefs, terrains={}):
 
     # We only understand a limited set of v10-style networks
     if networks and networks!=[NetworkDef.DEFAULTFILE]:
-        if wantoverlay:
+        if wantoverlay and not bbox:
             raise IOError, (0, 'Unsupported network: %s' % ', '.join(networks))
         else:
             skipnetworks = True
@@ -403,14 +404,14 @@ def readDSF(path, netdefs, terrains={}):
 
         elif c==27:	# Patch Triangle Strip - cross-pool (KSEA demo terrain uses this one)
             (l,)=unpack('<B', h.read(1))
-            if flags&1:
+            if flags&1 and wantmesh:
                 curpatch.append(array([pool[p][d] for (p,d) in fromstring(h.read(l*4), '<H').reshape(-1,2)])[stripindices[l]])
             else:
                 h.seek(l*4, 1)
 
         elif c==28:	# Patch Triangle Strip Range (KSEA demo terrain uses this one too)
             (first,last)=unpack('<HH', h.read(4))
-            if flags&1:
+            if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][first:][stripindices[last-first]])
 
         elif c==1:	# Coordinate Pool Select
@@ -500,47 +501,47 @@ def readDSF(path, netdefs, terrains={}):
 
         elif c==23:	# Patch Triangle
             (l,)=unpack('<B', h.read(1))
-            if flags&1:
+            if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][fromstring(h.read(l*2), '<H')])
             else:
                 h.seek(l*2, 1)
 
         elif c==24:	# Patch Triangle - cross-pool
             (l,)=unpack('<B', h.read(1))
-            if flags&1:
+            if flags&1 and wantmesh:
                 curpatch.append(array([pool[p][d] for (p,d) in fromstring(h.read(l*4), '<H').reshape(-1,2)]))
             else:
                 h.seek(l*4, 1)
 
         elif c==25:	# Patch Triangle Range
             (first,last)=unpack('<HH', h.read(4))
-            if flags&1:
+            if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][first:last])
             
         elif c==26:	# Patch Triangle Strip (used by g2xpl and MeshTool)
             (l,)=unpack('<B', h.read(1))
-            if flags&1:
+            if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][fromstring(h.read(l*2), '<H')[stripindices[l]]])
             else:
                 h.seek(l*2, 1)
 
         elif c==29:	# Patch Triangle Fan
             (l,)=unpack('<B', h.read(1))
-            if flags&1:
+            if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][fromstring(h.read(l*2), '<H')[fanindices[l]]])
             else:
                 h.seek(l*2, 1)
 
         elif c==30:	# Patch Triangle Fan - cross-pool
             (l,)=unpack('<B', h.read(1))
-            if flags&1:
+            if flags&1 and wantmesh:
                 curpatch.append(array([pool[p][d] for (p,d) in fromstring(h.read(l*4), '<H').reshape(-1,2)])[fanindices[l]])
             else:
                 h.seek(l*4, 1)
 
         elif c==31:	# Patch Triangle Fan Range
             (first,last)=unpack('<HH', h.read(4))
-            if flags&1:
+            if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][first:][fanindices[last-first]])
 
         elif c==32:	# Comment
@@ -592,6 +593,9 @@ def readDSF(path, netdefs, terrains={}):
         nets = (newnets, indices)
     else:
         nets = None
+
+    if bbox: placements = [p for p in placements if p.inside(bbox)]	# filter to bounding box
+    if bytype: placements = [p for p in placements if p.__class__ is bytype]	# filter by type, excluding derived
 
     return (south, west, placements, nets, mesh)
 

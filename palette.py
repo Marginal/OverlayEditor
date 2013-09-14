@@ -264,6 +264,7 @@ class PaletteChoicebook(wx.Choicebook):
     def _postselection(self, found):
         # Do stuff after a selection
         self.frame.toolbar.EnableTool(wx.ID_ADD,    found)
+        self.frame.toolbar.EnableTool(wx.ID_FIND,   False)
         self.frame.toolbar.EnableTool(wx.ID_CUT,    False)
         self.frame.toolbar.EnableTool(wx.ID_COPY,   False)
         self.frame.toolbar.EnableTool(wx.ID_EDIT,   False)
@@ -271,6 +272,7 @@ class PaletteChoicebook(wx.Choicebook):
         self.frame.toolbar.ToggleTool(wx.ID_ITALIC, False)
         if self.frame.menubar:
             self.frame.menubar.Enable(wx.ID_ADD,    found)
+            self.frame.menubar.Enable(wx.ID_FIND,   False)
             self.frame.menubar.Enable(wx.ID_CUT,    False)
             self.frame.menubar.Enable(wx.ID_COPY,   False)
             self.frame.menubar.Enable(wx.ID_EDIT,   False)

@@ -64,7 +64,7 @@ if not 'startfile' in dir(os):
     import webbrowser
 
 from clutter import latlondisp, Polygon, Exclude	# for loading exclusions into palette
-from clutterdef import ClutterDef, ObjectDef, KnownDefs, ExcludeDef, NetworkDef
+from clutterdef import ClutterDef, ObjectDef, PolygonDef, KnownDefs, ExcludeDef, NetworkDef
 from draw import MyGL
 from files import scanApt, readApt, readNav, readLib, readNet, sortfolded
 from importobjs import importpaths, importobjs
@@ -958,7 +958,7 @@ class MainWindow(wx.Frame):
                     if self.menubar:
                         self.menubar.Enable(wx.ID_ITALIC, placement.canbezier)
                         self.menubar.Check( wx.ID_ITALIC, hasbez)
-                if not self.canvas.selectednode and isinstance(list(self.canvas.selected)[0], Exclude):
+                if isinstance(list(self.canvas.selected)[0], Exclude):
                     self.toolbar.EnableTool(wx.ID_FIND, True)
                     if self.menubar: self.menubar.Enable(wx.ID_FIND, True)
         else:
@@ -1530,7 +1530,7 @@ class MainWindow(wx.Frame):
                     if not dsfs:
                         if glob(join(pkgnavdata, '[+-][0-9]0[+-][01][0-9]0', '[+-][0-9][0-9][+-][01][0-9][0-9].[eE][nN][vV]')): raise IOError, (0, 'This package uses v7 "ENV" files')
                     for f in dsfs:
-                        (lat, lon, p, nets, foo)=readDSF(f, netdefs)
+                        (lat, lon, p, nets, foo) = readDSF(f, netdefs, {})
                         tile=(lat,lon)
                         placements[tile]=p
                 except IOError, e:	# Bad DSF - restore to unloaded state
@@ -1705,7 +1705,23 @@ class MainWindow(wx.Frame):
             self.palette.set(name)	# show last added
 
     def OnImportRegion(self, event):
-        event.skip()
+        wx.BeginBusyCursor()
+        if glob(join(prefs.xplane, gmain9aptdat)):
+            dsfdirs=[join(prefs.xplane, gglobal),
+                     join(prefs.xplane, gdefault)]
+        else:
+            dsfdirs=[join(prefs.xplane, gdefault)]
+        if self.canvas.importregion(dsfdirs, self.defnetdefs):
+            wx.EndBusyCursor()
+            self.SetModified(True)
+            self.toolbar.EnableTool(wx.ID_UNDO, True)
+            if self.menubar:
+                self.menubar.Enable(wx.ID_UNDO, True)
+            self.ShowSel()
+        elif len(self.canvas.selected)==1 and isinstance(list(self.canvas.selected)[0], Exclude):
+            wx.EndBusyCursor()
+            myMessageBox('There are no %s in this region of the default scenery'.replace('&','or') % list(self.canvas.selected)[0].name[len(PolygonDef.EXCLUDE):], "No objects found.", wx.ICON_INFORMATION|wx.OK, self)
+
 
     def OnGoto(self, event):
         self.goto.CenterOnParent()	# Otherwise is centred on screen
