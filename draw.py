@@ -678,11 +678,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                 newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(self.placements[self.tile].index(poly), poly.clone())])
                 if not (self.undostack and self.undostack[-1].equals(newundo)):
                     self.undostack.append(newundo)
-                    self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
-                    self.frame.toolbar.EnableTool(wx.ID_UNDO, True)
-                    if self.frame.menubar:
-                        self.frame.menubar.Enable(wx.ID_SAVE, True)
-                        self.frame.menubar.Enable(wx.ID_UNDO, True)
+                self.frame.toolbar.EnableTool(wx.ID_SAVE, True)
+                self.frame.toolbar.EnableTool(wx.ID_UNDO, True)
+                if self.frame.menubar:
+                    self.frame.menubar.Enable(wx.ID_SAVE, True)
+                    self.frame.menubar.Enable(wx.ID_UNDO, True)
             if self.selectedhandle:
                 poly.updatehandle(self.selectednode, self.selectedhandle, event.CmdDown(), lat, lon, self.tile, self.options, self.vertexcache)
             else:

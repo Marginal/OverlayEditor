@@ -187,6 +187,7 @@ class Object(Clutter):
         self.flush(vertexcache)
         for p in self.placements:
             p.clearlayout(vertexcache)
+        # number of children is fixed, so no need to delete and re-create them
 
     def islaidout(self):
         return self.matrix is not None
@@ -280,6 +281,7 @@ class AutoGenPoint(Object):
             return False
 
         # load children
+        self.placements=[]	# might not be empty if e.g. we're re-loading after Undo
         for child in self.definition.children:
             (childname, definition, xdelta, zdelta, hdelta)=child
             assert definition.filename in defs	# Child Def should have been created when AutoGenPointDef was loaded
