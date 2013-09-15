@@ -147,29 +147,35 @@ class Object(Clutter):
         assert self.islaidout() and (obj.vdata is None or obj.base is not None), self
         if obj.vdata is None and not self.placements:
             return False
-
-        if queryobj is not None: glBeginQuery(glstate.occlusion_query, queryobj)
-        if obj.vdata is not None:	# .agp base has no vertex data
-            glLoadMatrixf(self.matrix)
-            glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
-            glBegin(GL_POINTS)
-            glVertex3fv(Object.origin)	# draw point at object origin so selectable even if not visible
-            glEnd()
-        for p in self.placements:
-            p.pick_instance(glstate)
-        if queryobj is not None: glEndQuery(glstate.occlusion_query)
+        if queryobj is not None:
+            glBeginQuery(glstate.occlusion_query, queryobj)
+            if obj.vdata is not None:	# .agp base has no vertex data
+                glLoadMatrixf(self.matrix)
+                glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
+                glBegin(GL_POINTS)
+                glVertex3fv(Object.origin)	# draw point at object origin so selectable even if no fragments generated
+                glEnd()
+            for p in self.placements:
+                p.pick_instance(glstate)	# use current queryobj. Also means that children don't get overhead of a point drawn
+            glEndQuery(glstate.occlusion_query)
+        else:
+            if obj.vdata is not None:	# .agp base has no vertex data:
+                glLoadMatrixf(self.matrix)
+                glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
+            for p in self.placements:
+                p.pick_instance(glstate)
         return True
 
     def pick_dynamic(self, glstate, queryobj=None):
         assert self.islaidout() and (self.dynamic_data is None or self.base is not None), self
         if self.dynamic_data is None and not self.placements:
             return False
-
         if queryobj is not None: glBeginQuery(glstate.occlusion_query, queryobj)
         if self.dynamic_data is not None:
             glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
-        for p in self.placements:
-            p.pick_dynamic(glstate)
+        # assume for speed that children are all Objects and so don't have dynamic data
+        if __debug__:
+            for p in self.placements: assert p.__class__ is Object, p
         if queryobj is not None: glEndQuery(glstate.occlusion_query)
         return True
 
@@ -439,22 +445,20 @@ class Polygon(Clutter):
             return False
         if queryobj is not None: glBeginQuery(glstate.occlusion_query, queryobj)
         for p in self.placements:
-            p.pick_instance(glstate)
+            p.pick_instance(glstate)	# use current queryobj. Also means that children don't get overhead of a point drawn.
         if queryobj is not None: glEndQuery(glstate.occlusion_query)
         return True
 
     def pick_dynamic(self, glstate, queryobj=None):
         assert self.islaidout() and self.base is not None, self
         if queryobj is not None: glBeginQuery(glstate.occlusion_query, queryobj)
-        glBegin(GL_POINTS)
-        glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
-        glEnd()
         base=self.base
         for winding in self.points:
             glDrawArrays(GL_LINE_STRIP, base, len(winding))
             base+=len(winding)
-        for p in self.placements:
-            p.pick_dynamic(glstate)
+        # assume for speed that children are all Objects and so don't have dynamic data
+        if __debug__:
+            for p in self.placements: assert p.__class__ is Object, p
         if queryobj is not None: glEndQuery(glstate.occlusion_query)
         return True
 
@@ -833,23 +837,18 @@ class Polygon(Clutter):
                     queryidx+=1
         else:
             for i in range(len(self.points)):
-                for j in range(self.closed and len(self.points[i])-1 or len(self.points[i])):
+                for j in range(len(self.nodes[i])):
                     node = self.nodes[i][j]
                     if withhandles:
-                        glLoadName((i<<24) + (1<<16) + j)
-                        glBegin(GL_POINTS)
                         if node.bezier:
+                            glLoadName((i<<24) + (1<<16) + j)
+                            glBegin(GL_POINTS)
                             glVertex3f(*node.bezloc)
-                        else:
-                            glVertex3f(*node.loc)	# Have to provide something
-                        glEnd()
-                        glLoadName((i<<24) + (2<<16) + j)
-                        glBegin(GL_POINTS)
-                        if node.bezier:
+                            glEnd()
+                            glLoadName((i<<24) + (2<<16) + j)
+                            glBegin(GL_POINTS)
                             glVertex3f(*node.bz2loc)
-                        else:
-                            glVertex3f(*node.loc)
-                        glEnd()
+                            glEnd()
                     glLoadName((i<<24) + j + queryidx)
                     glBegin(GL_POINTS)
                     glVertex3f(*node.loc)
@@ -963,12 +962,15 @@ class Draped(Polygon):
         assert self.islaidout() and self.base is not None, self
         if self.nonsimple:
             return Polygon.pick_dynamic(self, glstate, queryobj)
-        if queryobj is not None: glBeginQuery(glstate.occlusion_query, queryobj)
-        glBegin(GL_POINTS)
-        glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
-        glEnd()
-        glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
-        if queryobj is not None: glEndQuery(glstate.occlusion_query)
+        if queryobj is not None:
+            glBeginQuery(glstate.occlusion_query, queryobj)
+            glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+            glBegin(GL_POINTS)
+            glVertex3f(*self.points[0][0])	# draw a point so selectable even if no fragments generated
+            glEnd()
+            glEndQuery(glstate.occlusion_query)
+        else:
+            glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
         return True
         
     def bucket_dynamic(self, base, buckets):
@@ -1276,12 +1278,18 @@ class Facade(Polygon):
         assert self.islaidout() and self.base is not None, self
         if self.nonsimple:
             return Polygon.pick_dynamic(self, glstate, queryobj)
-        if queryobj is not None: glBeginQuery(glstate.occlusion_query, queryobj)
-        glBegin(GL_POINTS)
-        glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
-        glEnd()
-        glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
-        if queryobj is not None: glEndQuery(glstate.occlusion_query)
+        if queryobj is not None:
+            glBeginQuery(glstate.occlusion_query, queryobj)
+            glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+            glBegin(GL_POINTS)
+            glVertex3f(*self.points[0][0])	# draw a point so selectable even if no fragments generated
+            glEnd()
+            glEndQuery(glstate.occlusion_query)
+        else:
+            glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+        # assume for speed that children are all Objects and so don't have dynamic data
+        if __debug__:
+            for p in self.placements: assert p.__class__ is Object, p
         return True
         
     def draw_nodes(self, glstate, selectednode):
@@ -2060,14 +2068,16 @@ class Line(Polygon):
 
     def pick_dynamic(self, glstate, queryobj=None):
         assert self.islaidout() and self.base is not None, self
-        if queryobj is not None: glBeginQuery(glstate.occlusion_query, queryobj)
-        glBegin(GL_POINTS)
-        glVertex3f(*self.points[0][0])	# draw point at first node so selectable even if not visible
-        glEnd()
-        if self.outlinelen:
-            glDrawArrays(GL_LINE_STRIP, self.base, self.outlinelen)	# can't have holes
-        glDrawArrays(GL_TRIANGLES, self.base + self.outlinelen, len(self.dynamic_data)/6 - self.outlinelen)
-        if queryobj is not None: glEndQuery(glstate.occlusion_query)
+        if queryobj is not None:
+            glBeginQuery(glstate.occlusion_query, queryobj)
+            glDrawArrays(GL_TRIANGLES, self.base + self.outlinelen, len(self.dynamic_data)/6 - self.outlinelen)
+            glBegin(GL_POINTS)
+            glVertex3f(*self.points[0][0])	# draw a point so selectable even if no fragments generated
+            glEnd()
+            glEndQuery(glstate.occlusion_query)
+        else:
+            glDrawArrays(GL_TRIANGLES, self.base + self.outlinelen, len(self.dynamic_data)/6 - self.outlinelen)
+        # Skip overhead of drawing outline, on the assumption that the Line/Network segments cover the outline
         return True
 
     def bucket_dynamic(self, base, buckets):

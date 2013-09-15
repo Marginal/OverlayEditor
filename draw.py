@@ -1032,7 +1032,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         # No need to look further if user has clicked on a node or handle within selected polygon
                         self.clickmode = ClickModes.DragNode
                         self.selectednode = ((int(name)>>24, int(name)&0xffff))
-                        self.selectedhandle = self.nodes[int(name)>>24][int(name)&0xffff].bezier and ((int(name)&0xff0000) >> 16) or None
+                        self.selectedhandle = checkpolynode.nodes[int(name)>>24][int(name)&0xffff].bezier and ((int(name)&0xff0000) >> 16) or None
                         glLoadMatrixd(self.proj)	# Restore state for unproject
                         self.Refresh()
                         self.frame.ShowSel()
