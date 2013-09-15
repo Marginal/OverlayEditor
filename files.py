@@ -767,7 +767,6 @@ class VertexCache:
             self.dynamic_pending.pop(placement,False)
             placement.base=None
         else:
-            assert placement.islaidout(), placement
             assert placement.dynamic_data is not None, placement
             assert placement.dynamic_data.size, placement	# shouldn't have tried to allocate if no data
             self.dynamic_pending[placement]=True
