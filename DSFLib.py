@@ -595,7 +595,10 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
         nets = None
 
     if bbox: placements = [p for p in placements if p.inside(bbox)]	# filter to bounding box
-    if bytype: placements = [p for p in placements if p.__class__ is bytype]	# filter by type, excluding derived
+    if bytype is Object:
+        placements = [p for p in placements if isinstance(bytype, Object)]	# filter by type, including AutoGenPoints
+    elif bytype:
+        placements = [p for p in placements if p.__class__ is bytype]	# filter by type, excluding derived
 
     return (south, west, placements, nets, mesh)
 
