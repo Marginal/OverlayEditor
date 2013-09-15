@@ -1894,6 +1894,8 @@ class Forest(Polygon):
 
 class Line(Polygon):
 
+    MITRELIMIT = 0.987	# cos(angle) at which X-Plane appears to give up making a nice mitre between segments
+
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if lon==None:
             Polygon.__init__(self, name, param, nodes)
@@ -1995,7 +1997,7 @@ class Line(Polygon):
                 (prvx,prvy,prvz) = points[(node-1)%n]
                 prvh = atan2(x-prvx, prvz-z) % twopi
                 sx1 = 1 / cos((h - prvh)/2)
-                if abs(sx1 * self.definition.width) < max(size,hypot(x-prvx, prvz-z))*2:
+                if cos(h - prvh) > -Line.MITRELIMIT:
                     h1 = (h + prvh) / 2
                 else:
                     sx1 = 1	# too acute
@@ -2004,7 +2006,7 @@ class Line(Polygon):
                 (nxtx,nxty,nxtz) = points[(node+2)%n]
                 nxth = atan2(nxtx-tox, toz-nxtz) % twopi
                 sx2 = 1 / cos((h - nxth)/2)
-                if abs(sx2 * self.definition.width) < max(size,hypot(nxtx-tox, toz-nxtz))*2:
+                if cos(nxth - h) > -Line.MITRELIMIT:
                     h2 = (h + nxth) / 2
                 else:
                     sx2 = 1	# too acute
