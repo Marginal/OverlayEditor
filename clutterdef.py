@@ -1413,6 +1413,7 @@ class LineFallback(LineDef):
         self.width=1
         self.length=8.0
         self.segments=[LineDef.Segment(vertexcache.texcache.get(fallbacktexture), 8.0, -0.5, 0, 0, 0.5, 0, 1)]
+        self.color = None
         self.even = 0.125
 
 
@@ -1536,6 +1537,7 @@ class StringFallback(StringDef):
             fb = defs[StringFallback.OBJ]
         else:
             fb = defs[StringFallback.OBJ] = ObjectFallback(StringFallback.OBJ, vertexcache, lookup, defs)
+        self.color = COL_NONSIMPLE
         self.children = [StringDef.StringObj(StringFallback.OBJ, fb, 0, 0)]
         self.alternate = True
 
