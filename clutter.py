@@ -2100,7 +2100,7 @@ class Line(Polygon):
 class String(Polygon):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
-        if param is None: param=5	# arbitrary
+        if param is None: param=0	# midpoint spacing
         if lon==None:
             Polygon.__init__(self, name, param, nodes)
             if len(self.nodes[0][0].rest)==2:	# Has bezier coords - promote
@@ -2146,8 +2146,10 @@ class String(Polygon):
     def locationstr(self, dms, node=None):
         if node:
             return Polygon.locationstr(self, dms, node)
+        elif self.param:
+            return u'%s  Spacing\u2195 %3dm  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
         else:
-            return u'%s  Spacing\u2195 %-3dm  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+            return u'%s  Spacing\u2195 Midpoint  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
 
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
         if self.islaidout() and not recalc:
@@ -2183,29 +2185,63 @@ class String(Polygon):
             vertexcache.allocate_dynamic(self, True)
             return selectednode
 
-        repeat = self.param or 5	# arbitrary
+        if not self.param:
+            # placements at half the straight-line distance between nodes along edge
+            nodes = self.nodes[0]
+            objno = 0	# object no.
+            for i in range(1,len(nodes)-1):	# Strings are always open. For some reason first edge doesn't have a placement.
+                sz = hypot(nodes[i+1].loc[0] - nodes[i].loc[0], nodes[i+1].loc[2] - nodes[i].loc[2]) / 2	# distance to next placement
+                cumulative = 0	# cumulative length up to this point
+                for j in range(nodes[i].pointidx,nodes[i+1].pointidx):
+                    (x,y,z) = points[j]
+                    (tox,toy,toz) = points[j+1]
+                    size = hypot(tox-x, z-toz)
+                    if sz < size:
+                        break
+                    else:
+                        sz -= size
+                h = atan2(tox-x, z-toz) % twopi
+                coshdg=cos(h)
+                sinhdg=sin(h)
+                hdg=degrees(h)
+                p = self.definition.children[objno]
+                child = p.definition
+                placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta)
+                placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
+                childx = x + p.xdelta*coshdg + sz*sinhdg
+                childz = z + p.xdelta*sinhdg - sz*coshdg
+                placement.layout(tile, options, vertexcache, childx, None, childz, hdg+p.hdelta)
+                self.placements.append(placement)
+                objno = (objno+1) % len(self.definition.children)
+            self.nonsimple = not self.placements
+            self.dynamic_data=concatenate([array(p + (self.nonsimple and COL_NONSIMPLE or self.definition.color),float32) for w in self.points for p in w])
+            vertexcache.allocate_dynamic(self, True)
+            return selectednode			# exit!
+
+        # placements are repeated very param metres
+        repeat = self.param
         size=0		# length of this edge
-        cumulative=0	# cumulative length up to this node
+        cumulative = 0	# cumulative length up to this point
         objno=0	# object no.
-        node = -1
+        j = -1
         iteration = -0.261	# roughly what X-Plane appears to use!
         while True:
             iteration += 1
-            sz = iteration*repeat - cumulative
+            sz = iteration*repeat - cumulative	# distance along this edge to next placement
             while True:
                 if sz<size:
                     break	# will fit on this edge
                 else:
-                    node += 1
-                    if node >= n:
+                    j += 1
+                    if j >= n:
                         self.nonsimple = not self.placements
                         self.dynamic_data=concatenate([array(p + (self.nonsimple and COL_NONSIMPLE or self.definition.color),float32) for w in self.points for p in w])
                         vertexcache.allocate_dynamic(self, True)
                         return selectednode			# exit!
                     cumulative += size
                     sz = iteration*repeat - cumulative
-                (x,y,z)=points[node]
-                (tox,toy,toz)=points[node+1]
+                (x,y,z)=points[j]
+                (tox,toy,toz)=points[j+1]
                 size=hypot(tox-x, z-toz)
                 if size<=0: size=0	# shouldn't happen
                 h=atan2(tox-x, z-toz) % twopi
@@ -2222,10 +2258,6 @@ class String(Polygon):
             placement.layout(tile, options, vertexcache, childx, None, childz, hdg+p.hdelta)
             self.placements.append(placement)
             objno = (objno+1) % len(self.definition.children)
-
-    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        dparam=max(dparam, 1-self.param)	# zero spacing is undefined
-        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
 
 
 class Network(String,Line):
