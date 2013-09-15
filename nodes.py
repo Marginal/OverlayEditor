@@ -66,7 +66,7 @@ class BezierNode(Node):
 
     def __init__(self, coords):
         if isinstance(coords, Node):	# being promoted
-            coords = [coords.lon, coords.lat] + coords.rest
+            coords = [coords.lon, coords.lat] + coords.rest[-2:]	# drop param if any
             assert len(coords) in [2,4], coords
         Node.__init__(self, coords[:2])
         if len(coords)==2:
