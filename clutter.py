@@ -168,7 +168,7 @@ class Object(Clutter):
 
     def pick_dynamic(self, glstate, queryobj=None):
         assert self.islaidout() and (self.dynamic_data is None or self.base is not None), self
-        if self.dynamic_data is None and not self.placements:
+        if self.dynamic_data is None:
             return False
         if queryobj is not None: glBeginQuery(glstate.occlusion_query, queryobj)
         if self.dynamic_data is not None:

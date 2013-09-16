@@ -9,7 +9,7 @@ glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
 glDeleteQueries = alternate(glDeleteQueries, glDeleteQueriesARB)
 glEndQuery = alternate(glEndQuery, glEndQueryARB)
 glGenQueries = alternate(glGenQueries, glGenQueriesARB)
-glGetQueryObjectuiv = alternate(glGetQueryObjectiv, glGetQueryObjectuivARB)
+glGetQueryObjectuiv = alternate(glGetQueryObjectuiv, glGetQueryObjectuivARB)
 GL_ANY_SAMPLES_PASSED=0x8C2F	# not in 3.0.1
 from OpenGL.GL.ARB.instanced_arrays import glInitInstancedArraysARB, glVertexAttribDivisorARB
 from OpenGL.GL.EXT.multi_draw_arrays import glMultiDrawArraysEXT
@@ -1008,18 +1008,41 @@ class MyGL(wx.glcanvas.GLCanvas):
             if checkpolynode:
                 queryidx=len([item for sublist in checkpolynode.nodes for item in sublist])
                 if checkpolynode.canbezier and checkpolynode.isbezier: queryidx *= 3
+                needed = max(queryidx, len(placements) * 2)	# Twice as many for two-phase drawing
             else:
-                queryidx=0
-            needed = queryidx + len(placements) * 2	# Twice as many for two-phase drawing
+                needed = len(placements) * 2	# Twice as many for two-phase drawing
             self.glstate.alloc_queries(needed)
             glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
 
         # Select poly node?
+        self.selectednode = self.selectedhandle = None
         if checkpolynode:
             #print "selnodes",
             if self.glstate.occlusion_query:
                 checkpolynode.pick_nodes(self.glstate, checkpolynode.canbezier and checkpolynode.isbezier)
-                # We'll check on the status later
+                queryidx = 0
+                for i in range(len(checkpolynode.nodes)):
+                    for j in range(len(checkpolynode.nodes[i])):
+                        if checkpolynode.canbezier and checkpolynode.isbezier:
+                            if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
+                                self.selectednode = (i,j)
+                                if checkpolynode.nodes[i][j].bezier:
+                                    self.selectedhandle = 1
+                                    break	# prefer handle over its node
+                            queryidx+=1
+                            if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
+                                self.selectednode = (i,j)
+                                if checkpolynode.nodes[i][j].bezier:
+                                    self.selectedhandle = 2
+                                    break	# prefer handle over its node
+                            queryidx+=1
+                        if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
+                            self.selectednode = (i,j)
+                            break	# take first hit
+                        queryidx+=1
+                    else:
+                        continue
+                    break
             else:
                 glSelectBuffer(len([item for sublist in checkpolynode.nodes for item in sublist])*4)	# 4 ints per hit record containing one name
                 glRenderMode(GL_SELECT)
@@ -1033,13 +1056,18 @@ class MyGL(wx.glcanvas.GLCanvas):
                         self.clickmode = ClickModes.DragNode
                         self.selectednode = ((int(name)>>24, int(name)&0xffff))
                         self.selectedhandle = checkpolynode.nodes[int(name)>>24][int(name)&0xffff].bezier and ((int(name)&0xff0000) >> 16) or None
-                        glLoadMatrixd(self.proj)	# Restore state for unproject
-                        self.Refresh()
-                        self.frame.ShowSel()
-                        return
+                        break
                 except:	# overflow
                     if __debug__: print_exc()
-                self.selectednode = self.selectedhandle = None
+            if self.selectednode:
+                # No need to look further if user has clicked on a node or handle within selected polygon
+                self.clickmode=ClickModes.DragNode
+                # Restore state for unproject
+                glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
+                glLoadMatrixd(self.proj)
+                self.Refresh()
+                self.frame.ShowSel()
+                return		# Just abandon any remaining queries
 
         # Select placements
         glMatrixMode(GL_MODELVIEW)	# Temporarily change matrix mode for drawing rotated objects
@@ -1047,6 +1075,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.glstate.occlusion_query:
             gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
             lookup = []
+            queryidx = 0
             self.glstate.set_instance(self.vertexcache)
             for i in range(len(placements)):
                 if not placements[i].definition.type & self.locked and placements[i].pick_instance(self.glstate, self.glstate.queries[queryidx]):
@@ -1060,45 +1089,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                     queryidx+=1
             gc.enable()
 
-            # First check poly node status
-            self.selectednode = self.selectedhandle = None
-            queryidx=0
-            if checkpolynode:
-                for i in range(len(checkpolynode.nodes)):
-                    for j in range(len(checkpolynode.nodes[i])):
-                        if checkpolynode.canbezier and checkpolynode.isbezier:
-                            if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
-                                self.selectednode = (i,j)
-                                if checkpolynode.nodes[i][j].bezier:
-                                    self.selectedhandle = 1
-                            queryidx+=1
-                            if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
-                                self.selectednode = (i,j)
-                                if checkpolynode.nodes[i][j].bezier:
-                                    self.selectedhandle = 2
-                            queryidx+=1
-                        if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
-                            self.selectednode = (i,j)
-                        queryidx+=1
-
-                        if self.selectednode:
-                            # No need to look further if user has clicked on a node or handle within selected polygon
-                            self.clickmode=ClickModes.DragNode
-
-                            # Restore state for unproject
-                            glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
-                            glMatrixMode(GL_PROJECTION)
-                            glLoadMatrixd(self.proj)
-
-                            self.Refresh()
-                            self.frame.ShowSel()
-                            return		# Just abandon remaining queries
-
             # Now check for selections
             self.selectednode=None
             selections=set()
             for k in range(len(lookup)):
-                if glGetQueryObjectuiv(self.glstate.queries[queryidx+k], GL_QUERY_RESULT):
+                if glGetQueryObjectuiv(self.glstate.queries[k], GL_QUERY_RESULT):
                     selections.add(placements[lookup[k]])
             glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
 
@@ -1179,10 +1174,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                 else:
                     self.selected=set(list(selections)[:1])
         self.selections=selections
-        #if __debug__:
-        #    for selection in self.selected:
-        #        print basename(selection.definition.filename), selection.definition.layer
-        if __debug__: print "%6.3f time in select" %(time.clock()-clock)
 
         self.Refresh()
         self.frame.ShowSel()
