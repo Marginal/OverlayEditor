@@ -1278,9 +1278,10 @@ class ForestDef(PolygonDef):
             elif id=='SCALE_Y':
                 scaley=float(c[1])
             elif id=='TREE':
-                if len(c)>10 and float(c[6])>best and float(c[3])/scalex>.02 and float(c[4])/scaley>.02:
+                freq = float(c[6].replace(',','.'))	# workaround for error in e.g. v10 sparse_vhot_dry.for
+                if len(c)>10 and freq>best and float(c[3])/scalex>.02 and float(c[4])/scaley>.02:
                     # choose most popular, unless it's tiny (placeholder)
-                    best=float(c[6])
+                    best = freq
                     self.tree=(float(c[1])/scalex, float(c[2])/scaley,
                                (float(c[1])+float(c[3]))/scalex,
                                (float(c[2])+float(c[4]))/scaley)
