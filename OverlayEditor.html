@@ -20,7 +20,7 @@ h2 { font-family: Arial,Helvetica,sans-serif; }
 h3 { font-family: Arial,Helvetica,sans-serif; }
 h4 { font-family: Arial,Helvetica,sans-serif; }
 h5 { font-family: Arial,Helvetica,sans-serif; }
-kbd {font-family: sans-serif; color: black; background-color: white; border: 1px solid black; -webkit-border-radius:5px; -moz-border-radius:5px; border-radius: 5px; padding: 1px 1px 0px; }
+kbd {font-family: sans-serif; color: black; background-color: white; border: 1px solid black; -webkit-border-radius: 3px; -moz-border-radius: 3px; border-radius: 3px; padding: 0px 1px; }
   </style>
 </head>
 <body>
@@ -37,11 +37,33 @@ Scenery</a> &rarr; <a href="http://marginal.org.uk/x-planescenery/tools.html">To
 <h2><img style="border: 0px solid; vertical-align: middle;" src="Resources/OverlayEditor.png"> DSF overlay scenery editor</h2>
 
 <h3>Overview</h3>
-<p>This application edits X-Plane<small><sup>&reg;</sup></small> DSF overlay scenery packages for X-Plane 8.30 or later. It runs on Windows 2000 or later, MacOS 10.5 or later and Linux.</p>
-<p>This document is a reference - it is assumed that you're familiar with the basics of X-Plane's scenery system. Please read the section <a href="#other">below</a> if you intend to use OverlayEditor in conjunction with other scenery tools.<p>
+<p>This application edits X-Plane<small><sup>&reg;</sup></small> DSF &ldquo;overlay&rdquo; scenery packages for X-Plane 8.30 or later. It runs on Windows 2000 or later, MacOS 10.5 or later and Linux.</p>
+<p>The application allows you to place 3D objects, building facades, draped textures, roads and other kinds of scenery objects on top of X-Plane's terrain. The application does not edit X-Plane airport layouts (<i>i.e.</i> runways, taxiways and navaids) and does not edit X-Plane's terrain mesh, but it does read and display both of these in simplified form so you can see where you're placing your objects.</p>
+<p>Other applications allow you to edit or replace airport layouts, terrain mesh, and/or place objects. Please read the section <a href="#other">below</a> if you intend to use OverlayEditor in conjunction with other scenery tools.</p>
 
-<h3>Setting up</h3>
-<p>The first time that you run the application you are asked to identify X-Plane's top-level folder (<i>i.e.</i> the folder which contains the X-Plane, Plane-Maker etc applications).<p>
+<h3><a name="quickstart">Quick Start</a></h3>
+<ul>
+  <li>Press the <img class="inlbutton" alt="New" src="Resources/new.png"> button to create a new scenery package:</li>
+  <ul>
+    <li>Supply a name for your new scenery package. Many people use the convention of &ldquo;&lt;ICAO&nbsp;code&gt; &lt;Airport&nbsp;name&gt;&rdquo; (<i>e.g.</i> EGLC London&nbsp;City), but it's up to you.</li>
+    <li>Press <samp>OK</samp>.</li>
+  </ul>
+  <li>Press the <img class="inlbutton" alt="Go To" src="Resources/goto.png"> button to take you to the area that you want to model:</li>
+  <ul>
+    <li>Click in the <samp>Airports by name</samp> column and type to seach by name; or</li>
+    <li>Click in the <samp>Airports by code</samp> column and type to seach by ICAO code.</li>
+    <li>Choose an airport and press <samp>OK</samp>.</li>
+  </ul>
+  <li>We're going to place a 3D Object of a static aircraft at this airport, so point to the airport's ramp area with the mouse and use the Mouse wheel or Zoom gesture to zoom in.</li>
+  <li>From the menu titled <samp>Objects in this package</samp> choose <samp>lib/airport</samp>.</li>
+  <li>Choose the top item <samp>aircraft/corporate_biz/P180_avanti_ferrari</samp>. You'll see a preview of this aircraft in the <a href="#preview">space</a> below.</li>
+  <li>Press the <img class="inlbutton" alt="Add" src="Resources/add.png"> button to place this aircraft. It appears at the centre of the screen, and is colored pink to indicate that it is selected.</li>
+  <li>Use the <kbd>Q</kbd> and <kbd>E</kbd> to rotate the aircraft to your satisfaction (you can hold down <kbd>Shift</kbd> for bigger steps or <kbd>Ctrl</kbd> for tiny steps). Its current heading is shown to the right of the <a href="#statusbar">status bar</a>.</li>
+  <li>You can click and drag the aircraft to change its position, or use the <kbd>W</kbd>, <kbd>S</kbd>, <kbd>A</kbd> and <kbd>D</kbd> keys.</li>
+  <li>When you're happy, press the <img class="inlbutton" alt="Save" src="Resources/save.png"> button.</li>
+  <li>Start X-Plane, go to this airport and you'll see the static aircraft sitting where you placed it.</li>
+</ul>
+<p>That's it; you have created your first scenery package. You can continue to place additional objects in this scenery package if you like. You should probably also read the <a href="#toolbar">Tool bar</a>, <a href="#mainwindow">Main window</a> and <a href="#objectlist">List of objects</a> sections of this document.</p>
 
 <h3>The application window</h3>
 <p>The application window consists of five parts. Click on this screenshot for a description:</p>
@@ -75,8 +97,8 @@ All the packages in X-Plane's<code> Custom&nbsp;Scenery </code>folder are listed
     </tr>
     <tr>
       <td class="button"><a name="import"><img class="tlbbutton" alt="Import" src="Resources/import.png"></td>
-      <td>Import objects (and their textures) from another scenery package and add them to the <a href="#objectlist">list of objects</a>. Or import textures directly to generate draped polygons in the <a href="#objectlist">list of objects</a>.<br>
-The imported objects are placed in<code> custom&nbsp;objects </code>or<code> objects </code>if either of these folders exist, otherwise in the package's top-level folder.
+      <td>Import objects (and their textures) from another scenery package or from a downloaded collection of scenery objects, and add them to the <a href="#objectlist">list of objects</a>. You can also import <code>.dds</code> and <code>.png</code> texture files directly for use as draped polygons.<br>
+The imported objects are copied to<code> custom&nbsp;objects </code>or<code> objects </code>if either of these folders exist, otherwise to the package's top-level folder.
 <small>(So this button is only available once you have saved the scenery package).</small><br>
 Before you import objects from another scenery package you should first check
 the license terms; these often prohibit re-distribution of individual
@@ -85,7 +107,7 @@ objects.</td>
     <tr>
       <td class="button"><a name="import-region"><img class="tlbbutton" alt="Import Region" src="Resources/import-region.png"></td>
       <td>Import objects from the default scenery and place them in your scenery package.<br>
-This is most useful for &ldquo;tweaking&rdquo; small areas of roads; place an Exclusion region of type &ldquo;Roads, Railways &amp; Powerlines&rdquo; and use this button to pull in the roads from the default scenery that are within the area of the Exclusion region.</td>
+This is most useful for &ldquo;tweaking&rdquo; small areas of roads or forests; place an Exclusion region of appropriate type and use this button to pull in the roads or forests from the default scenery that are within the area of the Exclusion region.</td>
     </tr>
     <tr>
       <td class="button"><img class="tlbbutton" alt="Add" src="Resources/add.png"></td>
@@ -100,7 +122,7 @@ If you have a polygon <u>node</u> selected - Add new polygon node next to it.</t
     </tr>
     <tr>
       <td class="button"><img class="tlbbutton" alt="AddBezier" src="Resources/bezier.png"></td>
-      <td>Add curve control handles to the selected polygon node.</td>
+      <td>Give the selected polygon node curve control handles.</td>
     </tr>
     <tr>
       <td class="button"><img class="tlbbutton" alt="Delete" src="Resources/delete.png"></td>
@@ -221,15 +243,17 @@ To select objects:</p>
     <tr>
       <td class="keys">Mouse click and drag</td>
       <td>Move selected object(s), polygon node, or polygon curve control handle.<br>
-Hold down <kbd>Cmd</kbd> to move a pair of curve control handles independently of each other.</td>
+Hold down <kbd>Cmd</kbd> to move a curve control handle independently of its pair.</td>
     </tr>
     <tr>
       <td class="keys"><kbd>W</kbd>, <kbd>S</kbd>, <kbd>A</kbd>, <kbd>D</kbd></td>
-      <td>Move selected object(s) or polygon node. <small>Note: You can also use the keys on the numeric keypad (if your keyboard has one) - ensure that <kbd>NumLock</kbd> is on.</small></td>
+      <td>Move selected object(s) or polygon node.<br>
+<small>Note: You can also use the keys on the numeric keypad if your keyboard has one - ensure that <kbd>NumLock</kbd> is on.</small></td>
     </tr>
     <tr>
       <td class="keys"><kbd>Q</kbd>, <kbd>E</kbd></td>
-      <td>Rotate selected object(s) about the cursor. To rotate a single object about its origin, select it and press <kbd>C</kbd> before rotating.</td>
+      <td>Rotate selected object(s) about the cursor.<br>
+To rotate a single object about its origin, select it and press <kbd>C</kbd> before rotating.</td>
     </tr>
     <tr>
       <td class="keys"><kbd>R</kbd>, <kbd>F</kbd></td>
@@ -295,7 +319,7 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
 <p>You can use any of the objects in these lists in your scenery package - think of these lists as an artist's <a target="_blank" href="http://en.wikipedia.org/wiki/Palette_(painting)">palette</a>. You can also use the <samp>Search</samp> box to search through the available objects by name. Select one of the objects in these lists and press <img class="inlbutton" alt="Add" src="Resources/add.png"></td> to place it in your scenery package.</p>
 <p>The type of object is indicated by a symbol:</p>
 <dl>
-  <dd><img class="inlsymbol" alt="obj" src="Resources/obj.png"> - 3D object (<code>.obj</code>)</dd>
+  <dd><img class="inlsymbol" alt="obj" src="Resources/obj.png"> - 3D Object (<code>.obj</code>)</dd>
   <dd><img class="inlsymbol" alt="fac" src="Resources/fac.png"> - Facade polygon (<code>.fac</code>)</dd>
   <dd><img class="inlsymbol" alt="for" src="Resources/for.png"> - Forest polygon (<code>.for</code>)</dd>
   <dd><img class="inlsymbol" alt="pol" src="Resources/pol.png"> - Draped polygon (<code>.pol</code>) with a <a target="_blank" href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later)</dd>
@@ -307,7 +331,7 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
   <dd><img class="inlsymbol" alt="exc" src="Resources/exc.png"> - Exclusion region</dd>
   <dd><img class="inlsymbol" alt="bad" src="Resources/bad.png"> - Missing or unreadable object or polygon</dd>
 </dl>
-<p>Once you place a 3D object (denoted by the symbol <img class="inlsymbol" alt="obj" src="Resources/obj.png">) in your scenery package you can move, rotate or delete it <small>(see <a href="#manipkeys">above<a> for the keys to use)</small> and that's about it. The other types of objects are all &ldquo;polygons&rdquo; of various kinds. You can click on the &ldquo;nodes&rdquo; (<i>i.e.</i> corners) of a polygon and drag to change the polygon's shape, and you can press <img class="inlbutton" alt="AddNode" src="Resources/addnode.png"> to add new nodes. Most polygon types also have properties that can be changed with the <kbd>R</kbd> and <kbd>F</kbd></td> <a href="#manipkeys">keys<a>.</p>
+<p>Once you place a 3D Object (denoted by the symbol <img class="inlsymbol" alt="obj" src="Resources/obj.png">) in your scenery package you can move, rotate or delete it <small>(see <a href="#manipkeys">above<a> for the keys to use)</small> and that's about it. The other types of objects are all &ldquo;polygons&rdquo; of various kinds. You can click on the &ldquo;nodes&rdquo; (<i>i.e.</i> corners) of a polygon and drag to change the polygon's shape, and you can press <img class="inlbutton" alt="AddNode" src="Resources/addnode.png"> to add new nodes. Most polygon types also have properties that can be changed with the <kbd>R</kbd> and <kbd>F</kbd></td> <a href="#manipkeys">keys<a>.</p>
 <p>Some library objects are shown in these lists with a symbol <img class="inlsymbol" alt="objs" src="Resources/objs.png"> or <img class="inlsymbol" alt="facs" src="Resources/facs.png"> instead of the normal symbol <img class="inlsymbol" alt="obj" src="Resources/obj.png"> or <img class="inlsymbol" alt="fac" src="Resources/fac.png">. This means that the library object exists in multiple versions; X-Plane will choose which version of the object to display at random, but this application always displays the same version.</p>
 <p>Use <a href="#import"><img class="inlbutton" alt="Import" src="Resources/import.png"></a> to copy objects from another scenery <u>package</u> or from a downloaded collection of scenery objects. The imported objects will appear under the &ldquo;<samp>Objects in this package</samp>&rdquo; heading. (Don't use this to copy objects from a scenery <u>library</u>; just select the object from the appropriate list).</p>
 <p>Use <a href="#reload"><img class="inlbutton" alt="Reload" src="Resources/reload.png"></a> if you have otherwise added or modified objects in the scenery package folder, or if you have installed a new scenery library.</p>
@@ -333,8 +357,7 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
   <li>Repeat for the end node of the other &ldquo;bridge&rdquo; segment.</li>
 </ul>
 <p>Note: OverlayEditor doesn't display the bridge segments as being raised, so you may have to experiment a little.</p>
-<p>You can use <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> to make OverlayEditor display networks from the default scenery (in outline form). But X-Plane will not join network segments in your scenery package to segments from the default scenery, and traffic will not flow between them.</p>
-<p>You can use an Exclusion region to hide network segments from the default scenery, use <a href="#import-region"><img class="inlbutton" alt="Import Region" src="Resources/import-region.png"></a> to pull the hidden segments into your scenery package, and then edit them.</p>
+<p>You can use <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> to make OverlayEditor display networks from the default scenery (in outline form). But X-Plane will not join network segments in your scenery package to segments from the default scenery, and traffic will not flow between them. You can place an Exclusion region to hide network segments from the default scenery, use <a href="#import-region"><img class="inlbutton" alt="Import Region" src="Resources/import-region.png"></a> to pull the hidden segments into your scenery package, and then edit them.</p>
 
 <h3>Differences between this application and X-Plane</h3>
 <p>This application displays terrain and objects in orthogonal projection (no perspective) and in a simplified form. <i>i.e.</i>:</p>
@@ -375,7 +398,7 @@ Many objects in the default libraries exist in multiple versions - <i>e.g.</i> t
 
 <h3><a name="other">Using OverlayEditor in conjunction with other scenery tools</a></h3>
 <p>There are a number of other applications that can create X-Plane scenery packages. Those applications that place scenery objects work by writing &ldquo;overlay&rdquo; <code>.dsf</code> files into a scenery package folder. OverlayEditor can read and edit &ldquo;overlay&rdquo; <code>.dsf</code> files produced by other applications; but of course if you re-run the other application you may overwrite any edits that you have made using OverlayEditor.</p>
-<p>In particular, the WED application can be used to both to create X-Plane airport layouts and to place scenery objects. You can safely use WED to create and edit airport layout(s) and OverlayEditor to place scenery objects within the same scenery package <b>as long as you only use the <samp>File &rarr; Export&nbsp;apt.dat</samp> menu option in WED</b> and avoid the <samp>File &rarr; Export&nbsp;Scenery&nbsp;Pack</samp> menu option.</p>
+<p>In particular, the WED application can be used both to create X-Plane airport layouts and to place scenery objects. Like OverlayEditor it places scenery objects by writing &ldquo;overlay&rdquo; <code>.dsf</code> files, but it also writes the airport layouts to a file named <code>apt.dat</code> in your scenery package. You can safely use WED to create and edit airport layout(s) and OverlayEditor to place scenery objects within the same scenery package <b>as long as you only use the <samp>File &rarr; Export&nbsp;apt.dat</samp> menu option in WED</b> and avoid the <samp>File &rarr; Export&nbsp;Scenery&nbsp;Pack</samp> menu option.</p>
 
 <h3>Troubleshooting</h3>
 
