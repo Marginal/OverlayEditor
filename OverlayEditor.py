@@ -2,6 +2,7 @@
 
 from glob import glob
 from math import cos, floor, hypot, sin, pi, radians, sqrt
+import numpy
 import os	# for startfile
 from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
@@ -56,6 +57,9 @@ if not __debug__:
     warnings.simplefilter('ignore', DeprecationWarning)
     if hasattr(wx,'wxPyDeprecationWarning'):
         warnings.simplefilter('ignore', wx.wxPyDeprecationWarning)
+    numpy.seterr(all='ignore', divide='raise')	# default settings vary between numpy versions
+else:
+    numpy.seterr(all='raise')
 
 if not 'startfile' in dir(os):
     import types
