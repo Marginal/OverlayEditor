@@ -110,25 +110,26 @@ class GLstate():
         unlit     = open('Resources/unlit.fs').read()
         colorvs   = open('Resources/color.vs').read()
         colorfs   = open('Resources/color.fs').read()
-        self.skip_pos = 1
         self.textureshader = compileProgram(compileShader(vanilla, GL_VERTEX_SHADER),
                                             compileShader(unlit, GL_FRAGMENT_SHADER))
-        glBindAttribLocation(self.textureshader, self.skip_pos, 'skip')
-        glLinkProgram(self.textureshader)	# re-link with above location
-        assert glGetProgramiv(self.textureshader, GL_LINK_STATUS), glGetProgramInfoLog(self.textureshader)
+        if __debug__: print glGetProgramInfoLog(self.textureshader)
+        self.transform_pos = glGetUniformLocation(self.textureshader, 'transform')
+        self.skip_pos      = glGetAttribLocation(self.textureshader, 'skip')
         self.colorshader   = compileProgram(compileShader(colorvs, GL_VERTEX_SHADER),
                                             compileShader(colorfs, GL_FRAGMENT_SHADER))
         glBindAttribLocation(self.colorshader, self.skip_pos, 'skip')
         glLinkProgram(self.colorshader)	# re-link with above location
+        if __debug__: print glGetProgramInfoLog(self.colorshader)
         assert glGetProgramiv(self.colorshader, GL_LINK_STATUS), glGetProgramInfoLog(self.colorshader)
         if glInitInstancedArraysARB():
             self.instancedshader = compileProgram(compileShader(instanced, GL_VERTEX_SHADER),
                                                   compileShader(unlit, GL_FRAGMENT_SHADER))
-            self.transform_pos = glGetAttribLocation(self.instancedshader, 'transform')
-            self.selected_pos  = glGetAttribLocation(self.instancedshader, 'selected')
+            if __debug__: print glGetProgramInfoLog(self.instancedshader)
+            self.instanced_transform_pos = glGetAttribLocation(self.instancedshader, 'transform')
+            self.instanced_selected_pos  = glGetAttribLocation(self.instancedshader, 'selected')
             self.instanced_arrays = True
         else:
-            self.instancedshader = self.transform_pos = self.selected_pos = None
+            self.instancedshader = self.instanced_transform_pos = self.instanced_selected_pos = None
             self.instanced_arrays = False
         glUseProgram(self.textureshader)
 
@@ -424,7 +425,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glMatrixMode(GL_TEXTURE)
         glTranslatef(0, 1, 0)
         glScalef(1, -1, 1)			# OpenGL textures are backwards
-        glMatrixMode(GL_PROJECTION)		# We always leave the modelview matrix as identity and the active matrix mode as projection, unless drawing Objects
+        glMatrixMode(GL_PROJECTION)		# We always leave the modelview matrix as identity and the active matrix mode as projection
         wx.EVT_PAINT(self, self.OnPaint)	# start generating paint events only now we're set up
 
     def OnEraseBackground(self, event):
@@ -508,8 +509,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         elif self.clickmode==ClickModes.Drag:
             for placement in self.selected:
                 placement.layout(self.tile, self.options, self.vertexcache)
+        elif self.clickmode==ClickModes.DragBox:
+            self.Refresh()	# get rid of drag box
         self.clickmode=None
-        self.Refresh()	# get rid of drag box
         self.frame.ShowSel()
         event.Skip()
 
@@ -800,9 +802,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.glstate.set_color(COL_UNPAINTED)
         self.glstate.set_cull(True)
         self.glstate.set_depthtest(True)
+        self.glstate.set_texture(0)	# texture shader
+        glVertexAttrib1f(self.glstate.skip_pos, 0)
         if not self.options&Prefs.ELEVATION:
-            glMatrixMode(GL_MODELVIEW)
-            glScalef(1,0,1)		# Defeat elevation data
+            glUniform4f(self.glstate.transform_pos, 0, -1, 0, 0)	# Defeat elevation data
+        else:
+            glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
         if __debug__:
             if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
         (mesh, netindices) = self.vertexcache.getMesh(self.tile,self.options)
@@ -810,6 +815,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.glstate.set_poly(bool(poly))
             self.glstate.set_texture(texno)
             glDrawArrays(GL_TRIANGLES, base, number)
+        glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
         if __debug__:
             if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
         if netindices is not None:
@@ -818,10 +824,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.glstate.set_color(None)
             self.glstate.set_depthtest(False)	# Need line to appear over terrain
             glDrawElements(GL_LINES, len(netindices), GL_UNSIGNED_INT, netindices)
-
-        if not self.options&Prefs.ELEVATION:
-            glLoadIdentity()
-            glMatrixMode(GL_PROJECTION)
         #if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
 
         # Objects and Polygons
@@ -851,8 +853,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.vertexcache.buckets.draw(self.glstate, None, self.aptdata, imagery, self.imageryopacity)
 
         # Draw clutter with static geometry and sorted by texture (ignoring layer ordering since it doesn't really matter so much for Objects)
-        glMatrixMode(GL_MODELVIEW)	# Temporarily change matrix mode for drawing rotated objects
-        glLoadIdentity()
         self.glstate.set_instance(self.vertexcache)
         self.glstate.set_poly(False)
         self.glstate.set_depthtest(True)
@@ -860,39 +860,34 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.glstate.set_color(COL_UNPAINTED)
             self.glstate.set_texture(0)	# has side-effect so shader program won't be reset
             glUseProgram(self.glstate.instancedshader)
-            pos=self.glstate.transform_pos
-            glEnableVertexAttribArray(pos)
-            glEnableVertexAttribArray(pos+1)
-            glEnableVertexAttribArray(pos+2)
-            glEnableVertexAttribArray(pos+3)
-            glVertexAttribDivisorARB(pos,   1)
-            glVertexAttribDivisorARB(pos+1, 1)
-            glVertexAttribDivisorARB(pos+2, 1)
-            glVertexAttribDivisorARB(pos+3, 1)
+            glEnableVertexAttribArray(self.glstate.instanced_transform_pos)
+            glVertexAttribDivisorARB(self.glstate.instanced_transform_pos, 1)
             assert type(self.selected)==set
             selected = self.selected.copy()
             if selected:
-                glEnableVertexAttribArray(self.glstate.selected_pos)
-                glVertexAttribDivisorARB(self.glstate.selected_pos, 1)
+                glEnableVertexAttribArray(self.glstate.instanced_selected_pos)
+                glVertexAttribDivisorARB(self.glstate.instanced_selected_pos, 1)
                 for o in self.selected: selected.update(o.placements)	# include children
             else:
-                glVertexAttrib1f(self.glstate.selected_pos, 0)
+                glVertexAttrib1f(self.glstate.instanced_selected_pos, 0)
             for objdef in self.defs.values():	# benefit of sorting by texture would be marginal
                 objdef.draw_instanced(self.glstate, selected)
-            glDisableVertexAttribArray(pos)
-            glDisableVertexAttribArray(pos+1)
-            glDisableVertexAttribArray(pos+2)
-            glDisableVertexAttribArray(pos+3)
-            glDisableVertexAttribArray(self.glstate.selected_pos)
+            glDisableVertexAttribArray(self.glstate.instanced_transform_pos)
+            glDisableVertexAttribArray(self.glstate.instanced_selected_pos)
         else:
             # Instancing not supported
+            self.glstate.set_texture(0)	# load texture shader
             selected = self.selected.copy()
             if selected:
                 for o in self.selected: selected.update(o.placements)	# include children
             for objdef in self.defs.values():	# benefit of sorting by texture would be marginal
                 objdef.draw_instanced(self.glstate, selected)
-        glLoadIdentity()	# Drawing Objects alters the matrix
-        glMatrixMode(GL_PROJECTION)
+            glUniform4f(self.glstate.transform_pos, *zeros(4,float32))	# drawing Objects alters the matrix
+
+        # Overlays
+        self.glstate.set_texture(None)	# resets shader
+        self.glstate.set_depthtest(False)
+        self.glstate.set_poly(True)
 
         # Selected nodes - very last so overwrites everything
         if len(self.selected)==1:
@@ -900,11 +895,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             list(self.selected)[0].draw_nodes(self.glstate, self.selectednode)
 
         #if __debug__: print "%6.3f time to draw" % (time.clock()-clock)
-
-        # Overlays
-        self.glstate.set_texture(None)
-        self.glstate.set_depthtest(False)
-        self.glstate.set_poly(True)
 
         # labels
         if self.codeslist and self.d>2000:	# arbitrary
@@ -989,7 +979,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             gluPickMatrix(self.clickpos[0], size[1]-1-self.clickpos[1], 5,5, array([0, 0, size[0], size[1]], GLint))
         glMultMatrixd(self.proj)
 
-        self.glstate.set_texture(0)
+        self.glstate.set_texture(0)			# use textured shader throughout
         self.glstate.set_color(COL_WHITE)		# Ensure colour indexing off
         self.glstate.set_depthtest(False)		# Make selectable even if occluded
         self.glstate.set_poly(True)			# Disable writing to depth buffer
@@ -1005,12 +995,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         checkpolynode=(self.clickmode==ClickModes.Undecided and len(self.selected)==1 and isinstance(list(self.selected)[0], Polygon)) and list(self.selected)[0]
 
         if self.glstate.occlusion_query:
+            needed = len(placements) * 2	# Twice as many for two-phase drawing
             if checkpolynode:
                 queryidx=len([item for sublist in checkpolynode.nodes for item in sublist])
                 if checkpolynode.canbezier and checkpolynode.isbezier: queryidx *= 3
-                needed = max(queryidx, len(placements) * 2)	# Twice as many for two-phase drawing
-            else:
-                needed = len(placements) * 2	# Twice as many for two-phase drawing
+                needed = max(queryidx, needed)
             self.glstate.alloc_queries(needed)
             glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
 
@@ -1020,6 +1009,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             #print "selnodes",
             if self.glstate.occlusion_query:
                 checkpolynode.pick_nodes(self.glstate, checkpolynode.canbezier and checkpolynode.isbezier)
+                if __debug__: print "%6.3f time to issue poly node" %(time.clock()-clock)
                 queryidx = 0
                 for i in range(len(checkpolynode.nodes)):
                     for j in range(len(checkpolynode.nodes[i])):
@@ -1059,19 +1049,19 @@ class MyGL(wx.glcanvas.GLCanvas):
                         break
                 except:	# overflow
                     if __debug__: print_exc()
+            if __debug__: print "%6.3f time to check poly node" %(time.clock()-clock)
             if self.selectednode:
                 # No need to look further if user has clicked on a node or handle within selected polygon
                 self.clickmode=ClickModes.DragNode
                 # Restore state for unproject
                 glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
                 glLoadMatrixd(self.proj)
+                if __debug__: print "%6.3f time in select" %(time.clock()-clock)
                 self.Refresh()
                 self.frame.ShowSel()
                 return		# Just abandon any remaining queries
 
         # Select placements
-        glMatrixMode(GL_MODELVIEW)	# Temporarily change matrix mode for drawing rotated objects
-        glLoadIdentity()
         if self.glstate.occlusion_query:
             gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
             lookup = []
@@ -1081,13 +1071,16 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if not placements[i].definition.type & self.locked and placements[i].pick_instance(self.glstate, self.glstate.queries[queryidx]):
                     lookup.append(i)
                     queryidx+=1
+            if __debug__: print "%6.3f time to issue instance" %(time.clock()-clock)
             self.glstate.set_dynamic(self.vertexcache)
-            glLoadIdentity()	# Drawing Objects alters the matrix
+            glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
             for i in range(len(placements)):
                 if not placements[i].definition.type & self.locked and placements[i].pick_dynamic(self.glstate, self.glstate.queries[queryidx]):
                     lookup.append(i)
                     queryidx+=1
             gc.enable()
+            if __debug__: print "%6.3f time to issue dynamic" %(time.clock()-clock)
+            assert queryidx==len(lookup)
 
             # Now check for selections
             self.selectednode=None
@@ -1096,6 +1089,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if glGetQueryObjectuiv(self.glstate.queries[k], GL_QUERY_RESULT):
                     selections.add(placements[lookup[k]])
             glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
+            if __debug__: print "%6.3f time to check queries" %(time.clock()-clock)
 
         else:	# not self.glstate.occlusion_query
             glSelectBuffer(len(placements)*8)	# Twice as many for two-phase drawing
@@ -1108,12 +1102,14 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if not placements[i].definition.type & self.locked:
                     glLoadName(i)
                     placements[i].pick_instance(self.glstate)
+            if __debug__: print "%6.3f time to issue instance" %(time.clock()-clock)
             self.glstate.set_dynamic(self.vertexcache)
-            glLoadIdentity()	# Drawing Objects alters the matrix
+            glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
             for i in range(len(placements)):
                 if not placements[i].definition.type & self.locked:
                     glLoadName(i)
                     placements[i].pick_dynamic(self.glstate)
+            if __debug__: print "%6.3f time to issue dynamic" %(time.clock()-clock)
             # Now check for selections
             self.selectednode=None
             selections=set()
@@ -1122,10 +1118,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                     selections.add(placements[int(name)])
             except:	# overflow
                 if __debug__: print_exc()
-
-        # Restore state for unproject
-        glMatrixMode(GL_PROJECTION)
-        glLoadMatrixd(self.proj)
+            if __debug__: print "%6.3f time to check RenderMode" %(time.clock()-clock)
 
         if self.frame.bkgd:	# Don't allow selection of other objects while background dialog is open
             if self.clickmode==ClickModes.Drag or self.background in selections:
@@ -1174,6 +1167,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 else:
                     self.selected=set(list(selections)[:1])
         self.selections=selections
+        if __debug__: print "%6.3f time in select" %(time.clock()-clock)
 
         self.Refresh()
         self.frame.ShowSel()

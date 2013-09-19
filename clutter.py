@@ -150,7 +150,7 @@ class Object(Clutter):
         if queryobj is not None:
             glBeginQuery(glstate.occlusion_query, queryobj)
             if obj.vdata is not None:	# .agp base has no vertex data
-                glLoadMatrixf(self.matrix)
+                glUniform4f(glstate.transform_pos, *self.matrix)
                 glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
                 glBegin(GL_POINTS)
                 glVertex3fv(Object.origin)	# draw point at object origin so selectable even if no fragments generated
@@ -160,7 +160,7 @@ class Object(Clutter):
             glEndQuery(glstate.occlusion_query)
         else:
             if obj.vdata is not None:	# .agp base has no vertex data:
-                glLoadMatrixf(self.matrix)
+                glUniform4f(glstate.transform_pos, *self.matrix)
                 glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
             for p in self.placements:
                 p.pick_instance(glstate)
@@ -168,15 +168,20 @@ class Object(Clutter):
 
     def pick_dynamic(self, glstate, queryobj=None):
         assert self.islaidout() and (self.dynamic_data is None or self.base is not None), self
-        if self.dynamic_data is None:
-            return False
-        if queryobj is not None: glBeginQuery(glstate.occlusion_query, queryobj)
-        if self.dynamic_data is not None:
-            glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
-        # assume for speed that children are all Objects and so don't have dynamic data
+        # assume for speed that children are all Objects and and don't have dynamic data that extends outside the footprint
         if __debug__:
             for p in self.placements: assert p.__class__ is Object, p
-        if queryobj is not None: glEndQuery(glstate.occlusion_query)
+        if self.dynamic_data is None:
+            return False
+        elif queryobj is not None:
+            glBeginQuery(glstate.occlusion_query, queryobj)
+            glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+            glEndQuery(glstate.occlusion_query)
+        else:
+            if self.dynamic_data is not None:
+                glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+            else:
+                return False
         return True
 
     def draw_nodes(self, glstate, selectednode):
@@ -225,7 +230,7 @@ class Object(Clutter):
         if hdg is not None:
             self.hdg=hdg
         h=radians(self.hdg)
-        self.matrix=array([cos(h),0.0,sin(h),0.0, 0.0,1.0,0.0,0.0, -sin(h),0.0,cos(h),0.0, x,self.y,z,1.0],float32)
+        self.matrix = array([x,self.y,z,h],float32)
         self.definition.allocate(vertexcache)	# ensure allocated
         for p in self.placements:
             p.layout(tile, options, vertexcache)
@@ -464,8 +469,6 @@ class Polygon(Clutter):
 
     def draw_nodes(self, glstate, selectednode):
         # Just do it in immediate mode
-        glstate.set_texture(None)
-        glstate.set_depthtest(False)
 
         # bezier control handles
         if self.canbezier:

@@ -1,6 +1,6 @@
 import gc
-from math import cos, fabs, radians, sin
-from numpy import array, array_equal, concatenate, copy, diag, dot, float32, identity, outer
+from math import cos, fabs, pi, radians, sin
+from numpy import array, array_equal, concatenate, copy, diag, dot, float32, identity, outer, zeros
 from operator import itemgetter, attrgetter
 from os import listdir
 from os.path import basename, dirname, exists, join, normpath, sep
@@ -502,18 +502,14 @@ class ObjectDef(ClutterDef):
         glstate.set_texture(self.texture)
         if glstate.instanced_arrays:
             if selected:
-                glstate.set_attrib_selected(glstate.selected_pos, array([o in selected for o in self.instances],float32))
+                glstate.set_attrib_selected(glstate.instanced_selected_pos, array([o in selected for o in self.instances],float32))
             if not self.transform_valid:
                 if __debug__:
                     for o in self.instances: assert o.matrix is not None, "Empty matrix %s" % o
                 self.transform_vbo.set_array(concatenate([o.matrix for o in self.instances]))
                 self.transform_valid = True
             self.transform_vbo.bind()
-            pos=glstate.transform_pos
-            glVertexAttribPointer(pos,   4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo)
-            glVertexAttribPointer(pos+1, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 16)
-            glVertexAttribPointer(pos+2, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 32)
-            glVertexAttribPointer(pos+3, 4, GL_FLOAT, GL_FALSE, 64, self.transform_vbo + 48)
+            glVertexAttribPointer(glstate.instanced_transform_pos, 4, GL_FLOAT, GL_FALSE, 16, self.transform_vbo)
             if self.culled:
                 glstate.set_cull(True)
                 glDrawArraysInstanced(GL_TRIANGLES, self.base, self.culled, len(self.instances))
@@ -521,12 +517,13 @@ class ObjectDef(ClutterDef):
                 glstate.set_cull(False)
                 glDrawArraysInstanced(GL_TRIANGLES, self.base+self.culled, self.nocull, len(self.instances))
         else:
+            pos = glstate.transform_pos
             selected = self.instances.intersection(selected)	# subset of selected that are instances of this def
             unselected = self.instances.difference(selected)
             if unselected:
                 glstate.set_color(COL_UNPAINTED)
                 for obj in unselected:
-                    glLoadMatrixf(obj.matrix)
+                    glUniform4f(pos, *obj.matrix)
                     if self.culled:
                         glstate.set_cull(True)
                         glDrawArrays(GL_TRIANGLES, self.base, self.culled)
@@ -537,7 +534,7 @@ class ObjectDef(ClutterDef):
                 glstate.set_color(COL_SELECTED)
                 glstate.set_cull(False)		# draw rear side of "invisible" faces when selected
                 for obj in selected:
-                    glLoadMatrixf(obj.matrix)
+                    glUniform4f(pos, *obj.matrix)
                     glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
 
 
@@ -553,8 +550,6 @@ class ObjectDef(ClutterDef):
         glViewport(xoff, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
         glLoadIdentity()
         sizex=(self.bbox.maxx-self.bbox.minx)*0.5
         sizez=(self.bbox.maxz-self.bbox.minz)*0.5
@@ -562,32 +557,15 @@ class ObjectDef(ClutterDef):
                     sizez*0.88  + sizex*0.51,	# width at 30degrees
                     sizez*0.255 + sizex*0.44)	# depth at 30degrees / 2
         glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
         glRotatef( 30, 1,0,0)
         glRotatef(120, 0,1,0)
-        glTranslatef(sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz)
-        if __debug__ and False:
-            canvas.glstate.set_texture(0)
-            canvas.glstate.set_color(COL_UNPAINTED)
-            for height in [0, self.height]:
-                glBegin(GL_LINE_LOOP)
-                glVertex3f(self.bbox.minx, height, self.bbox.minz)
-                glVertex3f(self.bbox.maxx, height, self.bbox.minz)
-                glVertex3f(self.bbox.maxx, height, self.bbox.maxz)
-                glVertex3f(self.bbox.minx, height, self.bbox.maxz)
-                glEnd()
-        canvas.glstate.set_texture(0)
-        canvas.glstate.set_color(COL_CURSOR)
-        glBegin(GL_POINTS)
-        glVertex3f(0, 0, 0)
-        glEnd()
+
         canvas.glstate.set_color(COL_UNPAINTED)
-        canvas.glstate.set_depthtest(True)
-        canvas.glstate.set_poly(True)
+        canvas.glstate.set_depthtest(False)
         canvas.glstate.set_cull(True)
         if self.draped:
             canvas.glstate.set_texture(self.texture_draped)
+            glUniform4f(canvas.glstate.transform_pos, sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz, 0)
             glBegin(GL_TRIANGLES)
             for i in range(0,len(self.draped),3):
                 for j in range(3):
@@ -599,9 +577,7 @@ class ObjectDef(ClutterDef):
             child=p[1]
             if child.draped:
                 canvas.glstate.set_texture(child.texture_draped)
-                glPushMatrix()
-                glTranslatef(p[2],0,p[3])
-                glRotatef(p[4], 0,1,0)
+                glUniform4f(canvas.glstate.transform_pos, p[2] + sizex-self.bbox.maxx, 0, p[3] + sizez-self.bbox.maxz, radians(p[4]))
                 glBegin(GL_TRIANGLES)
                 for i in range(0,len(child.draped),3):
                     for j in range(3):
@@ -609,11 +585,19 @@ class ObjectDef(ClutterDef):
                         glTexCoord2f(v[3],v[4])
                         glVertex3f(v[0],v[1],v[2])
                 glEnd()
-                glPopMatrix()
 
+        canvas.glstate.set_texture(None)
+        canvas.glstate.set_color(COL_CURSOR)
+        glBegin(GL_POINTS)
+        glVertex3f(sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz)
+        glEnd()
+
+        canvas.glstate.set_color(COL_UNPAINTED)
+        canvas.glstate.set_depthtest(True)
         canvas.glstate.set_poly(False)
         if self.vdata is not None:
             canvas.glstate.set_texture(self.texture)
+            glUniform4f(canvas.glstate.transform_pos, sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz, 0)
             if self.culled:
                 glDrawArrays(GL_TRIANGLES, self.base, self.culled)
             if self.nocull:
@@ -623,25 +607,18 @@ class ObjectDef(ClutterDef):
             child=p[1]
             if child.vdata is not None:
                 canvas.glstate.set_texture(child.texture)
-                glPushMatrix()
-                glTranslatef(p[2],0,p[3])
-                glRotatef(p[4], 0,1,0)
+                glUniform4f(canvas.glstate.transform_pos, p[2] + sizex-self.bbox.maxx, 0, p[3] + sizez-self.bbox.maxz, radians(p[4]))
                 if child.culled:
                     canvas.glstate.set_cull(True)
                     glDrawArrays(GL_TRIANGLES, child.base, child.culled)
                 if child.nocull:
                     canvas.glstate.set_cull(False)
                     glDrawArrays(GL_TRIANGLES, child.base+child.culled, child.nocull)
-                glPopMatrix()
         data=glReadPixels(xoff,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
         
-        # Restore state for unproject & selection
-        glLoadIdentity()
-        glMatrixMode(GL_PROJECTION)
-        glPopMatrix()	
-
+        glLoadMatrixd(canvas.proj)	# Restore state for unproject
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         canvas.Refresh()	# Mac draws from the back buffer w/out paint event
@@ -818,11 +795,10 @@ class PolygonDef(ClutterDef):
         glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
         glLoadIdentity()
-        canvas.glstate.set_texture(self.texture)
         canvas.glstate.set_color(COL_WHITE)
+        canvas.glstate.set_texture(self.texture)
+        glUniform4f(canvas.glstate.transform_pos, *zeros(4,float32))
         glBegin(GL_QUADS)
         glTexCoord2f(l,b)
         glVertex3f(-hscale,  1, 0)
@@ -837,9 +813,7 @@ class PolygonDef(ClutterDef):
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
         
-        # Restore state for unproject & selection
-        glPopMatrix()	
-
+        glLoadMatrixd(canvas.proj)	# Restore state for unproject
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         canvas.Refresh()	# Mac draws from the back buffer w/out paint event
@@ -1166,19 +1140,15 @@ class FacadeDef(PolygonDef):
         glViewport(xoff, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
         glLoadIdentity()
         glOrtho(-pad, maxsize-pad, 0, maxsize, -maxsize, maxsize)
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
         glRotatef(-90, 0,1,0)
-        #glTranslatef(sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz)
         canvas.glstate.set_color(COL_UNPAINTED)
         canvas.glstate.set_depthtest(True)
         canvas.glstate.set_poly(False)
         canvas.glstate.set_cull(True)
         canvas.glstate.set_texture(self.texture)
+        glUniform4f(canvas.glstate.transform_pos, *zeros(4,float32))
         glBegin(GL_TRIANGLES)
         hoffset=0
         for segment in spelling.segments:
@@ -1198,26 +1168,19 @@ class FacadeDef(PolygonDef):
                 (childname, definition, is_draped, xdelta, ydelta, zdelta, hdelta)=child
                 if definition.vdata is not None:
                     canvas.glstate.set_texture(definition.texture)
-                    glPushMatrix()
-                    glTranslatef(xdelta,ydelta,hoffset+zdelta)
-                    glRotatef(hdelta, 0,1,0)
+                    glUniform4f(canvas.glstate.transform_pos, xdelta, ydelta, hoffset+zdelta, radians(hdelta))
                     if definition.culled:
                         canvas.glstate.set_cull(True)
                         glDrawArrays(GL_TRIANGLES, definition.base, definition.culled)
                     if definition.nocull:
                         canvas.glstate.set_cull(False)
                         glDrawArrays(GL_TRIANGLES, definition.base+definition.culled, definition.nocull)
-                    glPopMatrix()
             hoffset-=segment.width
         data=glReadPixels(xoff,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
 
-        # Restore state for unproject & selection
-        glLoadIdentity()
-        glMatrixMode(GL_PROJECTION)
-        glPopMatrix()
-
+        glLoadMatrixd(canvas.proj)	# Restore state for unproject
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         canvas.Refresh()	# Mac draws from the back buffer w/out paint event
@@ -1371,8 +1334,6 @@ class LineDef(PolygonDef):
         glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
         glLoadIdentity()
         canvas.glstate.set_color(COL_WHITE)
         canvas.glstate.set_poly(True)
@@ -1383,6 +1344,7 @@ class LineDef(PolygonDef):
             scale = 2.0 / self.length
         for segment in self.segments:
             canvas.glstate.set_texture(segment.texture)
+            glUniform4f(canvas.glstate.transform_pos, *zeros(4,float32))
             glBegin(GL_QUADS)
             glTexCoord2f(segment.s_left, segment.t_ratio)
             glVertex3f(segment.x_left*scale,  -self.length*scale*0.5, segment.y1)
@@ -1397,9 +1359,7 @@ class LineDef(PolygonDef):
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
 
-        # Restore state for unproject & selection
-        glPopMatrix()
-
+        glLoadMatrixd(canvas.proj)	# Restore state for unproject
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         canvas.Refresh()	# Mac draws from the back buffer w/out paint event
@@ -1480,11 +1440,10 @@ class StringDef(PolygonDef):
     def preview(self, canvas, vertexcache):
         if not self.canpreview: return None
         self.allocate(vertexcache)
+        canvas.glstate.set_instance(vertexcache)
         glViewport(0, 0, ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE)
         glClearColor(0.3, 0.5, 0.6, 1.0)	# Preview colour
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        glMatrixMode(GL_PROJECTION)
-        glPushMatrix()
         glLoadIdentity()
         defn = self.children[0].definition	# Hack - just use first child for sizing
         sizex=(defn.bbox.maxx-defn.bbox.minx)*0.5
@@ -1493,21 +1452,33 @@ class StringDef(PolygonDef):
                     sizez*0.88  + sizex*0.51,	# width at 30degrees
                     sizez*0.255 + sizex*0.44)	# depth at 30degrees / 2
         glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
         glRotatef( 30, 1,0,0)
         glRotatef(120, 0,1,0)
-        glTranslatef(sizex-defn.bbox.maxx, 0, sizez-defn.bbox.maxz)
-        canvas.glstate.set_instance(vertexcache)
+
         canvas.glstate.set_color(COL_UNPAINTED)
+        canvas.glstate.set_depthtest(False)
+        canvas.glstate.set_cull(True)
+        for p in self.children:
+            child = p.definition
+            if child.draped:
+                canvas.glstate.set_texture(child.texture_draped)
+                glUniform4f(canvas.glstate.transform_pos, sizex-defn.bbox.maxx, 0, sizez-defn.bbox.maxz, radians(p.hdelta))
+                glBegin(GL_TRIANGLES)
+                for i in range(0,len(child.draped),3):
+                    for j in range(3):
+                        v=child.draped[i+j]
+                        glTexCoord2f(v[3],v[4])
+                        glVertex3f(v[0],v[1],v[2])
+                glEnd()
+
         canvas.glstate.set_depthtest(True)
         canvas.glstate.set_poly(False)
         for p in self.children:
             child = p.definition
             if child.vdata is not None:
                 canvas.glstate.set_texture(child.texture)
+                glUniform4f(canvas.glstate.transform_pos, sizex-defn.bbox.maxx, 0, sizez-defn.bbox.maxz, radians(p.hdelta))
                 if child.culled:
-                    canvas.glstate.set_cull(True)
                     glDrawArrays(GL_TRIANGLES, child.base, child.culled)
                 if child.nocull:
                     canvas.glstate.set_cull(False)
@@ -1518,11 +1489,7 @@ class StringDef(PolygonDef):
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
 
-        # Restore state for unproject & selection
-        glLoadIdentity()
-        glMatrixMode(GL_PROJECTION)
-        glPopMatrix()
-
+        glLoadMatrixd(canvas.proj)	# Restore state for unproject
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         canvas.Refresh()	# Mac draws from the back buffer w/out paint event
