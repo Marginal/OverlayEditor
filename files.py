@@ -265,10 +265,11 @@ def readNav(filename):
     return nav
 
 
-def readLib(filename, objects, terrain):
+def readLib(filename, objects, terrain, iscustom):
     thisfileobjs={}
     h=None
     path=dirname(filename)
+    packagename = "{%s}" % basename(path)
     if basename(dirname(filename))=='800 objects':
         filename=join('Resources','800library.txt')
         builtinhack=True
@@ -297,7 +298,7 @@ def readLib(filename, objects, terrain):
                 if len(c)<3 or (c[1][-4:].lower() in SkipDefs and c[1]!=NetworkDef.DEFAULTFILE): continue
                 name=c[1].replace(':','/').replace('\\','/')
                 if builtinhack:
-                    lib='misc v800'
+                    lib = '{misc v800}'
                 else:
                     lib=name
                     if lib.startswith('/'): lib=lib[1:]
@@ -307,6 +308,8 @@ def readLib(filename, objects, terrain):
                         lib=lib[:lib.index('/',13)]
                     elif lib.startswith('ruscenery/'):
                         lib=lib[:lib.index('/',10)]
+                    elif lib.startswith('KSEA_objects/'):
+                        lib='KSEA_Objects'	# Hack: v10 KSEA Demo Area is inconsistent in capatilization
                     elif not '/' in lib:
                         lib="uncategorised"
                     else:
@@ -318,22 +321,21 @@ def readLib(filename, objects, terrain):
                 obj=join(path, normpath(obj))
                 if not exists(obj):
                     continue	# no point adding missing objects
-                if name[-4:]=='.ter':
-                    if name in terrain: continue
-                    terrain[name]=obj
-                else:
-                    if lib in objects:
-                        if name in thisfileobjs:
-                            objects[lib][name].multiple=True
-                            continue
-                        else:
-                            thisfileobjs[name]=True
-                            if name in objects[lib]:
-                                continue	# already defined elsewhere
+                elif name[-4:]=='.ter':
+                    if name not in terrain:
+                        terrain[name] =  obj
+                elif name in thisfileobjs:
+                    thisfileobjs[name].multiple = True		# already processed this name
+                elif name in objects[lib]:
+                    thisfileobjs[name] = objects[lib][name]
+                    if id=='EXPORT_EXTEND':
+                        thisfileobjs[name].multiple = True	# already defined elsewhere
                     else:
-                        thisfileobjs[name]=True
-                        objects[lib]={}
-                    objects[lib][name]=PaletteEntry(obj)
+                        thisfileobjs[name].file = obj		# replacing thing in lower-priority package
+                elif iscustom and (name.startswith('lib/') or name.startswith('/lib/')):
+                    thisfileobjs[name] = objects[packagename][name] = PaletteEntry(obj)	# separate out custom libraries (e.g. FF Library) that pollute the lib/ namespace
+                else:
+                    thisfileobjs[name] = objects[lib][name] = PaletteEntry(obj)
     except:
         if h: h.close()
         if __debug__:

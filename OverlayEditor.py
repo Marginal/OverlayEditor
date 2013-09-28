@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from collections import defaultdict	# Requires Python 2.5
 from glob import glob
 from math import cos, floor, hypot, sin, pi, radians, sqrt
 import numpy
@@ -1455,7 +1456,7 @@ class MainWindow(wx.Frame):
         # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
         # search order is: custom libraries, default libraries, scenery package
         progress.Update(2, 'Libraries')
-        lookupbylib={}	# {name: paletteentry} by libname
+        lookupbylib = defaultdict(dict)	# {name: paletteentry} by libname
         lookup={}	# {name: paletteentry}
         terrain={}	# {name: path}
 
@@ -1474,15 +1475,15 @@ class MainWindow(wx.Frame):
         self.palette.load('Objects in this package', objects, pkgdir)
         lookup.update(objects)
 
-        clibs=glob(join(prefs.xplane, gcustom, '*', glibrary))
-        clibs.sort()	# asciibetical
-        glibs=glob(join(prefs.xplane, gglobal, '*', glibrary))
-        glibs.sort()	# asciibetical
-        dlibs=glob(join(prefs.xplane, gdefault, '*', glibrary))
-        dlibs.sort()	# asciibetical
-        libpaths=clibs+glibs+dlibs
-        if __debug__: print "libraries", libpaths
-        for lib in libpaths: readLib(lib, lookupbylib, terrain)
+        # libraries in reverse asciibetical order = priority low to high
+        clibs = sorted(glob(join(prefs.xplane, gcustom,  '*', glibrary)), reverse=True)
+        glibs = sorted(glob(join(prefs.xplane, gglobal,  '*', glibrary)), reverse=True)
+        dlibs = sorted(glob(join(prefs.xplane, gdefault, '*', glibrary)), reverse=True)
+        if __debug__:
+            print "libraries:"
+            for l in reversed(dlibs+glibs+clibs): print l[len(prefs.xplane)+1:-11]
+        for lib in dlibs+glibs: readLib(lib, lookupbylib, terrain, False)
+        for lib in clibs: readLib(lib, lookupbylib, terrain, True)
         libs=lookupbylib.keys()
         sortfolded(libs)	# dislay order in palette
         for lib in libs: lookup.update(lookupbylib[lib])

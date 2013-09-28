@@ -87,7 +87,7 @@ class PaletteListBox(wx.VListBox):
                 if not self.pkgdir:
                     # library object
                     if name.startswith('/'): name=name[1:]
-                    if name.startswith(self.tabname+'/'):
+                    if name.lower().startswith(self.tabname.lower()+'/'):	# merge headings that differ only in case
                         name=name[len(self.tabname)+1:]
                     name=name[:-4]
                 elif name.lower().startswith('objects/') and name[8:] not in names:
