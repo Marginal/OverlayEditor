@@ -412,21 +412,21 @@ class ObjectDef(ClutterDef):
                     anim.pop()
                 elif id=='ANIM_trans':
                     t=identity(4)
-                    t[3,:3]=c[1:4]
+                    t[3,:3] = [float(c[i]) for i in range(1,4)]
                     anim[-1]=dot(t,anim[-1])
                     done_anim_t=True
                 elif id=='ANIM_trans_key':
                     if not done_anim_t:
                         t=identity(4)
-                        t[3,:3]=c[2:5]
+                        t[3,:3] = [float(c[i]) for i in range(2,5)]
                         anim[-1]=dot(t,anim[-1])
                     done_anim_t=True
                 elif id=='ANIM_rotate_begin':
-                    anim_axis = c[1:4]
+                    anim_axis = [float(c[i]) for i in range(1,4)]
                 elif id in ['ANIM_rotate', 'ANIM_rotate_key']:
                     if id=='ANIM_rotate':
                         angle=radians(float(c[4]))
-                        anim_axis=c[1:4]
+                        anim_axis = [float(c[i]) for i in range(1,4)]
                     else:
                         angle=radians(float(c[2]))
                     if angle and not done_anim_r:

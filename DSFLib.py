@@ -18,8 +18,19 @@ except:
 if __debug__:
     from traceback import print_exc
 
-from nodes import divisions, Node
-from clutter import Object, Polygon, Exclude, Network, onedeg
+if not hasattr(numpy,'radians'):
+    # numpy 1.0.1 on MacOS 10.5 doesn't have radians
+    def npradians(x, out=None):
+        if out:
+            out[:] = x * (pi/180)
+            return out
+        else:
+            return x * (pi/180)
+    numpy.radians = npradians
+
+from elevation import DSFdivisions, onedeg
+from nodes import Node
+from clutter import Object, Polygon, Exclude, Network
 from clutterdef import NetworkDef, COL_NETWORK
 from version import appname, appversion
 
@@ -264,7 +275,7 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
         for p in pool:
             total += len(p)
             longest = max(longest, len(p))
-        print 'pool:', len(pool), 'Avg:', total/len(pool), 'Max:', longest
+        print 'pool:', len(pool), 'Avg:', total/(len(pool) or 1), 'Max:', longest
         print 'po32:', len(po32)
 
     # X-Plane 10 raster data
