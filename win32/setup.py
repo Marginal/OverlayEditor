@@ -5,7 +5,9 @@ from os import getcwd, listdir, name
 from os.path import join
 from glob import glob
 import re
+from struct import pack, unpack
 from tempfile import gettempdir
+import time
 import numpy	# pull in dependencies
 
 import platform
@@ -163,3 +165,119 @@ setup(name='OverlayEditor',
       # mac
       #app = ['OverlayEditor.py'],
 )
+
+
+# Patch the executable to add an export table containing "NvOptimusEnablement"
+# http://developer.download.nvidia.com/devzone/devcenter/gamegraphics/files/OptimusRenderingPolicies.pdf
+
+# winnt.h
+IMAGE_DOS_SIGNATURE = 0x5a4d	# MZ
+IMAGE_DOS_HEADER_lfanew = 0x3c	# location of PE header
+
+# IMAGE_NT_HEADERS
+IMAGE_NT_SIGNATURE = 0x00004550	# PE\0\0
+
+# IMAGE_FILE_HEADER - http://msdn.microsoft.com/en-us/library/windows/desktop/ms680313%28v=vs.85%29.aspx
+IMAGE_FILE_MACHINE_I386  = 0x014c
+IMAGE_FILE_MACHINE_AMD64 = 0x8664
+
+# IMAGE_OPTIONAL_HEADER
+IMAGE_NT_OPTIONAL_HDR32_MAGIC = 0x10b
+IMAGE_NT_OPTIONAL_HDR64_MAGIC = 0x20b
+
+h = open('dist.%s/OverlayEditor.exe' % cpu, 'rb+')
+assert h
+
+# IMAGE_DOS_HEADER
+(magic,) = unpack('<H', h.read(2))
+assert magic == IMAGE_DOS_SIGNATURE
+h.seek(IMAGE_DOS_HEADER_lfanew)
+(nt_header,) = unpack('<I', h.read(4))
+
+# IMAGE_NT_HEADERS
+h.seek(nt_header)
+(magic,) = unpack('<I', h.read(4))
+assert magic == IMAGE_NT_SIGNATURE
+
+# IMAGE_FILE_HEADER
+(Machine, NumberOfSections, TimeDateStamp, PointerToSymbolTable, NumberOfSymbols, SizeOfOptionalHeader, Characteristics) = unpack('<HHIIIHH', h.read(20))
+assert cpu=='x86' and Machine==IMAGE_FILE_MACHINE_I386 or Machine==IMAGE_FILE_MACHINE_AMD64
+assert SizeOfOptionalHeader
+optional_header = h.tell()
+section_table = optional_header + SizeOfOptionalHeader
+
+# IMAGE_OPTIONAL_HEADER
+(Magic,MajorLinkerVersion,MinorLinkerVersion,SizeOfCode,SizeOfInitializedData,SizeOfUninitializedData,AddressOfEntryPoint,BaseOfCode,BaseOfData,ImageBase,SectionAlignment,FileAlignment) = unpack('<HBBIIIIIIIII', h.read(40))
+assert cpu=='x86' and Magic==IMAGE_NT_OPTIONAL_HDR32_MAGIC or Magic==IMAGE_NT_OPTIONAL_HDR64_MAGIC
+export_table_p = optional_header + (cpu=='x86' and 96 or 112)	# location of Export Directory pointer
+h.seek(export_table_p)
+(va,sz) = unpack('<II', h.read(8))
+assert va == sz == 0	# check there isn't already an export table
+
+# IMAGE_SECTION_HEADER
+h.seek(section_table)
+for section in range(NumberOfSections):
+    (Name, VirtualSize, VirtualAddress, SizeOfRawData, PointerToRawData, PointerToRelocations, PointerToLinenumbers, NumberOfRelocations, NumberOfLinenumbers, Characteristics) = unpack('<8sIIIIIIHHI', h.read(40))
+    if Name.rstrip('\0')=='.rdata':	# we'll put export table in .rdata, like MSVC's linker
+        break
+else:
+    assert False
+
+# IMAGE_EXPORT_DIRECTORY
+export_table_rva = VirtualAddress + VirtualSize + 4	# leave space for DWORD const variable before export_table
+export_table_raw = PointerToRawData + VirtualSize + 4
+DLLName = export_table_rva + 0x32
+AddressOfFunctions = export_table_rva + 0x28
+AddressOfNames = export_table_rva + 0x2c
+AddressOfNameOrdinals = export_table_rva + 0x30
+export_directory_table = pack('<IIHHIIIIIII', 0, int(time.time()), 0, 0, DLLName, 1, 1, 1, AddressOfFunctions, AddressOfNames, AddressOfNameOrdinals)
+export_address_table = pack('<I', export_table_rva - 4)	# pointer to exported variable
+export_name_table = pack('<I', export_table_rva + 0x44)
+export_ordinal_table = pack('<H', 0)
+export_DLLname = 'OverlayEditor.exe\0'
+export_names = 'NvOptimusEnablement\0'
+export_directory = export_directory_table + export_address_table + export_name_table + export_ordinal_table + export_DLLname + export_names
+# update .rdata section
+assert VirtualSize/SectionAlignment == (VirtualSize+4+len(export_directory))/SectionAlignment	# check we won't overflow the section
+VirtualSize += (4 + len(export_directory))
+h.seek(section_table + section*40)
+if VirtualSize <= SizeOfRawData:
+    h.write(pack('<8sIIIIIIHHI', Name, VirtualSize, VirtualAddress, SizeOfRawData, PointerToRawData, PointerToRelocations, PointerToLinenumbers, NumberOfRelocations, NumberOfLinenumbers, Characteristics))
+else:
+    # not enough space in file on disk
+    end_rdata_raw = PointerToRawData + SizeOfRawData
+    SizeOfRawData += FileAlignment	# make space
+    h.write(pack('<8sIIIIIIHHI', Name, VirtualSize, VirtualAddress, SizeOfRawData, PointerToRawData, PointerToRelocations and PointerToRelocations+FileAlignment or 0, PointerToLinenumbers and PointerToLinenumbers+FileAlignment or 0, NumberOfRelocations, NumberOfLinenumbers, Characteristics))
+
+    # bump following sections up
+    section +=1
+    while section < NumberOfSections:
+        h.seek(section_table + section*40)
+        (Name, VirtualSize, VirtualAddress, SizeOfRawData, PointerToRawData, PointerToRelocations, PointerToLinenumbers, NumberOfRelocations, NumberOfLinenumbers, Characteristics) = unpack('<8sIIIIIIHHI', h.read(40))
+        h.seek(section_table + section*40)
+        h.write(pack('<8sIIIIIIHHI', Name, VirtualSize, VirtualAddress, SizeOfRawData, PointerToRawData+FileAlignment, PointerToRelocations and PointerToRelocations+FileAlignment or 0, PointerToLinenumbers and PointerToLinenumbers+FileAlignment or 0, NumberOfRelocations, NumberOfLinenumbers, Characteristics))
+        section += 1
+
+    # move the content of the following sections
+    h.seek(end_rdata_raw)
+    restoffile = h.read()
+    h.seek(end_rdata_raw)
+    h.write('\0' * FileAlignment)
+    h.write(restoffile)
+
+    # Update optional header with new total size
+    SizeOfInitializedData += FileAlignment
+    h.seek(optional_header)
+    h.write(pack('<HBBIII', Magic,MajorLinkerVersion,MinorLinkerVersion,SizeOfCode,SizeOfInitializedData,SizeOfUninitializedData))
+
+
+# write export directory
+h.seek(export_table_raw - 4)
+h.write(pack('<I', 1))	# exported variable == 1
+h.write(export_directory)
+
+# update optional header to point to it
+h.seek(export_table_p)
+h.write(pack('<II', export_table_rva, len(export_directory)))
+
+h.close()
