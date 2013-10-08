@@ -16,9 +16,10 @@ from OpenGL.GL.EXT.multi_draw_arrays import glMultiDrawArraysEXT
 glMultiDrawArrays = alternate(glMultiDrawArrays, glMultiDrawArraysEXT)
 
 import gc
+from collections import defaultdict	# Requires Python 2.5
 from glob import glob
 from math import acos, atan2, cos, sin, floor, hypot, pi, radians
-from numpy import array, array_equal, dot, identity, zeros, float32, float64, int32
+from numpy import array, array_equal, concatenate, dot, identity, vstack, zeros, float32, float64, int32
 from os.path import basename, curdir, join
 from struct import unpack
 from sys import exc_info, exit, platform, version
@@ -31,12 +32,12 @@ if __debug__:
 
 from files import VertexCache, sortfolded, readApt, glInitTextureCompressionS3TcEXT
 from fixed8x13 import fixed8x13
-from clutter import Object, Polygon, Draped, DrapedImage, Facade, Network, Exclude, onedeg, latlondisp
-from clutterdef import BBox, ClutterDef, ObjectDef, AutoGenPointDef, NetworkDef, PolygonDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
+from clutter import Object, Polygon, Draped, DrapedImage, Facade, Network, Exclude, latlondisp
+from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, NetworkDef, PolygonDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
 from DSFLib import readDSF
+from elevation import BBox, ElevationMesh, onedeg, round2res
 from imagery import Imagery
 from MessageBox import myMessageBox
-from nodes import round2res
 from prefs import Prefs
 from version import appname
 
@@ -331,6 +332,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.d=2048.0
         self.proj=identity(4, float64)
 
+        if __debug__: self.ei = self.ej = ElevationMesh.DIVISIONS/2	# for debugging elevation mesh
+
         # Must specify min sizes for glX? - see glXChooseVisual and GLXFBConfig
         try:
             # Ask for a large depth buffer.
@@ -406,8 +409,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_DEPTH_TEST)
         glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
-        if debugapt: glLineWidth(2.0)
-        #glLineStipple(1, 0x0f0f)		# for selection drag
         glPointSize(5.0)			# for nodes
         glFrontFace(GL_CW)
         glPolygonMode(GL_FRONT, GL_FILL)
@@ -430,7 +431,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def OnEraseBackground(self, event):
         # Prevent flicker when resizing / painting on MSW
-        if __debug__: print "OnEraseBackground"
+        #if __debug__: print "OnEraseBackground"
         self.needclear=True	# ATI drivers require clear afer resize
 
     def OnKeyDown(self, event):
@@ -532,7 +533,10 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.valid:	# can get Idles during reload under X
             if self.clickmode==ClickModes.DragNode:
                 assert len(self.selected)==1
-                self.selectednode=list(self.selected)[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
+                if __debug__: clock2 = time.clock()
+                placement = list(self.selected)[0]
+                self.selectednode = placement.layout(self.tile, self.options, self.vertexcache, self.selectednode)
+                if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
                 assert self.selectednode
                 self.Refresh()
             elif self.needrefresh:
@@ -725,7 +729,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.SetCurrent()
         #self.SetFocus()			# required for GTK
 
-        if __debug__: print "OnPaint"
+        if __debug__: clock=time.clock()
 
         glViewport(0, 0, *size)
         vd=self.d*size.y/size.x
@@ -783,8 +787,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
             self.needclear=False
         
-        if __debug__: clock=time.clock()
-
         # Map imagery & background
         imagery=self.imagery.placements(self.d, size)	# May allocate into dynamic VBO
         #if __debug__: print "%6.3f time to get imagery" % (time.clock()-clock)
@@ -801,6 +803,38 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.glstate.set_instance(self.vertexcache)
         self.glstate.set_color(COL_UNPAINTED)
         self.glstate.set_cull(True)
+        self.glstate.set_poly(False)
+        if __debug__:
+            elev = self.vertexcache.getElevationMesh(self.tile,self.options)
+            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
+            if debugapt and hasattr(elev, 'divwidth'):
+                # show elevation mesh buckets
+                self.glstate.set_depthtest(False)
+                self.glstate.set_texture(None)
+                self.glstate.set_color(COL_DRAGBOX)
+                glBegin(GL_LINES)
+                for i in range(-ElevationMesh.DIVISIONS/2, ElevationMesh.DIVISIONS/2+1):
+                    glVertex3f( (ElevationMesh.DIVISIONS/2) * elev.divwidth, 0, i * elev.divheight)
+                    glVertex3f(-(ElevationMesh.DIVISIONS/2) * elev.divwidth, 0, i * elev.divheight)
+                for j in range(-ElevationMesh.DIVISIONS/2, ElevationMesh.DIVISIONS/2+1):
+                    glVertex3f(j * elev.divwidth, 0,  (ElevationMesh.DIVISIONS/2) * elev.divheight)
+                    glVertex3f(j * elev.divwidth, 0, -(ElevationMesh.DIVISIONS/2) * elev.divheight)
+                glEnd()
+                self.glstate.set_color(COL_SELECTED)
+                glBegin(GL_LINE_LOOP)
+                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2)  *elev.divwidth, 0, (self.ei-ElevationMesh.DIVISIONS/2)  *elev.divheight)
+                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2+1)*elev.divwidth, 0, (self.ei-ElevationMesh.DIVISIONS/2)  *elev.divheight)
+                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2+1)*elev.divwidth, 0, (self.ei-ElevationMesh.DIVISIONS/2+1)*elev.divheight)
+                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2)  *elev.divwidth, 0, (self.ei-ElevationMesh.DIVISIONS/2+1)*elev.divheight)
+                glEnd()
+                self.glstate.set_color(COL_UNPAINTED)
+                glBegin(GL_TRIANGLES)
+                print (self.ei,self.ej), len(elev.buckets[self.ei][self.ej]), 'tris'
+                for tri in elev.tris[elev.buckets[self.ei][self.ej]]:
+                    glVertex3fv(tri['p1'])
+                    glVertex3fv(tri['p2'])
+                    glVertex3fv(tri['p3'])
+                glEnd()
         self.glstate.set_depthtest(True)
         self.glstate.set_texture(0)	# texture shader
         glVertexAttrib1f(self.glstate.skip_pos, 0)
@@ -808,11 +842,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             glUniform4f(self.glstate.transform_pos, 0, -1, 0, 0)	# Defeat elevation data
         else:
             glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
-        if __debug__:
-            if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
         (mesh, netindices) = self.vertexcache.getMesh(self.tile,self.options)
-        for (base,number,texno,poly) in mesh:
-            self.glstate.set_poly(bool(poly))
+        for (base,number,texno) in mesh:
             self.glstate.set_texture(texno)
             glDrawArrays(GL_TRIANGLES, base, number)
         glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
@@ -894,11 +925,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             # don't bother setting VBO since this is done immediate
             list(self.selected)[0].draw_nodes(self.glstate, self.selectednode)
 
-        #if __debug__: print "%6.3f time to draw" % (time.clock()-clock)
-
         # labels
         if self.codeslist and self.d>2000:	# arbitrary
-            if __debug__: print "labels"
+            #if __debug__: print "labels"
             glCallList(self.codeslist)
 
         # Position centre
@@ -953,6 +982,8 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         glLoadMatrixd(self.proj)	# Restore state for unproject
         self.glstate.set_poly(False)
+
+        #if __debug__: print "%6.3f time in OnPaint" % (time.clock()-clock)
 
         # Display
         self.SwapBuffers()
@@ -1331,7 +1362,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 newundo=UndoEntry(self.tile, UndoEntry.MOVE, [(self.placements[self.tile].index(placement), placement.clone())])
                 if not (self.undostack and self.undostack[-1].equals(newundo)):
                     self.undostack.append(newundo)
+            if __debug__: clock2 = time.clock()
             self.selectednode=placement.movenode(self.selectednode, dlat, dlon, dparam, self.tile, self.options, self.vertexcache, False)
+            if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
             assert self.selectednode
         else:
             moved=[]
@@ -1339,7 +1372,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             for placement in self.selected:
                 if not self.frame.bkgd:	# No undo for background image
                     moved.append((placements.index(placement), placement.clone()))
+                if __debug__: clock2 = time.clock()
                 placement.move(dlat, dlon, dhdg, dparam, loc, self.tile, self.options, self.vertexcache)
+                if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
             if moved:
                 newundo=UndoEntry(self.tile, UndoEntry.MOVE, moved)
                 if not (self.undostack and self.undostack[-1].equals(newundo)):
@@ -1704,7 +1739,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.vertexcache.getMesh(newtile, options)
 
             progress.Update(2, 'Mesh')
-            self.vertexcache.getMeshdata(newtile, options)
 
             if options&Prefs.ELEVATION!=self.options&Prefs.ELEVATION:
                 # Elevation preference chaged - clear all layout (other than airports)
@@ -1752,7 +1786,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                         if not s in errtexs: errtexs.append(s)
                         
                     if not placement.islaidout():
+                        if __debug__: clock2 = time.clock()
                         placement.layout(newtile, options, self.vertexcache)
+                        if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
                 if __debug__: print "%6.3f time in load&layout" % (time.clock()-clock)
             elif newtile not in self.placements:
                 self.placements[newtile]=[]
@@ -1782,18 +1818,20 @@ class MyGL(wx.glcanvas.GLCanvas):
                 svarray=[]
                 tvarray=[]
                 rvarray=[]
-                area=BBox(newtile[0]-0.05, newtile[0]+1.1,
-                          newtile[1]-0.1, newtile[1]+1.2)
+                elev = self.vertexcache.getElevationMesh(newtile, options)
+                area=BBox(newtile[0]-0.05, newtile[0]+1.05,
+                          newtile[1]-0.05, newtile[1]+1.05)
                 tile=BBox(newtile[0], newtile[0]+1,
                           newtile[1], newtile[1]+1)
                 for code, (name, aptloc, apt) in self.airports.iteritems():
+                    if __debug__: clock2=time.clock()	# Processor time
                     if not area.inside(*aptloc):
                         continue
                     if tile.inside(*aptloc):
                         self.codes[newtile].append((code,aptloc))
-                    runways=[]
-                    taxiways=[]
-                    shoulders=[]
+                    runways   = defaultdict(list)
+                    taxiways  = defaultdict(list)
+                    shoulders = defaultdict(list)
                     thisarea=BBox()
                     if isinstance(apt, long):
                         try:
@@ -1823,24 +1861,19 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 sinhdg=sin(h)
                                 p1=[cx-length1*sinhdg, cz+length1*coshdg]
                                 p2=[cx+length2*sinhdg, cz-length2*coshdg]
-                                # Special handling for helipads, of which
-                                # there are loads
+                                # Don't drape helipads, of which there are loads
                                 if len(thisapt)==1 and length+stop1+stop2<61 and width<61:	# 200ft
                                     if not tile.inside(lat,lon):
                                         continue
-                                    #if __debug__: print code, "small"
-                                    if surface in surfaces:
-                                        col=surfaces[surface]
-                                    else:
-                                        col=surfaces[0]
+                                    col = surfaces.get(surface, surfaces[0]) + [0]
                                     xinc=width/2*coshdg
                                     zinc=width/2*sinhdg
-                                    rvarray.extend([[p1[0]+xinc, self.vertexcache.height(newtile,options, p1[0]+xinc, p1[1]+zinc), p1[1]+zinc] + col,
-                                                    [p1[0]-xinc, self.vertexcache.height(newtile,options, p1[0]-xinc, p1[1]-zinc), p1[1]-zinc] + col,
-                                                    [p2[0]-xinc, self.vertexcache.height(newtile,options, p2[0]-xinc, p2[1]-zinc), p2[1]-zinc] + col,
-                                                    [p1[0]+xinc, self.vertexcache.height(newtile,options, p1[0]+xinc, p1[1]+zinc), p1[1]+zinc] + col,
-                                                    [p2[0]-xinc, self.vertexcache.height(newtile,options, p2[0]-xinc, p2[1]-zinc), p2[1]-zinc] + col,
-                                                    [p2[0]+xinc, self.vertexcache.height(newtile,options, p2[0]+xinc, p2[1]+zinc), p2[1]+zinc] + col])
+                                    rvarray.extend(array([[p2[0]+xinc, elev.height(p2[0]+xinc, p2[1]+zinc), p2[1]+zinc] + col,
+                                                          [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc] + col,
+                                                          [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc] + col,
+                                                          [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc] + col,
+                                                          [p1[0]-xinc, elev.height(p1[0]-xinc, p1[1]-zinc), p1[1]-zinc] + col,
+                                                          [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc] + col], float32))
                                     continue
                             else:
                                 # new 850 style runway
@@ -1855,153 +1888,77 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 p2=[x2+stop2*sinhdg, z2-stop2*coshdg]
                             xinc=width/2*coshdg
                             zinc=width/2*sinhdg
-                            newthing=[surface,
-                                      [[p1[0]+xinc, p1[1]+zinc],
-                                       [p1[0]-xinc, p1[1]-zinc],
-                                       [p2[0]-xinc, p2[1]-zinc],
-                                       [p2[0]+xinc, p2[1]+zinc]]]
-                            kind.append(newthing)
+                            newthing = [[p2[0]+xinc, elev.height(p2[0]+xinc, p2[1]+zinc), p2[1]+zinc],
+                                        [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
+                                        [p1[0]-xinc, elev.height(p1[0]-xinc, p1[1]-zinc), p1[1]-zinc],
+                                        [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc]]
+                            kind[surface].append(newthing)
                             if shoulder:
                                 xinc=width*0.75*coshdg
                                 zinc=width*0.75*sinhdg
-                                newthing=[shoulder,
-                                          [[p1[0]+xinc, p1[1]+zinc],
-                                           [p1[0]-xinc, p1[1]-zinc],
-                                           [p2[0]-xinc, p2[1]-zinc],
-                                           [p2[0]+xinc, p2[1]+zinc]]]
-                                shoulders.append(newthing)
-                            for i in range(4):
-                                thisarea.include(*newthing[1][i])
+                                newthing = [[p2[0]+xinc, elev.height(p2[0]+xinc, p2[1]+zinc), p2[1]+zinc],
+                                            [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
+                                            [p1[0]-xinc, elev.height(p1[0]-xinc, p1[1]-zinc), p1[1]-zinc],
+                                            [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc]]
+                                shoulders[shoulder].append(newthing)
+                            for (x,y,z) in newthing:	# outer winding of runway or shoulder (if any)
+                                thisarea.include(x,z)
                         else:
                             # new 850 style taxiway
-                            newthing=[thing[0]]
-                            for i in range(1,len(thing)):
+                            surface = thing[0]
+                            for w in thing[1:]:
+                                n = len(w)
+                                if not n: break
                                 winding=[]
-                                for pt in thing[i]:
-                                    (x,z)=self.latlon2m(pt[0],pt[1])
+                                for j in range(n):
+                                    pt = w[j]
+                                    nxt = w[(j+1) % n]
+                                    loc = (x,z) = self.latlon2m(pt[0],pt[1])
                                     thisarea.include(x,z)
+                                    winding.append([x, elev.height(x,z), z])
                                     if len(pt)<4:
-                                        winding.append([x,z])
+                                        if len(nxt)>=4:
+                                            bezpts = 4
+                                            nxtloc = self.latlon2m(nxt[0], nxt[1])
+                                            nxtbez = self.latlon2m(nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
+                                            for u in range(1,bezpts):
+                                                (bx,bz) = self.bez3([loc, nxtbez, nxtloc], float(u)/bezpts)
+                                                thisarea.include(bx,bz)
+                                                winding.append([bx, elev.height(bx,bz), bz])
                                     else:
-                                        (xb,zb)=self.latlon2m(pt[2],pt[3])
-                                        thisarea.include(xb,zb)
-                                        winding.append([x,z,xb,zb])
-                                newthing.append(winding)
-                            taxiways.append(newthing)
+                                        bezpts = 4
+                                        bezloc = self.latlon2m(pt[2], pt[3])
+                                        nxtloc = self.latlon2m(nxt[0], nxt[1])
+                                        if len(nxt)>=4:
+                                            nxtbez = self.latlon2m(nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
+                                            for u in range(1,bezpts):
+                                                (bx,bz) = self.bez4([loc, bezloc, nxtbez, nxtloc], float(u)/bezpts)
+                                                thisarea.include(bx,bz)
+                                                winding.append([bx, elev.height(bx,bz), bz])
+                                        else:
+                                            for u in range(1,bezpts):
+                                                (bx,bz) = self.bez3([loc, bezloc, nxtloc], float(u)/bezpts)
+                                                thisarea.include(bx,bz)
+                                                winding.append([bx, elev.height(bx,bz), bz])
+                                #windings.append(winding)
+                                taxiways[surface].append(winding)
+                    if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, code)
 
                     if not runways and not taxiways:
                         continue	# didn't add anything (except helipads)
                     
                     # Find patches under this airport
-                    #if __debug__: print code, len(taxiways), len(runways),
-                    meshtris=[]
-                    for (bbox, tris) in self.vertexcache.getMeshdata(newtile,options):
-                        if thisarea.intersects(bbox):
-                            # tesselator is expensive - minimise mesh triangles
-                            for tri in tris:
-                                (meshpt, coeffs)=tri
-                                # following code is unwrapped below for speed
-                                #tbox=BBox()
-                                #for i in range(3):
-                                #    tbox.include(pt[i][0], pt[i][2])
-                                (m0,m1,m2)=meshpt
-                                minx=min(m0[0], m1[0], m2[0])
-                                maxx=max(m0[0], m1[0], m2[0])
-                                minz=min(m0[2], m1[2], m2[2])
-                                maxz=max(m0[2], m1[2], m2[2])
-                                if thisarea.intersects(BBox(minx, maxx, minz, maxz)):
-                                    meshtris.append(tri)
-                    if not meshtris:
-                        #if __debug__: print 0
-                        continue	# airport is wholly outside this tile
-                    #if __debug__: print len(meshtris),
+                    if __debug__: clock2=time.clock()	# Processor time
+                    meshtris = elev.getbox(thisarea)
 
                     for (kind,varray) in [(shoulders, svarray),
                                           (taxiways,  tvarray),
                                           (runways,   rvarray)]:
-                        lastcol=None
-                        pavements=[]
-                        for pave in kind:
-                            # tessellate similar surfaces together
-                            if pave[0] in surfaces:
-                                col=surfaces[pave[0]]
-                            else:
-                                col=surfaces[0]
-                            if col!=lastcol:
-                                if lastcol:
-                                    gluTessEndPolygon(tess)
-                                if pavements:
-                                    # tessellate existing against terrain
-                                    gluTessBeginPolygon(csgt, varray)
-                                    for i in range(0,len(pavements),3):
-                                        gluTessBeginContour(csgt)
-                                        for j in range(i,i+3):
-                                            #assert len(pavements[j])==3 and len(pavements[j][0])==3 and type(pavements[j][1])==bool and len(pavements[j][2])==2, pavements[j]
-                                            gluTessVertex(csgt, array([pavements[j][0][0],0,pavements[j][0][2]],float64), pavements[j])
-                                        gluTessEndContour(csgt)
-                                    for meshtri in meshtris:
-                                        (meshpt, coeffs)=meshtri
-                                        gluTessBeginContour(csgt)
-                                        for m in range(3):
-                                            x=meshpt[m][0]
-                                            z=meshpt[m][2]
-                                            #assert len(meshpt[m])==3, meshpt[m]
-                                            gluTessVertex(csgt, array([x,0,z],float64), (meshpt[m],True, lastcol))
-                                        gluTessEndContour(csgt)
-                                    gluTessEndPolygon(csgt)
-                                lastcol=col
-                                pavements=[]
-                                gluTessBeginPolygon(tess, pavements)
-
-                            # generate tris in pavements
-                            for i in range(1,len(pave)):
-                                gluTessBeginContour(tess)
-                                edge=pave[i]
-                                n=len(edge)
-                                last=None
-                                for j in range(n):
-                                    if len(edge[j])==len(edge[(j+1)%n])==2:
-                                        points=[edge[j]]
-                                    else:
-                                        cpoints=[(edge[j][0],edge[j][1])]
-                                        if len(edge[j])!=2:
-                                            cpoints.append((edge[j][2],edge[j][3]))
-                                        if len(edge[(j+1)%n])!=2:
-                                            cpoints.append((2*edge[(j+1)%n][0]-edge[(j+1)%n][2],2*edge[(j+1)%n][1]-edge[(j+1)%n][3]))
-                                            
-                                        cpoints.append((edge[(j+1)%n][0],edge[(j+1)%n][1]))
-                                        points=[self.bez(cpoints, u/4.0) for u in range(4)]	# X-Plane stops at or before 8
-                                    for pt in points:
-                                        if pt==last: continue
-                                        last=pt
-                                        (x,z)=pt
-                                        y=self.vertexcache.height(newtile,options,x,z,meshtris)
-                                        gluTessVertex(tess, array([x,0,z],float64), ([x,y,z], False, col))
-                                gluTessEndContour(tess)
-
-                        # tessellate last against terrain
-                        if lastcol:
-                            gluTessEndPolygon(tess)
-                        if pavements:	# may have no taxiways
-                            gluTessBeginPolygon(csgt, varray)
-                            for i in range(0,len(pavements),3):
-                                gluTessBeginContour(csgt)
-                                for j in range(i,i+3):
-                                    #assert len(pavements[j])==3 and len(pavements[j][0])==3 and type(pavements[j][1])==bool and len(pavements[j][2])==2, pavements[j]
-                                    gluTessVertex(csgt, array([pavements[j][0][0],0,pavements[j][0][2]],float64), pavements[j])
-                                gluTessEndContour(csgt)
-                            for meshtri in meshtris:
-                                (meshpt, coeffs)=meshtri
-                                gluTessBeginContour(csgt)
-                                for m in range(3):
-                                    x=meshpt[m][0]
-                                    z=meshpt[m][2]
-                                    #assert len(meshpt[m])==3, meshpt[m]
-                                    gluTessVertex(csgt, array([x,0,z],float64), (meshpt[m],True, lastcol))
-                                gluTessEndContour(csgt)
-                            gluTessEndPolygon(csgt)
-
-                    #if __debug__: print ' '
+                        # tessellate similar surfaces together
+                        for (surface, windings) in kind.iteritems():
+                            col = surfaces.get(surface, surfaces[0])
+                            varray.extend(elev.drapeapt(windings, col[0], col[1], meshtris))
+                    if __debug__: print "%6.3f time to tessellate %s" % (time.clock()-clock2, code)
 
                 varray=svarray+tvarray+rvarray
                 shoulderlen=len(svarray)
@@ -2020,11 +1977,14 @@ class MyGL(wx.glcanvas.GLCanvas):
             if runwaylen:
                 self.aptdata[ClutterDef.RUNWAYSLAYER]  = (self.vertexcache.instance_count+shoulderlen+taxiwaylen, runwaylen)
             if len(varray):
-                self.vertexcache.allocate_instance(array(varray,float32).flatten())
+                if __debug__:
+                    for p in varray: assert p.dtype==float32 and len(p)==6, p
+                self.vertexcache.allocate_instance(vstack(varray)[:,:5].flatten())	# instance VBO has 5 coords
 
             progress.Update(14, 'Navaids')
             assert self.tile==newtile
             if self.tile not in self.navaidplacements:
+                if __debug__: clock=time.clock()	# Processor time
                 objs={2:  'lib/airport/NAVAIDS/NDB_3.obj',
                       3:  'lib/airport/NAVAIDS/VOR.obj',
                       4:  'lib/airport/NAVAIDS/ILS.obj',
@@ -2063,11 +2023,14 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 if not placement.load(self.lookup, self.defs, self.vertexcache, False):
                                     if __debug__: print "Missing navaid %s" % objs[i]
                                 else:
+                                    if __debug__: clock2 = time.clock()
                                     x,z=placement.position(self.tile, lat, lon)
                                     placement.layout(self.tile, self.options, self.vertexcache, x+xinc*coshdg-zinc*sinhdg, None, z+xinc*sinhdg+zinc*coshdg)
+                                    if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
                                     placements.append(placement)
                         elif __debug__: print "Missing navaid type %d" % i
                 self.navaidplacements[self.tile]=placements
+                if __debug__: print "%6.3f time in navaids" % (time.clock()-clock)
             else:
                 # This tile has been previously viewed - placements are already loaded
                 for placement in self.navaidplacements[newtile]:
@@ -2081,14 +2044,14 @@ class MyGL(wx.glcanvas.GLCanvas):
             if __debug__ and platform=='win32':
                 pass	# hacky workaround for https://www.virtualbox.org/ticket/8666
             elif self.codes[self.tile]:
+                elev = self.vertexcache.getElevationMesh(self.tile, self.options)
                 self.codeslist=glGenLists(1)
                 glNewList(self.codeslist, GL_COMPILE)
                 glColor3f(1.0, 0.25, 0.25)	# Labels are pink
                 glBindTexture(GL_TEXTURE_2D, 0)
                 for (code, (lat,lon)) in self.codes[self.tile]:
                     (x,z)=self.latlon2m(lat,lon)
-                    y=self.vertexcache.height(self.tile,self.options,x,z)
-                    glRasterPos3f(x, y, z)
+                    glRasterPos3f(x, elev.height(x,z), z)
                     code=code.encode('latin1', 'replace')
                     for c in code:
                         glBitmap(8,13, 16,6, 8,0, fixed8x13[ord(c)])
@@ -2112,7 +2075,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # cursor position
         self.options=options
-        self.y=self.vertexcache.height(self.tile,self.options,self.x,self.z)
+        self.y = self.vertexcache.getElevationMesh(self.tile, self.options).height(self.x, self.z)
 
         # initiate imagery load. Does layout so must be after getMeshdata.
         # Python isn't really multithreaded so don't delay reload by initiating this earlier
@@ -2138,21 +2101,19 @@ class MyGL(wx.glcanvas.GLCanvas):
         # closing down
         self.imagery.exit()
 
-    def bez(self, p, mu):
+    def bez3(self, p, mu):
         # http://paulbourke.net/geometry/bezier/
-        mum1=1-mu
-        if len(p)==3:
-            mu2  = mu*mu
-            mum12= mum1*mum1
-            return (round(p[0][0]*mum12 + 2*p[1][0]*mum1*mu + p[2][0]*mu2,6),
-                    round(p[0][1]*mum12 + 2*p[1][1]*mum1*mu + p[2][1]*mu2,6))
-        elif len(p)==4:
-            mu3  = mu*mu*mu
-            mum13= mum1*mum1*mum1
-            return (round(p[0][0]*mum13 + 3*p[1][0]*mu*mum1*mum1 + 3*p[2][0]*mu*mu*mum1 + p[3][0]*mu3,6),
-                    round(p[0][1]*mum13 + 3*p[1][1]*mu*mum1*mum1 + 3*p[2][1]*mu*mu*mum1 + p[3][1]*mu3,6))
-        else:
-            raise ArithmeticError
+        mum1 = 1-mu
+        mu2  = mu*mu
+        mum12= mum1*mum1
+        return (p[0][0]*mum12 + 2*p[1][0]*mum1*mu + p[2][0]*mu2, p[0][1]*mum12 + 2*p[1][1]*mum1*mu + p[2][1]*mu2)
+
+    def bez4(self, p, mu):
+        # http://paulbourke.net/geometry/bezier/
+        mum1 = 1-mu
+        mu3  = mu*mu*mu
+        mum13= mum1*mum1*mum1
+        return (p[0][0]*mum13 + 3*p[1][0]*mu*mum1*mum1 + 3*p[2][0]*mu*mu*mum1 + p[3][0]*mu3, p[0][1]*mum13 + 3*p[1][1]*mu*mum1*mum1 + 3*p[2][1]*mu*mu*mum1 + p[3][1]*mu3)
         
     def getlocalloc(self, mx, my):
         if not self.valid: raise Exception        # MouseWheel can happen under MessageBox
@@ -2169,9 +2130,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.glstate.set_poly(False)	# DepthMask=True
         glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)
         if self.options&Prefs.ELEVATION:
-            for (base,number,texno,poly) in self.vertexcache.getMesh(self.tile,self.options)[0]:
-                if not poly:
-                    glDrawArrays(GL_TRIANGLES, base, number)
+            for (base,number,texno) in self.vertexcache.getMesh(self.tile,self.options)[0]:
+                glDrawArrays(GL_TRIANGLES, base, number)
         else:
             glBegin(GL_QUADS)
             glVertex3f( onedeg*cos(radians(1+self.tile[0]))/2, 0, -onedeg/2)

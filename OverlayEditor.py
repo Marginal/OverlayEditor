@@ -71,10 +71,10 @@ if not 'startfile' in dir(os):
 from clutter import latlondisp, Polygon, Exclude	# for loading exclusions into palette
 from clutterdef import ClutterDef, ObjectDef, PolygonDef, KnownDefs, ExcludeDef, NetworkDef
 from draw import MyGL
+from elevation import minres, round2res, ElevationMesh
 from files import scanApt, readApt, readNav, readLib, readNet, sortfolded
 from importobjs import importpaths, importobjs
 from lock import LockDialog
-from nodes import minres, round2res
 from palette import Palette, PaletteEntry
 from DSFLib import readDSF, writeDSF
 from MessageBox import myCreateStdDialogButtonSizer, myMessageBox, AboutBox
@@ -1027,7 +1027,17 @@ class MainWindow(wx.Frame):
                 if event.ShiftDown(): zinc*=10
                 xinc=zinc/cos(radians(self.loc[0]))
             hr=radians((self.hdg + [0,90,180,270][cursors.index(event.GetKeyCode())%4])%360)
-            if cursors.index(event.GetKeyCode())<8:
+            if __debug__ and event.AltDown():
+                # debug elevation mesh buckets
+                if event.GetKeyCode()==ord('W'):
+                    self.canvas.ei = max(self.canvas.ei-1, 0)
+                elif event.GetKeyCode()==ord('S'):
+                    self.canvas.ei = min(self.canvas.ei+1, ElevationMesh.DIVISIONS-1)
+                elif event.GetKeyCode()==ord('A'):
+                    self.canvas.ej = max(self.canvas.ej-1, 0)
+                elif event.GetKeyCode()==ord('D'):
+                    self.canvas.ej = min(self.canvas.ej+1, ElevationMesh.DIVISIONS-1)
+            elif cursors.index(event.GetKeyCode())<8:
                 self.loc=(round2res(self.loc[0]+zinc*cos(hr)),
                           round2res(self.loc[1]+xinc*sin(hr)))
             else:

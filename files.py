@@ -21,9 +21,10 @@ import time
 import wx
 
 from buckets import Buckets
-from clutter import Clutter, onedeg, f2m
+from clutter import Clutter, f2m
 from clutterdef import BBox, SkipDefs, NetworkDef
 from DSFLib import readDSF
+from elevation import ElevationMesh, DummyElevationMesh, onedeg
 from palette import PaletteEntry
 from prefs import Prefs
 from version import appname, appversion
@@ -664,8 +665,8 @@ class VertexCache:
     def __init__(self):
         self.ter={}		# name -> physical ter
         self.mesh={}		# tile -> [patches] where patch=(texture,f,v,t)
-        self.meshdata={}	# tile -> [(bbox, [(points, plane coeffs)])]
         self.nets={}		# tile -> [(type, [points])]
+        self.elevation = {}	# ElevationMesh
         self.currenttile=None
         self.meshcache=[]	# [indices] of current tile
         self.netcache=None	# networks in current tile
@@ -691,8 +692,8 @@ class VertexCache:
         if dsfdirs != self.dsfdirs:
             # X-Plane location changed - invalidate loaded meshes too
             self.mesh={}
-            self.meshdata={}
             self.nets={}
+            self.elevation = {}
         self.ter=terrain
         self.dsfdirs=dsfdirs
         self.flush()
@@ -820,9 +821,11 @@ class VertexCache:
             try:
                 (lat, lon, placements, nets, mesh)=readDSF(dsf, netdefs, self.ter)
                 if mesh:
-                    self.mesh[key]=mesh
-                    self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
+                    self.elevation[(tile[0],tile[1],Prefs.ELEVATION)] = ElevationMesh(tile, concatenate(mesh.values()))
+                    self.elevation[(tile[0],tile[1],0)] = DummyElevationMesh(tile)
                     self.nets[(tile[0],tile[1],Prefs.NETWORK)] = nets
+                    self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
+                    self.mesh[key]=mesh
                     break
             except:
                 if __debug__: print_exc()
@@ -840,38 +843,31 @@ class VertexCache:
                 break
         else:
             tex=join('Resources','Sea01.png')
-        self.mesh[key]=[(tex, 9,
-                         [[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
-                          [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100],
-                          [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2,   0, 100],
-                          [-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
-                          [ onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2, 100,   0],
-                          [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100]])]
-        self.nets[(tile[0],tile[1],0)]=[]	# prevents reload on stepping down
-        self.nets[(tile[0],tile[1],Prefs.NETWORK)]=[]
+        self.mesh[key] = { (tex, True): array([[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
+                                               [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100],
+                                               [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2,   0, 100],
+                                               [-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2,   0,   0],
+                                               [ onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2, 100,   0],
+                                               [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2, 100, 100]], float32) }
+        self.nets[(tile[0],tile[1],0)] = self.nets[(tile[0],tile[1],Prefs.NETWORK)] = []
+        self.elevation[(tile[0],tile[1],0)] = self.elevation[(tile[0],tile[1],Prefs.ELEVATION)] = DummyElevationMesh(tile)
 
     # return mesh data sorted by tex and net data for drawing
     def getMesh(self, tile, options):
 
         if tile==self.currenttile:
-            if __debug__: print "getMesh: cached"
+            #if __debug__: print "getMesh: cached"
             return (self.meshcache, self.netcache)
 
-        # merge patches that use same texture
-        bytex={}
-        for texture, flags, v in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
-            if (texture,flags) in bytex:
-                bytex[(texture,flags)].extend(v)
-            else:
-                bytex[(texture,flags)]=list(v)
         # add into array
         if __debug__: clock=time.clock()	# Processor time
 
         self.meshcache = []
-        for (texture, flags), v in bytex.iteritems():
-            base=self.allocate_instance(array(v, float32).flatten())
-            texno=self.texcache.get(texture, flags&8, False, flags&1)
-            self.meshcache.append((base, len(v), texno, flags&2))
+        for (texture, wrap), v in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)].iteritems():
+            vdata = v.flatten()
+            base=self.allocate_instance(vdata)
+            texno=self.texcache.get(texture, wrap, False, True)
+            self.meshcache.append((base, len(vdata)/5, texno))
 
         nets = self.nets[(tile[0],tile[1],options&Prefs.NETWORK)]
         if nets:
@@ -885,107 +881,5 @@ class VertexCache:
         self.currenttile=tile
         return (self.meshcache, self.netcache)
 
-    # create sets of bounding boxes for height testing
-    def getMeshdata(self, tile, options):
-        if not options&Prefs.ELEVATION:
-            mlat=max(abs(tile[0]),abs(tile[0]+1))
-            return [(BBox(-onedeg*cos(radians(mlat))/2, onedeg*cos(radians(mlat))/2, -onedeg/2,onedeg/2),
-                     [([[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
-                        [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2],
-                        [-onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],
-                       [0,0,0,0]),
-                      ([[-onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
-                        [ onedeg*cos(radians(tile[0]+1))/2, 0,-onedeg/2],
-                        [ onedeg*cos(radians(tile[0]  ))/2, 0, onedeg/2]],
-                       [0,0,0,0])])]
-        key=(tile[0],tile[1],options&Prefs.ELEVATION)
-        if key in self.meshdata:
-            return self.meshdata[key]	# don't reload
-        meshdata=[]
-        tot=0
-        if __debug__: clock=time.clock()	# Processor time
-        gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
-        for texture, flags, v in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)]:
-            assert flags&1	# not interested in overlays
-            minx=minz=maxint
-            maxx=maxz=-maxint
-            tris=[]
-            for i in range(0,len(v),3):
-                minx=min(minx, v[i][0], v[i+1][0], v[i+2][0])
-                maxx=max(maxx, v[i][0], v[i+1][0], v[i+2][0])
-                minz=min(minz, v[i][2], v[i+1][2], v[i+2][2])
-                maxz=max(maxz, v[i][2], v[i+1][2], v[i+2][2])
-                tris.append(([v[i][:3], v[i+1][:3], v[i+2][:3]], [0,0,0,0]))
-            meshdata.append((BBox(minx, maxx, minz, maxz), tris))
-            tot+=len(tris)
-        gc.enable()
-        if __debug__: print "%6.3f time in getMeshdata" % (time.clock()-clock)
-        #print len(meshdata), "patches,", tot, "tris,", tot/len(meshdata), "av"
-        self.meshdata[key]=meshdata
-        return meshdata
-            
-    # get all the tris in a given area for height-testing and draping
-    def getMeshtris(self, tile, options, abox):
-        meshtris=[]
-        for (bbox, bmeshtris) in self.getMeshdata(tile, options):
-            if not abox.intersects(bbox): continue
-            # This loop dominates execution time for the typical case of a small area
-            for meshtri in bmeshtris:
-                (meshpt, coeffs)=meshtri
-                (m0,m1,m2)=meshpt
-                # following code is unwrapped below for speed
-                #tbox=BBox()
-                #for m in meshpt:
-                #    tbox.include(m[0],m[2])
-                minx=min(m0[0], m1[0], m2[0])
-                maxx=max(m0[0], m1[0], m2[0])
-                minz=min(m0[2], m1[2], m2[2])
-                maxz=max(m0[2], m1[2], m2[2])
-                if abox.intersects(BBox(minx, maxx, minz, maxz)):
-                    meshtris.append(meshtri)
-        return meshtris
-
-    def height(self, tile, options, x, z, likely=[]):
-        # returns height of mesh at (x,z) using tri if supplied
-        if not options&Prefs.ELEVATION: return 0
-
-        # first test candidates
-        if likely:
-            h=self.heighttest(likely, x, z)
-            if h is not None: return h
-        if self.lasttri:
-            h=self.heighttest([self.lasttri], x, z)
-            if h is not None: return h
-
-        # test all patches then
-        for (bbox, tris) in self.getMeshdata(tile,options):
-            if not bbox.inside(x,z): continue
-            h=self.heighttest(tris, x, z)
-            if h is not None: return h
-        
-        # dunno
-        return 0
-
-    def heighttest(self, tris, x, z):
-        # helper for above
-        for tri in tris:
-            (pt, coeffs)=tri
-            # http://astronomy.swin.edu.au/~pbourke/geometry/insidepoly
-            c=False
-            for i in range(3):
-                j=(i+1)%3
-                if ((((pt[i][2] <= z) and (z < pt[j][2])) or
-                     ((pt[j][2] <= z) and (z < pt[i][2]))) and
-                    (x < (pt[j][0]-pt[i][0]) * (z - pt[i][2]) / (pt[j][2] - pt[i][2]) + pt[i][0])):
-                    c = not c
-            if c:
-                self.lasttri=tri
-                # http://astronomy.swin.edu.au/~pbourke/geometry/planeline
-                if not coeffs[3]:
-                    coeffs[0] = pt[0][1]*(pt[1][2]-pt[2][2]) + pt[1][1]*(pt[2][2]-pt[0][2]) + pt[2][1]*(pt[0][2]-pt[1][2]) # A
-                    coeffs[1] = pt[0][2]*(pt[1][0]-pt[2][0]) + pt[1][2]*(pt[2][0]-pt[0][0]) + pt[2][2]*(pt[0][0]-pt[1][0]) # B
-                    coeffs[2] = pt[0][0]*(pt[1][1]-pt[2][1]) + pt[1][0]*(pt[2][1]-pt[0][1]) + pt[2][0]*(pt[0][1]-pt[1][1]) # C
-                    coeffs[3] = -(pt[0][0]*(pt[1][1]*pt[2][2]-pt[2][1]*pt[1][2]) + pt[1][0]*(pt[2][1]*pt[0][2]-pt[0][1]*pt[2][2]) + pt[2][0]*(pt[0][1]*pt[1][2]-pt[1][1]*pt[0][2])) # D
-                return -(coeffs[0]*x + coeffs[2]*z + coeffs[3]) / coeffs[1]
-        # no hit
-        return None
+    def getElevationMesh(self, tile, options):
+        return self.elevation[(tile[0],tile[1],options&Prefs.ELEVATION)]

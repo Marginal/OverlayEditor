@@ -1,6 +1,6 @@
 from collections import defaultdict	# Requires Python 2.5
 from math import cos, floor, pi, radians
-from numpy import array, arange, concatenate, cumsum, empty, fromstring, insert, repeat, vstack, zeros, float32, uint16, uint32
+from numpy import ndarray, array, arange, concatenate, choose, cumsum, empty, fromstring, insert, logical_and, logical_or, repeat, roll, unique, vstack, where, zeros, float32, uint16, uint32
 from os import mkdir, popen3, rename, unlink, SEEK_CUR, SEEK_END
 from os.path import basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep
 from struct import unpack
@@ -110,7 +110,7 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
     (l,)=unpack('<I', h.read(4))
     placements=[]
     nets = defaultdict(list)
-    mesh=[]
+    mesh = defaultdict(list)
     c=h.read(l-9).split('\0')
     h.read(1)
     overlay=0
@@ -394,7 +394,7 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
             winding=[]
             for d in range(first, last):
                 p=pool[curpool][d]
-                winding.append(tuple(p))
+                winding.append(p.tolist())
             placements.append(Polygon.factory(polygons[idx], param, [winding]))
 
         elif c==15:	# Nested Polygon Range (DSF2Text uses this one too)
@@ -409,7 +409,7 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
                 winding=[]
                 for d in range(i[j],i[j+1]):
                     p=pool[curpool][d]
-                    winding.append(tuple(p))
+                    winding.append(p.tolist())
                 windings.append(winding)
             placements.append(Polygon.factory(polygons[idx], param, windings))
 
@@ -469,7 +469,7 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
             for i in range(l):
                 (d,)=unpack('<H', h.read(2))
                 p=pool[curpool][d]
-                winding.append(tuple(p))
+                winding.append(p.tolist())
             placements.append(Polygon,factory(polygons[idx], param, [winding]))
             
         elif c==14:	# Nested Polygon
@@ -481,30 +481,24 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
                 for j in range(l):
                     (d,)=unpack('<H', h.read(2))
                     p=pool[curpool][d]
-                    winding.append(tuple(p))
+                    winding.append(p.tolist())
                 windings.append(winding)
             if wantoverlay and n>0 and len(windings[0])>=2:
                 placements.append(Polygon.factory(polygons[idx], param, windings))
                 
         elif c==16:	# Terrain Patch
-            if curpatch:
-                newmesh=makemesh(flags,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
-                if newmesh: mesh.append(newmesh)
+            makemesh(mesh,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
             curter=terrain[idx]
             curpatch=[]
             
         elif c==17:	# Terrain Patch w/ flags
-            if curpatch:
-                newmesh=makemesh(flags,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
-                if newmesh: mesh.append(newmesh)
+            makemesh(mesh,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
             (flags,)=unpack('<B', h.read(1))
             curter=terrain[idx]
             curpatch=[]
             
         elif c==18:	# Terrain Patch w/ flags & LOD
-            if curpatch:
-                newmesh=makemesh(flags,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
-                if newmesh: mesh.append(newmesh)
+            makemesh(mesh,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
             (flags,near,far)=unpack('<Bff', h.read(9))
             assert near==0	# We don't currently handle LOD
             curter=terrain[idx]
@@ -572,17 +566,18 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
             raise IOError, (c, "Unrecognised command (%d)" % c, path)
 
     # Last one
-    if curpatch:
-        newmesh=makemesh(flags,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
-        if newmesh: mesh.append(newmesh)
+    makemesh(mesh,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
 
     if __debug__:
         print "%6.3f time in CMDS atom" % (time.clock()-clock)
         print 'Stats:'
         for cmd in sorted(cmds.keys()): print cmd, cmds[cmd]
         if not wantoverlay: print "%d patches, avg subsize %s" % (makemesh.count, makemesh.total/makemesh.count)
-
     h.close()
+
+    # consolidate mesh
+    for k,v in mesh.iteritems():
+        mesh[k] = concatenate(v)
 
     # apply colors to network points, consolidate and create indices for drawing
     # FIXME: speed this up
@@ -637,11 +632,14 @@ class MakeFanIndices(dict):
         return a
 
 
-def makemesh(flags,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,tercache):
+def makemesh(mesh,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,tercache):
 
-    if "count" not in makemesh.__dict__: makemesh.count = makemesh.total = 0
-    makemesh.count += 1
-    makemesh.total += len(patch)
+    if not patch: return
+
+    if __debug__:
+        if "count" not in makemesh.__dict__: makemesh.count = makemesh.total = 0
+        makemesh.count += 1
+        makemesh.total += len(patch)
 
     # Get terrain info
     if ter in tercache:
@@ -666,7 +664,7 @@ def makemesh(flags,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,
                 c=line.split()
                 if not c: continue
                 if c[0] in ['BASE_TEX', 'BASE_TEX_NOWRAP']:
-                    texflags=(c[0]=='BASE_TEX' and 8)
+                    texflags = (c[0]=='BASE_TEX')
                     texture=line[len(c[0]):].strip()
                     texture=texture.replace(':', sep)
                     texture=texture.replace('/', sep)
@@ -688,7 +686,7 @@ def makemesh(flags,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,
     # Make mesh
     centrelat=south+0.5
     centrelon=west+0.5
-    v = vstack(patch)[:,0:7]
+    v = vstack(patch)[:,:7]
 
     heights = v[:,2].copy()
     e = (heights == -32768)	# indices of points that take elevation from raster data
@@ -741,7 +739,7 @@ def makemesh(flags,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,
     else:	# explicit st co-ords
         v[:,3:5] = v[:,5:7]
 
-    return (texture,flags|texflags,v[:,0:5].tolist())	# FIXME: Make heighttest, airport layout etc handle numpy arrays
+    mesh[(texture,texflags)].append(v[:,:5])
 
 
 def writeDSF(dsfdir, key, placements, netfile):
@@ -788,7 +786,7 @@ def writeDSF(dsfdir, key, placements, netfile):
     h.write('PROPERTY\tsim/north\t%d\n' % (south+1))
     h.write('PROPERTY\tsim/south\t%d\n' %  south)
     h.write('\n')
-    h.write('DIVISIONS\t%d\n' % divisions)
+    h.write('DIVISIONS\t%d\n' % DSFdivisions)
     h.write('\n')
 
     objdefs=[]

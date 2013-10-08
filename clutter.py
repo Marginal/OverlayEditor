@@ -7,7 +7,7 @@
 # load -> read definition
 # location -> returns (average) lat/lon
 # locationstr -> returns info suitable for display in status bar
-# inside -> whether inside a bounding box
+# inside -> whether inside a lat,lon bounding box
 # layout -> fit to terrain, allocate into VBO(s)
 # clearlayout -> clear above
 # flush -> clear dynamic VBO allocation (but retain layout) - note doesn't clear instance VBO allocation since def may be shared
@@ -40,15 +40,15 @@ from OpenGL.GL.ARB.occlusion_query import *
 glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
 glEndQuery = alternate(glEndQuery, glEndQueryARB)
 
-from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, StringDef, NetworkDef, ObjectFallback, AutoGenFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, StringFallback, NetworkFallback, SkipDefs, BBox, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELBEZ, COL_SELBEZHANDLE, COL_SELNODE
-from nodes import Node, BezierNode, ParamNode, BezierParamNode, NetworkNode, maxres, minres, minhdg, resolution, round2res
+from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, StringDef, NetworkDef, ObjectFallback, AutoGenFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, StringFallback, NetworkFallback, SkipDefs, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELBEZ, COL_SELBEZHANDLE, COL_SELNODE
+from elevation import BBox, onedeg, maxres, minres, minhdg, resolution, round2res, ElevationMeshBase
+from nodes import Node, BezierNode, ParamNode, BezierParamNode, NetworkNode
 from palette import PaletteEntry
 from prefs import Prefs
 
 f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use for airport layout)
 twopi=pi*2
 piby2=pi/2
-onedeg=111320	# approx 1 degree of longitude at equator (60nm) [m]. Radius from sim/physics/earth_radius_m
 
 
 class Clutter:
@@ -61,6 +61,7 @@ class Clutter:
         self.dynamic_data=None	# Data for inclusion in VBO
         self.base=None		# Offset when allocated in VBO
         self.placements=[]	# child object placements
+        self.bbox = None	# bounding box (x,z)
         
     def position(self, tile, lat, lon):
         # returns (x,z) position relative to centre of enclosing tile
@@ -190,6 +191,9 @@ class Object(Clutter):
     def bucket_dynamic(self, base, buckets):
         self.base = base
         buckets.add(self.definition.layer, self.definition.texture_draped, base, len(self.dynamic_data)/6)
+        if __debug__: # draw outline for debug
+            for i in range(base, base+len(self.dynamic_data)/6, 3):
+                buckets.add(ClutterDef.OUTLINELAYER, None, i, 3)
         return self.dynamic_data
 
     def clearlayout(self, vertexcache):
@@ -221,34 +225,44 @@ class Object(Clutter):
                 p.layout(tile, options, vertexcache, recalc=False)
             return
 
+        elev = vertexcache.getElevationMesh(tile, options)
         if not (x and z):
             x,z=self.position(tile, self.lat, self.lon)
+        if meshtris is None:	# if meshtris are passed in then assume bbox has already been calculated
+            self.bbox = BBox(x, x, z, z)
+            meshtris = elev.getbox(self.bbox)
         if y is not None:
             self.y=y
         else:
-            self.y=vertexcache.height(tile,options,x,z,meshtris)
+            self.y = elev.height(x,z,meshtris)
         if hdg is not None:
             self.hdg=hdg
         h=radians(self.hdg)
         self.matrix = array([x,self.y,z,h],float32)
         self.definition.allocate(vertexcache)	# ensure allocated
         for p in self.placements:
-            p.layout(tile, options, vertexcache)
+            p.layout(tile, options, vertexcache, meshtris=meshtris)
         # draped & poly_os
         if not self.definition.draped: return
         coshdg=cos(h)
         sinhdg=sin(h)
-        if self.definition.poly or not options&Prefs.ELEVATION:	# poly_os
+        if self.definition.poly or elev.flat:	# poly_os
             self.dynamic_data=array([[x+v[0]*coshdg-v[2]*sinhdg,self.y+v[1],z+v[0]*sinhdg+v[2]*coshdg,v[3],v[4],0] for v in self.definition.draped], float32).flatten()
+            vertexcache.allocate_dynamic(self, True)
         else:	# draped
             tris=[]
             for v in self.definition.draped:
                 vx=x+v[0]*coshdg-v[2]*sinhdg
                 vz=z+v[0]*sinhdg+v[2]*coshdg
-                vy=vertexcache.height(tile,options, vx, vz, meshtris)
+                vy = elev.height(vx, vz, meshtris)
                 tris.append([vx,vy,vz,v[3],v[4],0])
-            self.dynamic_data=array(drape(tris, tile, options, vertexcache, meshtris), float32).flatten()
-        vertexcache.allocate_dynamic(self, True)
+            tris = elev.drapetris(tris, meshtris)
+            if tris:
+                self.dynamic_data = concatenate(tris)
+                vertexcache.allocate_dynamic(self, True)
+            else:
+                self.dynamic_data = None
+                vertexcache.allocate_dynamic(self, False)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         self.lat=max(tile[0], min(tile[0]+maxres, self.lat+dlat))
@@ -318,16 +332,17 @@ class AutoGenPoint(Object):
         # We're likely to be doing a lot of height testing and draping, so pre-compute relevant mesh
         # triangles on the assumption that all children are contained in .agp's "floorplan"
         x,z=self.position(tile, self.lat, self.lon)
+        self.bbox = BBox(x, x, z, z)
         h=radians(self.hdg)
         coshdg=cos(h)
         sinhdg=sin(h)
-        if options&Prefs.ELEVATION:
-            abox=BBox()
-            for v in self.definition.draped:
-                abox.include(x+v[0]*coshdg-v[2]*sinhdg, z+v[0]*sinhdg+v[2]*coshdg)
-            mymeshtris = vertexcache.getMeshtris(tile, options, abox)
-        else:
+        for v in self.definition.draped:
+            self.bbox.include(x+v[0]*coshdg-v[2]*sinhdg, z+v[0]*sinhdg+v[2]*coshdg)
+        elev = vertexcache.getElevationMesh(tile, options)
+        if elev.flat:
             mymeshtris = None
+        else:
+            mymeshtris = elev.getbox(self.bbox)
 
         Object.layout(self, tile, options, vertexcache, x, None, z, self.hdg, mymeshtris)
         assert len(self.placements)==len(self.definition.children), "%s %s %s %s" % (self, len(self.placements), self.definition, len(self.definition.children))
@@ -347,7 +362,6 @@ class Polygon(Clutter):
     def factory(name, param, nodes, lon=None, size=None, hdg=None):
         "creates and initialises appropriate Polygon subclass based on file extension"
         if lon==None:
-            assert isinstance(nodes[0][0], tuple)
             nodes = [[Node(coords) for coords in winding] for winding in nodes]
         if name.startswith(PolygonDef.EXCLUDE):
             return Exclude(name, param, nodes, lon, size, hdg)
@@ -398,6 +412,7 @@ class Polygon(Clutter):
         self.closed=True	# Open or closed
         self.col=COL_POLYGON	# Outline colour
         self.points=[]		# list of windings in world space (x,y,z), including points generated by bezier curves
+        self.bbox = None	# bounding box for above
 
     def __str__(self):
         return '<"%s" %d %s>' % (self.name,self.param,self.points)
@@ -549,8 +564,10 @@ class Polygon(Clutter):
     def layout_nodes(self, tile, options, vertexcache, selectednode):
         self.lat=self.lon=0
         self.points=[]
+        self.bbox = BBox()
         self.nonsimple=False
         fittomesh=self.definition.fittomesh
+        elev = vertexcache.getElevationMesh(tile, options)
 
         if not fittomesh:
             # elevation determined by mid-point of nodes 0 and 1
@@ -561,7 +578,7 @@ class Polygon(Clutter):
                 self.lon=self.nodes[0][0].lon
                 self.lat=self.nodes[0][0].lat
             (x,z)=self.position(tile, self.lat, self.lon)
-            y=vertexcache.height(tile,options,x,z)
+            y = elev.height(x,z)
         else:
             self.lon = sum([node.lon for node in self.nodes[0]]) / len(self.nodes[0])
             self.lat = sum([node.lat for node in self.nodes[0]]) / len(self.nodes[0])
@@ -575,7 +592,7 @@ class Polygon(Clutter):
                 node = nodes[j]
                 (x,z) = self.position(tile, node.lat, node.lon)
                 if fittomesh:
-                    y=vertexcache.height(tile,options,x,z)
+                    y = elev.height(x,z)
                 node.setloc(x,y,z)
                 if node.bezier:
                     (x,z) = self.position(tile, node.lat+node.bezlat, node.lon+node.bezlon)
@@ -608,7 +625,7 @@ class Polygon(Clutter):
                                 (bx,by,bz) = self.bez3([node.loc, node.bezloc, nxt.loc], float(u)/bezpts)
                             else:
                                 (bx,by,bz) = self.bez3([node.loc,  nxt.bz2loc, nxt.loc], float(u)/bezpts)
-                            points.append((bx, vertexcache.height(tile,options,bx,bz), bz))
+                            points.append((bx, elev.height(bx,bz), bz))
                     else:
                         if node.bezier and nxt.bezier:
                             points.extend([self.bez4([node.loc, node.bezloc, nxt.bz2loc, nxt.loc], float(u)/bezpts) for u in range(1,bezpts)])
@@ -619,6 +636,9 @@ class Polygon(Clutter):
             if self.closed: points.append(points[0]) # repeat first if closed
             self.points.append(points)
             i += 1
+
+        for (x,y,z) in self.points[0]:
+            self.bbox.include(x,z)
 
         return selectednode
 
@@ -772,7 +792,7 @@ class Polygon(Clutter):
                         p.rest = []
 
         if self.definition.fittomesh:
-            p.setloc(x, vertexcache.height(tile, options, x, z), z)
+            p.setloc(x, vertexcache.getElevationMesh(tile, options).height(x,z), z)
         else:
             p.setloc(x, None, z)	# assumes elevation already correct
         if p.bezier:
@@ -908,7 +928,7 @@ class Draped(Polygon):
 
     tess=gluNewTess()
     gluTessNormal(tess, 0, -1, 0)
-    gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
+    gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NEGATIVE)
     gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
     gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
 
@@ -980,6 +1000,9 @@ class Draped(Polygon):
         if self.nonsimple:
             return Polygon.bucket_dynamic(self, base, buckets)
         else:
+            if __debug__: # draw outline for debug
+                for i in range(base, base+len(self.dynamic_data)/6, 3):
+                    buckets.add(ClutterDef.OUTLINELAYER, None, i, 3)
             self.base = base
             buckets.add(self.definition.layer, self.definition.texture, base, len(self.dynamic_data)/6)
             return self.dynamic_data
@@ -1023,7 +1046,7 @@ class Draped(Polygon):
         p.lat = lat
         (x,z) = self.position(tile, lat, lon)
         if self.definition.fittomesh:
-            p.setloc(x, vertexcache.height(tile, options, x, z), z)
+            p.setloc(x, vertexcache.getElevationMesh(tile, options).height(x,z), z)
         else:
             p.setloc(x, None, z)	# assumes elevation already correct
         if p.bezier:
@@ -1038,43 +1061,46 @@ class Draped(Polygon):
             # just ensure allocated
             return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
 
-        tess=tls and tls.tess or Draped.tess
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
-        # Tessellate to generate tri vertices with UV data, and check polygon is simple
-        if self.param!=65535:
-            drp=self.definition
-            ch=cos(radians(self.param))
-            sh=sin(radians(self.param))
-        try:
-            tris=[]
-            gluTessBeginPolygon(tess, tris)
-            for i in range(len(self.points)):
-                gluTessBeginContour(tess)
-                for j in range(len(self.points[i])-1):	# always closed
-                    if self.param==65535:
-                        gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [self.nodes[i][j].rest[0], self.nodes[i][j].rest[1], 0])
-                    else:	# projected
-                        gluTessVertex(tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), list(self.points[i][j]) + [(self.points[i][j][0]*ch+self.points[i][j][2]*sh)/drp.hscale, (self.points[i][j][0]*sh-self.points[i][j][2]*ch)/drp.vscale, 0])
-                gluTessEndContour(tess)
-            gluTessEndPolygon(tess)
 
+        drp = self.definition
+        tess = tls and tls.tess or Draped.tess
+        elev = vertexcache.getElevationMesh(tile,options)
+
+        # Tessellate to generate tri vertices with UV data, and check polygon is simple
+        tris=[]
+        try:
+            if self.param!=65535:
+                assert not tls, self	# code below only handles passed tessellator for orthos
+                gluTessBeginPolygon(tess, tris)
+                elev.tessellatepoly(tess, self.points, drp.hscale, drp.vscale, self.param)
+                gluTessEndPolygon(tess)
+            else:
+                gluTessBeginPolygon(tess, tris)
+                elev.tessellatenodes(tess, self.nodes)
+                gluTessEndPolygon(tess)
             if __debug__:
                 if not tris: print "Draped layout failed for %s - no tris" % self
-
         except:
             # Combine required -> not simple
+            tris=[]
             if __debug__:
                 print "Draped layout failed for %s:" % self
                 print_exc()
-                tris=[]
 
-        if not tris:
+        if tris and not elev.flat:
+            # tessellate again, against terrain
+            if self.param!=65535:
+                tris = elev.drapepoly(self.points, drp.hscale, drp.vscale, self.param, self.bbox)
+            else:
+                tris = elev.drapetris(tris, self.bbox, tls and tls.csgt)
+        if tris:
+            self.dynamic_data = concatenate(tris)
+            assert self.dynamic_data.dtype == float32
+        else:
             self.nonsimple=True
             self.dynamic_data=concatenate([array(p+COL_NONSIMPLE,float32) for w in self.points for p in w])
-        elif not options&Prefs.ELEVATION:
-            self.dynamic_data=array(tris, float32).flatten()
-        else:
-            self.dynamic_data=array(drape(tris, tile, options, vertexcache, csgt=tls and tls.csgt), float32).flatten()
+
         if not tls:	# defer allocation if called in thread context
             vertexcache.allocate_dynamic(self, True)
         for p in self.placements:
@@ -1629,7 +1655,7 @@ class Facade(Polygon):
                 gluTessEndContour(Facade.tess)
                 gluTessEndPolygon(Facade.tess)
                 if __debug__:
-                    if not rooftris: print "Facade roof layout failed - no tris"
+                    if not rooftris: print "Facade roof layout failed for %s - no tris" % self
             except:
                 # Combine required -> not simple
                 if __debug__:
@@ -1775,14 +1801,15 @@ class Facade(Polygon):
                             gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, y, z, (x*coshdg+z*sinhdg)/s-maxu, (x*sinhdg-z*coshdg)/s-minv, 0])
                     else:
                         # Facade as a whole isn't draped but this floor at height 0 should be, so find elevations
+                        elev = vertexcache.getElevationMesh(tile, options)
                         for j in range(n):
                             (x,y,z) = nodes[j].loc
-                            gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, vertexcache.height(tile,options,x,z), z, (x*coshdg+z*sinhdg)/s-maxu, (x*sinhdg-z*coshdg)/s-minv, 0])
+                            gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, elev.height(x,z), z, (x*coshdg+z*sinhdg)/s-maxu, (x*sinhdg-z*coshdg)/s-minv, 0])
                     gluTessEndContour(Facade.tess)
                     gluTessEndPolygon(Facade.tess)
                     if __debug__:
                         if not tris: print "Facade draped layout failed - no tris"
-                    rooftris=drape(tris, tile, options, vertexcache)
+                    rooftris = elev.drapetris(tris, self.bbox)
                 else:
                     rooftris=[]
                 # Remaining roofs laid out at polygon point elevations
@@ -1968,23 +1995,17 @@ class Line(Polygon):
             return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
 
         selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+
+        # adjust bounding box since lines extend outside points
+        self.bbox.maxx += self.definition.width; self.bbox.minx -= self.definition.width
+        self.bbox.maxz += self.definition.width; self.bbox.minz -= self.definition.width
+
         points=self.points[0]
         n = self.closed and len(points)-1 or len(points)
 
         # may need to repeatedly drape, so pre-compute relevant mesh triangles
-        do_drape = options&Prefs.ELEVATION
-        if do_drape:
-            abox=BBox()
-            for node in range(n):
-                (x,y,z)=points[node]
-                abox.include(x, z)
-            abox.maxx += self.definition.width
-            abox.minx -= self.definition.width
-            abox.maxz += self.definition.width
-            abox.minz -= self.definition.width
-            mymeshtris = vertexcache.getMeshtris(tile, options, abox)
-        else:
-            mymeshtris = None
+        elev = vertexcache.getElevationMesh(tile, options)
+        mymeshtris = elev.getbox(self.bbox)
 
         nsegs = len(self.definition.segments)
         even = self.definition.even
@@ -2024,6 +2045,9 @@ class Line(Polygon):
                 else:
                     sx2 = 1	# too acute
 
+            # entire line may be long espcially if a road, so calculate bounding box per-edge
+            bbox = BBox(min(x,tox)-self.definition.width, max(x,tox)+self.definition.width,
+                        min(z,toz)-self.definition.width, max(z,toz)+self.definition.width)
             cosh1 = cos(h1) * sx1
             sinh1 = sin(h1) * sx1
             cosh2 = cos(h2) * sx2
@@ -2033,21 +2057,21 @@ class Line(Polygon):
                 # near
                 vx = x + segment.x_right * cosh1
                 vz = z + segment.x_right * sinh1
-                v1 = [vx, vertexcache.height(tile,options,vx,vz,mymeshtris) + segment.y2, vz, segment.s_right, t1 * segment.t_ratio, 0]
+                v1 = [vx, elev.height(vx,vz,mymeshtris) + segment.y2, vz, segment.s_right, t1 * segment.t_ratio, 0]
                 vx = x + segment.x_left  * cosh1
                 vz = z + segment.x_left  * sinh1
-                v2 = [vx, vertexcache.height(tile,options,vx,vz,mymeshtris) + segment.y1, vz, segment.s_left,  t1 * segment.t_ratio, 0]
+                v2 = [vx, elev.height(vx,vz,mymeshtris) + segment.y1, vz, segment.s_left,  t1 * segment.t_ratio, 0]
                 # far
                 vx = tox + segment.x_left  * cosh2
                 vz = toz + segment.x_left  * sinh2
-                v3 = [vx, vertexcache.height(tile,options,vx,vz,mymeshtris) + segment.y1, vz, segment.s_left,  t2 * segment.t_ratio, 0]
+                v3 = [vx, elev.height(vx,vz,mymeshtris) + segment.y1, vz, segment.s_left,  t2 * segment.t_ratio, 0]
                 vx = tox + segment.x_right * cosh2
                 vz = toz + segment.x_right * sinh2
-                v4 = [vx, vertexcache.height(tile,options,vx,vz,mymeshtris) + segment.y2, vz, segment.s_right, t2 * segment.t_ratio, 0]
+                v4 = [vx, elev.height(vx,vz,mymeshtris) + segment.y2, vz, segment.s_right, t2 * segment.t_ratio, 0]
                 tris = [v1,v2,v3, v4,v1,v3]
-                if do_drape:
-                    # Have to drape each segment individually since UVs don't match
-                    tris = drape(tris, tile, options, vertexcache, mymeshtris)
+                # Have to drape each segment individually since UVs don't necessarily match
+                if not elev.flat:
+                    tris = elev.drapetris(tris, bbox)
                 layer = (segment.y1 or segment.y2) and ClutterDef.GEOMCULLEDLAYER or self.definition.layer
                 segtris[layer][i] = segtris[layer][i] + tris
             t1 = t2 % 1		# prevent UV coords growing without bound
@@ -2090,6 +2114,9 @@ class Line(Polygon):
             base += self.outlinelen
         for (layer, texture, ntris) in self.drawdata:
             buckets.add(layer, texture, base, ntris)
+            if __debug__: # draw outline for debug
+                for i in range(base, base+ntris, 3):
+                    buckets.add(ClutterDef.OUTLINELAYER, None, i, 3)
             base += ntris
         assert base-self.base == len(self.dynamic_data)/6, "%s %s" % (base-self.base, len(self.dynamic_data)/6)
         return self.dynamic_data
@@ -2394,148 +2421,3 @@ Exclude.TYPES={PolygonDef.EXCLUDE+'Beaches': Beach,
                PolygonDef.EXCLUDE+'Strings': String}
 if __debug__:	# check we have a type for every name
     for name in Exclude.NAMES.values(): assert name in Exclude.TYPES
-
-
-# Tessellators for draped polygons
-
-def tessvertex(vertex, data):
-    data.append(vertex)
-
-def tessedge(flag):
-    pass	# dummy
-
-def csgtvertex(vertex, data):
-    data.append(vertex[0])
-
-def csgtcombined(coords, vertex, weight):
-    try:
-        return csgtcombine(coords, vertex, weight)
-    except:
-        print_exc()
-
-def csgtcombine(coords, vertex, weight):
-    # interp height & UV at coords from vertices ([x,y,z,u,v,w], ismesh)
-    #print
-    #print vertex[0], weight[0]
-    #print vertex[1], weight[1]
-    #print vertex[2], weight[2]
-    #print vertex[3], weight[3]
-
-    # check for just two adjacent mesh triangles
-    if vertex[0]==vertex[1]:
-        # common case
-        return vertex[0]
-    elif vertex[0][0][0]==vertex[1][0][0] and vertex[0][0][2]==vertex[1][0][2] and vertex[0][1]:
-        # Height discontinuity in terrain mesh - eg LIEE - wtf!
-        #assert not weight[2] and not vertex[2] and not weight[3] and not vertex[3] and vertex[1][1]
-        #print vertex[0], " ->"
-        return vertex[0]
-
-    # intersection of two lines - use terrain mesh line for height
-    elif vertex[0][1]:
-        # p1 and p2 have mesh height, p3 and p4 have uv
-        assert weight[0] and weight[1] and weight[2] and weight[3] and vertex[1][1]
-        p1=vertex[0][0]
-        p2=vertex[1][0]
-        p3=vertex[2][0]
-        p4=vertex[3][0]
-    else:
-        # p1 and p2 have mesh height, p3 and p4 have uv
-        assert weight[0] and weight[1] and weight[2] and weight[3] and vertex[2][1] and vertex[3][1]
-        p1=vertex[2][0]
-        p2=vertex[3][0]
-        p3=vertex[0][0]
-        p4=vertex[1][0]
-
-    # height
-    d=hypot(p2[0]-p1[0], p2[2]-p1[2])
-    if not d:
-        y=p1[1]
-    else:
-        ratio=(hypot(coords[0]-p1[0], coords[2]-p1[2])/d)
-        y=p1[1]+ratio*(p2[1]-p1[1])
-
-    # UV
-    d=hypot(p4[0]-p3[0], p4[2]-p3[2])
-    if not d:
-        uv=p3[3:]
-    else:
-        ratio=(hypot(coords[0]-p3[0], coords[2]-p3[2])/d)
-        uv=[p3[3]+ratio*(p4[3]-p3[3]),
-            p3[4]+ratio*(p4[4]-p3[4]),
-            p3[5]+ratio*(p4[5]-p3[5])]
-
-    #print ([coords[0],y,coords[2]], True, uv), " ->"
-    return ([coords[0],y,coords[2]]+uv, True)
-
-def csgtedge(flag):
-    pass	# dummy
-
-# Helper to drape polygons across terrain
-# Input - list of tri vertices [x,y,z,u,v,w]
-# Output - list of tri vertices draped across terrain - [x,y,z,u,v,w]
-def drape(tris, tile, options, vertexcache, meshtris=None, csgt=None):
-    if not csgt: csgt=drape.csgt
-    # tesselator is expensive - minimise mesh triangles
-    if not meshtris:
-        abox=BBox()
-        for tri in tris:
-            abox.include(tri[0],tri[2])
-        meshtris = vertexcache.getMeshtris(tile, options, abox)
-
-    csgttris=[]
-    for i in range(0,len(tris),3):
-        gluTessBeginPolygon(csgt, csgttris)
-        gluTessBeginContour(csgt)
-        tbox=BBox()
-        for tri in tris[i:i+3]:
-            tbox.include(tri[0],tri[2])
-            gluTessVertex(csgt, array([tri[0],0,tri[2]],float64), (tri,False))
-        gluTessEndContour(csgt)
-
-        for meshtri in meshtris:
-            gluTessBeginContour(csgt)
-            (meshpt, coeffs)=meshtri
-            (m0,m1,m2)=meshpt
-            minx=min(m0[0], m1[0], m2[0])
-            maxx=max(m0[0], m1[0], m2[0])
-            minz=min(m0[2], m1[2], m2[2])
-            maxz=max(m0[2], m1[2], m2[2])
-            if not tbox.intersects(BBox(minx, maxx, minz, maxz)):
-                continue
-            for m in meshpt:
-                x=m[0]
-                z=m[2]
-                # calculate a uv position
-                (tri0,tri1,tri2)=tris[i:i+3]
-                x0=tri0[0]
-                z0=tri0[2]
-                x1=tri1[0]-x0
-                z1=tri1[2]-z0
-                x2=tri2[0]-x0
-                z2=tri2[2]-z0
-                xp=x-x0
-                zp=z-z0
-                ah=x1*z2-x2*z1
-                bh=x2*z1-x1*z2
-                a=ah and (xp*z2-x2*zp)/ah
-                b=bh and (xp*z1-x1*zp)/bh
-                gluTessVertex(csgt, array([x,0,z],float64),
-                              (m+[tri0[3]+a*(tri1[3]-tri0[3])+b*(tri2[3]-tri0[3]),
-                                  tri0[4]+a*(tri1[4]-tri0[4])+b*(tri2[4]-tri0[4]),
-                                  tri0[5]+a*(tri1[5]-tri0[5])+b*(tri2[5]-tri0[5])], True))
-            gluTessEndContour(csgt)
-        gluTessEndPolygon(csgt)
-
-    #if __debug__: print "%6.3f time to drape %d tris against %d meshtris\n%6.3f of that in BBox" % (time.clock()-clock, len(tris)/3, len(meshtris), clock2)
-    return csgttris
-
-drape.csgt=gluNewTess()
-gluTessNormal(drape.csgt, 0, -1, 0)
-gluTessProperty(drape.csgt, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
-gluTessCallback(drape.csgt, GLU_TESS_VERTEX_DATA,  csgtvertex)
-if __debug__:
-    gluTessCallback(drape.csgt, GLU_TESS_COMBINE,  csgtcombined)
-else:
-    gluTessCallback(drape.csgt, GLU_TESS_COMBINE,  csgtcombine)
-gluTessCallback(drape.csgt, GLU_TESS_EDGE_FLAG,    csgtedge)	# no strips

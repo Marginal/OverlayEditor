@@ -1,16 +1,8 @@
-from math import atan2, cos, floor, hypot, radians, sin
+from math import atan2, cos, hypot, radians, sin
 
 import copy
 
-divisions=32	# WED 1.1 encodes at 8. WED 1.2 encodes at 32
-resolution=divisions*65535
-minres=1.0/resolution
-maxres=1-minres
-minhdg=360.0/65535
-
-def round2res(x):
-    i=floor(x)
-    return i+round((x-i)*resolution,0)*minres
+from elevation import minres, round2res
 
 # Basic node with no bezier control points. e.g. Forest. Also used for Draped orthos and unknown polygon types.
 class Node:

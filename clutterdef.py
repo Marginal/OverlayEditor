@@ -4,7 +4,7 @@ from numpy import array, array_equal, concatenate, copy, diag, dot, float32, ide
 from operator import itemgetter, attrgetter
 from os import listdir
 from os.path import basename, dirname, exists, join, normpath, sep
-from sys import exc_info, maxint
+from sys import maxint
 
 from OpenGL.GL import *
 from OpenGL.arrays import vbo
@@ -12,6 +12,8 @@ from OpenGL.extensions import alternate
 from OpenGL.GL.ARB.instanced_arrays import glVertexAttribDivisorARB
 from OpenGL.GL.ARB.draw_instanced import glDrawArraysInstancedARB
 glDrawArraysInstanced = alternate(glDrawArraysInstanced, glDrawArraysInstancedARB, platform.createExtensionFunction('glDrawArraysInstancedARB', dll=platform.GL, extension='GL_ARB_instanced_arrays', argTypes=(constants.GLenum,constants.GLint,constants.GLsizei,constants.GLsizei)))	# Handle systems that support GL_ARB_instanced_arrays but not GL_ARB_draw_instanced
+
+from elevation import BBox
 
 import wx
 if __debug__:
@@ -35,31 +37,6 @@ COL_CURSOR   =(1.0, 0.25,0.25)
 COL_NETWORK  =(0.5, 0.5, 0.5)
 
 fallbacktexture='Resources/fallback.png'
-
-class BBox:
-
-    def __init__(self, minx=maxint, maxx=-maxint, minz=maxint, maxz=-maxint):
-        self.minx=minx
-        self.maxx=maxx
-        self.minz=minz
-        self.maxz=maxz
-
-    def intersects(self, other):
-        return ((self.minx <= other.maxx) and (self.maxx > other.minx) and
-                (self.minz <= other.maxz) and (self.maxz > other.minz))
-
-    def inside(self, x, z):
-        return ((self.minx <= x < self.maxx) and
-                (self.minz <= z < self.maxz))
-
-    def include(self, x, z):
-        self.maxx=max(self.maxx, x)
-        self.minx=min(self.minx, x)
-        self.maxz=max(self.maxz, z)
-        self.minz=min(self.minz, z)
-
-    def __str__(self):
-        return '<x:%s,%s z:%s,%s>' % (self.minx,self.maxx,self.minz,self.maxz)
 
 
 # Virtual class for ground clutter definitions

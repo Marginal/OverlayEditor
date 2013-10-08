@@ -15,7 +15,8 @@ if __debug__:
     from traceback import print_exc
     from prefs import Prefs
 
-from clutter import Draped, DrapedImage, Polygon, tessvertex, tessedge, csgtvertex, csgtcombined, csgtcombine, csgtedge	# no strips
+from clutter import Draped, DrapedImage, Polygon
+from elevation import ElevationMeshBase
 from nodes import Node
 from version import appname, appversion
 
@@ -215,18 +216,15 @@ class Imagery:
         tls=threading.local()
         tls.tess=gluNewTess()
         gluTessNormal(tls.tess, 0, -1, 0)
-        gluTessProperty(tls.tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
-        gluTessCallback(tls.tess, GLU_TESS_VERTEX_DATA,  tessvertex)
-        gluTessCallback(tls.tess, GLU_TESS_EDGE_FLAG,    tessedge)
+        gluTessProperty(tls.tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NEGATIVE)
+        gluTessCallback(tls.tess, GLU_TESS_VERTEX_DATA,  ElevationMeshBase.tessvertex)
+        gluTessCallback(tls.tess, GLU_TESS_EDGE_FLAG,    ElevationMeshBase.tessedge)
         tls.csgt=gluNewTess()
         gluTessNormal(tls.csgt, 0, -1, 0)
         gluTessProperty(tls.csgt, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_ABS_GEQ_TWO)
-        gluTessCallback(tls.csgt, GLU_TESS_VERTEX_DATA,  csgtvertex)
-        if __debug__:
-            gluTessCallback(tls.csgt, GLU_TESS_COMBINE,  csgtcombined)
-        else:
-            gluTessCallback(tls.csgt, GLU_TESS_COMBINE,  csgtcombine)
-        gluTessCallback(tls.csgt, GLU_TESS_EDGE_FLAG,    csgtedge)
+        gluTessCallback(tls.csgt, GLU_TESS_VERTEX_DATA,  ElevationMeshBase.tessvertex)
+        gluTessCallback(tls.csgt, GLU_TESS_COMBINE,      ElevationMeshBase.tesscombinetris)
+        gluTessCallback(tls.csgt, GLU_TESS_EDGE_FLAG,    ElevationMeshBase.tessedge)
 
         while True:
             (fn, args)=self.q.get()
@@ -287,7 +285,7 @@ class Imagery:
             return []	# Don't do anything on startup. Can't do anything without a valid provider.
 
         # layout assumes mesh loaded
-        assert (not self.canvas.options&Prefs.ELEVATION) or (int(floor(self.loc[0])),int(floor(self.loc[1])),self.canvas.options&Prefs.ELEVATION) in self.canvas.vertexcache.meshdata, self.canvas.vertexcache.meshdata.keys()
+        assert (int(floor(self.loc[0])),int(floor(self.loc[1])),self.canvas.options&Prefs.ELEVATION) in self.canvas.vertexcache.elevation, self.canvas.vertexcache.elevation.keys()
 
         # http://msdn.microsoft.com/en-us/library/bb259689.aspx
         # http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#Resolution_and_Scale
