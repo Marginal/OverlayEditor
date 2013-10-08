@@ -579,6 +579,31 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
     for k,v in mesh.iteritems():
         mesh[k] = concatenate(v)
 
+    if len(terrain)>1 and 'g2xpl' in terrain[1]:
+        # Post-processing for g2xpl-generated meshes. This is slow so only do it if a g2xpl texture is used.
+        if __debug__: clock=time.clock()
+        for k,v in mesh.iteritems():
+            # sort vertices of each triangle
+            dtype = [('x1',float32), ('y1',float32), ('z1',float32), ('u1',float32), ('v1',float32),
+                     ('x2',float32), ('y2',float32), ('z2',float32), ('u2',float32), ('v2',float32),
+                     ('x3',float32), ('y3',float32), ('z3',float32), ('u3',float32), ('v3',float32)]
+            v = v.reshape((-1,15))
+            v1 = v.view(dtype)
+            v2 = roll(v, -5, axis=1).view(dtype)
+            v3 = roll(v, -10, axis=1).view(dtype)
+            v12= where(logical_or(v2['x1'] > v1['x1'], logical_and(v2['x1'] == v1['x1'], v2['z1'] > v1['z1'])), v2, v1)
+            v  = where(logical_or(v3['x1'] >v12['x1'], logical_and(v3['x1'] ==v12['x1'], v3['z1'] >v12['z1'])), v3, v12)
+
+            # remove negatives - calculate cross product at middle point p2
+            # http://paulbourke.net/geometry/polygonmesh/ "... vertices ordered clockwise or counterclockwise"
+            v = v[(v['x2']-v['x1']) * (v['z3']-v['z2']) - (v['z2']-v['z1']) * (v['x3']-v['x2']) > 0]
+
+            # Remove dupes. numpy.unique() only works on 1D arrays -
+            # http://mail.scipy.org/pipermail/numpy-discussion/2010-September/052877.html
+            v = unique(v)
+            mesh[k] = v.view(float32).reshape((-1,5))
+        if __debug__: print "%6.3f time in g2xpl post-processing" % (time.clock()-clock)
+
     # apply colors to network points, consolidate and create indices for drawing
     # FIXME: speed this up
     if nets:
