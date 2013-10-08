@@ -370,31 +370,30 @@ class ObjectDef(ClutterDef):
                 elif id=='TEXTURE_DRAPED':
                     if len(c)>1 and c[1].lower()!='none':
                         texture_draped=self.cleanpath(c[1])
-                        # FIXME: Should have different layers for static and dynamic content
                         self.layer=ClutterDef.DRAPEDLAYER
                 elif id=='ATTR_LOD':
                     if float(c[1])!=0: break
                     current=last=culled	# State is reset per LOD
                 elif id=='ATTR_poly_os':
-                    if not texture_draped:	# Ignore ATTR_poly_os if obj uses ATTR_draped
-                        self.poly=max(self.poly,int(float(c[1])))
-                        if float(c[1]):
-                            last=current
-                            current=draped
-                        else:
-                            current=last
+                    self.poly=max(self.poly,int(float(c[1])))
+                    if float(c[1]):
+                        if current is not draped: last = current
+                        current=draped
+                    else:
+                        current=last
                 elif id=='ATTR_cull':
-                    if current==draped:
+                    if current is draped:
                         last=culled
                     else:
                         current=culled
                 elif id=='ATTR_no_cull':
-                    if current==draped:
+                    if current is draped:
                         last=nocull
                     else:
                         current=nocull
                 elif id=='ATTR_draped':
-                    last=current
+                    self.poly = 0	# SketchUp outputs poly_os 2 before draped for backwards compatibility
+                    if current is not draped: last = current
                     current=draped
                 elif id=='ATTR_no_draped':
                     current=last
@@ -484,7 +483,7 @@ class ObjectDef(ClutterDef):
                     self.texerr=(texture, e.strerror)
                 except:
                     self.texerr=(texture, unicode(exc_info()[1]))
-                if self.poly:
+                if draped and not texture_draped:
                     self.texture_draped=self.texture
             self.draped=draped
 
