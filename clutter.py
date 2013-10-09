@@ -610,14 +610,17 @@ class Polygon(Clutter):
                     continue	# re-do layout with updated beziers
 
             points=[]
+            bezpts = Polygon.BEZPTS
             for j in range(n):
                 node = nodes[j]
                 nxt  = nodes[(j+1)%n]
                 node.pointidx = len(points)	# which point corresponds to this node
                 points.append(node.loc)
                 if self.canbezier and (self.closed or j!=n-1) and (node.bezier or nxt.bezier):	# only do beziers from last point if closed
-                    bezpts = isinstance(self, Network) and Polygon.NETBEZPTS or Polygon.BEZPTS
                     if fittomesh:
+                        if isinstance(self, Network):	# limit number of bezier points for speed
+                            size = hypot(nxt.loc[0] - node.loc[0], nxt.loc[2] - node.loc[2])
+                            bezpts = min(Polygon.NETBEZPTS, max(2, int(1.414 * size / self.definition.width)))
                         for u in range(1,bezpts):
                             if node.bezier and nxt.bezier:
                                 (bx,by,bz) = self.bez4([node.loc, node.bezloc, nxt.bz2loc, nxt.loc], float(u)/bezpts)
