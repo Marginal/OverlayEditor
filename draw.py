@@ -410,7 +410,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         glEnable(GL_DEPTH_TEST)
         glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
-        glPointSize(5.0)			# for nodes
+        glPointSize(7.0)			# for nodes
+        glEnable(GL_POINT_SMOOTH)
+        glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)	# we can hope
         glFrontFace(GL_CW)
         glPolygonMode(GL_FRONT, GL_FILL)
         glPolygonOffset(-2, -2)
@@ -747,6 +749,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         proj=dot(array([[cos(radians(self.h)),0,-sin(radians(self.h)),0], [0,1,0,0], [sin(radians(self.h)),0,cos(radians(self.h)),0], [0,0,0,1]], float64), proj)	# glRotatef(self.h, 0.0,1.0,0.0)
         self.proj=dot(array([[1,0,0,0], [0,1,0,0], [0,0,1,0], [-self.x,-self.y,-self.z,1]], float64), proj)	# glTranslatef(-self.x, -self.y, -self.z)
         glLoadMatrixd(self.proj)
+        glEnable(GL_POINT_SMOOTH)
 
         # Workaround for buggy ATI drivers: Check that occlusion queries actually work
         if self.glstate.occlusion_query is None:
@@ -990,6 +993,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glEnd()
 
         glLoadMatrixd(self.proj)	# Restore state for unproject
+        glDisable(GL_POINT_SMOOTH)	# Make selection etc slightly easier on the GPU
         self.glstate.set_poly(False)
 
         #if __debug__: print "%6.3f time in OnPaint" % (time.clock()-clock)
