@@ -280,7 +280,7 @@ class DummyElevationMesh(ElevationMeshBase):
 
 class ElevationMesh(ElevationMeshBase):
 
-    DIVISIONS = 256	# arbitrary - diminishing returns after this with smaller buckets
+    DIVISIONS = 128	# arbitrary - diminishing returns after this with smaller buckets
 
     def __init__(self, tile, tris):
 
@@ -322,11 +322,16 @@ class ElevationMesh(ElevationMeshBase):
 
         # Find 2D barycentric vectors, centred on p1 (A) - http://www.blackpawn.com/texts/pointinpoly/
         self.tris = empty(len(tris)/3, dtype=[('p1',float32,(3,)), ('p2',float32,(3,)), ('p3',float32,(3,)),
+                                              ('minx',float32), ('maxx',float32), ('minz',float32), ('maxz',float32),
                                               ('v0',float32,(2,)), ('v1',float32,(2,)),
                                               ('dot00',float32), ('dot01',float32), ('dot11',float32), ('invDenom',float32)])
         self.tris['p1'] = tris[0::3,:3]	# drop uv
         self.tris['p2'] = tris[1::3,:3]
         self.tris['p3'] = tris[2::3,:3]
+        self.tris['minx'] = numpy.minimum(numpy.minimum(self.tris['p1'][:,0], self.tris['p2'][:,0]), self.tris['p3'][:,0])
+        self.tris['maxx'] = numpy.maximum(numpy.maximum(self.tris['p1'][:,0], self.tris['p2'][:,0]), self.tris['p3'][:,0])
+        self.tris['minz'] = numpy.minimum(numpy.minimum(self.tris['p1'][:,2], self.tris['p2'][:,2]), self.tris['p3'][:,2])
+        self.tris['maxz'] = numpy.maximum(numpy.maximum(self.tris['p1'][:,2], self.tris['p2'][:,2]), self.tris['p3'][:,2])
         self.tris['v0'] = v0 = self.tris['p3'][:,::2] - self.tris['p1'][:,::2]	# C - A
         self.tris['v1'] = v1 = self.tris['p2'][:,::2] - self.tris['p1'][:,::2]	# B - A
         self.tris['dot00'] = numpy.sum(v0*v0, axis=1)		# v0.v0
@@ -339,21 +344,18 @@ class ElevationMesh(ElevationMeshBase):
 
         # Find grid buckets
         n = len(self.tris)
-        tris = self.tris.view(float32).reshape((n,-1))	# filtered coords
-        x = (tris[:,0:9:3] / self.divwidth + ElevationMesh.DIVISIONS/2).astype(int)
-        z = (tris[:,2:9:3] / self.divheight+ ElevationMesh.DIVISIONS/2).astype(int)
         xr = empty((n,2),int)	# [min,max+1]
         zr = empty((n,2),int)	# [min,max+1]
-        xr[:,0] = numpy.minimum(numpy.minimum(x[:,0], x[:,1]), x[:,2])
-        zr[:,0] = numpy.minimum(numpy.minimum(z[:,0], z[:,1]), z[:,2])
+        xr[:,0] = self.tris['minx'] / self.divwidth  + ElevationMesh.DIVISIONS/2
+        zr[:,0] = self.tris['minz'] / self.divheight + ElevationMesh.DIVISIONS/2
         # points lying exactly on top left grid boundary are rounded down
-        xr[:,1] = numpy.minimum(numpy.maximum(numpy.maximum(x[:,0], x[:,1]), x[:,2]) + 1, ElevationMesh.DIVISIONS)
-        zr[:,1] = numpy.minimum(numpy.maximum(numpy.maximum(z[:,0], z[:,1]), z[:,2]) + 1, ElevationMesh.DIVISIONS)
+        xr[:,1] = numpy.minimum(self.tris['maxx'] / self.divwidth  + ElevationMesh.DIVISIONS/2 + 1, ElevationMesh.DIVISIONS)
+        zr[:,1] = numpy.minimum(self.tris['maxz'] / self.divheight + ElevationMesh.DIVISIONS/2 + 1, ElevationMesh.DIVISIONS)
         if __debug__:
             print "%6.3f time to calculate mesh " % (time.clock()-clock)
             for i in range(n):
-                assert xr[i,0] >= 0 and xr[i,1] <= ElevationMesh.DIVISIONS, "%d %s %s" % (i, xr[i], tris[i])
-                assert zr[i,0] >= 0 and zr[i,1] <= ElevationMesh.DIVISIONS, "%d %s %s" % (i, zr[i], tris[i])
+                assert xr[i,0] >= 0 and xr[i,1] <= ElevationMesh.DIVISIONS, "%d xr=%s %s" % (i, xr[i], self.tris[i])
+                assert zr[i,0] >= 0 and zr[i,1] <= ElevationMesh.DIVISIONS, "%d zr=%s %s" % (i, zr[i], self.tris[i])
 
         self.buckets = [[list() for i in range(ElevationMesh.DIVISIONS)] for j in range(ElevationMesh.DIVISIONS)]
 
@@ -428,7 +430,7 @@ class ElevationMesh(ElevationMeshBase):
         maxz = min(int(floor(abox.maxz / self.divheight)) + ElevationMesh.DIVISIONS/2 + 1, ElevationMesh.DIVISIONS)
 
         if minx>=ElevationMesh.DIVISIONS or maxx<=0 or minz>=ElevationMesh.DIVISIONS or maxz<=0:
-            return empty((9,),float32)	# all off mesh
+            return empty((0,),float32)	# all off mesh
         elif minx+1==maxx and minz+1==maxz:	# common case: just one box
             indices = self.buckets[minz][minx]
         else:
@@ -437,12 +439,15 @@ class ElevationMesh(ElevationMeshBase):
                 for x in range(minx,maxx):
                     indices.update(self.buckets[z][x])
             indices = list(indices)
-        if indices:
-            tris = self.tris[indices]
-            #if __debug__: print "%6.3f time in getbox" % (time.clock()-clock)
-        else:
-            tris = empty((9,),float32)	# shouldn't happen
+        if not indices:
             if __debug__: print "%6.3f time in getbox (no tris)" % (time.clock()-clock)
+            return empty((0,),float32)	# shouldn't happen
+
+        tris = self.tris[indices]
+        # like BBox.intersects
+        tris = tris[logical_and(logical_and(tris['minx'] <= abox.maxx, tris['maxx'] > abox.minx),
+                                logical_and(tris['minz'] <= abox.maxz, tris['maxz'] > abox.minz))]
+        #if __debug__: print "%6.3f time in getbox" % (time.clock()-clock)
         return tris
 
 
@@ -457,6 +462,7 @@ class ElevationMesh(ElevationMeshBase):
         else:
             assert isinstance(box, ndarray), box
             meshtris = box
+        if not len(meshtris): return []
 
         # just the points, in reverse order since polygons are winded negatively
         meshtris = meshtris.view(float32).reshape((len(meshtris),-1))[:,:9].reshape((-1,3))[::-1]
@@ -496,6 +502,7 @@ class ElevationMesh(ElevationMeshBase):
         else:
             assert isinstance(box, ndarray), box
             meshtris = box
+        if not len(meshtris): return []
 
         # just the points
         meshtris = meshtris.view(float32).reshape((len(meshtris),-1))[:,:9].reshape((-1,3))
@@ -545,7 +552,7 @@ class ElevationMesh(ElevationMeshBase):
         outtris=[]
         gluTessBeginPolygon(tess, outtris)
         # mesh
-        for i in range(0,len(meshtris),3):
+        for i in range(0,len(meshcoords),3):
             gluTessBeginContour(tess)
             for j in range(i,i+3):
                 gluTessVertex(tess, meshcoords[j], texturedtris[j])
@@ -571,6 +578,7 @@ class ElevationMesh(ElevationMeshBase):
         else:
             assert isinstance(box, ndarray), box
             meshtris = box
+        if not len(meshtris): return []
 
         # just the points, in reverse order since polygons are winded negatively
         meshtris = meshtris.view(float32).reshape((len(meshtris),-1))[:,:9].reshape((-1,3))[::-1]
