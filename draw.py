@@ -13,6 +13,7 @@ glGetQueryObjectuiv = alternate(glGetQueryObjectuiv, glGetQueryObjectuivARB)
 GL_ANY_SAMPLES_PASSED=0x8C2F	# not in 3.0.1
 from OpenGL.GL.ARB.instanced_arrays import glInitInstancedArraysARB, glVertexAttribDivisorARB
 from OpenGL.GL.EXT.multi_draw_arrays import glMultiDrawArraysEXT
+from OpenGL.GL.EXT.gpu_shader4 import glInitGpuShader4EXT
 glMultiDrawArrays = alternate(glMultiDrawArrays, glMultiDrawArraysEXT)
 
 import gc
@@ -43,8 +44,9 @@ from version import appname
 
 sband=16	# width of mouse scroll band around edge of window
 
-debugapt=__debug__ and False
-
+debugapt = __debug__ and False
+log_glstate = __debug__ and True
+log_load = __debug__ and True
 
 class UndoEntry:
     ADD=0
@@ -86,7 +88,6 @@ class GLstate():
         self.occlusion_query=None	# Will test for this later
         self.queries=[]
         self.multi_draw_arrays = bool(glMultiDrawArrays)
-        if __debug__: print "multi_draw_arrays: %s" % self.multi_draw_arrays
         glEnableClientState(GL_VERTEX_ARRAY)
         self.texture=0
         glEnableClientState(GL_TEXTURE_COORD_ARRAY)
@@ -381,7 +382,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.SetCurrent(self.context)
         else:
             self.SetCurrent()
-        if __debug__: print "%s, %s, %s\nRGBA: %d%d%d%d, Depth: %d, Stencil: %d, Aux: %d, DoubleBuffer: %d" % (glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION), glGetInteger(GL_RED_BITS), glGetInteger(GL_GREEN_BITS), glGetInteger(GL_BLUE_BITS), glGetInteger(GL_ALPHA_BITS), glGetInteger(GL_DEPTH_BITS), glGetInteger(GL_STENCIL_BITS), glGetInteger(GL_AUX_BUFFERS), glGetBoolean(GL_DOUBLEBUFFER))
+        if log_glstate: print "%s\n%s\n%s\nRGBA: %d%d%d%d, Depth: %d, Stencil: %d, Aux: %d, DoubleBuffer: %d" % (glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION), glGetInteger(GL_RED_BITS), glGetInteger(GL_GREEN_BITS), glGetInteger(GL_BLUE_BITS), glGetInteger(GL_ALPHA_BITS), glGetInteger(GL_DEPTH_BITS), glGetInteger(GL_STENCIL_BITS), glGetInteger(GL_AUX_BUFFERS), glGetBoolean(GL_DOUBLEBUFFER))
 
         if not vbo.get_implementation():
             myMessageBox('This application requires the use of OpenGL Vertex Buffer Objects (VBOs) which are not supported by your graphics card.\nTry updating the drivers for your graphics card.',
@@ -431,6 +432,17 @@ class MyGL(wx.glcanvas.GLCanvas):
         glScalef(1, -1, 1)			# OpenGL textures are backwards
         glMatrixMode(GL_PROJECTION)		# We always leave the modelview matrix as identity and the active matrix mode as projection
         wx.EVT_PAINT(self, self.OnPaint)	# start generating paint events only now we're set up
+
+        if log_glstate:
+            print 'max_texture_size:\t\t%d' % self.vertexcache.texcache.maxtexsize
+            print 'texture_non_power_of_two:\t%s' % (self.vertexcache.texcache.npot and 'yes' or 'no')
+            print 'texture_compression:\t\t%s' % (self.vertexcache.texcache.compress and 'yes' or 'no')
+            print 'texture_compression_s3tc:\t%s' % (self.vertexcache.texcache.s3tc and 'yes' or 'no')
+            print 'bgra:\t\t\t\t%s' % (self.vertexcache.texcache.bgra and 'yes' or 'no')
+            print 'instanced_arrays:\t\t%s' % (self.glstate.instanced_arrays and 'yes' or 'no')
+            print 'multi_draw_arrays:\t\t%s' % (self.glstate.multi_draw_arrays and 'yes' or 'no')
+            print 'gpu_shader4:\t\t\t%s' % (glInitGpuShader4EXT() and 'yes' or 'no')
+
 
     def OnEraseBackground(self, event):
         # Prevent flicker when resizing / painting on MSW
@@ -754,6 +766,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         # Workaround for buggy ATI drivers: Check that occlusion queries actually work
         if self.glstate.occlusion_query is None:
             if not bool(glGenQueries):
+                if log_glstate: print 'occlusion_query:\t\tno'
                 self.glstate.occlusion_query=False
             else:
                 self.glstate.occlusion_query=hasGLExtension('GL_ARB_occlusion_query2') and GL_ANY_SAMPLES_PASSED or GL_SAMPLES_PASSED
@@ -775,7 +788,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glEndQuery(self.glstate.occlusion_query)
                 if not glGetQueryObjectuiv(self.glstate.queries[0], GL_QUERY_RESULT):
                     self.glstate.occlusion_query=False
-                    if __debug__: print "Occlusion query fail!"
+                    if log_glstate: print 'occlusion_query:\t\tbroken'
+                else:
+                    if log_glstate: print 'occlusion_query:\t\tyes (%s)' % (hasGLExtension('GL_ARB_occlusion_query2') and 'GL_ANY_SAMPLES_PASSED' or 'GL_SAMPLES_PASSED')
                 glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
 
         # Ground terrain
@@ -1769,7 +1784,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             # load placements
             progress.Update(3, 'Objects')
             if newtile in self.unsorted:
-                if __debug__: clock=time.clock()	# Processor time
+                if log_load: clock=time.clock()	# Processor time
                 placements = self.placements[newtile] = self.unsorted.pop(newtile)
                 # Limit progress dialog to 10 updates
                 p=len(placements)/10+1
@@ -1802,7 +1817,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         if __debug__: clock2 = time.clock()
                         placement.layout(newtile, options, self.vertexcache)
                         if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
-                if __debug__: print "%6.3f time in load&layout" % (time.clock()-clock)
+                if log_load: print "%6.3f time in load&layout" % (time.clock()-clock)
             elif newtile not in self.placements:
                 self.placements[newtile]=[]
             else:
@@ -1824,7 +1839,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                       15: [0.875, 0.875]}	# transparent
             key=(newtile[0],newtile[1],options&Prefs.ELEVATION)
             if key not in self.runways:
-                if __debug__: clock=time.clock()	# Processor time
+                if log_load: clock=time.clock()	# Processor time
                 gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
                 self.runways[key]=[]
                 self.codes[newtile]=[]
@@ -1979,7 +1994,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 runwaylen=len(rvarray)
                 self.runways[key]=(varray,shoulderlen,taxiwaylen,runwaylen)
                 gc.enable()
-                if __debug__: print "%6.3f time in runways" % (time.clock()-clock)
+                if log_load: print "%6.3f time in runways" % (time.clock()-clock)
             else:
                 (varray,shoulderlen,taxiwaylen,runwaylen)=self.runways[key]
             self.aptdata = {}
