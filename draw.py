@@ -311,6 +311,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.clickctrl=False	# Ctrl was held down
         self.selectednode=None	# Selected node. Only if len(self.selected)==1
         self.selectedhandle=None	# Selected node control handle.
+        self.selectedlayoutpending = False	# self.clickmode==ClickModes.DragNode and we need to do a full layout
         self.selections=set()	# Hits for cycling picking
         self.selectsaved=set()	# Selection at start of ctrl drag box
         self.snapnode = None	# (Polygon, idx) of node we snapped to in ClickModes.DragNode mode
@@ -489,7 +490,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.timer.Stop()
         if self.clickmode==ClickModes.DragNode:
             assert len(self.selected)==1
-            self.selectednode=list(self.selected)[0].layout(self.tile, self.options, self.vertexcache, self.selectednode)
+            if self.selectedlayoutpending:
+                if __debug__: clock2 = time.clock()
+                placement = list(self.selected)[0]
+                self.selectednode = placement.layout(self.tile, self.options, self.vertexcache, self.selectednode)
+                if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
+                self.selectedlayoutpending = False
             if self.snapnode:
                 # split segment at snapped-to node
                 (poly,idx) = self.snapnode
@@ -533,11 +539,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.valid:	# can get Idles during reload under X
             if self.clickmode==ClickModes.DragNode:
                 assert len(self.selected)==1
-                if __debug__: clock2 = time.clock()
-                placement = list(self.selected)[0]
-                self.selectednode = placement.layout(self.tile, self.options, self.vertexcache, self.selectednode)
-                if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
-                assert self.selectednode
+                if self.selectedlayoutpending:
+                    if __debug__: clock2 = time.clock()
+                    placement = list(self.selected)[0]
+                    self.selectednode = placement.layout(self.tile, self.options, self.vertexcache, self.selectednode)
+                    if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
+                    assert self.selectednode
+                    self.selectedlayoutpending = False
                 self.Refresh()
             elif self.needrefresh:
                 # Mouse motion with a selected polygon draws to the back buffer, which Mac uses as backing store. So refresh.
@@ -693,6 +701,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 poly.updatehandle(self.selectednode, self.selectedhandle, event.CmdDown(), lat, lon, self.tile, self.options, self.vertexcache)
             else:
                 poly.updatenode(self.selectednode, lat, lon, self.tile, self.options, self.vertexcache)
+            self.selectedlayoutpending = True	# need to do full layout at some point
             self.Refresh()	# show updated node
             self.frame.ShowSel()
             return
@@ -1074,7 +1083,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                 try:
                     for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
                         # No need to look further if user has clicked on a node or handle within selected polygon
-                        self.clickmode = ClickModes.DragNode
                         self.selectednode = ((int(name)>>24, int(name)&0xffff))
                         self.selectedhandle = checkpolynode.nodes[int(name)>>24][int(name)&0xffff].bezier and ((int(name)&0xff0000) >> 16) or None
                         break
@@ -1084,6 +1092,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if self.selectednode:
                 # No need to look further if user has clicked on a node or handle within selected polygon
                 self.clickmode=ClickModes.DragNode
+                self.selectedlayoutpending = False
                 # Restore state for unproject
                 glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
                 glLoadMatrixd(self.proj)
