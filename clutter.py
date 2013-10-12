@@ -1750,8 +1750,8 @@ class Facade(Polygon):
                 minv = min([((node.loc[0]*sinhdg - node.loc[2]*coshdg) / s) for node in nodes])
                 if floor.roofs[0]==0:
                     # "Roof" at height 0 is special and always gets draped (irrespective of "GRADED" setting in .fac)
-                    tris=[]
-                    gluTessBeginPolygon(Facade.tess, tris)
+                    rooftris=[]
+                    gluTessBeginPolygon(Facade.tess, rooftris)
                     gluTessBeginContour(Facade.tess)
                     if self.definition.fittomesh:
                         for j in range(n):
@@ -1766,8 +1766,9 @@ class Facade(Polygon):
                     gluTessEndContour(Facade.tess)
                     gluTessEndPolygon(Facade.tess)
                     if __debug__:
-                        if not tris: print "Facade draped layout failed - no tris"
-                    rooftris = elev.drapetris(tris, self.bbox)
+                        if not rooftris: print "Facade draped layout failed - no tris"
+                    if not elev.flat:
+                        rooftris = elev.drapetris(rooftris, self.bbox)
                 else:
                     rooftris=[]
                 # Remaining roofs laid out at polygon point elevations

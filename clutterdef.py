@@ -721,7 +721,8 @@ class AutoGenPointDef(ObjectDef):
         self.children=[]	# [name, ObjectDef, xdelta, zdelta, hdelta]
         # For instancing
         self.instances=set()		# Objects in current tile
-        self.transform_valid=False	# note no vbo since we assume we don't have vdata ourseleves
+        self.transform_valid=False
+        self.transform_vbo=vbo.VBO(None, GL_DYNAMIC_DRAW)
 
         hscale=vscale=width=hanchor=vanchor=crop=texture_draped=None
         objects=[]
