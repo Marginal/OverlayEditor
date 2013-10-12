@@ -74,7 +74,7 @@ class Prefs:
                 handle.write('*imagery=%s\n' % self.imageryprovider)
             for pkg, args in self.packageprops.iteritems():
                 if not pkg: continue	# unsaved Untitled
-                handle.write('%s="%s" %s\n' % (pkg, args[0], ' '.join(['%11.6f' % i for i in args[1:]])))
+                handle.write('%s="%s" %s\n' % (pkg, args[0], ' '.join(['%14.9f' % i for i in args[1:]])))
             handle.close()
         except:
             if __debug__: print_exc()

@@ -285,7 +285,7 @@ class Imagery:
             return []	# Don't do anything on startup. Can't do anything without a valid provider.
 
         # layout assumes mesh loaded
-        assert (int(floor(self.loc[0])),int(floor(self.loc[1])),self.canvas.options&Prefs.ELEVATION) in self.canvas.vertexcache.elevation, self.canvas.vertexcache.elevation.keys()
+        assert (int(floor(self.loc[0])),int(floor(self.loc[1])),self.canvas.options&Prefs.ELEVATION) in self.canvas.vertexcache.elevation, '%s %s' % ((int(floor(self.loc[0])),int(floor(self.loc[1])),self.canvas.options&Prefs.ELEVATION), self.canvas.vertexcache.elevation.keys())
 
         # http://msdn.microsoft.com/en-us/library/bb259689.aspx
         # http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#Resolution_and_Scale

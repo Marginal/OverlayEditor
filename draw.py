@@ -40,6 +40,7 @@ from elevation import BBox, ElevationMesh, onedeg, round2res
 from imagery import Imagery
 from lock import Locked
 from MessageBox import myMessageBox
+from nodes import Node
 from prefs import Prefs
 from version import appname
 
@@ -845,7 +846,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         navaidplacements=self.navaidplacements[self.tile]
 
         self.glstate.set_dynamic(self.vertexcache)	# realize
-        if self.selected:
+        if self.selected and not self.frame.bkgd:	# background image is always drawn with its own opacity setting
             selected = zeros((len(self.vertexcache.dynamic_data)/6,), float32)
             for placement in self.selected:
                 if placement.dynamic_data is not None:
@@ -1146,15 +1147,17 @@ class MyGL(wx.glcanvas.GLCanvas):
                         for j in range(len(nodes)):
                             h=atan2(nodes[j][0]-lon, nodes[j][1]-lat)+radians(hdg)
                             l=hypot(nodes[j][0]-lon, nodes[j][1]-lat)
-                            nodes[j]=(lon+sin(h)*l, lat+cos(h)*l)
+                            nodes[j] = Node([lon+sin(h)*l, lat+cos(h)*l])
                 else:
-                    nodes=[(p[i], p[i+1]) for i in range(0, len(p), 2)]
-                self.background=DrapedImage('background', 65535, [nodes])
+                    nodes = [Node([p[i], p[i+1]]) for i in range(0, len(p), 2)]
+                self.background=DrapedImage('*background', 65535, [nodes])
             else:
-                self.background=DrapedImage('background', 65535, loc[0], loc[1], self.d, self.h)
+                self.background=DrapedImage('*background', 65535, loc[0], loc[1], self.d, self.h)
             self.background.load(self.lookup, self.defs, self.vertexcache)
+            self.background.singlewinding = self.background.fixednodes = True
+            self.background.canbezier = False
             for i in range(len(self.background.nodes[0])):
-                self.background.nodes[0][i]+=((i+1)/2%2,i/2)
+                self.background.nodes[0][i].rest = [(i+1)/2%2,i/2]	# assign UVs
             if layoutnow:
                 self.background.layout(self.tile, self.options, self.vertexcache)
 
@@ -1594,15 +1597,15 @@ class MyGL(wx.glcanvas.GLCanvas):
                 print "Choice:\t%s" %self.frame.palette.GetChoiceCtrl().GetId()
 
 
-    def goto(self, loc, hdg=None, elev=None, dist=None, prefs=None):
-        if __debug__: print "goto", loc
+    def goto(self, latlon, hdg=None, elev=None, dist=None, prefs=None):
+        if __debug__: print "goto", latlon
         if not self.valid: return	# Hack: can get spurious events on Mac during startup (progress dialogs aren't truly modal)
         errdsf=None
         errobjs=[]
         errtexs=[]
-        newtile=(int(floor(loc[0])),int(floor(loc[1])))	# (lat,lon) of SW corner
+        newtile=(int(floor(latlon[0])),int(floor(latlon[1])))	# (lat,lon) of SW corner
         self.centre=[newtile[0]+0.5, newtile[1]+0.5]
-        (self.x, self.z)=self.latlon2m(loc[0],loc[1])
+        (self.x, self.z)=self.latlon2m(latlon[0],latlon[1])
         if hdg!=None: self.h=hdg
         if elev!=None: self.e=elev
         if dist!=None: self.d=dist
@@ -1821,7 +1824,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 for j in range(n):
                                     pt = w[j]
                                     nxt = w[(j+1) % n]
-                                    loc = (x,z) = self.latlon2m(pt[0],pt[1])
+                                    ptloc = (x,z) = self.latlon2m(pt[0],pt[1])
                                     thisarea.include(x,z)
                                     winding.append([x, elev.height(x,z), z])
                                     if len(pt)<4:
@@ -1830,7 +1833,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                             nxtloc = self.latlon2m(nxt[0], nxt[1])
                                             nxtbez = self.latlon2m(nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
                                             for u in range(1,bezpts):
-                                                (bx,bz) = self.bez3([loc, nxtbez, nxtloc], float(u)/bezpts)
+                                                (bx,bz) = self.bez3([ptloc, nxtbez, nxtloc], float(u)/bezpts)
                                                 thisarea.include(bx,bz)
                                                 winding.append([bx, elev.height(bx,bz), bz])
                                     else:
@@ -1840,12 +1843,12 @@ class MyGL(wx.glcanvas.GLCanvas):
                                         if len(nxt)>=4:
                                             nxtbez = self.latlon2m(nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
                                             for u in range(1,bezpts):
-                                                (bx,bz) = self.bez4([loc, bezloc, nxtbez, nxtloc], float(u)/bezpts)
+                                                (bx,bz) = self.bez4([ptloc, bezloc, nxtbez, nxtloc], float(u)/bezpts)
                                                 thisarea.include(bx,bz)
                                                 winding.append([bx, elev.height(bx,bz), bz])
                                         else:
                                             for u in range(1,bezpts):
-                                                (bx,bz) = self.bez3([loc, bezloc, nxtloc], float(u)/bezpts)
+                                                (bx,bz) = self.bez3([ptloc, bezloc, nxtloc], float(u)/bezpts)
                                                 thisarea.include(bx,bz)
                                                 winding.append([bx, elev.height(bx,bz), bz])
                                 #windings.append(winding)
@@ -1969,7 +1972,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if self.background:
                 nodes=self.background.nodes[0]
                 for i in range(len(nodes)):
-                    if (int(floor(nodes[i][1])),int(floor(nodes[i][0])))==newtile:
+                    if (int(floor(nodes[i].lat)),int(floor(nodes[i].lon)))==newtile:
                         self.background.layout(newtile, options, self.vertexcache)
                         break
                 else:
@@ -1987,7 +1990,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # initiate imagery load. Does layout so must be after getMeshdata.
         # Python isn't really multithreaded so don't delay reload by initiating this earlier
-        self.imagery.goto(self.imageryprovider, loc, self.d, self.GetClientSize())
+        self.imagery.goto(self.imageryprovider, latlon, self.d, self.GetClientSize())
 
         # Redraw can happen under MessageBox, so do this last
         if errdsf:

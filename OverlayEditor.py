@@ -446,7 +446,7 @@ class PreferencesDialog(wx.Dialog):
 class BackgroundDialog(wx.Dialog):
 
     def __init__(self, parent, id, title):
-        wx.Dialog.__init__(self, parent, id, title)
+        wx.Dialog.__init__(self, parent, id, title, style=wx.DEFAULT_FRAME_STYLE|wx.FRAME_FLOAT_ON_PARENT)
         if platform=='darwin':	# Default is too big on Mac
             self.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
             bg=wx.Colour(254,254,254)	# Odd colours = black on wxMac !!!
@@ -599,7 +599,10 @@ class BackgroundDialog(wx.Dialog):
                     if x1<x: break
                 self.path.SetValue('...'+sep+label)
 
-        prefs.imageryprovider=(self.imgbing.GetValue() and 'Bing') or (self.imgarcgis.GetValue() and 'ArcGIS') or (self.imgmapquest.GetValue() and 'MapQuest') or None
+        imageryprovider = (self.imgbing.GetValue() and 'Bing') or (self.imgarcgis.GetValue() and 'ArcGIS') or (self.imgmapquest.GetValue() and 'MapQuest') or None
+        if imageryprovider!=prefs.imageryprovider:
+            self.parent.canvas.imagery.reset(self.parent.canvas.vertexcache)	# free VBO allocations
+        prefs.imageryprovider = imageryprovider
         prefs.imageryopacity=self.opacity.GetValue()
         self.parent.canvas.setbackground(prefs, self.parent.loc, self.image, True)
         self.parent.canvas.goto(self.parent.loc, prefs=prefs)	# initiate imagery provider setup & loading
@@ -623,7 +626,7 @@ class BackgroundDialog(wx.Dialog):
         if self.parent.canvas.background:
             p=(self.image,)
             for n in self.parent.canvas.background.nodes[0]:
-                p+=n[:2]
+                p += (n.lon, n.lat)
             prefs.packageprops[prefs.package]=p
             if __debug__:print prefs.package, prefs.packageprops[prefs.package]
 
