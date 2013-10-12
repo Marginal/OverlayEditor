@@ -1,6 +1,7 @@
 import gc
 from math import cos, fabs, pi, radians, sin
-from numpy import array, array_equal, concatenate, copy, diag, dot, float32, identity, outer, zeros
+import numpy
+from numpy import array, array_equal, concatenate, copy, diag, dot, identity, logical_and, outer, vstack, zeros, float32
 from operator import itemgetter, attrgetter
 from os import listdir
 from os.path import basename, dirname, exists, join, normpath, sep
@@ -142,6 +143,9 @@ class ClutterDef:
     def draw_instanced(self, glstate, selected):
         pass
 
+    def pick_instanced(self, glstate, proj, selections, lookup):
+        pass
+
     # Normalise path, replacing : / and \ with os-specific separator, eliminating .. etc
     def cleanpath(self, path):
         # relies on normpath on win replacing '/' with '\\'
@@ -160,6 +164,7 @@ class ObjectDef(ClutterDef):
         self.poly=0
         self.bbox=BBox()
         self.height=0.5	# musn't be 0
+        self.radius=1.0
         self.base=None
         self.draped=[]
         self.texture_draped=0
@@ -463,6 +468,7 @@ class ObjectDef(ClutterDef):
                 if draped and not texture_draped:
                     self.texture_draped=self.texture
             self.draped=draped
+            self.radius = max(self.bbox.maxx, -self.bbox.minx, self.bbox.maxz, -self.bbox.minz) * 2	# clip radius
 
     def allocate(self, vertexcache):
         if self.base==None and self.vdata is not None:
@@ -475,15 +481,21 @@ class ObjectDef(ClutterDef):
         if self.vdata is None or not self.instances:
             #if __debug__: print "No data for instancing %s" % self
             return
+
+        if not self.transform_valid:
+            if __debug__:
+                for o in self.instances: assert o.matrix is not None, "Empty matrix %s" % o
+            if glstate.instanced_arrays:
+                self.transform_vbo.set_array(concatenate([o.matrix for o in self.instances]))
+            else:
+                self.transform_vbo = vstack([o.matrix for o in self.instances])	# not actually a VBO
+                self.transform_vbo[:,3] = 1		# drop rotation and make homogenous
+            self.transform_valid = True
+
         glstate.set_texture(self.texture)
         if glstate.instanced_arrays:
             if selected:
                 glstate.set_attrib_selected(glstate.instanced_selected_pos, array([o in selected for o in self.instances],float32))
-            if not self.transform_valid:
-                if __debug__:
-                    for o in self.instances: assert o.matrix is not None, "Empty matrix %s" % o
-                self.transform_vbo.set_array(concatenate([o.matrix for o in self.instances]))
-                self.transform_valid = True
             self.transform_vbo.bind()
             glVertexAttribPointer(glstate.instanced_transform_pos, 4, GL_FLOAT, GL_FALSE, 16, self.transform_vbo)
             if self.culled:
@@ -494,8 +506,11 @@ class ObjectDef(ClutterDef):
                 glDrawArraysInstanced(GL_TRIANGLES, self.base+self.culled, self.nocull, len(self.instances))
         else:
             pos = glstate.transform_pos
-            selected = self.instances.intersection(selected)	# subset of selected that are instances of this def
-            unselected = self.instances.difference(selected)
+            projected = numpy.abs(dot(self.transform_vbo, glstate.proj)[:,:2])	# |x|,|y| in NDC space
+            clip = 1 + numpy.max(numpy.abs(dot(array([[self.radius, 0, self.radius, 0], [self.radius, self.height, self.radius, 0]]), glstate.proj)[:,:2]))	# add largest dimension of bounding cylinder in NDC space
+            instances = set([item for (item,inview) in zip(self.instances, numpy.all(projected <= clip, axis=1)) if inview])	# filter to those in view
+            selected = instances.intersection(selected)	# subset of selected that are instances of this def
+            unselected = instances.difference(selected)
             if unselected:
                 glstate.set_color(COL_UNPAINTED)
                 for obj in unselected:
@@ -513,6 +528,53 @@ class ObjectDef(ClutterDef):
                     glUniform4f(pos, *obj.matrix)
                     glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
 
+    def pick_instanced(self, glstate, proj, selections, lookup):
+        if not self.instances:
+            return
+
+        if not self.transform_valid:	# won't be valid for AGPs since they are not drawn instanced
+            if __debug__:
+                for o in self.instances: assert o.matrix is not None, "Empty matrix %s" % o
+            if glstate.instanced_arrays:
+                self.transform_vbo.set_array(concatenate([o.matrix for o in self.instances]))
+            else:
+                self.transform_vbo = vstack([o.matrix for o in self.instances])	# not actually a VBO
+                self.transform_vbo[:,3] = 1		# drop rotation and make homogenous
+            self.transform_valid = True
+
+        if glstate.instanced_arrays:
+            transform = array(self.transform_vbo.data, copy=True).reshape((-1,4))
+            transform[:,3] = 1		# drop rotation and make homogenous
+        else:
+            transform = self.transform_vbo
+        projected = numpy.abs(dot(transform, proj)[:,:2])	# |x|,|y| in NDC space
+
+        # add those with centre in view directly to selections cos we don't need to query them,
+        # and in case we're so zoomed out that drawing the object wouldn't produce any fragments
+        selections.update([item for (item,inview) in zip(self.instances, numpy.all(projected <= 1, axis=1)) if inview])
+
+        if self.vdata is None: return	# don't have to do anything else for AGPs
+
+	# query those with bounding cylinder in view (but not those with centre in view)
+        pos = glstate.transform_pos
+        clip = 1 + numpy.max(numpy.abs(dot(array([[self.radius, 0, self.radius, 0], [self.radius, self.height, self.radius, 0]]), proj)[:,:2]))	# add largest dimension of bounding cylinder in NDC space
+        instances = [item for (item,inview) in zip(self.instances, logical_and(numpy.all(projected <= clip, axis=1), numpy.any(projected > 1, axis=1))) if inview]
+
+        queryidx = len(lookup)
+        lookup.extend(instances)
+        if glstate.occlusion_query:
+            for obj in instances:
+                glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
+                glUniform4f(pos, *obj.matrix)
+                glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
+                glEndQuery(glstate.occlusion_query)
+                queryidx += 1
+        else:
+            for obj in instances:
+                glLoadName(queryidx)
+                glUniform4f(pos, *obj.matrix)
+                glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
+                queryidx += 1
 
     def preview(self, canvas, vertexcache):
         if not self.canpreview: return None
@@ -594,7 +656,7 @@ class ObjectDef(ClutterDef):
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
         
-        glLoadMatrixd(canvas.proj)	# Restore state for unproject
+        glLoadMatrixd(canvas.glstate.proj)	# Restore state for unproject
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         canvas.Refresh()	# Mac draws from the back buffer w/out paint event
@@ -630,6 +692,7 @@ class ObjectFallback(ObjectDef):
         self.poly=0
         self.bbox=BBox(-0.5,0.5,-0.5,0.5)
         self.height=1.0
+        self.radius=1.0
         self.base=None
         self.draped=[]
         self.texture_draped=0
@@ -742,6 +805,9 @@ class AutoGenPointDef(ObjectDef):
         for p in self.children:
             p[1].allocate(vertexcache)
 
+    def draw_instanced(self, glstate, selected):
+        assert self.vdata is None	# we're just a container
+
 
 class AutoGenFallback(ObjectFallback):
 
@@ -789,7 +855,7 @@ class PolygonDef(ClutterDef):
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
         
-        glLoadMatrixd(canvas.proj)	# Restore state for unproject
+        glLoadMatrixd(canvas.glstate.proj)	# Restore state for unproject
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         canvas.Refresh()	# Mac draws from the back buffer w/out paint event
@@ -1156,7 +1222,7 @@ class FacadeDef(PolygonDef):
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
 
-        glLoadMatrixd(canvas.proj)	# Restore state for unproject
+        glLoadMatrixd(canvas.glstate.proj)	# Restore state for unproject
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         canvas.Refresh()	# Mac draws from the back buffer w/out paint event
@@ -1335,7 +1401,7 @@ class LineDef(PolygonDef):
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
 
-        glLoadMatrixd(canvas.proj)	# Restore state for unproject
+        glLoadMatrixd(canvas.glstate.proj)	# Restore state for unproject
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         canvas.Refresh()	# Mac draws from the back buffer w/out paint event
@@ -1465,7 +1531,7 @@ class StringDef(PolygonDef):
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
 
-        glLoadMatrixd(canvas.proj)	# Restore state for unproject
+        glLoadMatrixd(canvas.glstate.proj)	# Restore state for unproject
         glClearColor(0.5, 0.5, 1.0, 0.0)	# Sky
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         canvas.Refresh()	# Mac draws from the back buffer w/out paint event

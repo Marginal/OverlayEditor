@@ -38,6 +38,7 @@ from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, NetworkDef, Polyg
 from DSFLib import readDSF
 from elevation import BBox, ElevationMesh, onedeg, round2res
 from imagery import Imagery
+from lock import Locked
 from MessageBox import myMessageBox
 from prefs import Prefs
 from version import appname
@@ -85,6 +86,7 @@ class ClickModes:
 class GLstate():
     def __init__(self):
         self.debug=__debug__ and False
+        self.proj = identity(4, float64)	# projection matrix
         self.occlusion_query=None	# Will test for this later
         self.queries=[]
         self.multi_draw_arrays = bool(glMultiDrawArrays)
@@ -272,6 +274,17 @@ class GLstate():
             if __debug__:
                 if self.debug: print "get_queries", self.queries
 
+    def pickmatrix(self, x, y, width, height, viewx, viewy):
+        # like gluPickMatrix, but doesn't actually load the resultant matrix into OpenGL
+        width = width and float(width) or 1.0	# maths goes wrong if zero-sized box
+        height = height and float(height) or 1.0
+        sx = viewx / width
+        sy = viewy / height
+        tx = (viewx - 2 * x) / width
+        ty = (viewy - 2 * y) / height
+        m = array([[sx, 0, 0, 0], [0, sy, 0, 0], [0, 0, 1, 0], [tx, ty, 0, 1]], dtype=float64)
+        return dot(self.proj, m)
+
 
 # OpenGL Window
 class MyGL(wx.glcanvas.GLCanvas):
@@ -332,7 +345,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.h=0
         self.e=45
         self.d=2048.0
-        self.proj=identity(4, float64)
 
         if __debug__: self.ei = self.ej = ElevationMesh.DIVISIONS/2	# for debugging elevation mesh
 
@@ -510,6 +522,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 self.selectednode = placement.layout(self.tile, self.options, self.vertexcache, self.selectednode)
                 if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
                 self.selectedlayoutpending = False
+                self.Refresh()
             if self.snapnode:
                 # split segment at snapped-to node
                 (poly,idx) = self.snapnode
@@ -526,7 +539,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                     poly2.layout(self.tile, self.options, self.vertexcache, recalc=True)
                     self.selected = set([poly,poly2])
                     self.selectednode = self.selectedhandle = None
-            self.snapnode = None
+                    self.Refresh()
+                self.snapnode = None
         elif self.clickmode==ClickModes.Drag:
             for placement in self.selected:
                 placement.layout(self.tile, self.options, self.vertexcache)
@@ -594,41 +608,10 @@ class MyGL(wx.glcanvas.GLCanvas):
 
             # Change cursor if over a node
             if len(self.selected)==1 and isinstance(list(self.selected)[0], Polygon):
-                poly=list(self.selected)[0]
-                glLoadIdentity()
-                gluPickMatrix(event.GetX(), size[1]-1-event.GetY(), 5,5, array([0, 0, size[0], size[1]], GLint))
-                glMultMatrixd(self.proj)
-                self.glstate.set_texture(0)
-                self.glstate.set_color(COL_WHITE)	# Ensure colour indexing off
-                self.glstate.set_depthtest(False)	# Make selectable even if occluded
-                self.glstate.set_poly(True)		# Disable writing to depth buffer
-                n = len([item for sublist in poly.nodes for item in sublist])
-                if poly.canbezier and poly.isbezier: n *= 3
-                if self.glstate.occlusion_query:
-                    self.glstate.alloc_queries(n)
-                    selections=False
-                    glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
-                    poly.pick_nodes(self.glstate, poly.canbezier and poly.isbezier)
-                    for queryidx in range(n):
-                        if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
-                            selections=True
-                            break
-                    glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
-                else:
-                    glSelectBuffer(n*4)	# 4 ints per hit record containing one name
-                    glRenderMode(GL_SELECT)
-                    glInitNames()
-                    glPushName(0)
-                    poly.pick_nodes(self.glstate, poly.canbezier and poly.isbezier)
-                    selections=glRenderMode(GL_RENDER)
-
-                glLoadMatrixd(self.proj)	# Restore state for unproject
-
-                self.needrefresh=True
-                if selections:
+                if list(self.selected)[0].pick_nodes(self.glstate.pickmatrix(event.GetX(), size[1]-1-event.GetY(), 5,5, *size), True):
                     self.SetCursor(self.dragcursor)	# hovering over node
                     return
-                
+
             self.SetCursor(wx.NullCursor)
             return
 
@@ -653,47 +636,17 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.SetCursor(self.dragcursor)
             self.snapnode = None
             poly=list(self.selected)[0]
+
             if isinstance(poly, Network) and not self.selectedhandle and self.selectednode[1] in [0,len(poly.nodes[0])-1]:
                 # snap end nodes to nodes in other network segments
                 size = self.GetClientSize()
-                glLoadIdentity()
-                gluPickMatrix(event.GetX(), size[1]-1-event.GetY(), 13,13, array([0, 0, size[0], size[1]], GLint))
-                glMultMatrixd(self.proj)
-                self.glstate.set_texture(0)
-                self.glstate.set_color(COL_WHITE)	# Ensure colour indexing off
-                self.glstate.set_depthtest(False)	# Make selectable even if occluded
-                self.glstate.set_poly(True)		# Disable writing to depth buffer
-                nets = [p for p in self.placements[self.tile] if isinstance(p, Network) and p!=poly]
-                n = sum([len(net.nodes[0]) for net in nets])
-                queryidx = 0
-                lookup = []
-                if self.glstate.occlusion_query:
-                    self.glstate.alloc_queries(n)
-                    glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
-                    for p in nets:
-                        p.pick_nodes(self.glstate, False, queryidx)
-                        m = len(p.nodes[0])
-                        lookup.extend([(p,i) for i in range(m)])
-                        queryidx += m
-                    for queryidx in range(n):
-                        if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
-                            self.snapnode = lookup[queryidx]
+                proj = self.glstate.pickmatrix(event.GetX(), size[1]-1-event.GetY(), 13,13, *size)
+                for p in self.placements[self.tile]:
+                    if isinstance(p, Network) and p!=poly:
+                        hit = p.pick_nodes(proj, False)
+                        if hit:
+                            self.snapnode = (p, hit[0][1])
                             break
-                    glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
-                else:
-                    glSelectBuffer(n*4)	# 4 ints per hit record containing one name
-                    glRenderMode(GL_SELECT)
-                    glInitNames()
-                    glPushName(0)
-                    for p in nets:
-                        p.pick_nodes(self.glstate, False, queryidx)
-                        m = len(p.nodes[0])
-                        lookup.extend([(p,i) for i in range(m)])
-                        queryidx += m
-                    for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
-                        self.snapnode = lookup[int(name)]
-                        break
-                glLoadMatrixd(self.proj)	# Restore state for unproject
 
             if self.snapnode:
                 node = self.snapnode[0].nodes[0][self.snapnode[1]]
@@ -759,8 +712,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         proj=array([[1.0/self.d,0,0,0], [0,1.0/vd,0,0], [0,0,(-1.0/30)/vd,0], [0,0,0,1]], float64)	# glOrtho(-self.d, self.d, -vd, vd, -30*vd, 30*vd)	# 30 ~= 1/sin(2), where 2 is minimal elevation angle        
         proj=dot(array([[1,0,0,0], [0,cos(radians(self.e)),sin(radians(self.e)),0], [0,-sin(radians(self.e)),cos(radians(self.e)),0], [0,0,0,1]], float64), proj)	# glRotatef(self.e, 1.0,0.0,0.0)
         proj=dot(array([[cos(radians(self.h)),0,-sin(radians(self.h)),0], [0,1,0,0], [sin(radians(self.h)),0,cos(radians(self.h)),0], [0,0,0,1]], float64), proj)	# glRotatef(self.h, 0.0,1.0,0.0)
-        self.proj=dot(array([[1,0,0,0], [0,1,0,0], [0,0,1,0], [-self.x,-self.y,-self.z,1]], float64), proj)	# glTranslatef(-self.x, -self.y, -self.z)
-        glLoadMatrixd(self.proj)
+        self.glstate.proj = dot(array([[1,0,0,0], [0,1,0,0], [0,0,1,0], [-self.x,-self.y,-self.z,1]], float64), proj)	# glTranslatef(-self.x, -self.y, -self.z)
+        glLoadMatrixd(self.glstate.proj)
         glEnable(GL_POINT_SMOOTH)
 
         # Workaround for buggy ATI drivers: Check that occlusion queries actually work
@@ -1007,7 +960,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glVertex3f(-1+width*2.0/size.x,-1, -0.9)
                 glEnd()
 
-        glLoadMatrixd(self.proj)	# Restore state for unproject
+        glLoadMatrixd(self.glstate.proj)	# Restore state for unproject
         glDisable(GL_POINT_SMOOTH)	# Make selection etc slightly easier on the GPU
         self.glstate.set_poly(False)
 
@@ -1026,23 +979,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         #    self.selections=[]	# Can't remember
         if __debug__: clock=time.clock()
         size = self.GetClientSize()
-        glLoadIdentity()
         if self.clickmode==ClickModes.DragBox:
-            # maths goes wrong if zero-sized box
-            if self.clickpos[0]==self.mousenow[0]: self.mousenow[0]+=1
-            if self.clickpos[1]==self.mousenow[1]: self.mousenow[1]-=1
-            gluPickMatrix((self.clickpos[0]+self.mousenow[0])/2, size[1]-1-(self.clickpos[1]+self.mousenow[1])/2,
-                          abs(self.clickpos[0]-self.mousenow[0]), abs(self.clickpos[1]-self.mousenow[1]),
-                          array([0, 0, size[0], size[1]], GLint))
+            proj = self.glstate.pickmatrix((self.clickpos[0]+self.mousenow[0])/2, size[1]-1-(self.clickpos[1]+self.mousenow[1])/2,
+                                           abs(self.clickpos[0]-self.mousenow[0]), abs(self.clickpos[1]-self.mousenow[1]), *size)
         else:	# at point
-            gluPickMatrix(self.clickpos[0], size[1]-1-self.clickpos[1], 5,5, array([0, 0, size[0], size[1]], GLint))
-        glMultMatrixd(self.proj)
-
-        self.glstate.set_texture(0)			# use textured shader throughout
-        self.glstate.set_color(COL_WHITE)		# Ensure colour indexing off
-        self.glstate.set_depthtest(False)		# Make selectable even if occluded
-        self.glstate.set_poly(True)			# Disable writing to depth buffer
-        self.glstate.set_cull(False)			# Enable selection of "invisible" faces
+            proj = self.glstate.pickmatrix(self.clickpos[0], size[1]-1-self.clickpos[1], 5,5, *size)
 
         if self.frame.bkgd:	# Don't allow selection of other objects while background dialog is open
             if self.background and self.background.islaidout():
@@ -1051,133 +992,69 @@ class MyGL(wx.glcanvas.GLCanvas):
                 placements=[]
         else:
             placements=self.placements[self.tile]
-        checkpolynode=(self.clickmode==ClickModes.Undecided and len(self.selected)==1 and isinstance(list(self.selected)[0], Polygon)) and list(self.selected)[0]
-
-        if self.glstate.occlusion_query:
-            needed = len(placements) * 2	# Twice as many for two-phase drawing
-            if checkpolynode:
-                queryidx=len([item for sublist in checkpolynode.nodes for item in sublist])
-                if checkpolynode.canbezier and checkpolynode.isbezier: queryidx *= 3
-                needed = max(queryidx, needed)
-            self.glstate.alloc_queries(needed)
-            glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
 
         # Select poly node?
-        self.selectednode = self.selectedhandle = None
-        if checkpolynode:
-            #print "selnodes",
-            if self.glstate.occlusion_query:
-                checkpolynode.pick_nodes(self.glstate, checkpolynode.canbezier and checkpolynode.isbezier)
-                if __debug__: print "%6.3f time to issue poly node" %(time.clock()-clock)
-                queryidx = 0
-                for i in range(len(checkpolynode.nodes)):
-                    for j in range(len(checkpolynode.nodes[i])):
-                        if checkpolynode.canbezier and checkpolynode.isbezier:
-                            if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
-                                self.selectednode = (i,j)
-                                if checkpolynode.nodes[i][j].bezier:
-                                    self.selectedhandle = 1
-                                    break	# prefer handle over its node
-                            queryidx+=1
-                            if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
-                                self.selectednode = (i,j)
-                                if checkpolynode.nodes[i][j].bezier:
-                                    self.selectedhandle = 2
-                                    break	# prefer handle over its node
-                            queryidx+=1
-                        if glGetQueryObjectuiv(self.glstate.queries[queryidx], GL_QUERY_RESULT):
-                            self.selectednode = (i,j)
-                            break	# take first hit
-                        queryidx+=1
-                    else:
-                        continue
-                    break
-            else:
-                glSelectBuffer(len([item for sublist in checkpolynode.nodes for item in sublist])*4)	# 4 ints per hit record containing one name
-                glRenderMode(GL_SELECT)
-                glInitNames()
-                glPushName(0)
-                checkpolynode.pick_nodes(self.glstate, checkpolynode.canbezier and checkpolynode.isbezier)
-                selectnodes=[]
-                try:
-                    for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
-                        # No need to look further if user has clicked on a node or handle within selected polygon
-                        self.selectednode = ((int(name)>>24, int(name)&0xffff))
-                        self.selectedhandle = checkpolynode.nodes[int(name)>>24][int(name)&0xffff].bezier and ((int(name)&0xff0000) >> 16) or None
-                        break
-                except:	# overflow
-                    if __debug__: print_exc()
-            if __debug__: print "%6.3f time to check poly node" %(time.clock()-clock)
-            if self.selectednode:
+        if (self.clickmode==ClickModes.Undecided and len(self.selected)==1 and isinstance(list(self.selected)[0], Polygon)):
+            selected = list(self.selected)[0].pick_nodes(proj, True)
+            if selected:
                 # No need to look further if user has clicked on a node or handle within selected polygon
-                self.clickmode=ClickModes.DragNode
+                (self.selectednode, self.selectedhandle) = selected
+                self.clickmode = ClickModes.DragNode
                 self.selectedlayoutpending = False
-                # Restore state for unproject
-                glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
-                glLoadMatrixd(self.proj)
                 if __debug__: print "%6.3f time in select" %(time.clock()-clock)
-                self.Refresh()
                 self.frame.ShowSel()
-                return		# Just abandon any remaining queries
+                return
+        self.selectednode = self.selectedhandle = None
 
         # Select placements
+        glLoadMatrixd(proj)
+        self.glstate.set_texture(0)			# use textured shader throughout
+        self.glstate.set_color(COL_WHITE)		# Ensure colour indexing off
+        self.glstate.set_depthtest(False)		# Make selectable even if occluded
+        self.glstate.set_poly(True)			# Disable writing to depth buffer
+        self.glstate.set_cull(False)			# Enable selection of "invisible" faces
+        selections = set()
+        lookup = []
+        objdefs = (not self.locked&Locked.OBJ) and [objdef for objdef in self.defs.values() if isinstance(objdef,ObjectDef)] or []
+
         if self.glstate.occlusion_query:
-            gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
-            lookup = []
-            queryidx = 0
-            self.glstate.set_instance(self.vertexcache)
-            for i in range(len(placements)):
-                if not placements[i].definition.type & self.locked and placements[i].pick_instance(self.glstate, self.glstate.queries[queryidx]):
-                    lookup.append(i)
-                    queryidx+=1
-            if __debug__: print "%6.3f time to issue instance" %(time.clock()-clock)
-            self.glstate.set_dynamic(self.vertexcache)
-            glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
-            for i in range(len(placements)):
-                if not placements[i].definition.type & self.locked and placements[i].pick_dynamic(self.glstate, self.glstate.queries[queryidx]):
-                    lookup.append(i)
-                    queryidx+=1
-            gc.enable()
-            if __debug__: print "%6.3f time to issue dynamic" %(time.clock()-clock)
-            assert queryidx==len(lookup)
-
-            # Now check for selections
-            self.selectednode=None
-            selections=set()
-            for k in range(len(lookup)):
-                if glGetQueryObjectuiv(self.glstate.queries[k], GL_QUERY_RESULT):
-                    selections.add(placements[lookup[k]])
-            glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
-            if __debug__: print "%6.3f time to check queries" %(time.clock()-clock)
-
-        else:	# not self.glstate.occlusion_query
+            needed = sum([len(objdef.instances) for objdef in objdefs]) + len(placements)	# upper limit
+            self.glstate.alloc_queries(needed)
+            glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)	# Don't want to update frame buffer either
+        else:
             glSelectBuffer(len(placements)*8)	# Twice as many for two-phase drawing
             glRenderMode(GL_SELECT)
             glInitNames()
             glPushName(0)
 
-            self.glstate.set_instance(self.vertexcache)
-            for i in range(len(placements)):
-                if not placements[i].definition.type & self.locked:
-                    glLoadName(i)
-                    placements[i].pick_instance(self.glstate)
-            if __debug__: print "%6.3f time to issue instance" %(time.clock()-clock)
-            self.glstate.set_dynamic(self.vertexcache)
-            glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
-            for i in range(len(placements)):
-                if not placements[i].definition.type & self.locked:
-                    glLoadName(i)
-                    placements[i].pick_dynamic(self.glstate)
-            if __debug__: print "%6.3f time to issue dynamic" %(time.clock()-clock)
-            # Now check for selections
-            self.selectednode=None
-            selections=set()
+        self.glstate.set_instance(self.vertexcache)
+        for objdef in objdefs:
+            objdef.pick_instanced(self.glstate, proj, selections, lookup)
+        glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
+        if __debug__: print "%6.3f time to issue instance" %(time.clock()-clock)
+
+        self.glstate.set_dynamic(self.vertexcache)
+        for p in placements:
+            if not p.definition.type & self.locked:
+                p.pick_dynamic(self.glstate, lookup)
+        if __debug__: print "%6.3f time to issue dynamic" %(time.clock()-clock)
+
+        # Now check for selections
+        if self.glstate.occlusion_query:
+            for k in range(len(lookup)):
+                if glGetQueryObjectuiv(self.glstate.queries[k], GL_QUERY_RESULT):
+                    selections.add(lookup[k])
+            glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
+        else:
             try:
                 for min_depth, max_depth, (name,) in glRenderMode(GL_RENDER):
-                    selections.add(placements[int(name)])
+                    selections.add(lookup[int(name)])
             except:	# overflow
                 if __debug__: print_exc()
-            if __debug__: print "%6.3f time to check RenderMode" %(time.clock()-clock)
+        if __debug__: print "%6.3f time to check queries" %(time.clock()-clock)
+
+	# promote children and filter out navaids
+        selections = set([placement.parent or placement for placement in selections]).difference(self.navaidplacements[self.tile])
 
         if self.frame.bkgd:	# Don't allow selection of other objects while background dialog is open
             if self.clickmode==ClickModes.Drag or self.background in selections:
@@ -2169,7 +2046,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnd()
         mz=glReadPixelsf(mx,my, 1,1, GL_DEPTH_COMPONENT)[0][0]
         if mz==1.0: mz=0.5	# treat off the tile edge as sea level
-        (x,y,z)=gluUnProject(mx,my,mz, identity(4, float64), self.proj, array([0,0,size[0],size[1]], GLint))
+        (x,y,z)=gluUnProject(mx,my,mz, identity(4, float64), self.glstate.proj, array([0,0,size[0],size[1]], GLint))
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
         #self.SwapBuffers()	# debug
         glClear(GL_DEPTH_BUFFER_BIT)

@@ -15,7 +15,6 @@
 # movenode -> move - no layout
 # updatenode -> move node - no layout
 # updatehandle -> move node bezier control - no layout
-# pick_instance -> pick geometry in instance VBO, including child geometry
 # pick_dynamic -> pick geometry in dynamic VBO, including child geometry
 # pick_nodes -> pick nodes of selected polygon
 # draw_nodes -> draw highlighted
@@ -26,7 +25,8 @@
 import gc
 from collections import defaultdict
 from math import atan2, ceil, cos, degrees, floor, hypot, pi, radians, sin, tan
-from numpy import array, array_equal, concatenate, empty, float32, float64
+import numpy
+from numpy import array, array_equal, concatenate, dot, empty, nonzero, float32, float64
 from os.path import join
 from sys import maxint
 if __debug__:
@@ -60,6 +60,7 @@ class Clutter:
         self.lon=lon
         self.dynamic_data=None	# Data for inclusion in VBO
         self.base=None		# Offset when allocated in VBO
+        self.parent = None	# parent if this is a child
         self.placements=[]	# child object placements
         self.bbox = None	# bounding box (x,z)
         
@@ -75,17 +76,18 @@ class Object(Clutter):
     origin=array([0,0,0],float32)
 
     @staticmethod
-    def factory(name, lat, lon, hdg, y=None):
+    def factory(name, lat, lon, hdg):
         "creates and initialises appropriate Object subclass based on file extension"
         if name.lower()[-4:]==AutoGenPointDef.AGP:
-            return AutoGenPoint(name, lat, lon, hdg, y)
+            return AutoGenPoint(name, lat, lon, hdg)
         else:
-            return Object(name, lat, lon, hdg, y)
+            return Object(name, lat, lon, hdg)
 
-    def __init__(self, name, lat, lon, hdg, y=None):
+    def __init__(self, name, lat, lon, hdg, parent=None):
         Clutter.__init__(self, name, lat, lon)
+        self.parent = parent
         self.hdg=hdg
-        self.y=y
+        self.y=0
         self.matrix=None
 
     def __str__(self):
@@ -93,7 +95,7 @@ class Object(Clutter):
             self.name, self.lat, self.lon, self.hdg, self.y)
 
     def clone(self):
-        return self.__class__(self.name, self.lat, self.lon, self.hdg, self.y)
+        return self.__class__(self.name, self.lat, self.lon, self.hdg)
 
     def copy(self, dlat, dlon):
         copy = self.clone()
@@ -143,46 +145,22 @@ class Object(Clutter):
     def inside(self, bbox):
         return bbox.inside(self.lon, self.lat)
 
-    def pick_instance(self, glstate, queryobj=None):
-        obj=self.definition
-        assert self.islaidout() and (obj.vdata is None or obj.base is not None), self
-        if obj.vdata is None and not self.placements:
-            return False
-        if queryobj is not None:
-            glBeginQuery(glstate.occlusion_query, queryobj)
-            if obj.vdata is not None:	# .agp base has no vertex data
-                glUniform4f(glstate.transform_pos, *self.matrix)
-                glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
-                glBegin(GL_POINTS)
-                glVertex3fv(Object.origin)	# draw point at object origin so selectable even if no fragments generated
-                glEnd()
-            for p in self.placements:
-                p.pick_instance(glstate)	# use current queryobj. Also means that children don't get overhead of a point drawn
-            glEndQuery(glstate.occlusion_query)
-        else:
-            if obj.vdata is not None:	# .agp base has no vertex data:
-                glUniform4f(glstate.transform_pos, *self.matrix)
-                glDrawArrays(GL_TRIANGLES, obj.base, obj.culled+obj.nocull)
-            for p in self.placements:
-                p.pick_instance(glstate)
-        return True
-
-    def pick_dynamic(self, glstate, queryobj=None):
+    def pick_dynamic(self, glstate, lookup):
         assert self.islaidout() and (self.dynamic_data is None or self.base is not None), self
         # assume for speed that children are all Objects and and don't have dynamic data that extends outside the footprint
         if __debug__:
             for p in self.placements: assert p.__class__ is Object, p
         if self.dynamic_data is None:
             return False
-        elif queryobj is not None:
-            glBeginQuery(glstate.occlusion_query, queryobj)
+        elif glstate.occlusion_query:
+            glBeginQuery(glstate.occlusion_query, glstate.queries[len(lookup)])
             glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+            # no need to draw point at origin in case no fragments generated, since pick_instanced handles this for Objects
             glEndQuery(glstate.occlusion_query)
         else:
-            if self.dynamic_data is not None:
-                glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
-            else:
-                return False
+            glLoadName(len(lookup))
+            glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+        lookup.append(self)
         return True
 
     def draw_nodes(self, glstate, selectednode):
@@ -310,7 +288,7 @@ class AutoGenPoint(Object):
         for child in self.definition.children:
             (childname, definition, xdelta, zdelta, hdelta)=child
             assert definition.filename in defs	# Child Def should have been created when AutoGenPointDef was loaded
-            placement=Object(childname, self.lat, self.lon, self.hdg)
+            placement = Object(childname, self.lat, self.lon, self.hdg, parent=self)
             placement.definition=definition
             self.placements.append(placement)
         return True
@@ -460,26 +438,24 @@ class Polygon(Clutter):
                     return True
         return False
 
-    def pick_instance(self, glstate, queryobj=None):
-        if not self.placements:
-            return False
-        if queryobj is not None: glBeginQuery(glstate.occlusion_query, queryobj)
-        for p in self.placements:
-            p.pick_instance(glstate)	# use current queryobj. Also means that children don't get overhead of a point drawn.
-        if queryobj is not None: glEndQuery(glstate.occlusion_query)
-        return True
-
-    def pick_dynamic(self, glstate, queryobj=None):
+    def pick_dynamic(self, glstate, lookup):
         assert self.islaidout() and self.base is not None, self
-        if queryobj is not None: glBeginQuery(glstate.occlusion_query, queryobj)
-        base=self.base
-        for winding in self.points:
-            glDrawArrays(GL_LINE_STRIP, base, len(winding))
-            base+=len(winding)
         # assume for speed that children are all Objects and so don't have dynamic data
         if __debug__:
             for p in self.placements: assert p.__class__ is Object, p
-        if queryobj is not None: glEndQuery(glstate.occlusion_query)
+        base=self.base
+        if glstate.occlusion_query:
+            glBeginQuery(glstate.occlusion_query, glstate.queries[len(lookup)])
+            for winding in self.points:
+                glDrawArrays(GL_LINE_STRIP, base, len(winding))
+                base+=len(winding)
+            glEndQuery(glstate.occlusion_query)
+        else:
+            glLoadName(len(lookup))
+            for winding in self.points:
+                glDrawArrays(GL_LINE_STRIP, base, len(winding))
+                base+=len(winding)
+        lookup.append(self)
         return True
 
     def draw_nodes(self, glstate, selectednode):
@@ -830,55 +806,30 @@ class Polygon(Clutter):
                 p.setbezloc(x, None, z)
         return node
 
-    def pick_nodes(self, glstate, withhandles, queryidx=0):
-        assert not (withhandles and queryidx)	# non occlusion_query version can't handle both
-        withhandles = withhandles and self.isbezier
-        if glstate.occlusion_query:
-            for w in self.nodes:
-                for node in w:
-                    if withhandles:
-                        glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
-                        glBegin(GL_POINTS)
-                        if node.bezier:
-                            glVertex3f(*node.bezloc)
-                        else:
-                            glVertex3f(*node.loc)	# Have to provide something
-                        glEnd()
-                        glEndQuery(glstate.occlusion_query)
-                        queryidx+=1
-                        glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
-                        glBegin(GL_POINTS)
-                        if node.bezier:
-                            glVertex3f(*node.bz2loc)
-                        else:
-                            glVertex3f(*node.loc)
-                        glEnd()
-                        glEndQuery(glstate.occlusion_query)
-                        queryidx+=1
-                    glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
-                    glBegin(GL_POINTS)
-                    glVertex3f(*node.loc)
-                    glEnd()
-                    glEndQuery(glstate.occlusion_query)
-                    queryidx+=1
+    def pick_nodes(self, projection, withhandles):
+        # prefer inner windings over outer, and handles over node
+        if withhandles and self.isbezier:
+            for i in range(len(self.nodes)-1, -1, -1):
+                nodes = self.nodes[i]
+                points = empty((len(nodes) * 3, 4))
+                points[:,:3] = array([node.bezier and node.bz2loc or node.loc for node in nodes] + [node.bezier and node.bezloc or node.loc for node in nodes] + [node.loc for node in nodes])
+                points[:,3] = 1			# make homogenous
+                projected = numpy.abs(dot(points, projection)[:,:2])	# |x|,|y| in NDC space
+                inview = numpy.nonzero(numpy.all(projected <= 1, axis=1))[0]
+                if len(inview):
+                    j = inview[0] % len(nodes)
+                    return ((i,j), nodes[j].bezier and (2 - inview[0]/len(nodes)) or 0)
         else:
-            for i in range(len(self.points)):
-                for j in range(len(self.nodes[i])):
-                    node = self.nodes[i][j]
-                    if withhandles:
-                        if node.bezier:
-                            glLoadName((i<<24) + (1<<16) + j)
-                            glBegin(GL_POINTS)
-                            glVertex3f(*node.bezloc)
-                            glEnd()
-                            glLoadName((i<<24) + (2<<16) + j)
-                            glBegin(GL_POINTS)
-                            glVertex3f(*node.bz2loc)
-                            glEnd()
-                    glLoadName((i<<24) + j + queryidx)
-                    glBegin(GL_POINTS)
-                    glVertex3f(*node.loc)
-                    glEnd()
+            for i in range(len(self.nodes)-1, -1, -1):
+                nodes = self.nodes[i]
+                points = empty((len(nodes), 4))
+                points[:,:3] = array([node.loc for node in nodes])
+                points[:,3] = 1			# make homogenous
+                projected = numpy.abs(dot(points, projection)[:,:2])	# |x|,|y| in NDC space
+                inview = numpy.nonzero(numpy.all(projected <= 1, axis=1))[0]
+                if len(inview):
+                    return ((i,inview[0]), 0)
+        return None
 
     def write(self, idx, south, west):
         # DSFTool rounds down, so round up here first
@@ -917,7 +868,7 @@ class Beach(Polygon):
         Polygon.load(self, lookup, defs, vertexcache, usefallback=True)
         self.definition.layer=ClutterDef.BEACHESLAYER
 
-    def pick_dynamic(self, glstate, queryobj=None):
+    def pick_dynamic(self, glstate, lookup):
         return False	# Don't draw so can't be picked
 
 
@@ -984,19 +935,21 @@ class Draped(Polygon):
         else:
             return u'%s  Tex hdg\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def pick_dynamic(self, glstate, queryobj=None):
+    def pick_dynamic(self, glstate, lookup):
         assert self.islaidout() and self.base is not None, self
         if self.nonsimple:
-            return Polygon.pick_dynamic(self, glstate, queryobj)
-        if queryobj is not None:
-            glBeginQuery(glstate.occlusion_query, queryobj)
+            return Polygon.pick_dynamic(self, glstate, lookup)
+        elif glstate.occlusion_query:
+            glBeginQuery(glstate.occlusion_query, glstate.queries[len(lookup)])
             glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
             glBegin(GL_POINTS)
             glVertex3f(*self.points[0][0])	# draw a point so selectable even if no fragments generated
             glEnd()
             glEndQuery(glstate.occlusion_query)
         else:
+            glLoadName(len(lookup))
             glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
+        lookup.append(self)
         return True
         
     def bucket_dynamic(self, base, buckets):
@@ -1306,22 +1259,24 @@ class Facade(Polygon):
             else:
                 return u'%s  Height\u2195 %-3dm  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
-    def pick_dynamic(self, glstate, queryobj=None):
+    def pick_dynamic(self, glstate, lookup):
         assert self.islaidout() and self.base is not None, self
+        # assume for speed that children are all Objects and so don't have dynamic data
+        if __debug__:
+            for p in self.placements: assert p.__class__ is Object, p
         if self.nonsimple:
-            return Polygon.pick_dynamic(self, glstate, queryobj)
-        if queryobj is not None:
-            glBeginQuery(glstate.occlusion_query, queryobj)
+            return Polygon.pick_dynamic(self, glstate, lookup)
+        elif glstate.occlusion_query:
+            glBeginQuery(glstate.occlusion_query, glstate.queries[len(lookup)])
             glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
             glBegin(GL_POINTS)
             glVertex3f(*self.points[0][0])	# draw a point so selectable even if no fragments generated
             glEnd()
             glEndQuery(glstate.occlusion_query)
         else:
+            glLoadName(len(lookup))
             glDrawArrays(GL_TRIANGLES, self.base, len(self.dynamic_data)/6)
-        # assume for speed that children are all Objects and so don't have dynamic data
-        if __debug__:
-            for p in self.placements: assert p.__class__ is Object, p
+        lookup.append(self)
         return True
         
     def draw_nodes(self, glstate, selectednode):
@@ -1765,7 +1720,7 @@ class Facade(Polygon):
 
                 for child in segment.children:
                     (childname, definition, is_draped, xdelta, ydelta, zdelta, hdelta)=child
-                    placement=Object(childname, self.lat, self.lon, hdg+hdelta)
+                    placement = Object(childname, self.lat, self.lon, hdg+hdelta, parent=self)
                     placement.definition=definition		# Child Def should have been created when FacadeDef was loaded
                     sz=hoffset+zdelta*hscale+xdelta*sm*(1+zdelta/segment.width)		# scale z, allowing for miter if 1st segment 
                     childx=x+xdelta*coshdg-sz*sinhdg
@@ -2096,18 +2051,20 @@ class Line(Polygon):
         vertexcache.allocate_dynamic(self, True)
         return selectednode
 
-    def pick_dynamic(self, glstate, queryobj=None):
+    def pick_dynamic(self, glstate, lookup):
         assert self.islaidout() and self.base is not None, self
-        if queryobj is not None:
-            glBeginQuery(glstate.occlusion_query, queryobj)
+        if glstate.occlusion_query:
+            glBeginQuery(glstate.occlusion_query, glstate.queries[len(lookup)])
             glDrawArrays(GL_TRIANGLES, self.base + self.outlinelen, len(self.dynamic_data)/6 - self.outlinelen)
             glBegin(GL_POINTS)
             glVertex3f(*self.points[0][0])	# draw a point so selectable even if no fragments generated
             glEnd()
             glEndQuery(glstate.occlusion_query)
         else:
+            glLoadName(len(lookup))
             glDrawArrays(GL_TRIANGLES, self.base + self.outlinelen, len(self.dynamic_data)/6 - self.outlinelen)
         # Skip overhead of drawing outline, on the assumption that the Line/Network segments cover the outline
+        lookup.append(self)
         return True
 
     def bucket_dynamic(self, base, buckets):
@@ -2210,7 +2167,7 @@ class String(Polygon):
                 hdg=degrees(h)
                 for p in self.definition.children:
                     child = p.definition
-                    placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta)
+                    placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta, parent=self)
                     placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
                     placement.layout(tile, options, vertexcache, x + p.xdelta*coshdg, None, z + p.xdelta*sinhdg, hdg+p.hdelta)
                     self.placements.append(placement)
@@ -2239,7 +2196,7 @@ class String(Polygon):
                 hdg=degrees(h)
                 p = self.definition.children[objno]
                 child = p.definition
-                placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta)
+                placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta, parent=self)
                 placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
                 childx = x + p.xdelta*coshdg + sz*sinhdg
                 childz = z + p.xdelta*sinhdg - sz*coshdg
@@ -2284,7 +2241,7 @@ class String(Polygon):
 
             p = self.definition.children[objno]
             child = p.definition
-            placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta)
+            placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta, parent=self)
             placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
             childx = x + p.xdelta*coshdg + sz*sinhdg
             childz = z + p.xdelta*sinhdg - sz*coshdg
@@ -2333,11 +2290,11 @@ class Network(String,Line):
         else:
             return u'%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
 
-    def pick_dynamic(self, glstate, queryobj=None):
+    def pick_dynamic(self, glstate, lookup):
         if self.definition.segments:
-            return Line.pick_dynamic(self, glstate, queryobj)
+            return Line.pick_dynamic(self, glstate, lookup)
         else:
-            return String.pick_dynamic(self, glstate, queryobj)
+            return String.pick_dynamic(self, glstate, lookup)
 
     def bucket_dynamic(self, base, buckets):
         if self.definition.segments:
