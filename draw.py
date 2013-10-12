@@ -136,6 +136,8 @@ class GLstate():
             self.instancedshader = self.instanced_transform_pos = self.instanced_selected_pos = None
             self.instanced_arrays = False
         glUseProgram(self.textureshader)
+        glVertexAttrib1f(self.skip_pos, 0)
+        glUniform4f(self.transform_pos, *zeros(4,float32))
 
     def set_texture(self, id):
         if self.texture!=id:
@@ -724,7 +726,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 self.glstate.occlusion_query=hasGLExtension('GL_ARB_occlusion_query2') and GL_ANY_SAMPLES_PASSED or GL_SAMPLES_PASSED
             if self.glstate.occlusion_query:
-                self.glstate.set_texture(0)
+                glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+                self.glstate.set_texture(self.vertexcache.texcache.get(fallbacktexture))	# ATI drivers don't like 0
                 self.glstate.set_color(COL_WHITE)	# Ensure colour indexing off
                 self.glstate.set_depthtest(False)	# Draw even if occluded
                 self.glstate.set_poly(True)		# Disable writing to depth buffer
@@ -752,7 +755,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             # Sea
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
             self.glstate.set_color((0.25, 0.25, 0.50))
-            self.glstate.set_texture(0)
+            self.glstate.set_texture(None)
             glBegin(GL_QUADS)
             glVertex3f( onedeg*cos(radians(1+self.tile[0]))/2, 0, -onedeg/2)
             glVertex3f( onedeg*cos(radians(self.tile[0]))/2, 0,  onedeg/2)
@@ -1008,7 +1011,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # Select placements
         glLoadMatrixd(proj)
-        self.glstate.set_texture(0)			# use textured shader throughout
+        self.glstate.set_texture(self.vertexcache.texcache.get(fallbacktexture))	# textured shader throughout. ATI drivers don't like 0
         self.glstate.set_color(COL_WHITE)		# Ensure colour indexing off
         self.glstate.set_depthtest(False)		# Make selectable even if occluded
         self.glstate.set_poly(True)			# Disable writing to depth buffer
@@ -2030,7 +2033,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         mx=max(0, min(size[0]-1, mx))
         my=max(0, min(size[1]-1, size[1]-1-my))
         self.glstate.set_instance(self.vertexcache)
-        self.glstate.set_texture(0)
+        self.glstate.set_texture(self.vertexcache.texcache.get(fallbacktexture))	# textured shader. ATI drivers don't like 0
         self.glstate.set_depthtest(True)
         self.glstate.set_poly(False)	# DepthMask=True
         glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)
