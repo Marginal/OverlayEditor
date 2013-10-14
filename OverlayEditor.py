@@ -68,7 +68,7 @@ if not 'startfile' in dir(os):
     from urllib import quote
     import webbrowser
 
-from clutter import latlondisp, Polygon, Exclude	# for loading exclusions into palette
+from clutter import Clutter, Polygon, Exclude	# for loading exclusions into palette
 from clutterdef import ClutterDef, ObjectDef, PolygonDef, KnownDefs, ExcludeDef, NetworkDef
 from draw import MyGL
 from elevation import minres, round2res, ElevationMesh
@@ -379,25 +379,24 @@ class GotoDialog(wx.Dialog):
 class PreferencesDialog(wx.Dialog):
 
     def __init__(self, parent, id, title):
-        wx.Dialog.__init__(self, parent, id, title)
+        wx.Dialog.__init__(self, parent, id, title, style=wx.DEFAULT_FRAME_STYLE|wx.FRAME_FLOAT_ON_PARENT)
         if platform=='darwin':	# Default is too big on Mac
             self.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
-            
-        panel1 = wx.Panel(self,-1)
-        panel2 = wx.Panel(self,-1)
-        panel3 = wx.Panel(self,-1)
 
-        box1 = wx.StaticBoxSizer(wx.StaticBox(panel1, -1, 'X-Plane location'),
-                                 wx.VERTICAL)
-        self.path = wx.TextCtrl(panel1, -1, style=wx.TE_READONLY)
+        outersizer = wx.BoxSizer(wx.VERTICAL)	# For padding
+        box0 = wx.BoxSizer(wx.VERTICAL)
+        outersizer.Add(box0, 0, wx.ALL|wx.EXPAND, pad+pad)
+
+        box1 = wx.StaticBoxSizer(wx.StaticBox(self, -1, 'X-Plane location'), wx.VERTICAL)
+        box0.Add(box1, 0, wx.ALL|wx.EXPAND, pad)
+        self.path = wx.TextCtrl(self, -1, style=wx.TE_READONLY)
         self.path.SetMinSize((300, -1))
         if prefs.xplane: self.path.SetValue(prefs.xplane)
-        browsebtn=wx.Button(panel1, -1, browse)
-        box1.Add(self.path, 1, wx.ALIGN_CENTER|wx.ALL, 4)
-        box1.Add(browsebtn, 0, wx.ALIGN_RIGHT|wx.ALL, 4)
-        panel1.SetSizer(box1)
+        browsebtn=wx.Button(self, -1, browse)
+        box1.Add(self.path, 1, wx.ALL|wx.EXPAND, 4)
+        box1.Add(browsebtn, 0, wx.ALL|wx.ALIGN_RIGHT, 4)
 
-        self.display = wx.RadioBox(panel2, -1, "Terrain", style=wx.VERTICAL,
+        self.display = wx.RadioBox(self, -1, "Terrain", style=wx.VERTICAL,
                                    choices=["No terrain", "Show terrain", "Show terrain and elevation", "Show terrain and networks"])
         # "Show terrain, elevation, powerlines, railways, roads"])
         if prefs.options&Prefs.NETWORK:
@@ -406,27 +405,23 @@ class PreferencesDialog(wx.Dialog):
             self.display.SetSelection(2)
         elif prefs.options&Prefs.TERRAIN:
             self.display.SetSelection(1)
+        box0.Add(self.display, 0, wx.ALL|wx.EXPAND|wx.ALIGN_LEFT, pad)
+
         box2 = wx.BoxSizer()
-        box2.Add(self.display, 1)
-        panel2.SetSizer(box2)
-
-        self.latlon = wx.RadioBox(panel3, -1, "Latitude && Longitude", style=wx.VERTICAL,
-                                   choices=["Decimal", u"dd\u00B0mm'ss\""])
+        box0.Add(box2, 0, wx.ALL|wx.EXPAND, pad)
+        self.latlon = wx.RadioBox(self, -1, "Latitude && Longitude", style=wx.VERTICAL, choices=["Decimal", u"dd\u00B0mm\u2032ss\u2033"])
         if prefs.options&Prefs.DMS: self.latlon.SetSelection(1)
-        box3 = wx.BoxSizer()
-        box3.Add(self.latlon, 1)
-        panel3.SetSizer(box3)
+        box2.Add(self.latlon, 1, wx.RIGHT|wx.EXPAND, pad)
 
-        box4=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
+        self.distance = wx.RadioBox(self, -1, "Distance", style=wx.VERTICAL, choices=["Metres", "Feet"])
+        if prefs.options&Prefs.IMPERIAL: self.distance.SetSelection(1)
+        box2.Add(self.distance, 1, wx.LEFT|wx.EXPAND, pad)
 
-        box0 = wx.BoxSizer(wx.VERTICAL)
-        box0.Add(panel1, 0, wx.LEFT|wx.RIGHT|wx.TOP|wx.EXPAND, 10)
-        box0.Add(panel2, 0, wx.LEFT|wx.RIGHT|wx.TOP|wx.EXPAND, 10)
-        box0.Add(panel3, 0, wx.LEFT|wx.RIGHT|wx.TOP|wx.EXPAND, 10)
-        box0.Add(box4, 0, wx.ALL|wx.EXPAND, 10)
+        box5=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
+        box0.Add(box5, 0, wx.ALL|wx.EXPAND, pad)
 
         wx.EVT_BUTTON(self, browsebtn.GetId(), self.OnBrowse)
-        self.SetSizerAndFit(box0)
+        self.SetSizerAndFit(outersizer)
 
     def OnBrowse(self, event):
         while True:
@@ -914,12 +909,12 @@ class MainWindow(wx.Frame):
 
     def ShowLoc(self):
         if prefs.options&Prefs.ELEVATION:
-            self.statusbar.SetStatusText("%s  Hdg: %-5.1f  Elv: %-6.1f" % (latlondisp(prefs.options&Prefs.DMS, self.loc[0], self.loc[1]), self.hdg, self.canvas.getheight()), 1)
+            self.statusbar.SetStatusText(u"%s  Hdg: %.1f\u00B0  Elv: %s" % (Clutter.latlondisp(prefs.options&Prefs.DMS, self.loc[0], self.loc[1]), self.hdg, Clutter.distancedisp(prefs.options&Prefs.IMPERIAL, self.canvas.getheight())), 1)
         else:
-            self.statusbar.SetStatusText("%s  Hdg: %-5.1f" % (latlondisp(prefs.options&Prefs.DMS, self.loc[0], self.loc[1]), self.hdg), 1)
+            self.statusbar.SetStatusText(u"%s  Hdg: %.1f\u00B0" % (Clutter.latlondisp(prefs.options&Prefs.DMS, self.loc[0], self.loc[1]), self.hdg), 1)
 
     def ShowSel(self):
-        (names,string,lat,lon,hdg)=self.canvas.getsel(prefs.options&Prefs.DMS)
+        (names,string,lat,lon,hdg)=self.canvas.getsel(prefs.options&Prefs.DMS, prefs.options&Prefs.IMPERIAL)
         if names:
             for name in names:
                 if name!=names[0]:
@@ -1142,7 +1137,7 @@ class MainWindow(wx.Frame):
                     self.loc=loc
                     self.ShowSel()
         elif event.GetKeyCode() in [ord('C'), wx.WXK_NUMPAD5]:
-            (names,string,lat,lon,hdg)=self.canvas.getsel(prefs.options&Prefs.DMS)
+            (names,string,lat,lon,hdg)=self.canvas.getsel()
             if lat==None: return
             self.loc=(round2res(lat),round2res(lon))
             if hdg!=None and event.ShiftDown():
@@ -1778,6 +1773,8 @@ class MainWindow(wx.Frame):
             prefs.options=0
         if dlg.latlon.GetSelection():
             prefs.options|=Prefs.DMS
+        if dlg.distance.GetSelection():
+            prefs.options|=Prefs.IMPERIAL
         if dlg.path.GetValue()!=prefs.xplane:
             # Make untitled. Has ID_SAVE enabled so can Save As.
             prefs.xplane=dlg.path.GetValue()

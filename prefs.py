@@ -15,6 +15,7 @@ class Prefs:
     DMS=4
     NETWORK=8
     REDRAW=TERRAIN|ELEVATION|NETWORK	# options that cause meshlist to be recalculated
+    IMPERIAL=16
     
     def __init__(self):
         self.filename=None

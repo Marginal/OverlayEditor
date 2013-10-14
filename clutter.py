@@ -24,7 +24,7 @@
 
 import gc
 from collections import defaultdict
-from math import atan2, ceil, cos, degrees, floor, hypot, pi, radians, sin, tan
+from math import atan2, ceil, cos, degrees, floor, hypot, modf, pi, radians, sin, tan
 import numpy
 from numpy import array, array_equal, concatenate, dot, empty, nonzero, float32, float64
 from os.path import join
@@ -64,11 +64,35 @@ class Clutter:
         self.placements=[]	# child object placements
         self.bbox = None	# bounding box (x,z)
         
-    def position(self, tile, lat, lon):
+    @staticmethod
+    def position(tile, lat, lon):
         # returns (x,z) position relative to centre of enclosing tile
         # z is positive south
         return ((lon-tile[1]-0.5)*onedeg*cos(radians(lat)),
                 (0.5-(lat-tile[0]))*onedeg)
+
+    @staticmethod
+    def latlondisp(dms, lat, lon):
+        if dms:
+            sgnlat = lat>=0 and 'N' or 'S'
+            abslat=abs(lat)
+            mmlat=(abslat-int(abslat)) * 60.0
+            sslat=(mmlat-int(mmlat)) * 60.0
+            sgnlon = lon>=0 and 'E' or 'W'
+            abslon=abs(lon)
+            mmlon=(abslon-int(abslon)) * 60.0
+            sslon=(mmlon-int(mmlon)) * 60.0
+            return u'Lat: %s%02d\u00B0%02d\u2032%07.4f\u2033  Lon: %s%03d\u00B0%02d\u2032%07.4f\u2033' % (sgnlat, abslat, mmlat, sslat, sgnlon, abslon, mmlon, sslon)
+        else:
+            return "Lat: %.7f  Lon: %.7f" % (lat, lon)
+
+    @staticmethod
+    def distancedisp(imp, dist):
+        if imp:
+            (i,f) = modf(dist * (1/0.3048))
+            return u'%d\u2032%d\u2033' % (f, round(i*12,0))
+        else:
+            return '%.2fm' % dist
 
 
 class Object(Clutter):
@@ -136,11 +160,11 @@ class Object(Clutter):
     def location(self):
         return [self.lat, self.lon]
 
-    def locationstr(self, dms, node=None):
+    def locationstr(self, dms, imp, node=None):
         if self.y:
-            return '%s  Hdg: %-5.1f  Elv: %-6.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg, self.y)
+            return u'%s  Hdg: %.1f\u00B0  Elv: %s' % (self.latlondisp(dms, self.lat, self.lon), self.hdg, self.distancedisp(imp, self.y))
         else:
-            return '%s  Hdg: %-5.1f' % (latlondisp(dms, self.lat, self.lon), self.hdg)
+            return u'%s  Hdg: %.1f\u00B0' % (self.latlondisp(dms, self.lat, self.lon), self.hdg)
 
     def inside(self, bbox):
         return bbox.inside(self.lon, self.lat)
@@ -420,16 +444,33 @@ class Polygon(Clutter):
             self.lat = sum([node.lat for node in self.nodes[0]]) / len(self.nodes[0])
         return [self.lat, self.lon]
 
-    def locationstr(self, dms, node=None):
+    # horizontal distance to adjacent node(s)
+    def distancestr(self, imp, node):
+        (i,j) = node
+        pt = self.nodes[i][j].loc
+        n = len(self.nodes[i])
+        if j==0 and not self.closed:
+            nxt = self.nodes[i][j+1].loc
+            return u'\u2022%s' % self.distancedisp(imp, hypot(pt[0]-nxt[0], pt[2]-nxt[2]))
+        elif j==n-1 and not self.closed:
+            prv = self.nodes[i][j-1].loc
+            return u'\u2022%s' % self.distancedisp(imp, hypot(pt[0]-prv[0], pt[2]-prv[2]))
+        else:
+            prv = self.nodes[i][(j-1)%n].loc
+            nxt = self.nodes[i][(j+1)%n].loc
+            return u'%s\u2022%s' % (self.distancedisp(imp, hypot(pt[0]-prv[0], pt[2]-prv[2])), self.distancedisp(imp, hypot(pt[0]-nxt[0], pt[2]-nxt[2])))
+
+    def locationstr(self, dms, imp, node=None, extranodeinfo=None):
         if node:
             (i,j)=node
             hole=['', 'Hole '][i and 1]
+            extra = extranodeinfo and '  '+extranodeinfo or ''
             if self.nodes[i][j].loc[1]:
-                return '%s  Elv: %-6.1f  %sNode %d' % (latlondisp(dms, self.nodes[i][j].lat, self.nodes[i][j].lon), self.nodes[i][j].loc[1], hole, j)
+                return '%s  Elv: %s  %sNode %d%s   %s' % (self.latlondisp(dms, self.nodes[i][j].lat, self.nodes[i][j].lon), self.distancedisp(imp, self.nodes[i][j].loc[1]), hole, j, extra, self.distancestr(imp, node))
             else:
-                return '%s  %sNode %d' % (latlondisp(dms, self.nodes[i][j].lat, self.nodes[i][j].lon), hole, j)
+                return '%s  %sNode %d%s   %s' % (self.latlondisp(dms, self.nodes[i][j].lat, self.nodes[i][j].lon), hole, j, extra, self.distancestr(imp, node))
         else:
-            return u'%s  Param\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+            return u'%s  Param\u2195 %-3d  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
     def inside(self, bbox):
         for w in self.nodes:
@@ -927,13 +968,13 @@ class Draped(Polygon):
                     defs[filename]=self.definition=DrapedFallback(filename, vertexcache, lookup, defs)
             return False
 
-    def locationstr(self, dms, node=None):
+    def locationstr(self, dms, imp, node=None):
         if node:
-            return Polygon.locationstr(self, dms, node)
+            return Polygon.locationstr(self, dms, imp, node)
         elif self.param==65535:
-            return '%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
+            return '%s  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
         else:
-            return u'%s  Tex hdg\u2195 %-3d  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+            return u'%s  Tex hdg\u2195 %d\u00B0  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
     def pick_dynamic(self, glstate, lookup):
         assert self.islaidout() and self.base is not None, self
@@ -1114,13 +1155,13 @@ class Exclude(Polygon):
         self.definition=ExcludeDef(self.name, vertexcache, lookup, defs)	# just create a new one
         return True
 
-    def locationstr(self, dms, node=None):
+    def locationstr(self, dms, imp, node=None):
         # no elevation
         if node:
             (i,j)=node
-            return '%s  Node %d' % (latlondisp(dms, self.nodes[i][j].lat, self.nodes[i][j].lon), j)
+            return '%s  Node %d  %s' % (self.latlondisp(dms, self.nodes[i][j].lat, self.nodes[i][j].lon), j, self.distancestr(imp, node))
         else:
-            return '%s' % (latlondisp(dms, self.lat, self.lon))
+            return '%s' % (self.latlondisp(dms, self.lat, self.lon))
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         for i in range(len(self.nodes)):
@@ -1238,26 +1279,26 @@ class Facade(Polygon):
                     defs[filename]=self.definition=FacadeFallback(filename, vertexcache, lookup, defs)
             return False
 
-    def locationstr(self, dms, node=None):
+    def locationstr(self, dms, imp, node=None):
         if self.definition.version>=1000:
             floor=self.definition.floors[self.floorno]
             if node:
                 (i,j)=node
                 if len(floor.walls)>1 and (self.closed or j<len(self.nodes[i])-1):
                     wallno = self.nodes[i][j].param
-                    return Polygon.locationstr(self, dms, node) + u'  Wall\u2195 ' + (0<=wallno<len(floor.walls) and floor.walls[wallno].name or 'undefined')
+                    return Polygon.locationstr(self, dms, imp, node, u'  Wall\u2195 ' + (0<=wallno<len(floor.walls) and floor.walls[wallno].name or 'undefined'))
                 else:	# Can't change wall type if only one wall, or if final node
-                    return Polygon.locationstr(self, dms, node)
+                    return Polygon.locationstr(self, dms, imp, node)
             elif len(self.definition.floors)>1:
-                return u'%s  Height\u2195 %s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), floor.name, len(self.nodes[0]))
+                return u'%s  Height\u2195 %s  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), floor.name, len(self.nodes[0]))
             else:	# Can't change height if only one floor
-                return u'%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
+                return u'%s  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
 
         else:	# old-style
             if node:
-                return Polygon.locationstr(self, dms, node)
+                return Polygon.locationstr(self, dms, imp, node)
             else:
-                return u'%s  Height\u2195 %-3dm  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+                return u'%s  Height\u2195 %-3dm  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
 
     def pick_dynamic(self, glstate, lookup):
         assert self.islaidout() and self.base is not None, self
@@ -1848,11 +1889,11 @@ class Forest(Polygon):
                     defs[filename]=self.definition=ForestFallback(filename, vertexcache, lookup, defs)
             return False
 
-    def locationstr(self, dms, node=None):
+    def locationstr(self, dms, imp, node=None):
         if node:
-            return Polygon.locationstr(self, dms, node)
+            return Polygon.locationstr(self, dms, imp, node)
         else:
-            return u'%s  Density\u2195 %-4.1f%%  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
+            return u'%s  Density\u2195 %-4.1f%%  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
         Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
@@ -1940,12 +1981,12 @@ class Line(Polygon):
                     defs[filename]=self.definition=LineFallback(filename, vertexcache, lookup, defs)
             return False
 
-    def locationstr(self, dms, node=None):
+    def locationstr(self, dms, imp, node=None):
         if node:
-            return Polygon.locationstr(self, dms, node)
+            return Polygon.locationstr(self, dms, imp, node)
         else:
             oc=self.closed and 'Closed' or 'Open'
-            return u'%s  %s\u2195  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
+            return u'%s  %s\u2195  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
 
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
         self.closed=(self.param and True)
@@ -2134,13 +2175,13 @@ class String(Polygon):
                     defs[filename]=self.definition=StringFallback(filename, vertexcache, lookup, defs)
             return False
 
-    def locationstr(self, dms, node=None):
+    def locationstr(self, dms, imp, node=None):
         if node:
-            return Polygon.locationstr(self, dms, node)
+            return Polygon.locationstr(self, dms, imp, node)
         elif self.param:
-            return u'%s  Spacing\u2195 %3dm  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
+            return u'%s  Spacing\u2195 %3dm  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), self.param, len(self.nodes[0]))
         else:
-            return u'%s  Spacing\u2195 Midpoint  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
+            return u'%s  Spacing\u2195 Midpoint  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
 
     def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
         if self.islaidout() and not recalc:
@@ -2281,15 +2322,15 @@ class Network(String,Line):
             defs[filename] = self.definition = NetworkFallback(self.name, vertexcache, lookup, defs)
             return False
 
-    def locationstr(self, dms, node=None):
+    def locationstr(self, dms, imp, node=None):
         if node:
             (i,j)=node
             if j==0 or j==len(self.nodes[i])-1:
-                return Polygon.locationstr(self, dms, node) + u'  Level\u2195 %s' % (self.nodes[i][j].param or 'Ground')
+                return Polygon.locationstr(self, dms, imp, node, u'  Level\u2195 %s' % (self.nodes[i][j].param or 'Ground'))
             else:
-                return Polygon.locationstr(self, dms, node)
+                return Polygon.locationstr(self, dms, imp, node)
         else:
-            return u'%s  (%d nodes)' % (latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
+            return u'%s  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
 
     def pick_dynamic(self, glstate, lookup):
         if self.definition.segments:
@@ -2348,27 +2389,6 @@ class Network(String,Line):
             return Line.layout(self, tile, options, vertexcache, selectednode, recalc)
         else:
             return String.layout(self, tile, options, vertexcache, selectednode, recalc)
-
-
-def latlondisp(dms, lat, lon):
-    if dms:
-        if lat>=0:
-            sgnlat='N'
-        else:
-            sgnlat='S'
-        abslat=abs(lat)
-        mmlat=(abslat-int(abslat)) * 60.0
-        sslat=(mmlat-int(mmlat)) * 60.0
-        if lon>=0:
-            sgnlon='E'
-        else:
-            sgnlon='W'
-        abslon=abs(lon)
-        mmlon=(abslon-int(abslon)) * 60.0
-        sslon=(mmlon-int(mmlon)) * 60.0
-        return u'Lat: %s%02d\u00B0%02d\'%07.4f"  Lon: %s%03d\u00B0%02d\'%07.4f"' % (sgnlat, abslat, mmlat, sslat, sgnlon, abslon, mmlon, sslon)
-    else:
-        return "Lat: %.7f  Lon: %.7f" % (lat, lon)
 
 
 # Have to do this after classes are defined. Yuck.

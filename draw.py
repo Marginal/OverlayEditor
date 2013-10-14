@@ -33,7 +33,7 @@ if __debug__:
 
 from files import VertexCache, sortfolded, readApt, glInitTextureCompressionS3TcEXT
 from fixed8x13 import fixed8x13
-from clutter import Object, Polygon, Draped, DrapedImage, Facade, Network, Exclude, latlondisp
+from clutter import Clutter, Object, Polygon, Draped, DrapedImage, Facade, Network, Exclude
 from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, NetworkDef, PolygonDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
 from DSFLib import readDSF
 from elevation import BBox, ElevationMesh, onedeg, round2res
@@ -1512,20 +1512,20 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.frame.ShowSel()
         return (placement.lat, placement.lon)
 
-    def getsel(self, dms):
+    def getsel(self, dms=0, imp=0):
         # return current selection, or average: ([names], location_string, lat, lon, object_hdg)
         if not self.selected: return ([], '', None, None, None)
 
         if self.selectednode:
             placement=list(self.selected)[0]
             (i,j)=self.selectednode
-            return ([placement.name], placement.locationstr(dms, self.selectednode), placement.nodes[i][j].lat, placement.nodes[i][j].lon, None)
+            return ([placement.name], placement.locationstr(dms, imp, self.selectednode), placement.nodes[i][j].lat, placement.nodes[i][j].lon, None)
         elif len(self.selected)==1:
             placement=list(self.selected)[0]
             if isinstance(placement, Polygon):
-                return ([placement.name], placement.locationstr(dms), placement.lat, placement.lon, None)
+                return ([placement.name], placement.locationstr(dms, imp), placement.lat, placement.lon, None)
             else:
-                return ([placement.name], placement.locationstr(dms), placement.lat, placement.lon, placement.hdg)
+                return ([placement.name], placement.locationstr(dms, imp), placement.lat, placement.lon, placement.hdg)
         else:
             lat=lon=0
             names=[]
@@ -1536,7 +1536,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 lon+=tlon
             lat/=len(self.selected)
             lon/=len(self.selected)
-            return (names, "%s  (%d objects)" % (latlondisp(dms, lat, lon), len(self.selected)), lat, lon, None)
+            return (names, "%s  (%d objects)" % (Clutter.latlondisp(dms, lat, lon), len(self.selected)), lat, lon, None)
 
     def getheight(self):
         # return current height
