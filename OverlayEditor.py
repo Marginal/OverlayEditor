@@ -58,6 +58,7 @@ if not __debug__:
     warnings.simplefilter('ignore', DeprecationWarning)
     if hasattr(wx,'wxPyDeprecationWarning'):
         warnings.simplefilter('ignore', wx.wxPyDeprecationWarning)
+    wx.Log.SetLogLevel(wx.LOG_Error)	# wx warnings are seldom helpful
     numpy.seterr(all='ignore', divide='raise')	# default settings vary between numpy versions
 else:
     numpy.seterr(all='raise')
@@ -1907,7 +1908,8 @@ if platform=='win32':
         wx.SystemOptions.SetOptionInt('msw.remap', 2)
     else:
         wx.SystemOptions.SetOptionInt('msw.remap', 0)
-
+if __debug__:
+    wx.Log.SetActiveTarget(wx.LogStderr())
 frame=MainWindow(None, wx.ID_ANY, appname)
 app.SetTopWindow(frame)
 
