@@ -825,12 +825,15 @@ class Polygon(Clutter):
     def updatehandle(self, node, handle, split, lat, lon, tile, options, vertexcache):
         # Defer full layout
         assert handle in [1,2], handle
-        assert self.isbezier and self.canbezier	# shouldn't be able to manuipulate control handles on types we think shouldn't have them
+        assert self.isbezier and self.canbezier	# shouldn't be able to manipulate control handles on types we think shouldn't have them
         (i,j) = node
         p = self.nodes[i][j]
         assert p.bezier
         (x,z) = self.position(tile, lat, lon)
-        if split: p.split = True
+        if self.closed or (j>0 and j<len(self.nodes[i])-1):
+            if split: p.split = True
+        else:
+            p.split = False	# meaningless to split first or last node of open poly
         if handle==1:
             (p.bezlon, p.bezlat) = (lon - p.lon, lat - p.lat)
             p.setbezloc(x, None, z)

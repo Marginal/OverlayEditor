@@ -116,7 +116,7 @@ class BezierNode(Node):
             return 'POLYGON_POINT\t%14.9f %14.9f %14.9f %14.9f\n' % (min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4), min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4))	# repeat location in bezier fields
         elif not self.split:
             return 'POLYGON_POINT\t%14.9f %14.9f %14.9f %14.9f\n' % (min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4), min(west+1, self.lon+self.bezlon+minres/4), min(south+1, self.lat+self.bezlat+minres/4))	# standard forward-pointing bezier
-        else:
+        else:	# split bezier
             s = 'POLYGON_POINT\t%14.9f %14.9f %14.9f %14.9f\n' % (min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4), min(west+1, self.lon-self.bz2lon + minres/4), min(south+1, self.lat-self.bz2lat + minres/4))	# mirror of backwards-pointing bezier
             s+= 'POLYGON_POINT\t%14.9f %14.9f %14.9f %14.9f\n' % (min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4), min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4))	# dummy - repeat location in bezier fields
             s+= 'POLYGON_POINT\t%14.9f %14.9f %14.9f %14.9f\n' % (min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4), min(west+1, self.lon+self.bezlon+minres/4), min(south+1, self.lat+self.bezlat+minres/4))	# standard forward-pointing bezier
@@ -131,15 +131,21 @@ class BezierNode(Node):
         newnodes = [[cls(node) for node in w] for w in nodes]
         # detect split nodes
         for nodes in newnodes:
-            j = 2
+            j = 1
             while j < len(nodes):
-                (a,b,c) = nodes[j-2:j+1]
-                if (a.lat == b.lat == c.lat) and not b.bezlat and (a.lon == b.lon == c.lon) and not b.bezlon:
-                    a.split = True
-                    a.bezlat = c.bezlat
-                    a.bezlon = c.bezlon
-                    nodes.pop(j)
-                    nodes.pop(j-1)
+                if j==1:	# WED splits split node 0 across first and last
+                    (a,b,c) = (nodes[-1],nodes[0],nodes[1])
+                else:
+                    (a,b,c) = nodes[j-2:j+1]
+                if (a.lat == b.lat == c.lat) and (a.lon == b.lon == c.lon) and not b.bezier:
+                    b.bezier = True
+                    b.bz2lat = a.bz2lat
+                    b.bz2lon = a.bz2lon
+                    b.bezlat = c.bezlat
+                    b.bezlon = c.bezlon
+                    b.split = a.bezlat!=c.bezlat or a.bezlon!=c.bezlon	# node sometimes encoded as split when it isn't
+                    nodes.pop(j)	# c
+                    nodes.pop(j-2)	# a
                 else:
                     j += 1
         return newnodes
@@ -190,7 +196,7 @@ class BezierParamNode(BezierNode,ParamNode):
             return 'POLYGON_POINT\t%14.9f %14.9f %5d %14.9f %14.9f\n' % (min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4), self.param, min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4))	# repeat location in bezier fields
         elif not self.split:
             return 'POLYGON_POINT\t%14.9f %14.9f %5d %14.9f %14.9f\n' % (min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4), self.param, min(west+1, self.lon+self.bezlon+minres/4), min(south+1, self.lat+self.bezlat+minres/4))	# standard forward-pointing bezier
-        else:
+        else:	# split bezier
             s = 'POLYGON_POINT\t%14.9f %14.9f %5d %14.9f %14.9f\n' % (min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4), self.param, min(west+1, self.lon-self.bz2lon + minres/4), min(south+1, self.lat-self.bz2lat + minres/4))	# mirror of backwards-pointing bezier
             s+= 'POLYGON_POINT\t%14.9f %14.9f %5d %14.9f %14.9f\n' % (min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4), self.param, min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4))	# dummy - repeat location in bezier fields
             s+= 'POLYGON_POINT\t%14.9f %14.9f %5d %14.9f %14.9f\n' % (min(west+1, self.lon+minres/4), min(south+1, self.lat+minres/4), self.param, min(west+1, self.lon+self.bezlon+minres/4), min(south+1, self.lat+self.bezlat+minres/4))	# standard forward-pointing bezier
