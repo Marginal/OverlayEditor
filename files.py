@@ -381,7 +381,8 @@ def readNet(filename):
         if not c: continue
         id=c[0]
         if id=='#VROAD':
-            comment=c[1]
+            comment = c[1]
+            if comment.startswith('seconary'): comment = 'secondary'+comment[8:]	# be nice and fix spelling error
         elif id=='TEXTURE':
             texs.append(join(path,c[2]))
         elif id=='ROAD_DRAPED':		# flags? type ? ?

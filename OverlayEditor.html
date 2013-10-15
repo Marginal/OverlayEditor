@@ -15,6 +15,9 @@
 .kbdtable { table-layout: fixed; width: 100%; border: 0px; }
 .kbdtable td.button { width: 64px; vertical-align: top; }
 .kbdtable td.keys { width: 33%; vertical-align: top; }
+.generaltable { margin-left: 40px; text-align: left; border-spacing: 0px; }
+.generaltable thead tr th { font-family: Arial,Helvetica,sans-serif; border-bottom: 2px solid black; padding: 1px 4px; }
+.generaltable tbody tr td { vertical-align: text-bottom; padding: 1px 4px; }
 samp { font-family: Arial,Helvetica,sans-serif; }
 h2 { font-family: Arial,Helvetica,sans-serif; }
 h3 { font-family: Arial,Helvetica,sans-serif; }
@@ -350,6 +353,34 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
   <li>When multiple roads and/or railways meet at a junction, in order for X-Plane to draw the junction correctly the first or last nodes of all the segments that meet at the junction must be in <u>exactly</u> the same location.</li>
 </ul>
 <p>To help with this, when you drag the first or last node of a network segment it will &ldquo;snap&rdquo; to any nearby nodes in other segments. And if the &ldquo;snapped-to&rdquo; node is in the middle of its segment, that segment will be split in two.</p>
+<p>The user's &ldquo;number of roads&rdquo; rendering option controls which kinds of networks they will see:</p>
+<table class="generaltable">
+  <thead>
+    <tr>
+      <th>Setting</th>
+      <th>Networks displayed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><samp>none</samp></td>
+      <td>none</td>
+    </tr>
+    <tr>
+      <td><samp>default</samp></td>
+      <td>&ldquo;hwy&rdquo;, &ldquo;powerlines&rdquo;, &ldquo;rail&rdquo;</td>
+    </tr>
+    <tr>
+      <td><samp>tons</samp></td>
+      <td>as above, plus &ldquo;local&rdquo;, &ldquo;primary&rdquo;, &ldquo;secondary&rdquo;</td>
+    </tr>
+    <tr>
+      <td><samp>extreme</samp></td>
+      <td>as above, plus &ldquo;single&rdquo;</td>
+    </tr>
+  </tbody>
+</table>
+
 <p>To construct a bridge over a road or railway:</p>
 <ul>
   <li>Create a four-way junction / crossroads - <i>i.e.</i> four segments with their first or last nodes at <u>exactly</u> the same location.</li>
