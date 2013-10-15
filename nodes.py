@@ -218,19 +218,18 @@ class NetworkNode(BezierParamNode):
         else:
             self.param = int(coords[2])
             BezierNode.__init__(self, coords[:2])
-        self.split = True	# always split
 
     def write(self, type_id, junction_id):
         s = ''
-        if self.bezier and not type_id and (self.bz2lon or self.bz2lat):
+        if self.bezier and not type_id and (self.bz2lon or self.bz2lat):	# Preceding Bezier (not at first node)
             s += 'SHAPE_POINT\t\t\t%14.9f %14.9f %d\n' % (self.lon+self.bz2lon, self.lat+self.bz2lat, 1)
         if type_id:	# First
             s += 'BEGIN_SEGMENT\t%d %d\t%d\t%14.9f %14.9f %d\n' % (0, type_id, junction_id, self.lon, self.lat, self.param)
         elif junction_id:	# Last
             s += 'END_SEGMENT\t\t%d\t%14.9f %14.9f %d\n' % (junction_id, self.lon, self.lat, self.param)
-        else:
+        else:		# Mid
             s += 'SHAPE_POINT\t\t\t%14.9f %14.9f %d\n' % (self.lon, self.lat, 0)
-        if self.bezier and (type_id or not junction_id) and (self.bezlon or self.bezlat):
+        if self.bezier and (type_id or not junction_id) and (self.bezlon or self.bezlat):	# Following Bezier (not at last node)
             s += 'SHAPE_POINT\t\t\t%14.9f %14.9f %d\n' % (self.lon+self.bezlon, self.lat+self.bezlat, 1)
         return s
 
@@ -243,12 +242,12 @@ class NetworkNode(BezierParamNode):
         # promote to a bezier polygon
         assert len(nodes)==1, nodes	# network segments can't have holes
         newnodes = [[NetworkNode(node) for node in w] for w in nodes]
-        # detect beziers
+        # bezier control points are currently free-floating. Attach them to nodes, in pairs if possible..
         for nodes in newnodes:
             j = 1
             while j < len(nodes)-1:
                 node = nodes[j]
-                if node.param:	# bezier?
+                if node.param:	# bezier control point
                     prv = nodes[j-1]
                     if prv.bezier:
                         # previous node already a bezier, so this is a quadratic curve. attach control point to next node
@@ -262,15 +261,28 @@ class NetworkNode(BezierParamNode):
                             nxt.bezlon = nodes[j+2].lon - nxt.lon
                             nxt.bz2lat = node.lat - nxt.lat
                             nxt.bz2lon = node.lon - nxt.lon
+                            nxt.split = nxt.bezlat != -nxt.bz2lat or nxt.bezlon != -nxt.bz2lon
                             nodes.pop(j+2)
                             nodes.pop(j)
                             j += 1	# skip the node we've just turned into a bezier
+                        elif j==len(nodes)-2:
+                            # attach to last node, and don't split it
+                            nxt.bezier = True
+                            nxt.bz2lat = node.lat - nxt.lat
+                            nxt.bz2lon = node.lon - nxt.lon
+                            nxt.bezlat = -nxt.bz2lat
+                            nxt.bezlon = -nxt.bz2lon
+                            nxt.split = False
+                            nodes.pop(j)
+                            j += 1	# skip the node we've just turned into a bezier
                         else:
+                            # ugly half-split node
                             nxt.bezier = True
                             nxt.bezlat = 0
                             nxt.bezlon = 0
                             nxt.bz2lat = node.lat - nxt.lat
                             nxt.bz2lon = node.lon - nxt.lon
+                            nxt.split = True
                             nodes.pop(j)
                             j += 1	# skip the node we've just turned into a bezier
                     elif j<len(nodes)-2 and not nodes[j+1].param and nodes[j+2].param:
@@ -281,15 +293,27 @@ class NetworkNode(BezierParamNode):
                         nxt.bezlon = nodes[j+2].lon - nxt.lon
                         nxt.bz2lat = node.lat - nxt.lat
                         nxt.bz2lon = node.lon - nxt.lon
+                        nxt.split = nxt.bezlat != -nxt.bz2lat or nxt.bezlon != -nxt.bz2lon
                         nodes.pop(j+2)
                         nodes.pop(j)
                         j += 1	# skip the node we've just turned into a bezier
+                    elif j==1:
+                        # attach to first node, and don't split it
+                        prv.bezier = True
+                        prv.bezlat = node.lat - prv.lat
+                        prv.bezlon = node.lon - prv.lon
+                        prv.bz2lat = -prv.bezlat
+                        prv.bz2lon = -prv.bezlon
+                        prv.split = False
+                        nodes.pop(j)
                     else:
+                        # previous node wasn't a bezier - make it into an ugly half-split node
                         prv.bezier = True
                         prv.bezlat = node.lat - prv.lat
                         prv.bezlon = node.lon - prv.lon
                         prv.bz2lat = 0
                         prv.bz2lon = 0
+                        prv.split = True
                         nodes.pop(j)
                 else:
                     j += 1
