@@ -270,7 +270,7 @@ def readLib(filename, objects, terrain, iscustom):
     thisfileobjs={}
     h=None
     path=dirname(filename)
-    packagename = "{%s}" % basename(path)
+    packagename = basename(path)
     if basename(dirname(filename))=='800 objects':
         filename=join('Resources','800library.txt')
         builtinhack=True
@@ -299,7 +299,7 @@ def readLib(filename, objects, terrain, iscustom):
                 if len(c)<3 or (c[1][-4:].lower() in SkipDefs and c[1]!=NetworkDef.DEFAULTFILE): continue
                 name=c[1].replace(':','/').replace('\\','/')
                 if builtinhack:
-                    lib = '{misc v800}'
+                    lib = 'misc v800'
                 else:
                     lib=name
                     if lib.startswith('/'): lib=lib[1:]
@@ -327,14 +327,15 @@ def readLib(filename, objects, terrain, iscustom):
                         terrain[name] =  obj
                 elif name in thisfileobjs:
                     thisfileobjs[name].multiple = True		# already processed this name
-                elif name in objects[lib]:
+                elif lib in objects and name in objects[lib]:
                     thisfileobjs[name] = objects[lib][name]
                     if id=='EXPORT_EXTEND':
                         thisfileobjs[name].multiple = True	# already defined elsewhere
                     else:
                         thisfileobjs[name].file = obj		# replacing thing in lower-priority package
                 elif iscustom and (name.startswith('lib/') or name.startswith('/lib/')):
-                    thisfileobjs[name] = objects[packagename][name] = PaletteEntry(obj)	# separate out custom libraries (e.g. FF Library) that pollute the lib/ namespace
+                    # separate out custom libraries (e.g. FF Library) that pollute the lib/ namespace (overriding is OK)
+                    thisfileobjs[name] = objects[packagename][name] = PaletteEntry(obj)
                 else:
                     thisfileobjs[name] = objects[lib][name] = PaletteEntry(obj)
     except:
