@@ -266,16 +266,12 @@ def readNav(filename):
     return nav
 
 
-def readLib(filename, objects, terrain, iscustom):
+def readLib(filename, objects, terrain, iscustom, thiscustom):
     thisfileobjs={}
+    private = deprecated = False
     h=None
     path=dirname(filename)
     packagename = basename(path)
-    if basename(dirname(filename))=='800 objects':
-        filename=join('Resources','800library.txt')
-        builtinhack=True
-    else:
-        builtinhack=False
     try:
         h=codecs.open(filename, 'rU', 'latin1')
         if not h.readline().strip()[0] in ['I','A']:
@@ -293,31 +289,22 @@ def readLib(filename, objects, terrain, iscustom):
                 regionskip=(c[1]!='all')	# we don't yet handle region-specific libraries (e.g. terrain)
             elif regionskip:
                 continue
+            elif id=='PUBLIC':
+                private = deprecated = False
+            elif id=='PRIVATE':
+                private = not thiscustom	# only list PRIVATE exports if in the same scenery package
+                deprecated = False
+            elif id=='DEPRECATED':
+                private = False
+                deprecated = True
             elif id in ['EXPORT', 'EXPORT_RATIO', 'EXPORT_EXTEND', 'EXPORT_EXCLUDE']:
                 # ignore EXPORT_BACKUP
                 if id=='EXPORT_RATIO': c.pop(1)
                 if len(c)<3 or (c[1][-4:].lower() in SkipDefs and c[1]!=NetworkDef.DEFAULTFILE): continue
                 name=c[1].replace(':','/').replace('\\','/')
-                if builtinhack:
-                    lib = 'misc v800'
-                else:
-                    lib=name
-                    if lib.startswith('/'): lib=lib[1:]
-                    if lib.startswith('lib/'):
-                        lib=lib[:lib.index('/',4)]
-                    elif lib.startswith('opensceneryx/'):
-                        lib=lib[:lib.index('/',13)]
-                    elif lib.startswith('ruscenery/'):
-                        lib=lib[:lib.index('/',10)]
-                    elif lib.startswith('KSEA_objects/'):
-                        lib='KSEA_Objects'	# Hack: v10 KSEA Demo Area is inconsistent in capatilization
-                    elif not '/' in lib:
-                        lib="uncategorised"
-                    else:
-                        lib=lib[:lib.index('/')]
                 # allow single spaces
                 obj=' '.join(c[2:]).replace(':','/').replace('\\','/')
-                if obj.startswith('blank.'):
+                if not iscustom and basename(obj).startswith('blank.'):
                     continue	# no point adding placeholders
                 obj=join(path, normpath(obj))
                 if not exists(obj):
@@ -325,19 +312,23 @@ def readLib(filename, objects, terrain, iscustom):
                 elif name[-4:]=='.ter':
                     if name not in terrain:
                         terrain[name] =  obj
-                elif name in thisfileobjs:
-                    thisfileobjs[name].multiple = True		# already processed this name
-                elif lib in objects and name in objects[lib]:
-                    thisfileobjs[name] = objects[lib][name]
-                    if id=='EXPORT_EXTEND':
-                        thisfileobjs[name].multiple = True	# already defined elsewhere
-                    else:
-                        thisfileobjs[name].file = obj		# replacing thing in lower-priority package
-                elif iscustom and (name.startswith('lib/') or name.startswith('/lib/')):
-                    # separate out custom libraries (e.g. FF Library) that pollute the lib/ namespace (overriding is OK)
-                    thisfileobjs[name] = objects[packagename][name] = PaletteEntry(obj)
+                elif name in thisfileobjs:		# already processed this name
+                    p = thisfileobjs[name]
+                    p.multiple = True
+                    p.private = private and p.private	# shouldn't really happen in same package
+                    p.deprecated = deprecated and p.deprecated	# ditto
+                elif name in objects:			# already defined elsewhere
+                    if private:
+                        pass				# just let existing item stand
+                    elif id=='EXPORT_EXTEND':
+                        p = thisfileobjs[name] = objects[name]
+                        p.multiple = True
+                        p.private = False
+                        p.deprecated = deprecated and p.deprecated
+                    else:				# replacing thing in lower-priority package
+                        thisfileobjs[name] = objects[name] = PaletteEntry(obj, packagename, iscustom, False, deprecated)	# override everything
                 else:
-                    thisfileobjs[name] = objects[lib][name] = PaletteEntry(obj)
+                    thisfileobjs[name] = objects[name] = PaletteEntry(obj, packagename, iscustom, private, deprecated)
     except:
         if h: h.close()
         if __debug__:

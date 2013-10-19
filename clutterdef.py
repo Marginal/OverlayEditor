@@ -1659,5 +1659,5 @@ class NetworkFallback(NetworkDef):
 
 
 UnknownDefs=['.agb','.ags']	# Known unknowns
-SkipDefs = ['.bch','.net','.dcl']		# Ignore in library
+SkipDefs = ['.bch','.net','.dcl','.voc']	# Ignore in library
 KnownDefs=[ObjectDef.OBJECT, AutoGenPointDef.AGP, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.LINE, PolygonDef.STRING, PolygonDef.DRAPED]+UnknownDefs

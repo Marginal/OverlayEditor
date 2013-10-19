@@ -97,8 +97,7 @@ elif sys.platform.lower().startswith('darwin'):
               ]
 
 res=["Resources/windsock.obj",
-     "Resources/screenshot.jpg",
-     "Resources/800library.txt"]
+     "Resources/screenshot.jpg"]
 for f in listdir('Resources'):
     if f[-3:]in ['png', '.vs', '.fs']: res.append('Resources/%s' % f)
 

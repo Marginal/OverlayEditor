@@ -10,9 +10,13 @@ from MessageBox import myMessageBox
 
 class PaletteEntry:
 
-    def __init__(self, file):
-        self.file=file
-        self.multiple=False
+    def __init__(self, filename, package=None, iscustom=True, private=False, deprecated=False):
+        self.file = filename
+        self.package = package	# If multiple then the highest priority package. None for non-library objects
+        self.iscustom = iscustom
+        self.private = private
+        self.deprecated = deprecated
+        self.multiple = False
     
 
 class PaletteListBox(wx.VListBox):
@@ -259,6 +263,7 @@ class PaletteChoicebook(wx.Choicebook):
         else:
             # no key, or listed in DSF but not present - eg unrecognised poly
             self.lists[self.GetSelection()].SetSelection(-1)
+            self.SetSelection(0)	# default to first tab
             self._postselection(False)
 
     def _postselection(self, found):
@@ -374,7 +379,7 @@ class Palette(wx.SplitterWindow):
         if not self.cb.lists: return	# wxMac 2.9 sends spurious event on start
         search=self.sb.GetValue().lower()
         if search:
-            objects=dict((name,entry) for (name,entry) in self.frame.canvas.lookup.iteritems() if search in name.lower())
+            objects=dict((name,entry) for (name,entry) in self.frame.canvas.lookup.iteritems() if search in name.lower() and not entry.private and not entry.deprecated)
         else:
             objects={}
         self.cb.lists[-1].populate(objects)

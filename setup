@@ -14,7 +14,7 @@ rm -rf ${APPNAME}.app
 
 PY='OverlayEditor.py buckets.py clutter.py clutterdef.py draw.py elevation.py DSFLib.py files.py fixed8x13.py MessageBox.py imagery.py importobjs.py lock.py nodes.py palette.py prefs.py version.py'
 DATA='OverlayEditor.html'
-RSRC='Resources/*.png Resources/*.vs Resources/*.fs Resources/windsock.obj Resources/screenshot.jpg Resources/800library.txt'
+RSRC='Resources/*.png Resources/*.vs Resources/*.fs Resources/windsock.obj Resources/screenshot.jpg'
 PREV='Resources/previews/*.jpg'
 
 # linux

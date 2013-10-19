@@ -1465,11 +1465,9 @@ class MainWindow(wx.Frame):
         # According to http://scenery.x-plane.com/library.php?doc=about_lib.php&title=X-Plane+8+Library+System
         # search order is: custom libraries, default libraries, scenery package
         progress.Update(2, 'Libraries')
-        lookupbylib = defaultdict(dict)	# {name: paletteentry} by libname
         lookup={}	# {name: paletteentry}
         terrain={}	# {name: path}
 
-        objects={}
         if package:
             for path, dirs, files in walk(pkgdir):
                 for f in files:
@@ -1478,11 +1476,9 @@ class MainWindow(wx.Frame):
                         if name.lower().startswith('custom objects') and f[-4:].lower()==ObjectDef.OBJECT:
                             name=name[15:]
                         if not name.startswith('opensceneryx/placeholder.'):	# no point adding placeholders
-                            objects[name]=PaletteEntry(join(path,f))
+                            lookup[name] = PaletteEntry(join(path,f))
                     #elif f[-4:].lower()==NetworkDef.NETWORK:	# Don't support custom networks
                     #    netfile=join(path,f)
-        self.palette.load('Objects in this package', objects, pkgdir)
-        lookup.update(objects)
 
         # libraries in reverse asciibetical order = priority low to high
         clibs = sorted(glob(join(prefs.xplane, gcustom,  '*', glibrary)), reverse=True)
@@ -1491,11 +1487,47 @@ class MainWindow(wx.Frame):
         if __debug__:
             print "libraries:"
             for l in reversed(dlibs+glibs+clibs): print l[len(prefs.xplane)+1:-11]
-        for lib in dlibs+glibs: readLib(lib, lookupbylib, terrain, False)
-        for lib in clibs: readLib(lib, lookupbylib, terrain, True)
-        libs=lookupbylib.keys()
-        sortfolded(libs)	# dislay order in palette
-        for lib in libs: lookup.update(lookupbylib[lib])
+        for lib in dlibs+glibs: readLib(lib, lookup, terrain, False, False)
+        for lib in clibs: readLib(lib, lookup, terrain, True, pkgdir==dirname(lib))
+
+        # post-process into catergories for palette
+        lookupbylib = defaultdict(dict)	# {name: paletteentry} by libname
+        objects = {}	# in this package, and not overridden
+        deprecated = {}
+        for name, obj in lookup.iteritems():
+            if obj.private:
+                pass	# Just don't list these for now. Should probably not be in lookup at all (but we still need to display navaids)
+            elif not obj.package:
+                objects[name] = obj
+            elif obj.deprecated:
+                deprecated[name] = obj
+            else:
+                lib = name
+                if lib.startswith('/'): lib=lib[1:]
+                if lib.startswith('lib/'):
+                    if obj.iscustom:
+                        lib = obj.package	# separate out custom libraries (e.g. FF Library) that write new entries under lib/
+                    else:
+                        lib = lib[:lib.index('/',4)]
+                elif lib.startswith('opensceneryx/'):
+                    lib = lib[:lib.index('/',13)]
+                elif lib.startswith('ruscenery/'):
+                    lib = lib[:lib.index('/',10)]
+                elif lib.startswith('KSEA_objects/'):
+                    lib = 'KSEA_Objects'	# Hack: v10 KSEA Demo Area is inconsistent in capatilization
+                elif not '/' in lib:
+                    lib = "Uncategorised"
+                else:
+                    lib = lib[:lib.index('/')]
+                lookupbylib[lib][name] = obj
+
+        # Populate palette with library items
+        self.palette.load('Objects in this package', objects, pkgdir)
+        libnames = lookupbylib.keys()
+        sortfolded(libnames)	# dislay order in palette
+        for libname in libnames:
+            self.palette.load(libname, lookupbylib[libname])
+        if deprecated: self.palette.load('Deprecated', deprecated)
 
         # Networks
         # lookup and palette need to be populated with human-readable names so that networks are browsable and searchable
@@ -1531,6 +1563,16 @@ class MainWindow(wx.Frame):
             else:
                 netdefs = self.defnetdefs	# don't bother re-loading
                 netfile = NetworkDef.DEFAULTFILE
+        if netdefs:
+            names={}
+            for type_id,defn in netdefs.iteritems():
+                names[defn.name] = PaletteEntry(defn.name)
+            self.palette.load(NetworkDef.TABNAME, names)
+            lookup.update(names)
+
+        # Populate palette with final items
+        self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], PaletteEntry(x)) for x in Exclude.NAMES.keys()]))
+        self.palette.load('Search results', {})
 
         if not reload:
             # Load, not reload
@@ -1606,18 +1648,6 @@ class MainWindow(wx.Frame):
 
         if self.goto: self.goto.Close()	# Needed on wxMac 2.5
         self.goto=GotoDialog(self, airports)	# build only
-
-        # Populate palette with library items
-        for lib in libs:
-            self.palette.load(lib, lookupbylib[lib])
-        if netdefs:
-            names={}
-            for type_id,defn in netdefs.iteritems():
-                names[defn.name] = PaletteEntry(defn.name)
-            self.palette.load(NetworkDef.TABNAME, names)
-            lookup.update(names)
-        self.palette.load(ExcludeDef.TABNAME, dict([(Exclude.NAMES[x], PaletteEntry(x)) for x in Exclude.NAMES.keys()]))
-        self.palette.load('Search results', {})
 
         if xpver>=9:
             dsfdirs=[join(prefs.xplane, gcustom),
