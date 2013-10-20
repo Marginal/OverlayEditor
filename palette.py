@@ -32,10 +32,8 @@ class PaletteListBox(wx.VListBox):
         if platform.startswith('linux'):
             self.height-=1
         self.imgs=parent.imgs
-        self.actfg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHTTEXT)
-        self.actbg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHT)
-        self.inafg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
-        self.inabg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENU)
+        self.actfg = platform=='darwin' and wx.Colour(255,255,255) or wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHTTEXT)
+        self.inafg = wx.SystemSettings_GetColour(wx.SYS_COLOUR_WINDOWTEXT)
         self.indent=4
         self.parent=parent
         self.tabname=tabname
@@ -121,15 +119,23 @@ class PaletteListBox(wx.VListBox):
     def OnDrawItem(self, dc, rect, n):
         if platform!='darwin':
             dc.SetFont(self.font)	# wtf?
-        if self.GetSelection()==n:
-            dc.SetTextForeground(self.actfg)
-        else:
-            dc.SetTextForeground(self.inafg)
+        dc.SetTextForeground(self.GetSelection()==n and self.actfg or self.inafg)
         (imgno, name, realname)=self.choices[n]
         assert 0<=imgno<self.imgs.GetImageCount(), "Palette imgno %d out of range for %s (%s)" % (imgno, name, realname)
         self.imgs.Draw(imgno, dc, rect.x+self.indent, rect.y,
                        wx.IMAGELIST_DRAW_TRANSPARENT, True)
         dc.DrawText(name, rect.x+12+2*self.indent, rect.y)
+
+    def OnDrawBackground(self, dc, rect, n):
+        # override default so drawn with correct color on Mac and Linux, and focussed on all platforms under wx2.9
+        if self.GetSelection()==n:
+            wx.RendererNative.Get().DrawItemSelectionRect(self, dc, rect, wx.CONTROL_SELECTED|wx.CONTROL_FOCUSED)
+        elif platform=='darwin':
+            # native renderer draws unselected in bizarre color on wxMac 2.8
+            wx.RendererNative.GetGeneric().DrawItemSelectionRect(self, dc, rect)
+        else:
+            wx.RendererNative.Get().DrawItemSelectionRect(self, dc, rect)
+
 
 class PaletteChoicebook(wx.Choicebook):
     

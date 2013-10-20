@@ -28,7 +28,7 @@ except:
     if __debug__: print_exc()
     import Tkinter, tkMessageBox
     Tkinter.Tk().withdraw()
-    tkMessageBox.showerror("Error", "wxPython is not installed.\nThis application requires wxPython 2.5.3 or later.")
+    tkMessageBox.showerror("Error", "wxPython is not installed.\nThis application requires wxPython 2.8 or later.")
     exit(1)
 from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
 
@@ -128,10 +128,9 @@ class myListBox(wx.VListBox):
 
         self.height=self.indent=1	# need something
         self.choices=choices
-        self.actfg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHTTEXT)
-        self.actbg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHT)
-        self.inafg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
-        self.inabg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENU)
+        self.actfg = platform=='darwin' and wx.Colour(255,255,255) or wx.SystemSettings_GetColour(wx.SYS_COLOUR_HIGHLIGHTTEXT)
+        self.inafg = wx.SystemSettings_GetColour(wx.SYS_COLOUR_WINDOWTEXT)
+        self.hasfocus = False
         if platform=='win32' or platform.startswith('linux'):
             self.font=wx.SystemSettings_GetFont(wx.SYS_DEFAULT_GUI_FONT)
         else:
@@ -154,14 +153,14 @@ class myListBox(wx.VListBox):
     def OnSetFocus(self, event):
         self.timer.Stop()
         self.sel=''
-        self.SetSelectionBackground(self.actbg)
+        self.hasfocus = True
         sel=self.GetSelection()
         if sel>=0: self.RefreshLine(sel)
         
     def OnKillFocus(self, event):
         self.timer.Stop()
         self.sel=''
-        self.SetSelectionBackground(self.inabg)
+        self.hasfocus = False
         sel=self.GetSelection()
         if sel>=0: self.RefreshLine(sel)
 
@@ -177,11 +176,18 @@ class myListBox(wx.VListBox):
 
     def OnDrawItem(self, dc, rect, n):
         if self.font: dc.SetFont(self.font)	# wtf?
-        if self.GetSelection()==n and self.FindFocus()==self:
-            dc.SetTextForeground(self.actfg)
-        else:
-            dc.SetTextForeground(self.inafg)
+        dc.SetTextForeground(self.hasfocus and self.GetSelection()==n and self.actfg or self.inafg)
         dc.DrawText(self.choices[n], rect.x+self.indent, rect.y)
+
+    def OnDrawBackground(self, dc, rect, n):
+        # override default so drawn with correct color on Mac and Linux
+        if self.GetSelection()==n:
+            wx.RendererNative.Get().DrawItemSelectionRect(self, dc, rect, self.hasfocus and wx.CONTROL_SELECTED|wx.CONTROL_FOCUSED or wx.CONTROL_SELECTED)
+        elif platform=='darwin':
+            # native renderer draws unselected in bizarre color on wxMac 2.8
+            wx.RendererNative.GetGeneric().DrawItemSelectionRect(self, dc, rect)
+        else:
+            wx.RendererNative.Get().DrawItemSelectionRect(self, dc, rect)
 
     def OnKeyDown(self, event):
         # wxMac 2.5 doesn't handle cursor movement

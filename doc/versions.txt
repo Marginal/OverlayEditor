@@ -1,7 +1,7 @@
-MacOS 10.3/10.4: 2.5.3
-MacOS 10.5.8: 2.5.1 ?, numpy 1.0.1
-MacOS 10.6.8: 2.6.1 x86+x86_64, numpy 1.6.2. also 2.5.4 x86+ppc, numpy 1.2.1
-MacOS 10.7: 2.6.?, also 2.7.?
-MacOS 10.8: 2.6.?, also 2.7.?
-MacOS 10.9:
-
+MacOS 10.3: 2.3.0
+MacOS 10.3: 2.3.5
+MacOS 10.5.8: 2.5.1 x86+ppc +  numpy 1.0.1 + wx 2.8.4
+MacOS 10.6.8: 2.6.1 x86+x86_64+ppc + numpy 1.2.1 (no 64bit wx). also 2.5.4 x86+ppc + numpy 1.2.1 + wx 2.8.8.1. built with gcc-4.2
+MacOS 10.7: 2.7.1. also 2.6.6. (no 64bit wx)
+MacOS 10.8: 2.7.2 + numpy 1.6.1. also 2.6.7 + numpy 1.6.1. built with clang
+MacOS 10.9: 2.7.5? also 2.6.8?
