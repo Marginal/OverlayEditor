@@ -341,6 +341,8 @@ class Palette(wx.SplitterWindow):
         sizer.Add(self.cb, 1, wx.EXPAND)
         panel.SetSizerAndFit(sizer)
         self.preview=wx.Panel(self, wx.ID_ANY, style=wx.FULL_REPAINT_ON_RESIZE)
+        if platform=='darwin':
+            self.preview.ClearBackground = self.ClearPreviewBackground
         self.SetMinimumPaneSize(1)
         self.SplitHorizontally(panel, self.preview, -ClutterDef.PREVIEWSIZE)
         self.lastheight=self.GetSize().y
@@ -425,6 +427,12 @@ class Palette(wx.SplitterWindow):
     def markbad(self, key):
         return self.cb.markbad(key)
 
+    # ClearBackground is problematic on wxMac (causes recursion under 2.8, doesn't work under 2.9), so do it manually
+    def ClearPreviewBackground(self):
+        dc = wx.PaintDC(self.preview)
+        dc.SetBackground(wx.Brush(self.preview.GetBackgroundColour()))
+        dc.Clear()
+
     def OnPaint(self, event):
         if __debug__: print "preview", self.previewkey, self.lastkey
         dc = wx.PaintDC(self.preview)
@@ -445,10 +453,6 @@ class Palette(wx.SplitterWindow):
                 self.preview.ClearBackground()
             return
 
-        # ClearBackground causes *immediate* repaint on wxMac 2.8,
-        # so hack to suppress recursion
-        wx.EVT_PAINT(self.preview, None)
-
         if self.previewkey!=self.lastkey:
             # New
             self.previewkey=self.lastkey
@@ -457,7 +461,6 @@ class Palette(wx.SplitterWindow):
             if not self.previewkey or self.previewkey in self.cb.bad or self.previewkey not in self.frame.canvas.lookup:
                 self.preview.SetBackgroundColour(wx.NullColour)
                 self.preview.ClearBackground()
-                wx.EVT_PAINT(self.preview, self.OnPaint)
                 return	# unknown object - can't do anything
             
             # Look for built-in screenshot
@@ -553,6 +556,3 @@ class Palette(wx.SplitterWindow):
         else:
             self.preview.SetBackgroundColour(wx.NullColour)
             self.preview.ClearBackground()
-
-        wx.EVT_PAINT(self.preview, self.OnPaint)
-
