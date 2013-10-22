@@ -8,6 +8,15 @@ from clutterdef import ClutterDef, ObjectDef, PolygonDef, DrapedDef, ExcludeDef,
 from MessageBox import myMessageBox
 
 
+# Focus is a pain.
+# On all platforms keyboard focus can go to any control that the user clicks on.
+# On Mac this works fine, so install key event handlers on all clickable items to forward events. MouseWheel events
+# go to the control under the mouse so we don't have to do anything special.
+# Same applies to Linux, except canvas doesn't accept focus so we have to manually give focus to it when the user
+# clicks in the main window.
+# On Windows, MouseWheel events go to the control that has keyboard focus. So we continually shift focus to the canvas
+# window, and handle PaletteListBox scrolling manually from there.
+
 class PaletteEntry:
 
     def __init__(self, filename, package=None, iscustom=True, private=False, deprecated=False):
@@ -40,6 +49,9 @@ class PaletteListBox(wx.VListBox):
         self.tabno=tabno
         self.pkgdir=pkgdir
         self.populate(objects)
+        wx.EVT_LISTBOX(self, self.GetId(), self.parent.OnChoice)
+        wx.EVT_KEY_DOWN(self, self.parent.palette.OnKeyDown)
+        wx.EVT_SET_FOCUS(self, self.parent.palette.OnSetFocus)
 
     def populate(self, objects):
         self.SetSelection(-1)
@@ -139,12 +151,11 @@ class PaletteListBox(wx.VListBox):
 
 class PaletteChoicebook(wx.Choicebook):
     
-    def __init__(self, parent, frame):
-        self.frame=frame
+    def __init__(self, parent, frame, palette):
+        self.frame = frame
+        self.palette = palette	# the ancestor window that handles events for us
         
         wx.Choicebook.__init__(self, parent, wx.ID_ANY, style=wx.CHB_TOP)
-        #if platform=='darwin':	# Default is too big on Mac
-        #    self.SetWindowVariant(wx.WINDOW_VARIANT_MINI)
         self.last=(-1,None)
         self.lists=[]	# child listboxs
         self.lookup={}	# name->(tabno,index)
@@ -179,16 +190,14 @@ class PaletteChoicebook(wx.Choicebook):
         self.imgs.Add(wx.Bitmap("Resources/exc.png", wx.BITMAP_TYPE_PNG))
         self.imgno_bad = self.imgs.GetImageCount()
         self.imgs.Add(wx.Bitmap("Resources/bad.png", wx.BITMAP_TYPE_PNG))	# bad assumed below to be last
-        wx.EVT_KEY_DOWN(self, self.OnKeyDown)	# appears to do nowt on Windows
+        wx.EVT_KEY_DOWN(self, self.palette.OnKeyDown)	# does nothing on Windows
+        wx.EVT_SET_FOCUS(self, self.palette.OnSetFocus)
         if 'GetChoiceCtrl' in dir(self):	# not available on wxMac 2.5
             if platform=='win32':
                 self.GetChoiceCtrl().SetWindowVariant(wx.WINDOW_VARIANT_LARGE)
-            wx.EVT_KEY_DOWN(self.GetChoiceCtrl(), self.OnKeyDown)
+            else:
+                wx.EVT_SET_FOCUS(self.GetChoiceCtrl(), self.palette.OnSetFocus)	# can get focus under Carbon, which looks ugly
 
-    def OnKeyDown(self, event):
-        # Override & manually propagate
-        self.frame.OnKeyDown(event)
-        event.Skip(False)
 
     def OnChoice(self, event):
         #print "choice"
@@ -206,10 +215,6 @@ class PaletteChoicebook(wx.Choicebook):
             self.frame.palette.preview.Refresh()
         event.Skip()
 
-    def OnKillFocus(self, event):
-        # Prevent wx 2.9 on win32 from displaying in unfocussed color
-        pass
-
     def flush(self):
         if len(self.lists): self.SetSelection(0)	# reduce flicker
         for i in range(len(self.lists)-1,-1,-1):
@@ -224,9 +229,6 @@ class PaletteChoicebook(wx.Choicebook):
         l=PaletteListBox(self, -1, wx.LB_SINGLE|wx.VSCROLL, tabname, tabno, objects, pkgdir)
         self.lists.append(l)
         self.AddPage(l, tabname)
-        wx.EVT_LISTBOX(self, l.GetId(), self.OnChoice)
-        #wx.EVT_KILL_FOCUS(l, self.OnKillFocus)	# Prevent wx 2.9 on win32 from displaying in unfocussed color
-        wx.EVT_KEY_DOWN(l, self.OnKeyDown)
     
     def add(self, name):
         if __debug__: print "cbadd", name
@@ -328,16 +330,14 @@ class Palette(wx.SplitterWindow):
         self.lastkey=None
         self.previewkey=self.previewbmp=self.previewimg=self.previewsize=None
         self.sashsize=4
-        wx.SplitterWindow.__init__(self, parent, wx.ID_ANY,
-                                   style=wx.SP_3DSASH|wx.SP_NOBORDER|wx.SP_LIVE_UPDATE)
-        self.SetWindowStyle(self.GetWindowStyle() & ~wx.TAB_TRAVERSAL)	# wx.TAB_TRAVERSAL is set behind our backs - this fucks up cursor keys
+        wx.SplitterWindow.__init__(self, parent, wx.ID_ANY, style=wx.SP_3DSASH|wx.SP_NOBORDER|wx.SP_LIVE_UPDATE)
         panel=wx.Panel(self)
         sizer=wx.BoxSizer(wx.VERTICAL)
         self.sb=wx.SearchCtrl(panel)
         self.sb.ShowCancelButton(True)
         sizer.Add(self.sb, 0, flag=wx.EXPAND|(platform=='darwin' and wx.ALL or wx.BOTTOM), border=3)
         if platform=='darwin' and wx.VERSION<(2,9): sizer.AddSpacer(6)	# layout on OSX sucks
-        self.cb=PaletteChoicebook(panel, frame)
+        self.cb=PaletteChoicebook(panel, frame, self)
         sizer.Add(self.cb, 1, wx.EXPAND)
         panel.SetSizerAndFit(sizer)
         self.preview=wx.Panel(self, wx.ID_ANY, style=wx.FULL_REPAINT_ON_RESIZE)
@@ -347,10 +347,14 @@ class Palette(wx.SplitterWindow):
         self.SplitHorizontally(panel, self.preview, -ClutterDef.PREVIEWSIZE)
         self.lastheight=self.GetSize().y
         wx.EVT_SIZE(self, self.OnSize)
+        wx.EVT_KEY_DOWN(self, self.OnKeyDown)
+        wx.EVT_SET_FOCUS(self, self.OnSetFocus)
         wx.EVT_KEY_DOWN(self.preview, self.OnKeyDown)
+        wx.EVT_SET_FOCUS(self.preview, self.OnSetFocus)
         wx.EVT_SPLITTER_SASH_POS_CHANGING(self, self.GetId(), self.OnSashPositionChanging)
         wx.EVT_PAINT(self.preview, self.OnPaint)
         wx.EVT_TEXT(self.sb, self.sb.GetId(), self.OnSearch)
+        wx.EVT_MOUSEWHEEL(self, self.OnMouseWheel)	# stop these events propagating to main window under wx2.9
         if wx.version()<'2.9.4.1':
             # cancel button doesn't send EVT_SEARCHCTRL_CANCEL_BTN under 2.9.4.0 - http://trac.wxwidgets.org/ticket/14799
             # event not needed under 2.9.4.1
@@ -380,8 +384,12 @@ class Palette(wx.SplitterWindow):
 
     def OnKeyDown(self, event):
         # Override & manually propagate
-        self.frame.OnKeyDown(event)
         event.Skip(False)
+        self.frame.OnKeyDown(event)
+
+    def OnSetFocus(self, event):
+        event.Skip(False)
+        self.frame.canvas.SetFocus()	# give focus back to main window
 
     def OnSearch(self, event):
         if not self.cb.lists: return	# wxMac 2.9 sends spurious event on start
@@ -398,6 +406,9 @@ class Palette(wx.SplitterWindow):
         self.sb.ChangeValue('')		# Don't want to generate an EVT_TEXT
         self.cb.SetSelection(0)		# Switch to "Objects in this package"
         self.cb.lists[-1].populate({})
+
+    def OnMouseWheel(self, event):
+        event.Skip(False)		# stop events from propagating from PaletteListBox to main window under wx2.9
 
     def flush(self):
         self.cb.flush()
@@ -440,10 +451,6 @@ class Palette(wx.SplitterWindow):
             self.frame.canvas.SetCurrent(self.frame.canvas.context)
         else:
             self.frame.canvas.SetCurrent()
-        # MainWindow (and wxFrames in general) don't receive focus or generate key events under GTK
-        # so set focus here which does - http://www.wxwidgets.org/docs/faqgtk.htm#charinframe
-        # Also this prevents ChoiceBook grabbing focus on win32
-        self.preview.SetFocusIgnoringChildren()
 
         if dc.GetSize().y<16 or not self.lastkey:
             if self.previewkey:

@@ -357,14 +357,14 @@ class MyGL(wx.glcanvas.GLCanvas):
             # wxGTK<=2.8 can't recover from a failure in glXChooseFBConfig so skip this - http://trac.wxwidgets.org/ticket/12479
             if platform.startswith('linux'): raise AssertionError
             # We're not using the stencil buffer so would prefer to specify a 32bit depth buffer, but this can cause e.g. Intel Windows drivers to fall back to 16 even though they support 24
-            wx.glcanvas.GLCanvas.__init__(self, parent, style=wx.FULL_REPAINT_ON_RESIZE,
+            wx.glcanvas.GLCanvas.__init__(self, parent, style=wx.FULL_REPAINT_ON_RESIZE|wx.WANTS_CHARS,
                                           attribList=[wx.glcanvas.WX_GL_RGBA,wx.glcanvas.WX_GL_DOUBLEBUFFER,wx.glcanvas.WX_GL_DEPTH_SIZE, 24])
         except:
             # Failed - try with safe 16bit depth buffer.
             try:
                 if __debug__: print "Trying 16bit depth buffer"
                 # wxGTK<=2.8 has no way to discover if this fails, so will segfault later
-                wx.glcanvas.GLCanvas.__init__(self, parent, style=wx.FULL_REPAINT_ON_RESIZE,
+                wx.glcanvas.GLCanvas.__init__(self, parent, style=wx.FULL_REPAINT_ON_RESIZE|wx.WANTS_CHARS,
                                               attribList=[wx.glcanvas.WX_GL_RGBA,wx.glcanvas.WX_GL_DOUBLEBUFFER,wx.glcanvas.WX_GL_DEPTH_SIZE, 16])
             except:
                 myMessageBox('Try updating the drivers for your graphics card.', "Can't initialise OpenGL.", wx.ICON_ERROR|wx.OK, self)
@@ -472,6 +472,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.frame.OnKeyDown(event)
 
     def OnMouseWheel(self, event):
+        # under wxMac 2.8 scroll events don't arrive in the main frame, so catch here and forward
         if self.clickmode:
             event.Skip()
         else:
@@ -502,6 +503,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         #event.Skip(False)	# don't change focus
         self.mousenow=self.clickpos=[event.GetX(),event.GetY()]
         self.clickctrl=event.CmdDown()
+        self.frame.canvas.SetFocus()	# otherwise focus goes to None under wxGTK
         self.CaptureMouse()
         size = self.GetClientSize()
         if event.GetX()<sband or event.GetY()<sband or size.x-event.GetX()<sband or size.y-event.GetY()<sband:
@@ -706,7 +708,6 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.SetCurrent(self.context)
         else:
             self.SetCurrent()
-        #self.SetFocus()			# required for GTK
 
         if __debug__: clock=time.clock()
 
@@ -766,6 +767,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.SwapBuffers()
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
             self.needclear=False
+            self.frame.canvas.SetFocus()	# under wxGTK need to manually set focus on startup
             return
         elif self.needclear:
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)

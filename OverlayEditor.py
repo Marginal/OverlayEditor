@@ -806,10 +806,8 @@ class MainWindow(wx.Frame):
         (x,y)=self.statusbar.GetTextExtent(u'  Lat: 99\u00B099\'99.999"W  Lon: 999\u00B099\'99.999"W  Hdg: 999.9  Elv: 9999.9  ')
         self.statusbar.SetStatusWidths([0, x+50,-1])
 
-        self.splitter=wx.SplitterWindow(self, wx.ID_ANY,
-                                        style=wx.SP_3DSASH|wx.SP_NOBORDER|wx.SP_LIVE_UPDATE)
-        self.splitter.SetWindowStyle(self.splitter.GetWindowStyle() & ~wx.TAB_TRAVERSAL)	# wx.TAB_TRAVERSAL is set behind our backs - this fucks up cursor keys
-        self.canvas = MyGL(self.splitter, self) # needed by palette!
+        self.splitter = wx.SplitterWindow(self, wx.ID_ANY, style=wx.SP_3DSASH|wx.SP_NOBORDER|wx.SP_LIVE_UPDATE)
+        self.canvas = MyGL(self.splitter, self)
         self.palette = Palette(self.splitter, self)
         self.splitter.SetMinimumPaneSize(100)
         self.splitter.SplitVertically(self.canvas, self.palette, -ClutterDef.PREVIEWSIZE)
@@ -822,6 +820,7 @@ class MainWindow(wx.Frame):
         self.lastwidth=self.GetSize().x
         wx.EVT_SIZE(self, self.OnSize)
         wx.EVT_SPLITTER_SASH_POS_CHANGING(self.splitter, self.splitter.GetId(), self.OnSashPositionChanging)
+        wx.EVT_KEY_DOWN(self.splitter, self.OnKeyDown)
 
         self.Show(True)
 
@@ -1195,15 +1194,18 @@ class MainWindow(wx.Frame):
 
 
     def OnMouseWheel(self, event):
-        if event.GetWheelRotation()>0:
+        if event.GetX()<0 or event.GetX()>=self.Size[0] or event.GetY()<0 or event.GetY()>=self.canvas.Size[1] or not event.GetWheelRotation():
+            return	# outside frame
+        elif event.GetX()>self.canvas.Size[0]:
+            if platform=='win32':	# manually scroll palette
+                self.palette.cb.GetCurrentPage().ScrollLines(event.GetLinesPerAction() * -event.GetWheelRotation() / event.GetWheelDelta())
+            return
+        elif event.GetWheelRotation()>0:
             r=event.ShiftDown() and 1.0/zoom2 or 1.0/zoom
             if self.dist*r < 1.0: r = 1.0/self.dist
         elif event.GetWheelRotation()<0:
             r=event.ShiftDown() and zoom2 or zoom
             if self.dist*r > maxzoom: r = maxzoom/self.dist
-        else:
-            event.Skip(True)
-            return
         try:
             (mx,my,mz)=self.canvas.getlocalloc(event.GetX(),event.GetY())	# OpenGL coords of mouse / zoom point
             (cx,cz)=(self.canvas.x, self.canvas.z)				# OpenGL coords of cursor
@@ -1215,7 +1217,6 @@ class MainWindow(wx.Frame):
             self.ShowLoc()
         except:
             if __debug__: print_exc()
-        event.Skip(True)
         
         
     def OnNew(self, event):
