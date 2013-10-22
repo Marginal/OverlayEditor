@@ -5,7 +5,7 @@ from numpy import array, array_equal, concatenate, copy, diag, dot, identity, lo
 from operator import itemgetter, attrgetter
 from os import listdir
 from os.path import basename, dirname, exists, join, normpath, sep
-from sys import maxint
+from sys import maxint, exc_info
 
 from OpenGL.GL import *
 from OpenGL.arrays import vbo
