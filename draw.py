@@ -17,9 +17,8 @@ from OpenGL.GL.EXT.gpu_shader4 import glInitGpuShader4EXT
 glMultiDrawArrays = alternate(glMultiDrawArrays, glMultiDrawArraysEXT)
 
 import gc
-from collections import defaultdict	# Requires Python 2.5
 from glob import glob
-from math import acos, atan2, cos, sin, floor, hypot, pi, radians
+from math import atan2, cos, sin, floor, hypot, radians
 from numpy import array, array_equal, concatenate, dot, identity, vstack, zeros, float32, float64, int32
 from os.path import basename, curdir, join
 from struct import unpack
@@ -31,7 +30,8 @@ import wx.glcanvas
 if __debug__:
     from traceback import print_exc
 
-from files import VertexCache, sortfolded, readApt, glInitTextureCompressionS3TcEXT
+from apt import readApt, layoutApt
+from files import VertexCache, sortfolded, glInitTextureCompressionS3TcEXT
 from fixed8x13 import fixed8x13
 from clutter import Clutter, Object, Polygon, Draped, DrapedImage, Facade, Network, Exclude
 from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, NetworkDef, PolygonDef, COL_CURSOR, COL_SELECTED, COL_UNPAINTED, COL_DRAGBOX, COL_WHITE, fallbacktexture
@@ -1118,11 +1118,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         return(((lon-self.centre[1])*onedeg*cos(radians(lat)),
                 (self.centre[0]-lat)*onedeg))
 
-    def aptlatlon2m(self, lat, lon):
-        # version of the above with fudge factors for runways/taxiways
-        return(((lon-self.centre[1])*(onedeg+8)*cos(radians(lat)),
-                (self.centre[0]-lat)*(onedeg-2)))
-
     # create the background polygon. Defer layout to goto since can be called in reload() before location is known.
     def setbackground(self, prefs, loc=None, newfile=None, layoutnow=False):
         if newfile is None and prefs.package in prefs.packageprops:
@@ -1712,176 +1707,12 @@ class MyGL(wx.glcanvas.GLCanvas):
 
             # Lay out runways
             progress.Update(13, 'Airports')
-            surfaces={0:  [0.125, 0.125],	# unknown
-                      1:  [0.375, 0.125],	# asphalt
-                      2:  [0.625, 0.125],	# concrete
-                      3:  [0.875, 0.125],	# grass
-                      4:  [0.125, 0.375],	# dirt,
-                      5:  [0.375, 0.375],	# gravel
-                      12: [0.125, 0.875],	# lakebed
-                      13: [0.375, 0.875],	# water
-                      14: [0.625, 0.875],	# ice
-                      15: [0.875, 0.875]}	# transparent
             key=(newtile[0],newtile[1],options&Prefs.ELEVATION)
             if key not in self.runways:
                 if log_load: clock=time.clock()	# Processor time
-                gc.disable()	# work round http://bugs.python.org/issue4074 on Python<2.7
-                self.runways[key]=[]
-                self.codes[newtile]=[]
-                svarray=[]
-                tvarray=[]
-                rvarray=[]
-                elev = self.vertexcache.getElevationMesh(newtile, options)
-                area=BBox(newtile[0]-0.05, newtile[0]+1.05,
-                          newtile[1]-0.05, newtile[1]+1.05)
-                tile=BBox(newtile[0], newtile[0]+1,
-                          newtile[1], newtile[1]+1)
-                for code, (name, aptloc, apt) in self.airports.iteritems():
-                    if __debug__: clock2=time.clock()	# Processor time
-                    if not area.inside(*aptloc):
-                        continue
-                    if tile.inside(*aptloc):
-                        self.codes[newtile].append((code,aptloc))
-                    runways   = defaultdict(list)
-                    taxiways  = defaultdict(list)
-                    shoulders = defaultdict(list)
-                    thisarea=BBox()
-                    if isinstance(apt, long):
-                        try:
-                            thisapt=readApt(self.aptdatfile, apt)
-                            self.airports[code]=(name, aptloc, thisapt)
-                        except:
-                            thisapt=[]
-                    else:
-                        thisapt=list(apt)
-                    thisapt.reverse()	# draw in reverse order
-                    newthing=None
-                    for thing in thisapt:
-                        if isinstance(thing, tuple):
-                            # convert to pavement style
-                            if not isinstance(thing[0], tuple):
-                                # old pre-850 style or 850 style helipad
-                                (lat,lon,h,length,width,stop1,stop2,surface,shoulder,isrunway)=thing
-                                if isrunway:
-                                    kind=runways
-                                else:
-                                    kind=taxiways
-                                (cx,cz)=self.aptlatlon2m(lat,lon)
-                                length1=length/2+stop1
-                                length2=length/2+stop2
-                                h=radians(h)
-                                coshdg=cos(h)
-                                sinhdg=sin(h)
-                                p1=[cx-length1*sinhdg, cz+length1*coshdg]
-                                p2=[cx+length2*sinhdg, cz-length2*coshdg]
-                                # Don't drape helipads, of which there are loads
-                                if len(thisapt)==1 and length+stop1+stop2<61 and width<61:	# 200ft
-                                    if not tile.inside(lat,lon):
-                                        continue
-                                    col = surfaces.get(surface, surfaces[0]) + [0]
-                                    xinc=width/2*coshdg
-                                    zinc=width/2*sinhdg
-                                    rvarray.extend(array([[p2[0]+xinc, elev.height(p2[0]+xinc, p2[1]+zinc), p2[1]+zinc] + col,
-                                                          [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc] + col,
-                                                          [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc] + col,
-                                                          [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc] + col,
-                                                          [p1[0]-xinc, elev.height(p1[0]-xinc, p1[1]-zinc), p1[1]-zinc] + col,
-                                                          [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc] + col], float32))
-                                    continue
-                            else:
-                                # new 850 style runway
-                                ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface,shoulder)=thing
-                                kind=runways
-                                (x1,z1)=self.latlon2m(lat1,lon1)
-                                (x2,z2)=self.latlon2m(lat2,lon2)
-                                h=-atan2(x1-x2,z1-z2)
-                                coshdg=cos(h)
-                                sinhdg=sin(h)
-                                p1=[x1-stop1*sinhdg, z1+stop1*coshdg]
-                                p2=[x2+stop2*sinhdg, z2-stop2*coshdg]
-                            xinc=width/2*coshdg
-                            zinc=width/2*sinhdg
-                            newthing = [[p2[0]+xinc, elev.height(p2[0]+xinc, p2[1]+zinc), p2[1]+zinc],
-                                        [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
-                                        [p1[0]-xinc, elev.height(p1[0]-xinc, p1[1]-zinc), p1[1]-zinc],
-                                        [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc]]
-                            kind[surface].append(newthing)
-                            if shoulder:
-                                xinc=width*0.75*coshdg
-                                zinc=width*0.75*sinhdg
-                                newthing = [[p2[0]+xinc, elev.height(p2[0]+xinc, p2[1]+zinc), p2[1]+zinc],
-                                            [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
-                                            [p1[0]-xinc, elev.height(p1[0]-xinc, p1[1]-zinc), p1[1]-zinc],
-                                            [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc]]
-                                shoulders[shoulder].append(newthing)
-                            for (x,y,z) in newthing:	# outer winding of runway or shoulder (if any)
-                                thisarea.include(x,z)
-                        else:
-                            # new 850 style taxiway
-                            surface = thing[0]
-                            for w in thing[1:]:
-                                n = len(w)
-                                if not n: break
-                                winding=[]
-                                for j in range(n):
-                                    pt = w[j]
-                                    nxt = w[(j+1) % n]
-                                    ptloc = (x,z) = self.latlon2m(pt[0],pt[1])
-                                    thisarea.include(x,z)
-                                    winding.append([x, elev.height(x,z), z])
-                                    if len(pt)<4:
-                                        if len(nxt)>=4:
-                                            bezpts = 4
-                                            nxtloc = self.latlon2m(nxt[0], nxt[1])
-                                            nxtbez = self.latlon2m(nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
-                                            for u in range(1,bezpts):
-                                                (bx,bz) = self.bez3([ptloc, nxtbez, nxtloc], float(u)/bezpts)
-                                                thisarea.include(bx,bz)
-                                                winding.append([bx, elev.height(bx,bz), bz])
-                                    else:
-                                        bezpts = 4
-                                        bezloc = self.latlon2m(pt[2], pt[3])
-                                        nxtloc = self.latlon2m(nxt[0], nxt[1])
-                                        if len(nxt)>=4:
-                                            nxtbez = self.latlon2m(nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
-                                            for u in range(1,bezpts):
-                                                (bx,bz) = self.bez4([ptloc, bezloc, nxtbez, nxtloc], float(u)/bezpts)
-                                                thisarea.include(bx,bz)
-                                                winding.append([bx, elev.height(bx,bz), bz])
-                                        else:
-                                            for u in range(1,bezpts):
-                                                (bx,bz) = self.bez3([ptloc, bezloc, nxtloc], float(u)/bezpts)
-                                                thisarea.include(bx,bz)
-                                                winding.append([bx, elev.height(bx,bz), bz])
-                                #windings.append(winding)
-                                taxiways[surface].append(winding)
-                    if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, code)
-
-                    if not runways and not taxiways:
-                        continue	# didn't add anything (except helipads)
-                    
-                    # Find patches under this airport
-                    if __debug__: clock2=time.clock()	# Processor time
-                    meshtris = elev.getbox(thisarea)
-
-                    for (kind,varray) in [(shoulders, svarray),
-                                          (taxiways,  tvarray),
-                                          (runways,   rvarray)]:
-                        # tessellate similar surfaces together
-                        for (surface, windings) in kind.iteritems():
-                            col = surfaces.get(surface, surfaces[0])
-                            varray.extend(elev.drapeapt(windings, col[0], col[1], meshtris))
-                    if __debug__: print "%6.3f time to tessellate %s" % (time.clock()-clock2, code)
-
-                varray=svarray+tvarray+rvarray
-                shoulderlen=len(svarray)
-                taxiwaylen=len(tvarray)
-                runwaylen=len(rvarray)
-                self.runways[key]=(varray,shoulderlen,taxiwaylen,runwaylen)
-                gc.enable()
+                (self.runways[key], self.codes[newtile]) = layoutApt(newtile, self.aptdatfile, self.airports, self.vertexcache.getElevationMesh(newtile, options))
                 if log_load: print "%6.3f time in runways" % (time.clock()-clock)
-            else:
-                (varray,shoulderlen,taxiwaylen,runwaylen)=self.runways[key]
+            (varray,shoulderlen,taxiwaylen,runwaylen) = self.runways[key]
             self.aptdata = {}
             if shoulderlen:
                 self.aptdata[ClutterDef.SHOULDERLAYER] = (self.vertexcache.instance_count, shoulderlen)
@@ -2014,20 +1845,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         # closing down
         self.imagery.exit()
 
-    def bez3(self, p, mu):
-        # http://paulbourke.net/geometry/bezier/
-        mum1 = 1-mu
-        mu2  = mu*mu
-        mum12= mum1*mum1
-        return (p[0][0]*mum12 + 2*p[1][0]*mum1*mu + p[2][0]*mu2, p[0][1]*mum12 + 2*p[1][1]*mum1*mu + p[2][1]*mu2)
-
-    def bez4(self, p, mu):
-        # http://paulbourke.net/geometry/bezier/
-        mum1 = 1-mu
-        mu3  = mu*mu*mu
-        mum13= mum1*mum1*mum1
-        return (p[0][0]*mum13 + 3*p[1][0]*mu*mum1*mum1 + 3*p[2][0]*mu*mu*mum1 + p[3][0]*mu3, p[0][1]*mum13 + 3*p[1][1]*mu*mum1*mum1 + 3*p[2][1]*mu*mu*mum1 + p[3][1]*mu3)
-        
     def getlocalloc(self, mx, my):
         if not self.valid: raise Exception        # MouseWheel can happen under MessageBox
         if wx.VERSION >= (2,9):

@@ -69,11 +69,12 @@ if not 'startfile' in dir(os):
     from urllib import quote
     import webbrowser
 
+from apt import scanApt, readApt, readNav
 from clutter import Clutter, Polygon, Exclude	# for loading exclusions into palette
 from clutterdef import ClutterDef, ObjectDef, PolygonDef, KnownDefs, ExcludeDef, NetworkDef
 from draw import MyGL
 from elevation import minres, round2res, ElevationMesh
-from files import scanApt, readApt, readNav, readLib, readNet, sortfolded
+from files import readLib, readNet, sortfolded
 from importobjs import importpaths, importobjs
 from lock import LockDialog
 from palette import Palette, PaletteEntry
