@@ -763,9 +763,10 @@ class Polygon(Clutter):
         return self.layout(tile, options, vertexcache, selectednode, True)
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        for i in range(len(self.nodes)):
-            for j in range(len(self.nodes[i])):
-                self.movenode((i,j), dlat, dlon, 0, tile, options, vertexcache)
+        if dlat or dlon:
+            for i in range(len(self.nodes)):
+                for j in range(len(self.nodes[i])):
+                    self.movenode((i,j), dlat, dlon, 0, tile, options, vertexcache)
         if dhdg:
             for w in self.nodes:
                 for p in w:
@@ -1167,11 +1168,11 @@ class Exclude(Polygon):
             return '%s' % (self.latlondisp(dms, self.lat, self.lon))
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        for i in range(len(self.nodes)):
-            for j in range(len(self.nodes[i])):
-                Polygon.movenode(self, (i,j), dlat, dlon, 0, tile, options, vertexcache)	# use superclass to prevent complication
         # no rotation or param
         if dlat or dlon:
+            for i in range(len(self.nodes)):
+                for j in range(len(self.nodes[i])):
+                    Polygon.movenode(self, (i,j), dlat, dlon, 0, tile, options, vertexcache)	# use superclass to prevent complication
             self.layout(tile, options, vertexcache)
 
     def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=False):
