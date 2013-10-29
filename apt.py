@@ -1,8 +1,12 @@
 import gc
 from collections import defaultdict	# Requires Python 2.5
 from math import atan2, cos, sin, radians
-from numpy import array, float32
+from numpy import array, arange, concatenate, cumsum, repeat, zeros, float32
+from OpenGL.GL import GLuint
 import time
+
+if __debug__:
+    from traceback import print_exc
 
 from elevation import BBox, onedeg
 from clutter import f2m
@@ -22,7 +26,7 @@ surfaces = {0:  [0.125, 0.125],	# unknown
 
 # Scan global airport list - assumes code is ASCII for speed
 def scanApt(filename):
-    airports={}	# (name, [lat,lon], fileoffset) by code
+    airports={}	# (name, (lat,lon), fileoffset) by code
     nav=[]	# (type,lat,lon,hdg)
     h=file(filename, 'rU')	# assumes ascii
     if not h.readline().strip() in ['A','I']:
@@ -60,26 +64,35 @@ def scanApt(filename):
             break
         elif loc:	# Don't bother parsing past first location
             pass
-        elif id==14:	# Prefer tower location
-            loc=[float(c[1]),float(c[2])]
         elif id==10:	# Runway / taxiway
-            loc=[float(c[1]),float(c[2])]
+            loc = (float(c[1]),float(c[2]))
         elif id==100:	# 850 Runway
-            loc=[(float(c[9])+float(c[18]))/2,(float(c[10])+float(c[19]))/2]
+            loc = ((float(c[9])+float(c[18]))/2,(float(c[10])+float(c[19]))/2)
         elif id==101:	# 850 Water runway
-            loc=[(float(c[4])+float(c[7]))/2, (float(c[5])+float(c[8]))/2]
+            loc = ((float(c[4])+float(c[7]))/2, (float(c[5])+float(c[8]))/2)
         elif id==102:	# 850 Helipad
-            loc=[float(c[2]),float(c[3])]
+            loc = (float(c[2]),float(c[3]))
+        elif id==14:	# tower
+            loc = (float(c[1]),float(c[2]))
     if code and loc:	# No terminating 99
         airports[code]=(name,loc,offset)
     h.close()
     return (airports, nav)
 
+
 # two modes of operation:
 # - without offset, return all airports and navs (used for custom apt.dats)
-# - with offset, just return airport at offset (used for global apt.dat)
+# - with offset, just return data for airport at offset (used for global apt.dat)
 def readApt(filename, offset=None):
-    airports={}	# (name, [lat,lon], [(lat,lon,hdg,length,width,stop,stop)]) by code
+
+    COL_UNKNOWN = (0.75,0.75,0.75)
+    COL_ROAD    = (0.9, 0.9, 0.9 )
+    COL_TAXI    = (0.9, 0.8, 0.2 )
+
+    def col(code):
+        return (0<=code<=9 and COL_TAXI) or (50<=code<=59 and COL_TAXI) or (20<=code<=22 and COL_ROAD) or None
+
+    airports={}	# (name, (lat,lon), (taxiways, runways, markings)) by ICAO code
     nav=[]	# (type,lat,lon,hdg)
     firstcode=None
     h=open(filename, 'rU')
@@ -96,89 +109,174 @@ def readApt(filename, offset=None):
             raise AssertionError, "The apt.dat file in this package is invalid."
         ver=int(ver)
 
-    code=name=loc=None
-    run=[]
-    pavement=[]
+    code = name = None
+    loc = None		# airport location
+    pavement = None
+    surface = 0
+    linear = None
+    taxiways = []
+    runways  = []
+    markings = []
     for line in h:
         c=line.split()
         if not c or c[0].startswith('#'): continue
         id=int(c[0])
-        if pavement and id not in range(111,120):
-            run.append(pavement[:-1])
-            pavement=[]
-        if id in [1,16,17]:		# Airport/Seaport/Heliport
+
+        if id==110:	# pavement
+            surface = int(c[1])
+            pavement = [surface]
+            linear = []	# might have edge lines
+            linearstart = None
+            continue
+        elif id==120:	# linear feature
+            linear = []
+            linearstart = None
+            pavement = None
+            continue
+
+        elif pavement:
+            if id==111:
+                pavement.append((float(c[1]),float(c[2])))
+            elif id==112:
+                pavement.append((float(c[1]),float(c[2]),float(c[3]),float(c[4])))
+            elif id==113:
+                pavement.append((float(c[1]),float(c[2])))
+                taxiways.append(pavement)
+                pavement = [surface]	# holes just continue from previous pavement
+            elif id==114:
+                pavement.append((float(c[1]),float(c[2]),float(c[3]),float(c[4])))
+                taxiways.append(pavement)
+                pavement = [surface]	# holes just continue from previous pavement
+            elif id==115 or id==116:
+                # not allowed in pavement
+                raise AssertionError, "The apt.dat file in this package is invalid."
+            else:
+                # something else
+                pavement = linear = None
+
+        if linear is not None:
+            if id==111:
+                if not linearstart: linearstart = (COL_UNKNOWN, float(c[1]),float(c[2]))
+                color = len(c)>=4 and col(float(c[3]))
+                if color:
+                    linear.append((color, float(c[1]),float(c[2])))
+                elif linear:
+                    linear.append((COL_UNKNOWN, float(c[1]),float(c[2])))
+                    # skip this segment and start a new line
+                    markings.append(linear)
+                    linear = []
+            elif id==112:
+                if not linearstart: linearstart = (COL_UNKNOWN, float(c[1]),float(c[2]),float(c[3]),float(c[4]))
+                color = len(c)>=6 and col(float(c[5]))
+                if color:
+                    linear.append((color, float(c[1]),float(c[2]),float(c[3]),float(c[4])))
+                elif linear:
+                    linear.append((COL_UNKNOWN, float(c[1]),float(c[2]),float(c[3]),float(c[4])))
+                    # skip this segment and start a new line
+                    markings.append(linear)
+                    linear = []
+            elif id==113:
+                color = len(c)>=4 and col(float(c[3]))
+                if color:
+                    linear.append((color, float(c[1]),float(c[2])))
+                    if linearstart: linear.append(linearstart)	# duplicate first node to close line
+                    markings.append(linear)
+                elif linear:
+                    linear.append((COL_UNKNOWN, float(c[1]),float(c[2])))
+                    markings.append(linear)
+                if pavement:		# holes just continue from previous pavement
+                    linear = []
+                    linearstart = None
+                else:
+                    linear = None
+            elif id==114:
+                color = len(c)>=6 and col(float(c[5]))
+                if color:
+                    linear.append((color, float(c[1]),float(c[2]),float(c[3]),float(c[4])))
+                    if linearstart: linear.append(linearstart)	# duplicate first node to close line
+                    markings.append(linear)
+                elif linear:
+                    linear.append((COL_UNKNOWN, float(c[1]),float(c[2]),float(c[3]),float(c[4])))
+                    markings.append(linear)
+                if pavement:		# holes just continue from previous pavement
+                    linear = []
+                    linearstart = None
+                else:
+                    linear = None
+            elif id==115:
+                if linear:
+                    linear.append((COL_UNKNOWN, float(c[1]),float(c[2])))
+                    markings.append(linear)
+                linear = None
+            elif id==116:
+                if linear:
+                    linear.append((COL_UNKNOWN, float(c[1]),float(c[2]),float(c[3]),float(c[4])))
+                    markings.append(linear)
+                linear = None
+            else:
+                # not allowed anything else
+                raise AssertionError, "The apt.dat file in this package is invalid."
+
+        elif id in [1,16,17]:		# Airport/Seaport/Heliport
             if offset:	# reached next airport
-                if not run: raise AssertionError, "Airport %s does not have any runways." % code
+                if not runways: raise AssertionError, "Airport %s does not have any runways." % code
                 h.close()
-                return run
+                return (taxiways, runways, markings)
             if code:
                 if code in airports:
                     if loc: raise AssertionError, "Airport %s is listed more than once." % code
-                elif not run:
+                elif not runways:
                     raise AssertionError, "Airport %s does not have any runways." % code
                 else:
-                    airports[code]=(name,loc,run)
+                    airports[code] = (name, loc, (taxiways, runways, markings))
                 code=name=loc=None
-                run=[]
+                taxiways = []
+                runways  = []
+                markings = []
             code=c[4].decode('latin1')
             if not firstcode: firstcode=code
             name=(' '.join(c[5:])).decode('latin1')
-        elif id==14:	# Prefer tower location
-            loc=[float(c[1]),float(c[2])]
-        elif id==10:	# Runway / taxiway
-            # (lat,lon,h,length,width,stop1,stop2,surface,shoulder,isrunway)
+
+        elif id==10:	# Old-style runway / taxiway / helipad
+            # see 100 or 102 for output format
             lat=float(c[1])
             lon=float(c[2])
-            if not loc: loc=[lat,lon]
+            if not loc: loc = (lat,lon)
+            istaxiway = c[3]=='xxx'
+            ishelipad = c[3][0]=='H'
             stop=c[7].split('.')
             if len(stop)<2: stop.append(0)
             if len(c)<11:
                 surface=int(c[9])/1000000	# v6
             else:
-                surface=int(c[10])
+                surface=int(c[10])		# v7
             if len(c)<12:
                 shoulder=0
             else:
                 shoulder=int(c[11])
-            if c[3][0]=='H': surface=surface-5
-            run.append((lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]),
-                        f2m*float(stop[0]), f2m*float(stop[1]),
-                        surface, shoulder, c[3]!='xxx'))
-        elif id==100:	# 850 Runway
+            if ishelipad:
+                runways.append( (lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]), f2m*float(stop[0]), f2m*float(stop[1]), surface-5, shoulder, True))
+            elif istaxiway:
+                taxiways.append((lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]), f2m*float(stop[0]), f2m*float(stop[1]), surface, shoulder, False))
+            else:
+                runways.append( (lat, lon, float(c[4]), f2m*float(c[5]),f2m*float(c[8]), f2m*float(stop[0]), f2m*float(stop[1]), surface, shoulder, False))
+        elif id==100 or id==101:	# 850 Runway
             # ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface,shoulder)
-            if not loc:
-                loc=[(float(c[9])+float(c[18]))/2,
-                     (float(c[10])+float(c[19]))/2]
-            run.append(((float(c[9]), float(c[10])),
-                        (float(c[18]), float(c[19])),
-                        float(c[1]), float(c[12]),float(c[21]), int(c[2]), int(c[3])))
-        elif id==101:	# 850 Water runway
-            # ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface,shoulder)
-            if not loc:
-                loc=[(float(c[4])+float(c[7]))/2,
-                     (float(c[5])+float(c[8]))/2]
-            run.append(((float(c[4]), float(c[5])),
-                        (float(c[7]), float(c[8])),
-                        float(c[1]), 0,0, 13, 0))
+            if id==100:
+                (lat1,lon1,lat2,lon2,width,stop1,stop2,surface,shoulder) = (float(c[9]), float(c[10]), float(c[18]), float(c[19]), float(c[1]), float(c[12]),float(c[21]), int(c[2]), int(c[3]))
+            else:
+                (lat1,lon1,lat2,lon2,width,stop1,stop2,surface,shoulder) = (float(c[4]), float(c[5]), float(c[7]), float(c[8]), float(c[1]), 0,0, 13, 0)
+            if not loc: loc = ((lat1+lat2)/2, (lon1+lon2)/2)
+            runways.append(((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface,shoulder))
         elif id==102:	# 850 Helipad
-            # (lat,lon,h,length,width,stop1,stop2,surface,shoulder,isrunway)
+            # (lat,lon,h,length,width,stop1,stop2,surface,shoulder,ishelipad)
             lat=float(c[2])
             lon=float(c[3])
-            if not loc: loc=[lat,lon]
-            run.append((lat, lon, float(c[4]), float(c[5]),float(c[6]),
-                        0,0, int(c[7]), int(c[9]), True))
-        elif id==110:
-            pavement=[int(c[1]),[]]	# surface
-        elif id==111 and pavement:
-            pavement[-1].append((float(c[1]),float(c[2])))
-        elif id==112 and pavement:
-            pavement[-1].append((float(c[1]),float(c[2]),float(c[3]),float(c[4])))
-        elif id==113 and pavement:
-            pavement[-1].append((float(c[1]),float(c[2])))
-            pavement.append([])
-        elif id==114 and pavement:
-            pavement[-1].append((float(c[1]),float(c[2]),float(c[3]),float(c[4])))
-            pavement.append([])
+            if not loc: loc = (lat,lon)
+            runways.append((lat, lon, float(c[4]), float(c[5]),float(c[6]), 0,0, int(c[7]), int(c[9]), True))
+
+        elif id==14:	# Prefer tower location
+            loc = (float(c[1]),float(c[2]))
         elif id==18 and int(c[3]):	# Beacon - goes in nav
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), 0))
         elif id==19:	# Windsock - goes in nav
@@ -187,18 +285,19 @@ def readApt(filename, offset=None):
             nav.append((id*10+int(c[3]), float(c[1]),float(c[2]), float(c[4])))
         elif id==99:
             break
+
     if offset:
-        if not run: raise AssertionError, "Airport %s does not have any runways." % code
+        if not runways: raise AssertionError, "Airport %s does not have any runways." % code
         h.close()
-        return run
+        return (taxiways, runways, markings)
     # last one
     if code:
         if code in airports:
             if loc: raise AssertionError, "Airport %s is listed more than once." % code
-        elif not run:
+        elif not runways:
             raise AssertionError, "Airport %s does not have any runways." % code
         else:
-            airports[code]=(name,loc,run)
+            airports[code] = (name, loc, (taxiways, runways, markings))
     else:
         raise AssertionError, "The apt.dat file in this package is empty."
     h.close()
@@ -256,9 +355,12 @@ def layoutApt(tile, aptdatfile, airports, elev):
     svarray=[]
     tvarray=[]
     rvarray=[]
+    marray =[]
     centre = [tile[0]+0.5, tile[1]+0.5]
     area = BBox(tile[0]-0.05, tile[0]+1.05, tile[1]-0.05, tile[1]+1.05)	# bounding box for including airport runways & taxiways
     tile = BBox(tile[0], tile[0]+1, tile[1], tile[1]+1)			# bounding box for displaying ICAO code
+    bezpts = 6	# balance between speed and quality
+
     for code, (name, aptloc, apt) in airports.iteritems():
         if __debug__: clock=time.clock()	# Processor time
         if not area.inside(*aptloc):
@@ -268,42 +370,38 @@ def layoutApt(tile, aptdatfile, airports, elev):
         runways   = defaultdict(list)
         taxiways  = defaultdict(list)
         shoulders = defaultdict(list)
+        markings  = []
         thisarea=BBox()
         if isinstance(apt, long):
+            # default airport
             try:
-                thisapt=readApt(aptdatfile, apt)
-                airports[code]=(name, aptloc, thisapt)
+                (apttaxiways, aptrunways, aptmarkings) = thisapt = readApt(aptdatfile, apt)
+                airports[code] = (name, aptloc, thisapt)
             except:
-                thisapt=[]
+                if __debug__: print_exc()
+                continue	# ignore errors in default airports
         else:
-            thisapt=list(apt)
-        thisapt.reverse()	# draw in reverse order
-        newthing=None
-        for thing in thisapt:
-            if isinstance(thing, tuple):
-                # convert to pavement style
-                if not isinstance(thing[0], tuple):
-                    # old pre-850 style or 850 style helipad
-                    (lat,lon,h,length,width,stop1,stop2,surface,shoulder,isrunway)=thing
-                    if isrunway:
-                        kind=runways
-                    else:
-                        kind=taxiways
-                    (cx,cz) = aptlatlon2m(centre, lat,lon)
-                    length1=length/2+stop1
-                    length2=length/2+stop2
-                    h=radians(h)
-                    coshdg=cos(h)
-                    sinhdg=sin(h)
-                    p1=[cx-length1*sinhdg, cz+length1*coshdg]
-                    p2=[cx+length2*sinhdg, cz-length2*coshdg]
+            (apttaxiways, aptrunways, aptmarkings) = apt
+
+        # runways
+        for thing in aptrunways:
+            if not isinstance(thing[0], tuple):
+                # old pre-850 style runway or 850 style helipad
+                (lat,lon,h,length,width,stop1,stop2,surface,shoulder,ishelipad) = thing
+                (cx,cz) = aptlatlon2m(centre, lat,lon)
+                length1 = length/2+stop1
+                length2 = length/2+stop2
+                h = radians(h)
+                coshdg = cos(h)
+                sinhdg = sin(h)
+                p1 = [cx-length1*sinhdg, cz+length1*coshdg]
+                p2 = [cx+length2*sinhdg, cz-length2*coshdg]
+                xinc = width/2*coshdg
+                zinc = width/2*sinhdg
+                if ishelipad:
                     # Don't drape helipads, of which there are loads
-                    if len(thisapt)==1 and length+stop1+stop2<61 and width<61:	# 200ft
-                        if not tile.inside(lat,lon):
-                            continue
+                    if tile.inside(lat,lon):
                         col = surfaces.get(surface, surfaces[0]) + [0]
-                        xinc=width/2*coshdg
-                        zinc=width/2*sinhdg
                         rvarray.extend(array([[p2[0]+xinc, elev.height(p2[0]+xinc, p2[1]+zinc), p2[1]+zinc] + col,
                                               [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc] + col,
                                               [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc] + col,
@@ -311,73 +409,131 @@ def layoutApt(tile, aptdatfile, airports, elev):
                                               [p1[0]-xinc, elev.height(p1[0]-xinc, p1[1]-zinc), p1[1]-zinc] + col,
                                               [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc] + col], float32))
                         continue
-                else:
-                    # new 850 style runway
-                    ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface,shoulder)=thing
-                    kind=runways
-                    (x1,z1) = latlon2m(centre, lat1, lon1)
-                    (x2,z2) = latlon2m(centre, lat2, lon2)
-                    h=-atan2(x1-x2,z1-z2)
-                    coshdg=cos(h)
-                    sinhdg=sin(h)
-                    p1=[x1-stop1*sinhdg, z1+stop1*coshdg]
-                    p2=[x2+stop2*sinhdg, z2-stop2*coshdg]
-                xinc=width/2*coshdg
-                zinc=width/2*sinhdg
+            else:
+                # new 850 style runway
+                ((lat1,lon1),(lat2,lon2),width,stop1,stop2,surface,shoulder)=thing
+                (x1,z1) = latlon2m(centre, lat1, lon1)
+                (x2,z2) = latlon2m(centre, lat2, lon2)
+                h = -atan2(x1-x2,z1-z2)
+                coshdg = cos(h)
+                sinhdg = sin(h)
+                p1 = [x1-stop1*sinhdg, z1+stop1*coshdg]
+                p2 = [x2+stop2*sinhdg, z2-stop2*coshdg]
+                xinc = width/2*coshdg
+                zinc = width/2*sinhdg
+            newthing = [[p2[0]+xinc, elev.height(p2[0]+xinc, p2[1]+zinc), p2[1]+zinc],
+                        [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
+                        [p1[0]-xinc, elev.height(p1[0]-xinc, p1[1]-zinc), p1[1]-zinc],
+                        [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc]]
+            runways[surface].append(newthing)
+            if shoulder:
+                xinc = width*0.75*coshdg
+                zinc = width*0.75*sinhdg
                 newthing = [[p2[0]+xinc, elev.height(p2[0]+xinc, p2[1]+zinc), p2[1]+zinc],
                             [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
                             [p1[0]-xinc, elev.height(p1[0]-xinc, p1[1]-zinc), p1[1]-zinc],
                             [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc]]
-                kind[surface].append(newthing)
-                if shoulder:
-                    xinc=width*0.75*coshdg
-                    zinc=width*0.75*sinhdg
-                    newthing = [[p2[0]+xinc, elev.height(p2[0]+xinc, p2[1]+zinc), p2[1]+zinc],
-                                [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
-                                [p1[0]-xinc, elev.height(p1[0]-xinc, p1[1]-zinc), p1[1]-zinc],
-                                [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc]]
-                    shoulders[shoulder].append(newthing)
-                for (x,y,z) in newthing:	# outer winding of runway or shoulder (if any)
-                    thisarea.include(x,z)
+                shoulders[shoulder].append(newthing)
+            for (x,y,z) in newthing:	# outer winding of runway or shoulder (if any)
+                thisarea.include(x,z)
+
+        # taxiways
+        for thing in reversed(apttaxiways):	# draw in reverse order for some reason that I can't now remember
+            if isinstance(thing, tuple):
+                # old pre-850 style taxiway
+                (lat,lon,h,length,width,stop1,stop2,surface,shoulder,ishelipad) = thing
+                assert not shoulder		# shoulders only apply to runways
+                assert not ishelipad		# should be in aptrunways
+                (cx,cz) = aptlatlon2m(centre, lat,lon)
+                length1 = length/2+stop1
+                length2 = length/2+stop2
+                h = radians(h)
+                coshdg = cos(h)
+                sinhdg = sin(h)
+                p1 = [cx-length1*sinhdg, cz+length1*coshdg]
+                p2 = [cx+length2*sinhdg, cz-length2*coshdg]
+                xinc = width/2*coshdg
+                zinc = width/2*sinhdg
+                newthing = [[p2[0]+xinc, elev.height(p2[0]+xinc, p2[1]+zinc), p2[1]+zinc],
+                            [p2[0]-xinc, elev.height(p2[0]-xinc, p2[1]-zinc), p2[1]-zinc],
+                            [p1[0]-xinc, elev.height(p1[0]-xinc, p1[1]-zinc), p1[1]-zinc],
+                            [p1[0]+xinc, elev.height(p1[0]+xinc, p1[1]+zinc), p1[1]+zinc]]
             else:
                 # new 850 style taxiway
                 surface = thing[0]
-                for w in thing[1:]:
-                    n = len(w)
-                    if not n: break
-                    winding=[]
-                    for j in range(n):
-                        pt = w[j]
-                        nxt = w[(j+1) % n]
-                        ptloc = (x,z) = latlon2m(centre, pt[0],pt[1])
-                        thisarea.include(x,z)
-                        winding.append([x, elev.height(x,z), z])
-                        if len(pt)<4:
-                            if len(nxt)>=4:
-                                bezpts = 4
-                                nxtloc = latlon2m(centre, nxt[0], nxt[1])
-                                nxtbez = latlon2m(centre, nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
-                                for u in range(1,bezpts):
-                                    (bx,bz) = bez3([ptloc, nxtbez, nxtloc], float(u)/bezpts)
-                                    thisarea.include(bx,bz)
-                                    winding.append([bx, elev.height(bx,bz), bz])
-                        else:
-                            bezpts = 4
-                            bezloc = latlon2m(centre, pt[2], pt[3])
+                thing = thing[1:]
+                n = len(thing)
+                newthing = []
+                for j in range(n):
+                    pt = thing[j]
+                    nxt = thing[(j+1) % n]
+                    if pt[0]==nxt[0] and pt[1]==nxt[1]: continue	# duplicated point - probably split bezier
+                    ptloc = (x,z) = latlon2m(centre, pt[0],pt[1])
+                    thisarea.include(x,z)
+                    newthing.append([x, elev.height(x,z), z])
+                    if len(pt)<4:
+                        if len(nxt)>=4:
                             nxtloc = latlon2m(centre, nxt[0], nxt[1])
-                            if len(nxt)>=4:
-                                nxtbez = latlon2m(centre, nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
-                                for u in range(1,bezpts):
-                                    (bx,bz) = bez4([ptloc, bezloc, nxtbez, nxtloc], float(u)/bezpts)
-                                    thisarea.include(bx,bz)
-                                    winding.append([bx, elev.height(bx,bz), bz])
-                            else:
-                                for u in range(1,bezpts):
-                                    (bx,bz) = bez3([ptloc, bezloc, nxtloc], float(u)/bezpts)
-                                    thisarea.include(bx,bz)
-                                    winding.append([bx, elev.height(bx,bz), bz])
-                    #windings.append(winding)
-                    taxiways[surface].append(winding)
+                            nxtbez = latlon2m(centre, nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
+                            for u in range(1,bezpts):
+                                (bx,bz) = bez3([ptloc, nxtbez, nxtloc], float(u)/bezpts)
+                                thisarea.include(bx,bz)
+                                newthing.append([bx, elev.height(bx,bz), bz])
+                    else:
+                        bezloc = latlon2m(centre, pt[2], pt[3])
+                        nxtloc = latlon2m(centre, nxt[0], nxt[1])
+                        if len(nxt)>=4:
+                            nxtbez = latlon2m(centre, nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
+                            for u in range(1,bezpts):
+                                (bx,bz) = bez4([ptloc, bezloc, nxtbez, nxtloc], float(u)/bezpts)
+                                thisarea.include(bx,bz)
+                                newthing.append([bx, elev.height(bx,bz), bz])
+                        else:
+                            for u in range(1,bezpts):
+                                (bx,bz) = bez3([ptloc, bezloc, nxtloc], float(u)/bezpts)
+                                thisarea.include(bx,bz)
+                                newthing.append([bx, elev.height(bx,bz), bz])
+            taxiways[surface].append(newthing)
+            for (x,y,z) in newthing:
+                thisarea.include(x,z)
+
+        # markings
+        for thing in aptmarkings:
+            newthing = []
+            color = [0,0,0]
+            n = len(thing)
+            for j in range(n-1):
+                pt = thing[j][1:]
+                nxt = thing[j+1][1:]
+                if pt[0]==nxt[0] and pt[1]==nxt[1]: continue	# duplicated point - probably split bezier
+                ptloc = (x,z) = latlon2m(centre, pt[0],pt[1])
+                newthing.append([x, elev.height(x,z), z] + color)
+                color = list(thing[j][0])	# X-Plane specifies color on first node of each line, but OpenGL uses second node
+                if len(pt)<4:
+                    if len(nxt)>=4:
+                        nxtloc = latlon2m(centre, nxt[0], nxt[1])
+                        nxtbez = latlon2m(centre, nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
+                        for u in range(1,bezpts):
+                            (bx,bz) = bez3([ptloc, nxtbez, nxtloc], float(u)/bezpts)
+                            newthing.append([bx, elev.height(bx,bz), bz] + color)
+                else:
+                    bezloc = latlon2m(centre, pt[2], pt[3])
+                    nxtloc = latlon2m(centre, nxt[0], nxt[1])
+                    if len(nxt)>=4:
+                        nxtbez = latlon2m(centre, nxt[0]*2-nxt[2],nxt[1]*2-nxt[3])
+                        for u in range(1,bezpts):
+                            (bx,bz) = bez4([ptloc, bezloc, nxtbez, nxtloc], float(u)/bezpts)
+                            newthing.append([bx, elev.height(bx,bz), bz] + color)
+                    else:
+                        for u in range(1,bezpts):
+                            (bx,bz) = bez3([ptloc, bezloc, nxtloc], float(u)/bezpts)
+                            newthing.append([bx, elev.height(bx,bz), bz] + color)
+            # last one
+            pt = thing[n-1][1:]
+            ptloc = (x,z) = latlon2m(centre, pt[0],pt[1])
+            newthing.append([x, elev.height(x,z), z] + color)
+            marray.append(array(newthing, float32))
+
         if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock, code)
 
         if not runways and not taxiways:
@@ -401,5 +557,15 @@ def layoutApt(tile, aptdatfile, airports, elev):
     taxiwaylen=len(tvarray)
     runwaylen=len(rvarray)
 
+    if marray:
+        counts = array([len(chain) for chain in marray], int)	# points in each chain
+        start  = cumsum(concatenate((zeros((1,), int), counts)))[:-1]
+        end    = start + counts - 1
+        mindices= concatenate([repeat(arange(start[i],end[i],1,GLuint), 2) for i in range(len(counts))])
+        mindices[1::2] += 1
+        assert (len(mindices) == (sum(counts)-len(counts))*2)
+    else:
+        mindices = None
+
     gc.enable()
-    return ((varray,shoulderlen,taxiwaylen,runwaylen), codes)
+    return ((varray,shoulderlen,taxiwaylen,runwaylen,marray,mindices), codes)

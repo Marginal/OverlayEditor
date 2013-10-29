@@ -30,7 +30,7 @@ import wx.glcanvas
 if __debug__:
     from traceback import print_exc
 
-from apt import readApt, layoutApt
+from apt import layoutApt
 from files import VertexCache, sortfolded, glInitTextureCompressionS3TcEXT
 from fixed8x13 import fixed8x13
 from clutter import Clutter, Object, Polygon, Draped, DrapedImage, Facade, Network, Exclude
@@ -840,7 +840,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.glstate.set_texture(None)
             self.glstate.set_color(None)
             self.glstate.set_depthtest(False)	# Need line to appear over terrain
-            glDrawElements(GL_LINES, len(netindices), GL_UNSIGNED_INT, netindices)
+            glDrawRangeElements(GL_LINES, netindices[0], netindices[-1], len(netindices), GL_UNSIGNED_INT, netindices)
         #if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
 
         # Objects and Polygons
@@ -1712,7 +1712,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if log_load: clock=time.clock()	# Processor time
                 (self.runways[key], self.codes[newtile]) = layoutApt(newtile, self.aptdatfile, self.airports, self.vertexcache.getElevationMesh(newtile, options))
                 if log_load: print "%6.3f time in runways" % (time.clock()-clock)
-            (varray,shoulderlen,taxiwaylen,runwaylen) = self.runways[key]
+            (varray,shoulderlen,taxiwaylen,runwaylen,marray,mindices) = self.runways[key]
             self.aptdata = {}
             if shoulderlen:
                 self.aptdata[ClutterDef.SHOULDERLAYER] = (self.vertexcache.instance_count, shoulderlen)
@@ -1724,6 +1724,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if __debug__:
                     for p in varray: assert p.dtype==float32 and len(p)==6, p
                 self.vertexcache.allocate_instance(vstack(varray)[:,:5].flatten())	# instance VBO has 5 coords
+            if marray:
+                if __debug__:
+                    for p in marray: assert p.dtype==float32 and p.shape[1]==6, p
+                base = self.vertexcache.allocate_vector(vstack(marray).flatten())
+                self.aptdata[ClutterDef.MARKINGSLAYER] = (base + mindices)
 
             progress.Update(14, 'Navaids')
             assert self.tile==newtile

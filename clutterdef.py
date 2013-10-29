@@ -54,13 +54,14 @@ fallbacktexture='Resources/fallback.png'
 class ClutterDef:
 
     LAYERNAMES=['terrain', 'beaches', 'shoulders', 'taxiways', 'runways', 'markings', 'roads', 'objects', 'light_objects', 'cars']
-    BEACHESLAYER=LAYERNAMES.index('beaches')*11+5
-    SHOULDERLAYER=LAYERNAMES.index('shoulders')*11+5
-    TAXIWAYLAYER=LAYERNAMES.index('taxiways')*11+5
-    RUNWAYSLAYER=LAYERNAMES.index('runways')*11+5
-    NETWORKLAYER=LAYERNAMES.index('roads')*11+5
-    DRAPEDLAYER =LAYERNAMES.index('objects')*11		# objects -5 for draped geometry
-    OBJECTLAYER =LAYERNAMES.index('objects')*11+5
+    BEACHESLAYER  = LAYERNAMES.index('beaches')*11+5
+    SHOULDERLAYER = LAYERNAMES.index('shoulders')*11+5
+    TAXIWAYLAYER  = LAYERNAMES.index('taxiways')*11+5
+    RUNWAYSLAYER  = LAYERNAMES.index('runways')*11+5
+    MARKINGSLAYER = LAYERNAMES.index('markings')*11+5
+    NETWORKLAYER  = LAYERNAMES.index('roads')*11+5
+    DRAPEDLAYER   = LAYERNAMES.index('objects')*11	# objects -5 for draped geometry
+    OBJECTLAYER   = LAYERNAMES.index('objects')*11+5
     LAYERCOUNT      = len(LAYERNAMES)*11		# assignable X-Plane layers
     OUTLINELAYER    = LAYERCOUNT			# for polygons
     GEOMCULLEDLAYER = LAYERCOUNT+1			# for non-draped dynamic geometry (i.e. Facades)

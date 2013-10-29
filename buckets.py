@@ -95,12 +95,28 @@ class Buckets:
             self.layerbuckets[layer].draw(glstate)	# draw per layer
             # Special handling - yuck
             if not selected:
-                if layer in aptdata:
-                    (base, length) = aptdata[layer]
+                if layer == ClutterDef.MARKINGSLAYER and layer in aptdata:
+                    (indices) = aptdata[layer]
+                    glstate.set_vector(self.vertexcache)
+                    glstate.set_texture(None)
+                    glstate.set_color(None)
+                    glstate.set_depthtest(False)	# Need line to appear over terrain
                     glDisableVertexAttribArray(glstate.skip_pos)
                     glVertexAttrib1f(glstate.skip_pos, 0)
+                    glShadeModel(GL_FLAT)
+                    glDrawRangeElements(GL_LINES, indices[0], indices[-1], len(indices), GL_UNSIGNED_INT, indices)
+                    glstate.set_dynamic(self.vertexcache)
+                    glstate.set_color(COL_UNPAINTED)
+                    glstate.set_depthtest(True)
+                    if selected is not None:
+                        glEnableVertexAttribArray(glstate.skip_pos)
+                    glShadeModel(GL_SMOOTH)
+                elif layer in aptdata:
+                    (base, length) = aptdata[layer]
                     glstate.set_instance(self.vertexcache)
                     glstate.set_texture(self.vertexcache.texcache.get('Resources/surfaces.png'))
+                    glDisableVertexAttribArray(glstate.skip_pos)
+                    glVertexAttrib1f(glstate.skip_pos, 0)
                     glDrawArrays(GL_TRIANGLES, base, length)
                     glstate.set_dynamic(self.vertexcache)
                     if selected is not None:
