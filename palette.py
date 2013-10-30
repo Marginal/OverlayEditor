@@ -193,10 +193,15 @@ class PaletteChoicebook(wx.Choicebook):
         wx.EVT_KEY_DOWN(self, self.palette.OnKeyDown)	# does nothing on Windows
         wx.EVT_SET_FOCUS(self, self.palette.OnSetFocus)
         if 'GetChoiceCtrl' in dir(self):	# not available on wxMac 2.5
+            ctrl = self.GetChoiceCtrl()
             if platform=='win32':
-                self.GetChoiceCtrl().SetWindowVariant(wx.WINDOW_VARIANT_LARGE)
+                ctrl.SetWindowVariant(wx.WINDOW_VARIANT_LARGE)
+            elif platform=='darwin':
+                wx.EVT_SET_FOCUS(ctrl, self.palette.OnSetFocus)	# can get focus under Carbon, which looks ugly
+                ctrl.GetContainingSizer().InsertSpacer(0, 3)	# needs extra space under Cocoa
+                ctrl.GetContainingSizer().AddSpacer(3)
             else:
-                wx.EVT_SET_FOCUS(self.GetChoiceCtrl(), self.palette.OnSetFocus)	# can get focus under Carbon, which looks ugly
+                wx.EVT_SET_FOCUS(ctrl, self.palette.OnSetFocus)	# give focus away so cursor keys scroll the canvas
 
 
     def OnChoice(self, event):

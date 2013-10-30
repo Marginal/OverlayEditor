@@ -446,16 +446,13 @@ class PreferencesDialog(wx.Dialog):
                 self.FindWindowById(wx.ID_OK).Enable()
                 return wx.ID_OK
 
-class BackgroundDialog(wx.Dialog):
+class BackgroundDialog(wx.Frame):
+    # Uses wx.Frame not wx.Dialog: http://trac.wxwidgets.org/ticket/15595
 
     def __init__(self, parent, id, title):
-        wx.Dialog.__init__(self, parent, id, title, style=wx.DEFAULT_FRAME_STYLE|wx.FRAME_FLOAT_ON_PARENT)
+        wx.Frame.__init__(self, parent, id, title, style=wx.FRAME_TOOL_WINDOW|wx.FRAME_NO_TASKBAR|wx.CAPTION|wx.CLOSE_BOX|wx.FRAME_FLOAT_ON_PARENT)
         if platform=='darwin':	# Default is too big on Mac
             self.SetWindowVariant(wx.WINDOW_VARIANT_SMALL)
-            bg=wx.Colour(254,254,254)	# Odd colours = black on wxMac !!!
-        else:
-            bg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_WINDOW)
-        fg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
 
         self.parent=parent
         self.parent.palette.set(None)
@@ -476,23 +473,25 @@ class BackgroundDialog(wx.Dialog):
         else:
             self.image=''
 
-        outersizer = wx.BoxSizer(wx.VERTICAL)	# For padding
+        outersizer = wx.BoxSizer(wx.VERTICAL)
+        panel = wx.Panel(self)
         sizer = wx.BoxSizer(wx.VERTICAL)
-        outersizer.Add(sizer, 0, wx.ALL|wx.EXPAND, pad+pad)
+        outersizer.Add(panel, 0, wx.ALL|wx.EXPAND)
+        panel.SetSizer(sizer)
 
-        sizer1 = wx.StaticBoxSizer(wx.StaticBox(self, -1, 'Mapping service'), wx.VERTICAL)
-        sizer.Add(sizer1, 0, wx.ALL|wx.EXPAND, pad)
-        self.imgnone = wx.RadioButton(self, -1, 'None', style=wx.RB_GROUP)
+        sizer1 = wx.StaticBoxSizer(wx.StaticBox(panel, -1, 'Mapping service'), wx.VERTICAL)
+        sizer.Add(sizer1, 0, wx.ALL|wx.EXPAND, pad+pad)
+        self.imgnone = wx.RadioButton(panel, -1, 'None', style=wx.RB_GROUP)
         self.imgnone.SetValue(prefs.imageryprovider not in ['Bing','ArcGIS','MapQuest'])
-        self.imgbing = wx.RadioButton(self, -1, u'Microsoft Bing\u2122 ')
+        self.imgbing = wx.RadioButton(panel, -1, u'Microsoft Bing\u2122 ')
         self.imgbing.SetValue(prefs.imageryprovider=='Bing')
-        bingtou = wx.HyperlinkCtrl(self, -1, 'Terms of Use', 'http://www.microsoft.com/maps/assets/docs/terms.aspx')
-        self.imgarcgis = wx.RadioButton(self, -1, u'ESRI ArcGIS Online ')
+        bingtou = wx.HyperlinkCtrl(panel, -1, 'Terms of Use', 'http://www.microsoft.com/maps/assets/docs/terms.aspx')
+        self.imgarcgis = wx.RadioButton(panel, -1, u'ESRI ArcGIS Online ')
         self.imgarcgis.SetValue(prefs.imageryprovider=='ArcGIS')
-        arcgistou = wx.HyperlinkCtrl(self, -1, 'Terms of Use', 'http://www.esri.com/legal/pdfs/e-800-termsofuse.pdf')
-        self.imgmapquest = wx.RadioButton(self, -1, u'MapQuest OpenStreetMap ')
+        arcgistou = wx.HyperlinkCtrl(panel, -1, 'Terms of Use', 'http://www.esri.com/legal/pdfs/e-800-termsofuse.pdf')
+        self.imgmapquest = wx.RadioButton(panel, -1, u'MapQuest OpenStreetMap ')
         self.imgmapquest.SetValue(prefs.imageryprovider=='MapQuest')
-        mapquesttou = wx.HyperlinkCtrl(self, -1, 'Terms of Use', 'http://info.mapquest.com/terms-of-use/')
+        mapquesttou = wx.HyperlinkCtrl(panel, -1, 'Terms of Use', 'http://info.mapquest.com/terms-of-use/')
         sizer11 = wx.FlexGridSizer(4, 3, pad, pad)
         sizer1.Add(sizer11, 0, wx.ALL|wx.EXPAND, pad)
         sizer11.Add(self.imgnone, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, pad)
@@ -508,29 +507,29 @@ class BackgroundDialog(wx.Dialog):
         sizer11.Add(mapquesttou, 0, wx.LEFT|wx.RIGHT|wx.EXPAND, pad)
         sizer11.AddStretchSpacer()
 
-        sizer2 = wx.StaticBoxSizer(wx.StaticBox(self, -1, 'File'), wx.VERTICAL)
-        sizer.Add(sizer2, 0, wx.ALL|wx.EXPAND, pad)
+        sizer2 = wx.StaticBoxSizer(wx.StaticBox(panel, -1, 'File'), wx.VERTICAL)
+        sizer.Add(sizer2, 0, wx.ALL|wx.EXPAND, pad+pad)
 
-        sizer3 = wx.StaticBoxSizer(wx.StaticBox(self, -1, 'Opacity'))
-        sizer.Add(sizer3, 0, wx.ALL|wx.EXPAND, pad)
-        self.opacity=wx.Slider(self, -1, prefs.imageryopacity, 10, 100, style=wx.SL_LABELS)
+        sizer3 = wx.StaticBoxSizer(wx.StaticBox(panel, -1, 'Opacity'))
+        sizer.Add(sizer3, 0, wx.ALL|wx.EXPAND, pad+pad)
+        self.opacity=wx.Slider(panel, -1, prefs.imageryopacity, 10, 100, style=wx.SL_LABELS)
         sizer3.Add(self.opacity, 1, wx.ALL|wx.EXPAND, pad)
 
         if platform!='darwin':	# Mac users are used to dialogs withaout an OK button
-            sizer4=myCreateStdDialogButtonSizer(self, wx.OK)
-            sizer.Add(sizer4, 0, wx.ALL|wx.EXPAND, pad)
+            sizer4=myCreateStdDialogButtonSizer(panel, wx.OK)
+            sizer.Add(sizer4, 0, wx.ALL|wx.EXPAND, pad+pad)
 
-        self.path = wx.TextCtrl(self, -1, style=wx.TE_READONLY)
+        self.path = wx.TextCtrl(panel, -1, style=wx.TE_READONLY)
         self.path.SetMinSize((300, -1))
         sizer2.Add(self.path, 1, wx.ALL|wx.EXPAND, pad)
         sizer22 = wx.FlexGridSizer(1, 4, pad, pad)
         sizer2.Add(sizer22, 0, wx.ALL|wx.EXPAND, pad)
         sizer22.AddGrowableCol(0, proportion=1)
         sizer22.AddStretchSpacer()
-        self.clearbtn=wx.Button(self, wx.ID_CLEAR)
+        self.clearbtn=wx.Button(panel, wx.ID_CLEAR)
         sizer22.Add(self.clearbtn, 0, wx.ALIGN_CENTER|wx.ALL, pad)
         #sizer22.AddSpacer(6)	# cosmetic
-        self.browsebtn=wx.Button(self, -1, browse)
+        self.browsebtn=wx.Button(panel, -1, browse)
         self.browsebtn.SetDefault()
         sizer22.Add(self.browsebtn, 0, wx.ALIGN_CENTER|wx.ALL, pad)
 
@@ -544,7 +543,6 @@ class BackgroundDialog(wx.Dialog):
         wx.EVT_BUTTON(self, self.browsebtn.GetId(), self.OnBrowse)
         wx.EVT_SCROLL_THUMBRELEASE(self, self.OnUpdate)
         wx.EVT_SCROLL_CHANGED(self, self.OnUpdate)	# for keyboard changes on Windows
-        #wx.EVT_COMMAND_SCROLL(self, self.opacity.GetId(), self.OnUpdate)
         wx.EVT_BUTTON(self, wx.ID_OK, self.OnClose)
         wx.EVT_BUTTON(self, wx.ID_CANCEL, self.OnClose)
         wx.EVT_CLOSE(self, self.OnClose)
@@ -1420,6 +1418,7 @@ class MainWindow(wx.Frame):
             self.bkgd=BackgroundDialog(self, wx.ID_ANY, "Background imagery")
             self.bkgd.CenterOnParent()	# Otherwise is top-left on Mac
             self.bkgd.Show()
+            self.bkgd.Raise()
         self.canvas.Refresh()	# Show background image as selected
         
     # Load or reload current package
