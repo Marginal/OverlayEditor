@@ -1030,9 +1030,9 @@ class MainWindow(wx.Frame):
             if __debug__ and event.AltDown():
                 # debug elevation mesh buckets
                 if event.GetKeyCode()==ord('W'):
-                    self.canvas.ei = max(self.canvas.ei-1, 0)
-                elif event.GetKeyCode()==ord('S'):
                     self.canvas.ei = min(self.canvas.ei+1, ElevationMesh.DIVISIONS-1)
+                elif event.GetKeyCode()==ord('S'):
+                    self.canvas.ei = max(self.canvas.ei-1, 0)
                 elif event.GetKeyCode()==ord('A'):
                     self.canvas.ej = max(self.canvas.ej-1, 0)
                 elif event.GetKeyCode()==ord('D'):

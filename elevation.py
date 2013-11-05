@@ -8,7 +8,7 @@
 
 import gc
 from collections import defaultdict	# Requires Python 2.5
-from math import sin, cos, floor, radians
+from math import sin, cos, ceil, floor, radians
 from sys import exc_info, maxint
 import time
 import numpy
@@ -281,6 +281,11 @@ class DummyElevationMesh(ElevationMeshBase):
 class ElevationMesh(ElevationMeshBase):
 
     DIVISIONS = 128	# arbitrary - diminishing returns after this with smaller buckets
+    MINUV = -0.0000001	# allow for rounding errors in hit test
+    DTYPE = [('p1',float32,(3,)), ('p2',float32,(3,)), ('p3',float32,(3,)),
+             ('minx',float32), ('maxx',float32), ('minz',float32), ('maxz',float32),
+             ('v0',float32,(2,)), ('v1',float32,(2,)),
+             ('dot00',float32), ('dot01',float32), ('dot11',float32), ('invDenom',float32)]
 
     def __init__(self, tile, tris):
 
@@ -321,10 +326,7 @@ class ElevationMesh(ElevationMeshBase):
         if __debug__: clock=time.clock()	# Processor time
 
         # Find 2D barycentric vectors, centred on p1 (A) - http://www.blackpawn.com/texts/pointinpoly/
-        self.tris = empty(len(tris)/3, dtype=[('p1',float32,(3,)), ('p2',float32,(3,)), ('p3',float32,(3,)),
-                                              ('minx',float32), ('maxx',float32), ('minz',float32), ('maxz',float32),
-                                              ('v0',float32,(2,)), ('v1',float32,(2,)),
-                                              ('dot00',float32), ('dot01',float32), ('dot11',float32), ('invDenom',float32)])
+        self.tris = empty(len(tris)/3, dtype=ElevationMesh.DTYPE)
         self.tris['p1'] = tris[0::3,:3]	# drop uv
         self.tris['p2'] = tris[1::3,:3]
         self.tris['p3'] = tris[2::3,:3]
@@ -342,15 +344,15 @@ class ElevationMesh(ElevationMeshBase):
             self.tris = self.tris[self.tris['invDenom'] != 0]	# filter out degenerate triangles e.g. KSEA Demo Terrain
         self.tris['invDenom'] = reciprocal(self.tris['invDenom'])
 
-        # Find grid buckets
+        # Find grid buckets. bucket (0,0) is bottom left
         n = len(self.tris)
         xr = empty((n,2),int)	# [min,max+1]
         zr = empty((n,2),int)	# [min,max+1]
-        xr[:,0] = self.tris['minx'] / self.divwidth  + ElevationMesh.DIVISIONS/2
-        zr[:,0] = self.tris['minz'] / self.divheight + ElevationMesh.DIVISIONS/2
-        # points lying exactly on top left grid boundary are rounded down
-        xr[:,1] = numpy.minimum(self.tris['maxx'] / self.divwidth  + ElevationMesh.DIVISIONS/2 + 1, ElevationMesh.DIVISIONS)
-        zr[:,1] = numpy.minimum(self.tris['maxz'] / self.divheight + ElevationMesh.DIVISIONS/2 + 1, ElevationMesh.DIVISIONS)
+        xr[:,0] = ElevationMesh.DIVISIONS/2 + self.tris['minx'] / self.divwidth
+        zr[:,0] = ElevationMesh.DIVISIONS/2 - self.tris['maxz'] / self.divheight
+        # points lying exactly on top or right grid boundary are rounded down
+        xr[:,1] = numpy.minimum(ElevationMesh.DIVISIONS/2 + 1 + self.tris['maxx'] / self.divwidth,  ElevationMesh.DIVISIONS)
+        zr[:,1] = numpy.minimum(ElevationMesh.DIVISIONS/2 + 1 - self.tris['minz'] / self.divheight, ElevationMesh.DIVISIONS)
         if __debug__:
             print "%6.3f time to calculate mesh " % (time.clock()-clock)
             for i in range(n):
@@ -383,17 +385,17 @@ class ElevationMesh(ElevationMeshBase):
             dot12 = tri['v1'][0] * v2[0] + tri['v1'][1] * v2[1]
             u = (tri['dot11'] * dot02 - tri['dot01'] * dot12) * tri['invDenom']
             v = (tri['dot00'] * dot12 - tri['dot01'] * dot02) * tri['invDenom']
-            if u>=0 and v>=0 and u+v<=1:
+            if u>=ElevationMesh.MINUV and v>=ElevationMesh.MINUV and u+v<=1:
                 #if __debug__: print "%6.3f time in height (lasttri)" % (time.clock()-clock)
                 return tri['p1'][1] + u * (tri['p3'][1] - tri['p1'][1]) + v * (tri['p2'][1] - tri['p1'][1])	# P = A + u * (C - A) + v * (B - A)
 
         if meshtris is None:
-            i = int(z/self.divheight + ElevationMesh.DIVISIONS/2)
-            j = int(x/self.divwidth  + ElevationMesh.DIVISIONS/2)
-            if not (0<=i<ElevationMesh.DIVISIONS and 0<=j<ElevationMesh.DIVISIONS):
-                #if __debug__: print "%6.3f time in height (outside)" % (time.clock()-clock)
+            i = int(ElevationMesh.DIVISIONS/2 - z/self.divheight)
+            j = int(ElevationMesh.DIVISIONS/2 + x/self.divwidth)
+            if not (0<=i<=ElevationMesh.DIVISIONS and 0<=j<=ElevationMesh.DIVISIONS):
+                if __debug__: print "%6.3f time in height (outside)" % (time.clock()-clock)
                 return 0
-            tris = self.tris[self.buckets[i][j]]
+            tris = self.tris[self.buckets[min(i,ElevationMesh.DIVISIONS-1)][min(j,ElevationMesh.DIVISIONS-1)]]	# might be on tile north/east border
         else:
             tris = meshtris
 
@@ -409,7 +411,7 @@ class ElevationMesh(ElevationMeshBase):
         result['v'] = (tris['dot00'] * dot12 - tris['dot01'] * dot02) * tris['invDenom']
 
         # Check if point is in any triangle
-        hits = logical_and(logical_and(result['u'] >= 0, result['v'] >= 0), result['u'] + result['v'] <= 1)
+        hits = logical_and(logical_and(result['u'] >= ElevationMesh.MINUV, result['v'] >= ElevationMesh.MINUV), result['u'] + result['v'] <= 1)
 
         if hits.any():
             # Take the first hit
@@ -424,13 +426,14 @@ class ElevationMesh(ElevationMeshBase):
     def getbox(self, abox):
 
         if __debug__: clock=time.clock()	# Processor time
-        minx = max(int(floor(abox.minx / self.divwidth))  + ElevationMesh.DIVISIONS/2, 0)
-        maxx = min(int(floor(abox.maxx / self.divwidth))  + ElevationMesh.DIVISIONS/2 + 1, ElevationMesh.DIVISIONS)
-        minz = max(int(floor(abox.minz / self.divheight)) + ElevationMesh.DIVISIONS/2, 0)
-        maxz = min(int(floor(abox.maxz / self.divheight)) + ElevationMesh.DIVISIONS/2 + 1, ElevationMesh.DIVISIONS)
+        minx = max(ElevationMesh.DIVISIONS/2 + int(floor(abox.minx / self.divwidth)),  0)
+        maxx = min(ElevationMesh.DIVISIONS/2 + int(floor(abox.maxx / self.divwidth))  + 1, ElevationMesh.DIVISIONS)
+        minz = max(ElevationMesh.DIVISIONS/2 - int(ceil(abox.maxz / self.divheight)), 0)
+        maxz = min(ElevationMesh.DIVISIONS/2 - int(ceil(abox.minz / self.divheight)) + 1, ElevationMesh.DIVISIONS)
 
         if minx>=ElevationMesh.DIVISIONS or maxx<=0 or minz>=ElevationMesh.DIVISIONS or maxz<=0:
-            return empty((0,),float32)	# all off mesh
+            if __debug__: print "%6.3f time in getbox (off mesh)" % (time.clock()-clock)
+            return empty((0,),ElevationMesh.DTYPE)	# all off mesh
         elif minx+1==maxx and minz+1==maxz:	# common case: just one box
             indices = self.buckets[minz][minx]
         else:
@@ -441,7 +444,7 @@ class ElevationMesh(ElevationMeshBase):
             indices = list(indices)
         if not indices:
             if __debug__: print "%6.3f time in getbox (no tris)" % (time.clock()-clock)
-            return empty((0,),float32)	# shouldn't happen
+            return empty((0,),ElevationMesh.DTYPE)	# shouldn't happen
 
         tris = self.tris[indices]
         # like BBox.intersects

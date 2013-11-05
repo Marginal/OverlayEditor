@@ -347,7 +347,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.e=45
         self.d=2048.0
 
-        if __debug__: self.ei = self.ej = ElevationMesh.DIVISIONS/2	# for debugging elevation mesh
+        if __debug__: self.ei = self.ej = ElevationMesh.DIVISIONS/2-1	# for debugging elevation mesh
 
         # Must specify min sizes for glX? - see glXChooseVisual and GLXFBConfig
         try:
@@ -806,10 +806,10 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glEnd()
                 self.glstate.set_color(COL_SELECTED)
                 glBegin(GL_LINE_LOOP)
-                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2)  *elev.divwidth, 0, (self.ei-ElevationMesh.DIVISIONS/2)  *elev.divheight)
-                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2+1)*elev.divwidth, 0, (self.ei-ElevationMesh.DIVISIONS/2)  *elev.divheight)
-                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2+1)*elev.divwidth, 0, (self.ei-ElevationMesh.DIVISIONS/2+1)*elev.divheight)
-                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2)  *elev.divwidth, 0, (self.ei-ElevationMesh.DIVISIONS/2+1)*elev.divheight)
+                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2)  *elev.divwidth, 0, (ElevationMesh.DIVISIONS/2  -self.ei)*elev.divheight)
+                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2+1)*elev.divwidth, 0, (ElevationMesh.DIVISIONS/2  -self.ei)*elev.divheight)
+                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2+1)*elev.divwidth, 0, (ElevationMesh.DIVISIONS/2-1-self.ei)*elev.divheight)
+                glVertex3f((self.ej-ElevationMesh.DIVISIONS/2)  *elev.divwidth, 0, (ElevationMesh.DIVISIONS/2-1-self.ei)*elev.divheight)
                 glEnd()
                 self.glstate.set_color(COL_UNPAINTED)
                 glBegin(GL_TRIANGLES)
