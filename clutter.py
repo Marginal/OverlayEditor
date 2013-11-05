@@ -44,7 +44,7 @@ from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, Drape
 from elevation import BBox, onedeg, maxres, minres, minhdg, resolution, round2res, ElevationMeshBase
 from nodes import Node, BezierNode, ParamNode, BezierParamNode, NetworkNode
 from palette import PaletteEntry
-from prefs import Prefs
+from prefs import Prefs, prefs
 
 f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use for airport layout)
 twopi=pi*2
@@ -58,6 +58,7 @@ class Clutter:
         self.definition=None
         self.lat=lat		# For centreing etc
         self.lon=lon
+        self.vertexcache = None	# link to global cache for allocating resources
         self.dynamic_data=None	# Data for inclusion in VBO
         self.base=None		# Offset when allocated in VBO
         self.parent = None	# parent if this is a child
@@ -127,7 +128,11 @@ class Object(Clutter):
         copy.lon -= dlon
         return copy
 
-    def load(self, lookup, defs, vertexcache, usefallback=False):
+    def load(self, lookup, defs, vertexcache, usefallback=False, definition=None):
+        self.vertexcache = vertexcache
+        if definition:
+            self.definition = definition	# for child objects that may not be in global namespace lookup
+            return True
         try:
             if self.name.startswith('*'):	# this application's resource
                 filename=join('Resources', self.name[1:])
@@ -198,36 +203,36 @@ class Object(Clutter):
                 buckets.add(ClutterDef.OUTLINELAYER, None, i, 3)
         return self.dynamic_data
 
-    def clearlayout(self, vertexcache):
+    def clearlayout(self):
         self.matrix=None
         self.dynamic_data=None	# Can be removed from dynamic VBO
-        self.flush(vertexcache)
+        self.flush()
         for p in self.placements:
-            p.clearlayout(vertexcache)
+            p.clearlayout()
         # number of children is fixed, so no need to delete and re-create them
 
     def islaidout(self):
         return self.matrix is not None
 
-    def flush(self, vertexcache):
-        vertexcache.allocate_dynamic(self, False)
+    def flush(self):
+        self.vertexcache.allocate_dynamic(self, False)
         self.definition.instances.discard(self)
         self.definition.transform_valid=False
         for p in self.placements:
-            p.flush(vertexcache)
+            p.flush()
 
-    def layout(self, tile, options, vertexcache, x=None, y=None, z=None, hdg=None, meshtris=None, recalc=True):
+    def layout(self, tile, x=None, y=None, z=None, hdg=None, meshtris=None, recalc=True):
         self.definition.instances.add(self)
         self.definition.transform_valid=False
         if self.islaidout() and not recalc:
             # just ensure allocated
-            self.definition.allocate(vertexcache)
-            if self.dynamic_data is not None: vertexcache.allocate_dynamic(self, True)
+            self.definition.allocate(self.vertexcache)
+            if self.dynamic_data is not None: self.vertexcache.allocate_dynamic(self, True)
             for p in self.placements:
-                p.layout(tile, options, vertexcache, recalc=False)
+                p.layout(tile, recalc=False)
             return
 
-        elev = vertexcache.getElevationMesh(tile, options)
+        elev = self.vertexcache.getElevationMesh(tile)
         if not (x and z):
             x,z=self.position(tile, self.lat, self.lon)
         if meshtris is None:	# if meshtris are passed in then assume bbox has already been calculated
@@ -241,16 +246,16 @@ class Object(Clutter):
             self.hdg=hdg
         h=radians(self.hdg)
         self.matrix = array([x,self.y,z,h],float32)
-        self.definition.allocate(vertexcache)	# ensure allocated
+        self.definition.allocate(self.vertexcache)	# ensure allocated
         for p in self.placements:
-            p.layout(tile, options, vertexcache, meshtris=meshtris)
+            p.layout(tile, meshtris=meshtris)
         # draped & poly_os
         if not self.definition.draped: return
         coshdg=cos(h)
         sinhdg=sin(h)
         if self.definition.poly or elev.flat:	# poly_os
             self.dynamic_data=array([[x+v[0]*coshdg-v[2]*sinhdg,self.y+v[1],z+v[0]*sinhdg+v[2]*coshdg,v[3],v[4],0] for v in self.definition.draped], float32).flatten()
-            vertexcache.allocate_dynamic(self, True)
+            self.vertexcache.allocate_dynamic(self, True)
         else:	# draped
             tris=[]
             for v in self.definition.draped:
@@ -261,12 +266,12 @@ class Object(Clutter):
             tris = elev.drapetris(tris, meshtris)
             if tris:
                 self.dynamic_data = concatenate(tris)
-                vertexcache.allocate_dynamic(self, True)
+                self.vertexcache.allocate_dynamic(self, True)
             else:
                 self.dynamic_data = None
-                vertexcache.allocate_dynamic(self, False)
+                self.vertexcache.allocate_dynamic(self, False)
 
-    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile):
         self.lat=max(tile[0], min(tile[0]+maxres, self.lat+dlat))
         self.lon=max(tile[1], min(tile[1]+maxres, self.lon+dlon))
         if dhdg:
@@ -275,7 +280,7 @@ class Object(Clutter):
             self.lat=max(tile[0], min(tile[0]+maxres, round2res(loc[0]+cos(h)*l)))
             self.lon=max(tile[1], min(tile[1]+maxres, round2res(loc[1]+sin(h)*l)))
             self.hdg=(self.hdg+dhdg)%360
-        self.layout(tile, options, vertexcache)
+        self.layout(tile)
 
     def write(self, idx, south, west):
         # DSFTool rounds down, so round up here first
@@ -284,7 +289,8 @@ class Object(Clutter):
 
 class AutoGenPoint(Object):
 
-    def load(self, lookup, defs, vertexcache, usefallback=False):
+    def load(self, lookup, defs, vertexcache, usefallback=False, definition=None):
+        self.vertexcache = vertexcache
         try:
             filename=lookup[self.name].file
             if filename in defs:
@@ -313,22 +319,22 @@ class AutoGenPoint(Object):
             (childname, definition, xdelta, zdelta, hdelta)=child
             assert definition.filename in defs	# Child Def should have been created when AutoGenPointDef was loaded
             placement = Object(childname, self.lat, self.lon, self.hdg, parent=self)
-            placement.definition=definition
+            placement.load(None, None, vertexcache, definition=definition)
             self.placements.append(placement)
         return True
 
     if __debug__:
-        def layoutp(self, tile, options, vertexcache, recalc=True):
+        def layoutp(self, tile, recalc=True):
             try:
                 from cProfile import runctx
-                runctx('self.layout2(tile, options, vertexcache, recalc)', globals(), locals(), 'profile.dmp')
+                runctx('self.layout2(tile, recalc)', globals(), locals(), 'profile.dmp')
             except:
                 print_exc()
 
-    def layout(self, tile, options, vertexcache, recalc=True):
+    def layout(self, tile, recalc=True):
         if self.islaidout() and not recalc:
             # just ensure allocated
-            Object.layout(self, tile, options, vertexcache, recalc=False)
+            Object.layout(self, tile, recalc=False)
             return
 
         # We're likely to be doing a lot of height testing and draping, so pre-compute relevant mesh
@@ -340,19 +346,19 @@ class AutoGenPoint(Object):
         sinhdg=sin(h)
         for v in self.definition.draped:
             self.bbox.include(x+v[0]*coshdg-v[2]*sinhdg, z+v[0]*sinhdg+v[2]*coshdg)
-        elev = vertexcache.getElevationMesh(tile, options)
+        elev = self.vertexcache.getElevationMesh(tile)
         if elev.flat:
             mymeshtris = None
         else:
             mymeshtris = elev.getbox(self.bbox)
 
-        Object.layout(self, tile, options, vertexcache, x, None, z, self.hdg, mymeshtris)
+        Object.layout(self, tile, x, None, z, self.hdg, mymeshtris)
         assert len(self.placements)==len(self.definition.children), "%s %s %s %s" % (self, len(self.placements), self.definition, len(self.definition.children))
         for i in range(len(self.placements)):
             (childname, definition, xdelta, zdelta, hdelta)=self.definition.children[i]
             childx=x+xdelta*coshdg-zdelta*sinhdg
             childz=z+xdelta*sinhdg+zdelta*coshdg
-            self.placements[i].layout(tile, options, vertexcache, childx, None, childz, self.hdg+hdelta, mymeshtris)
+            self.placements[i].layout(tile, childx, None, childz, self.hdg+hdelta, mymeshtris)
 
 
 class Polygon(Clutter):
@@ -431,6 +437,7 @@ class Polygon(Clutter):
         return copy
 
     def load(self, lookup, defs, vertexcache, usefallback=True):
+        self.vertexcache = vertexcache
         if self.name in lookup:
             filename=lookup[self.name].file
         else:
@@ -562,29 +569,29 @@ class Polygon(Clutter):
             base += len(winding)
         return self.dynamic_data
 
-    def clearlayout(self, vertexcache):
+    def clearlayout(self):
         self.points=[]
         self.dynamic_data=None	# Can be removed from VBO
-        self.flush(vertexcache)
+        self.flush()
         for p in self.placements:
-            p.clearlayout(vertexcache)
+            p.clearlayout()
         self.placements=[]
 
     def islaidout(self):
         return self.dynamic_data is not None
 
-    def flush(self, vertexcache):
-        vertexcache.allocate_dynamic(self, False)
+    def flush(self):
+        self.vertexcache.allocate_dynamic(self, False)
         for p in self.placements:
-            p.flush(vertexcache)
+            p.flush()
 
-    def layout_nodes(self, tile, options, vertexcache, selectednode):
+    def layout_nodes(self, tile, selectednode):
         self.lat=self.lon=0
         self.points=[]
         self.bbox = BBox()
         self.nonsimple=False
         fittomesh=self.definition.fittomesh
-        elev = vertexcache.getElevationMesh(tile, options)
+        elev = self.vertexcache.getElevationMesh(tile)
 
         if not fittomesh:
             # elevation determined by mid-point of nodes 0 and 1
@@ -662,22 +669,22 @@ class Polygon(Clutter):
 
         return selectednode
 
-    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
+    def layout(self, tile, selectednode=None, recalc=True):
         if self.islaidout() and not recalc:
             # just ensure allocated
-            vertexcache.allocate_dynamic(self, True)
+            self.vertexcache.allocate_dynamic(self, True)
             for p in self.placements:
-                p.layout(tile, options, vertexcache, recalc=False)
+                p.layout(tile, recalc=False)
             return selectednode
-        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+        selectednode=self.layout_nodes(tile, selectednode)
         col=self.nonsimple and COL_NONSIMPLE or self.col
         self.dynamic_data=concatenate([array(p+col,float32) for w in self.points for p in w])
-        vertexcache.allocate_dynamic(self, True)
+        self.vertexcache.allocate_dynamic(self, True)
         for p in self.placements:
-            p.layout(tile, options, vertexcache)
+            p.layout(tile)
         return selectednode
 
-    def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
+    def addnode(self, tile, selectednode, lat, lon, clockwise=False):
         if self.fixednodes: return False
         (i,j)=selectednode
         n=len(self.nodes[i])
@@ -698,22 +705,22 @@ class Polygon(Clutter):
                 nextnode=(j-1)%n
             self.nodes[i].insert(newnode, self.nodes[0][0].__class__([round2res((self.nodes[i][j].lon + self.nodes[i][nextnode].lon)/2),
                                                                       round2res((self.nodes[i][j].lat + self.nodes[i][nextnode].lat)/2)]))
-        return self.layout(tile, options, vertexcache, (i,newnode))
+        return self.layout(tile, (i,newnode))
 
-    def delnode(self, tile, options, vertexcache, selectednode, clockwise=False):
+    def delnode(self, tile, selectednode, clockwise=False):
         if self.fixednodes: return False
         (i,j)=selectednode
         if len(self.nodes[i])<=(self.closed and 3 or 2):	# Open lines and facades can have just two nodes
-            return self.delwinding(tile, options, vertexcache, selectednode)
+            return self.delwinding(tile, selectednode)
         self.nodes[i].pop(j)
         if (i and clockwise) or (not i and not clockwise):
             selectednode=(i,(j-1)%len(self.nodes[i]))
         else:
             selectednode=(i,j%len(self.nodes[i]))
-        self.layout(tile, options, vertexcache, selectednode)
+        self.layout(tile, selectednode)
         return selectednode
 
-    def addwinding(self, tile, options, vertexcache, size, hdg):
+    def addwinding(self, tile, size, hdg):
         if self.singlewinding: return False
         minrad=0.000007071*size
         for j in self.nodes[0]:
@@ -723,15 +730,15 @@ class Polygon(Clutter):
         self.nodes.append([])
         for j in [h+5*pi/4, h+7*pi/4, h+pi/4, h+3*pi/4]:
             self.nodes[i].append(self.nodes[0][0].__class__([round2res(self.lon+sin(j)*minrad), round2res(self.lat+cos(j)*minrad)]))
-        return self.layout(tile, options, vertexcache, (i,0))
+        return self.layout(tile, (i,0))
 
-    def delwinding(self, tile, options, vertexcache, selectednode):
+    def delwinding(self, tile, selectednode):
         (i,j)=selectednode
         if not i: return False	# don't delete outer winding
         self.nodes.pop(i)
-        return self.layout(tile, options, vertexcache, (i-1,0))
+        return self.layout(tile, (i-1,0))
 
-    def togglebezier(self, tile, options, vertexcache, selectednode):
+    def togglebezier(self, tile, selectednode):
         # Add or delete bezier control points
         (i,j) = selectednode
         node = self.nodes[i][j]
@@ -760,13 +767,13 @@ class Polygon(Clutter):
             else:
                 (node.bezlon, node.bezlat) = ((self.nodes[i][(j+1)%n].lon - self.nodes[i][(j-1)%n].lon) / 4, (self.nodes[i][(j+1)%n].lat - self.nodes[i][(j-1)%n].lat) / 4)
                 (node.bz2lon, node.bz2lat) = (-node.bezlon, -node.bezlat)
-        return self.layout(tile, options, vertexcache, selectednode, True)
+        return self.layout(tile, selectednode, True)
 
-    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile):
         if dlat or dlon:
             for i in range(len(self.nodes)):
                 for j in range(len(self.nodes[i])):
-                    self.movenode((i,j), dlat, dlon, 0, tile, options, vertexcache)
+                    self.movenode((i,j), dlat, dlon, 0, tile)
         if dhdg:
             for w in self.nodes:
                 for p in w:
@@ -777,9 +784,9 @@ class Polygon(Clutter):
             elif self.param>65535: self.param=65535	# uint16
         # do layout if changed
         if dlat or dlon or dhdg or dparam:
-            self.layout(tile, options, vertexcache)
+            self.layout(tile)
 
-    def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
+    def movenode(self, node, dlat, dlon, darg, tile, defer=True):
         # Most polygons don't have co-ordinate arguments other than lat/lon & beziers, so darg ignored here.
         if not self.canbezier:
             # Trash additional co-ordinates of unknown types, and of types (e.g. v8 Facades) that don't meaningfully support them
@@ -790,9 +797,9 @@ class Polygon(Clutter):
         if defer:
             return node
         else:
-            return self.layout(tile, options, vertexcache, node)
+            return self.layout(tile, node)
         
-    def updatenode(self, node, lat, lon, tile, options, vertexcache):
+    def updatenode(self, node, lat, lon, tile):
         # update node height but defer full layout. Assumes lat,lon is valid
         (i,j) = node
         p = self.nodes[i][j]
@@ -806,14 +813,14 @@ class Polygon(Clutter):
                 p.setloc(x, None, z)
                 self.nodes = [[Node(p) for p in w] for w in self.nodes]	# trashes layout
                 self.isbezier = False
-                return self.layout(tile, options, vertexcache, node)
+                return self.layout(tile, node)
             else:
                 for w in self.nodes:
                     for p in w:
                         p.rest = []
 
         if self.definition.fittomesh:
-            p.setloc(x, vertexcache.getElevationMesh(tile, options).height(x,z), z)
+            p.setloc(x, self.vertexcache.getElevationMesh(tile).height(x,z), z)
         else:
             p.setloc(x, None, z)	# assumes elevation already correct
         if p.bezier:
@@ -823,7 +830,7 @@ class Polygon(Clutter):
             p.setbz2loc(x, None, z)
         return node
 
-    def updatehandle(self, node, handle, split, lat, lon, tile, options, vertexcache):
+    def updatehandle(self, node, handle, split, lat, lon, tile):
         # Defer full layout
         assert handle in [1,2], handle
         assert self.isbezier and self.canbezier	# shouldn't be able to manipulate control handles on types we think shouldn't have them
@@ -950,6 +957,7 @@ class Draped(Polygon):
                 self.isbezier = True		# already promoted
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
+        self.vertexcache = vertexcache
         try:
             filename=lookup[self.name].file
             if filename in defs:
@@ -1008,7 +1016,7 @@ class Draped(Polygon):
             buckets.add(self.definition.layer, self.definition.texture, base, len(self.dynamic_data)/6)
             return self.dynamic_data
 
-    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile):
         if self.param==65535:
             n=len(self.nodes[0])
             if dparam>0:
@@ -1026,20 +1034,20 @@ class Draped(Polygon):
             # rotate texture
             self.param = (self.param + dparam + dhdg) % 360
         if dlat or dlon or dhdg:
-            Polygon.move(self, dlat,dlon,dhdg, 0, loc, tile, options, vertexcache)
+            Polygon.move(self, dlat,dlon,dhdg, 0, loc, tile)
         elif dparam:
-            self.layout(tile, options, vertexcache)
+            self.layout(tile)
 
-    def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
+    def movenode(self, node, dlat, dlon, darg, tile, defer=True):
         # Override super because it will trash ortho UV coords
         (i,j) = node
         self.nodes[i][j].move(dlat, dlon, tile)
         if defer:
             return node
         else:
-            return self.layout(tile, options, vertexcache, node)
+            return self.layout(tile, node)
 
-    def updatenode(self, node, lat, lon, tile, options, vertexcache):
+    def updatenode(self, node, lat, lon, tile):
         # Override super because it will trash ortho UV coords
         (i,j) = node
         p = self.nodes[i][j]
@@ -1047,7 +1055,7 @@ class Draped(Polygon):
         p.lat = lat
         (x,z) = self.position(tile, lat, lon)
         if self.definition.fittomesh:
-            p.setloc(x, vertexcache.getElevationMesh(tile, options).height(x,z), z)
+            p.setloc(x, self.vertexcache.getElevationMesh(tile).height(x,z), z)
         else:
             p.setloc(x, None, z)	# assumes elevation already correct
         if p.bezier:
@@ -1057,16 +1065,16 @@ class Draped(Polygon):
             p.setbz2loc(x, None, z)
         return node
 
-    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True, tls=None):
+    def layout(self, tile, selectednode=None, recalc=True, tls=None):
         if self.islaidout() and not recalc:
             # just ensure allocated
-            return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
+            return Polygon.layout(self, tile, selectednode, False)
 
-        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+        selectednode=self.layout_nodes(tile, selectednode)
 
         drp = self.definition
         tess = tls and tls.tess or Draped.tess
-        elev = vertexcache.getElevationMesh(tile,options)
+        elev = self.vertexcache.getElevationMesh(tile)
 
         # Tessellate to generate tri vertices with UV data, and check polygon is simple
         tris=[]
@@ -1103,9 +1111,9 @@ class Draped(Polygon):
             self.dynamic_data=concatenate([array(p+COL_NONSIMPLE,float32) for w in self.points for p in w])
 
         if not tls:	# defer allocation if called in thread context
-            vertexcache.allocate_dynamic(self, True)
+            self.vertexcache.allocate_dynamic(self, True)
         for p in self.placements:
-            p.layout(tile, options, vertexcache)
+            p.layout(tile)
         return selectednode
 
 
@@ -1114,6 +1122,7 @@ class Draped(Polygon):
 class DrapedImage(Draped):
 
     def load(self, lookup, defs, vertexcache, usefallback=True):
+        self.vertexcache = vertexcache
         self.definition=DrapedFallback(self.name, vertexcache, lookup, defs)
         self.definition.layer=ClutterDef.IMAGERYLAYER
         self.definition.texture=0
@@ -1156,6 +1165,7 @@ class Exclude(Polygon):
         self.col=COL_EXCLUDE
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
+        self.vertexcache = vertexcache
         self.definition=ExcludeDef(self.name, vertexcache, lookup, defs)	# just create a new one
         return True
 
@@ -1167,22 +1177,22 @@ class Exclude(Polygon):
         else:
             return '%s' % (self.latlondisp(dms, self.lat, self.lon))
 
-    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile):
         # no rotation or param
         if dlat or dlon:
             for i in range(len(self.nodes)):
                 for j in range(len(self.nodes[i])):
-                    Polygon.movenode(self, (i,j), dlat, dlon, 0, tile, options, vertexcache)	# use superclass to prevent complication
-            self.layout(tile, options, vertexcache)
+                    Polygon.movenode(self, (i,j), dlat, dlon, 0, tile)	# use superclass to prevent complication
+            self.layout(tile)
 
-    def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=False):
+    def movenode(self, node, dlat, dlon, darg, tile, defer=False):
         # changes adjacent nodes, so always do full layout immediately
         (i,j) = node
         lon = max(tile[1], min(tile[1]+1, self.nodes[i][j].lon + dlon))
         lat = max(tile[0], min(tile[0]+1, self.nodes[i][j].lat + dlat))
-        return self.updatenode(node, lat, lon, tile, options, vertexcache)
+        return self.updatenode(node, lat, lon, tile)
 
-    def updatenode(self, node, lat, lon, tile, options, vertexcache):
+    def updatenode(self, node, lat, lon, tile):
         (i,j)=node
         self.nodes[i][j].lon = lon
         self.nodes[i][j].lat = lat
@@ -1197,7 +1207,7 @@ class Exclude(Polygon):
             self.nodes[i][(j-1)%4].lon = lon
             self.nodes[i][(j-1)%4].lat = self.nodes[i][(j-1)%4].lat
         # changed adjacent nodes, so do full layout immediately
-        return self.layout(tile, options, vertexcache, node)
+        return self.layout(tile, node)
 
 
 class Facade(Polygon):
@@ -1222,6 +1232,7 @@ class Facade(Polygon):
         self.rooflen=0
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
+        self.vertexcache = vertexcache
         try:
             filename=lookup[self.name].file
             if filename in defs:
@@ -1351,10 +1362,10 @@ class Facade(Polygon):
                 buckets.add(layer, self.definition.texture_roof, self.base+self.datalen+self.drapedlen, self.rooflen)
             return self.dynamic_data
 
-    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile):
         if self.definition.version<1000:
             dparam=max(dparam, 1-self.param)	# can't have height 0
-            Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
+            Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile)
         else:
             if dparam:
                 if dparam>0:
@@ -1363,13 +1374,13 @@ class Facade(Polygon):
                     self.floorno=max(self.floorno-1, 0)
                 self.param=min(65535, max(1, int(round(self.definition.floors[self.floorno].height))))
             if dlat or dlon or dhdg:
-                Polygon.move(self, dlat,dlon,dhdg, 0, loc, tile, options, vertexcache)
+                Polygon.move(self, dlat,dlon,dhdg, 0, loc, tile)
             elif dparam:
-                self.layout(tile, options, vertexcache)
+                self.layout(tile)
 
-    def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
+    def movenode(self, node, dlat, dlon, darg, tile, defer=True):
         if self.definition.version<1000:
-            return Polygon.movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer)	# trashes any spurious coords
+            return Polygon.movenode(self, node, dlat, dlon, darg, tile, defer)	# trashes any spurious coords
         else:
             (i,j) = node
             # set wall type
@@ -1380,16 +1391,16 @@ class Facade(Polygon):
             elif darg<0:
                 self.nodes[i][j].param = min(len(floor.walls)-1, max(0, wallno-1))
             if dlat or dlon:
-                return Polygon.movenode(self, node, dlat, dlon, 0, tile, options, vertexcache, defer)
+                return Polygon.movenode(self, node, dlat, dlon, 0, tile, defer)
             elif darg and not defer:
-                return self.layout(tile, options, vertexcache, node)
+                return self.layout(tile, node)
             else:
                 return node
 
-    def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
+    def addnode(self, tile, selectednode, lat, lon, clockwise=False):
         if self.fixednodes: return False
         if self.definition.version<1000:
-            return Polygon.addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise)
+            return Polygon.addnode(self, tile, selectednode, lat, lon, clockwise)
         (i,j)=selectednode
         n=len(self.nodes[i])
         if n>=255: return False	# node count is encoded as uint8 in DSF
@@ -1410,32 +1421,32 @@ class Facade(Polygon):
             self.nodes[i].insert(newnode, self.nodes[0][0].__class__([round2res((self.nodes[i][j].lon + self.nodes[i][nextnode].lon)/2),
                                                                       round2res((self.nodes[i][j].lat + self.nodes[i][nextnode].lat)/2),
                                                                       self.nodes[i][j].param]))	# inherit wall type
-        return self.layout(tile, options, vertexcache, (i,newnode))
+        return self.layout(tile, (i,newnode))
 
-    def togglebezier(self, tile, options, vertexcache, selectednode):
+    def togglebezier(self, tile, selectednode):
         if not self.canbezier:
             return False	# old-style Facades don't support beziers
         elif not self.isbezier:
             self.nodes = [[BezierParamNode(p) for p in w] for w in self.nodes]	# trashes layout
             self.isbezier = True
-        return Polygon.togglebezier(self, tile, options, vertexcache, selectednode)
+        return Polygon.togglebezier(self, tile, selectednode)
 
-    def clearlayout(self, vertexcache):
-        Polygon.clearlayout(self, vertexcache)
+    def clearlayout(self):
+        Polygon.clearlayout(self)
         self.datalen=self.rooflen=0
 
-    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
+    def layout(self, tile, selectednode=None, recalc=True):
         if self.islaidout() and not recalc:
             # just ensure allocated
-            return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
+            return Polygon.layout(self, tile, selectednode, False)
 
-        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+        selectednode=self.layout_nodes(tile, selectednode)
         if self.definition.version>=1000:
-            return self.layout10(tile, options, vertexcache, selectednode)
+            return self.layout10(tile, selectednode)
         else:
-            return self.layout8(tile, options, vertexcache, selectednode)
+            return self.layout8(tile, selectednode)
 
-    def layout8(self, tile, options, vertexcache, selectednode):
+    def layout8(self, tile, selectednode):
         tris=[]
         roofpts=[]
         points=self.points[0]
@@ -1678,12 +1689,12 @@ class Facade(Polygon):
             self.datalen=len(tris)
             self.dynamic_data=array(tris, float32).flatten()
 
-        vertexcache.allocate_dynamic(self, True)
+        self.vertexcache.allocate_dynamic(self, True)
         return selectednode
 
-    def layout10(self, tile, options, vertexcache, selectednode):
+    def layout10(self, tile, selectednode):
         for p in self.placements:
-            p.clearlayout(vertexcache)	# clear any dynamic allocation of children
+            p.clearlayout()	# clear any dynamic allocation of children
         self.placements=[]
         tris=[]
         floor=self.definition.floors[self.floorno]
@@ -1766,7 +1777,7 @@ class Facade(Polygon):
                 for child in segment.children:
                     (childname, definition, is_draped, xdelta, ydelta, zdelta, hdelta)=child
                     placement = Object(childname, self.lat, self.lon, hdg+hdelta, parent=self)
-                    placement.definition=definition		# Child Def should have been created when FacadeDef was loaded
+                    placement.load(None, None, self.vertexcache, definition=definition)	# Child Def should have been created when FacadeDef was loaded
                     sz=hoffset+zdelta*hscale+xdelta*sm*(1+zdelta/segment.width)		# scale z, allowing for miter if 1st segment 
                     childx=x+xdelta*coshdg-sz*sinhdg
                     childz=z+xdelta*sinhdg+sz*coshdg
@@ -1774,7 +1785,7 @@ class Facade(Polygon):
                         childy=None
                     else:
                         childy=y+ydelta
-                    placement.layout(tile, options, vertexcache, childx, childy, childz)
+                    placement.layout(tile, childx, childy, childz)
                     self.placements.append(placement)
 
             	hoffset-=segment.width*hscale
@@ -1804,7 +1815,7 @@ class Facade(Polygon):
                             gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, y, z, (x*coshdg+z*sinhdg)/s-maxu, (x*sinhdg-z*coshdg)/s-minv, 0])
                     else:
                         # Facade as a whole isn't draped but this floor at height 0 should be, so find elevations
-                        elev = vertexcache.getElevationMesh(tile, options)
+                        elev = self.vertexcache.getElevationMesh(tile)
                         for j in range(n):
                             (x,y,z) = nodes[j].loc
                             gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, elev.height(x,z), z, (x*coshdg+z*sinhdg)/s-maxu, (x*sinhdg-z*coshdg)/s-minv, 0])
@@ -1846,7 +1857,7 @@ class Facade(Polygon):
                 self.rooflen=len(roofdata)/6-self.drapedlen
                 self.dynamic_data=concatenate((self.dynamic_data, roofdata))
 
-        vertexcache.allocate_dynamic(self, True)
+        self.vertexcache.allocate_dynamic(self, True)
         return selectednode
 
 
@@ -1871,6 +1882,7 @@ class Forest(Polygon):
         self.col=COL_FOREST
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
+        self.vertexcache = vertexcache
         try:
             filename=lookup[self.name].file
             if filename in defs:
@@ -1899,16 +1911,16 @@ class Forest(Polygon):
         else:
             return u'%s  Density\u2195 %-4.1f%%  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
 
-    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile):
+        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile)
         if self.param>255: self.param=255
 
-    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
+    def layout(self, tile, selectednode=None, recalc=True):
         if self.islaidout() and not recalc:
             # just ensure allocated
-            return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
+            return Polygon.layout(self, tile, selectednode, False)
 
-        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+        selectednode=self.layout_nodes(tile, selectednode)
 
         # tessellate. This is just to check polygon is simple
         try:
@@ -1932,7 +1944,7 @@ class Forest(Polygon):
 
         col=self.nonsimple and COL_NONSIMPLE or self.col
         self.dynamic_data=concatenate([array(p+col,float32) for w in self.points for p in w])
-        vertexcache.allocate_dynamic(self, True)
+        self.vertexcache.allocate_dynamic(self, True)
         return selectednode
 
 
@@ -1963,6 +1975,7 @@ class Line(Polygon):
         self.drawdata=[]	# [(layer,texture,count)]
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
+        self.vertexcache = vertexcache
         try:
             filename=lookup[self.name].file
             if filename in defs:
@@ -1992,13 +2005,13 @@ class Line(Polygon):
             oc=self.closed and 'Closed' or 'Open'
             return u'%s  %s\u2195  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), oc, len(self.nodes[0]))
 
-    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
+    def layout(self, tile, selectednode=None, recalc=True):
         self.closed=(self.param and True)
         if self.islaidout() and not recalc:
             # just ensure allocated
-            return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
+            return Polygon.layout(self, tile, selectednode, False)
 
-        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+        selectednode=self.layout_nodes(tile, selectednode)
 
         # adjust bounding box since lines extend outside points
         self.bbox.maxx += self.definition.width; self.bbox.minx -= self.definition.width
@@ -2008,7 +2021,7 @@ class Line(Polygon):
         n = self.closed and len(points)-1 or len(points)
 
         # may need to repeatedly drape, so pre-compute relevant mesh triangles
-        elev = vertexcache.getElevationMesh(tile, options)
+        elev = self.vertexcache.getElevationMesh(tile)
         mymeshtris = elev.getbox(self.bbox)
 
         nsegs = len(self.definition.segments)
@@ -2094,7 +2107,7 @@ class Line(Polygon):
             outlinedata = concatenate([array(p+self.definition.color,float32) for w in self.points for p in w])
             self.outlinelen = len(outlinedata)/6
             self.dynamic_data = concatenate((outlinedata, self.dynamic_data))
-        vertexcache.allocate_dynamic(self, True)
+        self.vertexcache.allocate_dynamic(self, True)
         return selectednode
 
     def pick_dynamic(self, glstate, lookup):
@@ -2127,9 +2140,9 @@ class Line(Polygon):
         assert base-self.base == len(self.dynamic_data)/6, "%s %s" % (base-self.base, len(self.dynamic_data)/6)
         return self.dynamic_data
 
-    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile):
         dparam = (dparam+self.param) % 2 - self.param	# toggle between 0 and 1
-        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
+        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile)
         assert self.param in [0,1]
 
 
@@ -2158,6 +2171,7 @@ class String(Polygon):
         self.canbezier = True
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
+        self.vertexcache = vertexcache
         try:
             filename=lookup[self.name].file
             if filename in defs:
@@ -2187,16 +2201,16 @@ class String(Polygon):
         else:
             return u'%s  Spacing\u2195 Midpoint  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), len(self.nodes[0]))
 
-    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
+    def layout(self, tile, selectednode=None, recalc=True):
         if self.islaidout() and not recalc:
             # just ensure allocated
-            return Polygon.layout(self, tile, options, vertexcache, selectednode, False)
+            return Polygon.layout(self, tile, selectednode, False)
 
         # allocate lines for picking and for display
-        selectednode=self.layout_nodes(tile, options, vertexcache, selectednode)
+        selectednode=self.layout_nodes(tile, selectednode)
 
         for p in self.placements:
-            p.clearlayout(vertexcache)	# clear any dynamic allocation of children
+            p.clearlayout()	# clear any dynamic allocation of children
 
         self.placements=[]
         points = self.points[0]
@@ -2212,13 +2226,12 @@ class String(Polygon):
                 sinhdg=sin(h)
                 hdg=degrees(h)
                 for p in self.definition.children:
-                    child = p.definition
                     placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta, parent=self)
-                    placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
-                    placement.layout(tile, options, vertexcache, x + p.xdelta*coshdg, None, z + p.xdelta*sinhdg, hdg+p.hdelta)
+                    placement.load(None, None, self.vertexcache, definition=p.definition)		# Child Def should have been created when StringDef was loaded
+                    placement.layout(tile, x + p.xdelta*coshdg, None, z + p.xdelta*sinhdg, hdg+p.hdelta)
                     self.placements.append(placement)
             self.dynamic_data=concatenate([array(p + (self.nonsimple and COL_NONSIMPLE or self.definition.color),float32) for w in self.points for p in w])
-            vertexcache.allocate_dynamic(self, True)
+            self.vertexcache.allocate_dynamic(self, True)
             return selectednode
 
         if not self.param:
@@ -2243,15 +2256,15 @@ class String(Polygon):
                 p = self.definition.children[objno]
                 child = p.definition
                 placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta, parent=self)
-                placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
+                placement.load(None, None, self.vertexcache, definition=p.definition)		# Child Def should have been created when StringDef was loaded
                 childx = x + p.xdelta*coshdg + sz*sinhdg
                 childz = z + p.xdelta*sinhdg - sz*coshdg
-                placement.layout(tile, options, vertexcache, childx, None, childz, hdg+p.hdelta)
+                placement.layout(tile, childx, None, childz, hdg+p.hdelta)
                 self.placements.append(placement)
                 objno = (objno+1) % len(self.definition.children)
             self.nonsimple = not self.placements
             self.dynamic_data=concatenate([array(p + (self.nonsimple and COL_NONSIMPLE or self.definition.color),float32) for w in self.points for p in w])
-            vertexcache.allocate_dynamic(self, True)
+            self.vertexcache.allocate_dynamic(self, True)
             return selectednode			# exit!
 
         # placements are repeated very param metres
@@ -2272,7 +2285,7 @@ class String(Polygon):
                     if j >= n:
                         self.nonsimple = not self.placements
                         self.dynamic_data=concatenate([array(p + (self.nonsimple and COL_NONSIMPLE or self.definition.color),float32) for w in self.points for p in w])
-                        vertexcache.allocate_dynamic(self, True)
+                        self.vertexcache.allocate_dynamic(self, True)
                         return selectednode			# exit!
                     cumulative += size
                     sz = iteration*repeat - cumulative
@@ -2288,10 +2301,10 @@ class String(Polygon):
             p = self.definition.children[objno]
             child = p.definition
             placement = Object(p.name, self.lat, self.lon, hdg+p.hdelta, parent=self)
-            placement.definition = p.definition		# Child Def should have been created when StringDef was loaded
+            placement.load(None, None, self.vertexcache, definition=p.definition)		# Child Def should have been created when StringDef was loaded
             childx = x + p.xdelta*coshdg + sz*sinhdg
             childz = z + p.xdelta*sinhdg - sz*coshdg
-            placement.layout(tile, options, vertexcache, childx, None, childz, hdg+p.hdelta)
+            placement.layout(tile, childx, None, childz, hdg+p.hdelta)
             self.placements.append(placement)
             objno = (objno+1) % len(self.definition.children)
 
@@ -2318,6 +2331,7 @@ class Network(String,Line):
         self.isbezier = True	# nodes always stored as bezier for simplicity
             
     def load(self, lookup, defs, vertexcache, usefallback=False):
+        self.vertexcache = vertexcache
         # skip lookup, since defs is pre-populated with the valid NetworkDefs
         if self.name in defs:
             self.definition = defs[self.name]
@@ -2348,22 +2362,22 @@ class Network(String,Line):
         else:
             return String.bucket_dynamic(self, base, buckets)
 
-    def move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache):
-        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile, options, vertexcache)
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile):
+        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile)
 
-    def movenode(self, node, dlat, dlon, darg, tile, options, vertexcache, defer=True):
+    def movenode(self, node, dlat, dlon, darg, tile, defer=True):
         (i,j) = node
         if darg:
             # elevation
             self.nodes[i][j].param = (j==0 or j==len(self.nodes[i])-1) and min(max(self.nodes[i][j].param + darg, 0), 5) or 0	# level 5 is arbitrary
         if dlat or dlon:
-            return Polygon.movenode(self, node, dlat, dlon, 0, tile, options, vertexcache, defer)
+            return Polygon.movenode(self, node, dlat, dlon, 0, tile, defer)
         elif darg and not defer:
-            return self.layout(tile, options, vertexcache, node)
+            return self.layout(tile, node)
         else:
             return node
 
-    def addnode(self, tile, options, vertexcache, selectednode, lat, lon, clockwise=False):
+    def addnode(self, tile, selectednode, lat, lon, clockwise=False):
         if self.fixednodes: return False
         (i,j) = selectednode
         n = len(self.nodes[i])
@@ -2386,13 +2400,13 @@ class Network(String,Line):
                 nextnode=(j-1)%n
             self.nodes[i].insert(newnode, NetworkNode([round2res((self.nodes[i][j].lon + self.nodes[i][nextnode].lon)/2),
                                                        round2res((self.nodes[i][j].lat + self.nodes[i][nextnode].lat)/2), 0]))
-        return self.layout(tile, options, vertexcache, (i,newnode))
+        return self.layout(tile, (i,newnode))
 
-    def layout(self, tile, options, vertexcache, selectednode=None, recalc=True):
+    def layout(self, tile, selectednode=None, recalc=True):
         if self.definition.segments:
-            return Line.layout(self, tile, options, vertexcache, selectednode, recalc)
+            return Line.layout(self, tile, selectednode, recalc)
         else:
-            return String.layout(self, tile, options, vertexcache, selectednode, recalc)
+            return String.layout(self, tile, selectednode, recalc)
 
 
 # Have to do this after classes are defined. Yuck.

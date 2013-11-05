@@ -80,7 +80,7 @@ from lock import LockDialog
 from palette import Palette, PaletteEntry
 from DSFLib import readDSF, writeDSF
 from MessageBox import myCreateStdDialogButtonSizer, myMessageBox, AboutBox
-from prefs import Prefs
+from prefs import Prefs, prefs
 from version import appname, appversion
 
 # Path validation
@@ -108,9 +108,6 @@ gmain8navdat=join(gresources,gnavdata,'[nN][aA][vV].[dD][aA][tT]')
 gmain9aptdat=join(gdefault,'[dD][eE][fF][aA][uU][lL][tT] [aA][pP][tT] [dD][aA][tT]',gaptdat)
 gmain9navdat=join(gresources,'[dD][eE][fF][aA][uU][lL][tT] [d][aA][tT][aA]','[eE][aA][rR][tT][hH]_[nN][aA][vV].[dD][aA][tT]')
 glibrary='[lL][iI][bB][rR][aA][rR][yY].[tT][xX][tT]'
-
-
-global prefs
 
 
 if platform=='darwin':
@@ -602,11 +599,11 @@ class BackgroundDialog(wx.Frame):
 
         imageryprovider = (self.imgbing.GetValue() and 'Bing') or (self.imgarcgis.GetValue() and 'ArcGIS') or (self.imgmapquest.GetValue() and 'MapQuest') or None
         if imageryprovider!=prefs.imageryprovider:
-            self.parent.canvas.imagery.reset(self.parent.canvas.vertexcache)	# free VBO allocations
+            self.parent.canvas.imagery.reset()			# free VBO allocations
         prefs.imageryprovider = imageryprovider
         prefs.imageryopacity=self.opacity.GetValue()
         self.parent.canvas.setbackground(prefs, self.parent.loc, self.image, True)
-        self.parent.canvas.goto(self.parent.loc, prefs=prefs)	# initiate imagery provider setup & loading
+        self.parent.canvas.goto(self.parent.loc)		# initiate imagery provider setup & loading
 
 
     def OnClose(self, event):
@@ -1801,6 +1798,7 @@ class MainWindow(wx.Frame):
         if x!=wx.ID_OK:
             if x: dlg.Destroy()
             return
+        oldoptions = prefs.options
         if dlg.display.GetSelection()==3:
             prefs.options=Prefs.TERRAIN|Prefs.NETWORK
         elif dlg.display.GetSelection()==2:
@@ -1848,7 +1846,7 @@ class MainWindow(wx.Frame):
             self.defnetdefs=[]	# force reload
             self.OnReload(False)
             prefs.write()
-        self.canvas.goto(self.loc, prefs=prefs)
+        self.canvas.goto(self.loc)
         self.ShowLoc()
         self.ShowSel()
 
@@ -1951,7 +1949,6 @@ frame=MainWindow(None, wx.ID_ANY, appname)
 app.SetTopWindow(frame)
 
 # user prefs
-prefs=Prefs()
 if not prefs.xplane or not (glob(join(prefs.xplane, gcustom)) and (glob(join(prefs.xplane, gmain8aptdat)) or glob(join(prefs.xplane, gmain9aptdat)))):
     if platform.startswith('linux'):	# prompt is not displayed on Linux
         myMessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder", wx.ICON_INFORMATION|wx.OK, frame)

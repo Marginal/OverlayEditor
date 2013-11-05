@@ -41,7 +41,7 @@ from imagery import Imagery
 from lock import Locked
 from MessageBox import myMessageBox
 from nodes import Node
-from prefs import Prefs
+from prefs import Prefs, prefs
 from version import appname
 
 sband=16	# width of mouse scroll band around edge of window
@@ -302,7 +302,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.valid=False	# do we have valid data for a redraw?
         self.needclear=False	# pending clear
         self.needrefesh=False	# pending refresh
-        self.options=0		# display options
+        self.options = 0	# display options at last goto()
         self.tile=(0,999)	# [lat,lon] of SW
         self.centre=None	# [lat,lon] of centre
         self.airports={}	# [runways] by code
@@ -317,8 +317,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.placements={}	# [Clutter] by tile
         self.unsorted={}	# [Clutter] by tile
         self.background=None
-        self.imageryprovider=None	# map image provider, eg 'Bing'
-        self.imagery=None
         
         self.mousenow=None	# Current position (used in timer and drag)
         self.locked=0		# locked object types
@@ -524,7 +522,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if self.selectedlayoutpending:
                 if __debug__: clock2 = time.clock()
                 placement = list(self.selected)[0]
-                self.selectednode = placement.layout(self.tile, self.options, self.vertexcache, self.selectednode)
+                self.selectednode = placement.layout(self.tile, self.selectednode)
                 if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
                 self.selectedlayoutpending = False
                 self.Refresh()
@@ -539,16 +537,16 @@ class MyGL(wx.glcanvas.GLCanvas):
                                                                                  (len(placements), poly2)]))
                     placements.append(poly2)
                     poly.nodes[0] = poly.nodes[0][:idx+1]
-                    poly.layout(self.tile, self.options, self.vertexcache, recalc=True)
+                    poly.layout(self.tile, recalc=True)
                     poly2.nodes[0]= poly2.nodes[0][idx:]
-                    poly2.layout(self.tile, self.options, self.vertexcache, recalc=True)
+                    poly2.layout(self.tile, recalc=True)
                     self.selected = set([poly,poly2])
                     self.selectednode = self.selectedhandle = None
                     self.Refresh()
                 self.snapnode = None
         elif self.clickmode==ClickModes.Drag:
             for placement in self.selected:
-                placement.layout(self.tile, self.options, self.vertexcache)
+                placement.layout(self.tile)
         elif self.clickmode==ClickModes.DragBox:
             self.Refresh()	# get rid of drag box
         self.clickmode=None
@@ -575,7 +573,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if self.selectedlayoutpending:
                     if __debug__: clock2 = time.clock()
                     placement = list(self.selected)[0]
-                    self.selectednode = placement.layout(self.tile, self.options, self.vertexcache, self.selectednode)
+                    self.selectednode = placement.layout(self.tile, self.selectednode)
                     if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
                     assert self.selectednode
                     self.selectedlayoutpending = False
@@ -670,9 +668,9 @@ class MyGL(wx.glcanvas.GLCanvas):
                     self.frame.menubar.Enable(wx.ID_SAVE, True)
                     self.frame.menubar.Enable(wx.ID_UNDO, True)
             if self.selectedhandle:
-                poly.updatehandle(self.selectednode, self.selectedhandle, event.CmdDown(), lat, lon, self.tile, self.options, self.vertexcache)
+                poly.updatehandle(self.selectednode, self.selectedhandle, event.CmdDown(), lat, lon, self.tile)
             else:
-                poly.updatenode(self.selectednode, lat, lon, self.tile, self.options, self.vertexcache)
+                poly.updatenode(self.selectednode, lat, lon, self.tile)
             self.selectedlayoutpending = True	# need to do full layout at some point
             self.Refresh()	# show updated node
             self.frame.ShowSel()
@@ -791,7 +789,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.glstate.set_cull(True)
         self.glstate.set_poly(False)
         if __debug__:
-            elev = self.vertexcache.getElevationMesh(self.tile,self.options)
+            elev = self.vertexcache.getElevationMesh(self.tile)
             if debugapt: glPolygonMode(GL_FRONT, GL_LINE)
             if debugapt and hasattr(elev, 'divwidth'):
                 # show elevation mesh buckets
@@ -824,11 +822,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.glstate.set_depthtest(True)
         self.glstate.set_texture(0)	# texture shader
         glVertexAttrib1f(self.glstate.skip_pos, 0)
-        if not self.options&Prefs.ELEVATION:
+        if not prefs.options&Prefs.ELEVATION:
             glUniform4f(self.glstate.transform_pos, 0, -1, 0, 0)	# Defeat elevation data
         else:
             glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
-        (mesh, netindices) = self.vertexcache.getMesh(self.tile,self.options)
+        (mesh, netindices) = self.vertexcache.getMesh(self.tile)
         for (base,number,texno) in mesh:
             self.glstate.set_texture(texno)
             glDrawArrays(GL_TRIANGLES, base, number)
@@ -857,7 +855,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glEnableVertexAttribArray(self.glstate.skip_pos)
             if self.glstate.instanced_arrays: glVertexAttribDivisorARB(self.glstate.skip_pos, 0)
             self.glstate.set_attrib_selected(self.glstate.skip_pos, selected)
-            self.vertexcache.buckets.draw(self.glstate, False, self.aptdata, imagery, self.imageryopacity)
+            self.vertexcache.buckets.draw(self.glstate, False, self.aptdata, imagery, prefs.imageryopacity)
 
             # Selected dynamic - last so overwrites unselected dynamic
             selected = 1 - selected
@@ -867,7 +865,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             glVertexAttrib1f(self.glstate.skip_pos, 0)
         else:
             glVertexAttrib1f(self.glstate.skip_pos, 0)
-            self.vertexcache.buckets.draw(self.glstate, None, self.aptdata, imagery, self.imageryopacity)
+            self.vertexcache.buckets.draw(self.glstate, None, self.aptdata, imagery, prefs.imageryopacity)
 
         # Draw clutter with static geometry and sorted by texture (ignoring layer ordering since it doesn't really matter so much for Objects)
         self.glstate.set_instance(self.vertexcache)
@@ -1156,7 +1154,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             for i in range(len(self.background.nodes[0])):
                 self.background.nodes[0][i].rest = [(i+1)/2%2,i/2]	# assign UVs
             if layoutnow:
-                self.background.layout(self.tile, self.options, self.vertexcache)
+                self.background.layout(self.tile)
 
         if self.background.name!=backgroundfile:
             self.background.name=backgroundfile
@@ -1205,7 +1203,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 placement.canbezier = True
                 
-        placement.layout(self.tile, self.options, self.vertexcache)
+        placement.layout(self.tile)
         placements=self.placements[self.tile]
         self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD, [(len(placements), placement)]))
         placements.append(placement)
@@ -1228,9 +1226,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         placement=list(self.selected)[0]
         newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(self.placements[self.tile].index(placement), placement.clone())])
         if self.selectednode:
-            newnode=placement.addnode(self.tile, self.options, self.vertexcache, self.selectednode, lat, lon)
+            newnode=placement.addnode(self.tile, self.selectednode, lat, lon)
         else:
-            newnode=placement.addwinding(self.tile, self.options, self.vertexcache, size, hdg)
+            newnode=placement.addwinding(self.tile, size, hdg)
         if not newnode:
             return False
 
@@ -1249,7 +1247,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if len(self.selected)!=1 or not self.selectednode: return False
         placement = list(self.selected)[0]
         newundo = UndoEntry(self.tile, UndoEntry.MODIFY, [(self.placements[self.tile].index(placement), placement.clone())])
-        newnode = placement.togglebezier(self.tile, self.options, self.vertexcache, self.selectednode)
+        newnode = placement.togglebezier(self.tile, self.selectednode)
         if not newnode:
             return False
         else:
@@ -1271,7 +1269,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if not (self.undostack and self.undostack[-1].equals(newundo)):
                     self.undostack.append(newundo)
             if __debug__: clock2 = time.clock()
-            self.selectednode=placement.movenode(self.selectednode, dlat, dlon, dparam, self.tile, self.options, self.vertexcache, False)
+            self.selectednode=placement.movenode(self.selectednode, dlat, dlon, dparam, self.tile, False)
             if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
             assert self.selectednode
         else:
@@ -1281,7 +1279,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 if not self.frame.bkgd:	# No undo for background image
                     moved.append((placements.index(placement), placement.clone()))
                 if __debug__: clock2 = time.clock()
-                placement.move(dlat, dlon, dhdg, dparam, loc, self.tile, self.options, self.vertexcache)
+                placement.move(dlat, dlon, dhdg, dparam, loc, self.tile)
                 if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
             if moved:
                 newundo=UndoEntry(self.tile, UndoEntry.MOVE, moved)
@@ -1307,9 +1305,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             placement=list(self.selected)[0]
             newundo=UndoEntry(self.tile, UndoEntry.MODIFY, [(self.placements[self.tile].index(placement), placement.clone())])
             if shift:
-                newnode=placement.delwinding(self.tile, self.options, self.vertexcache, self.selectednode)
+                newnode=placement.delwinding(self.tile, self.selectednode)
             else:
-                newnode=placement.delnode(self.tile, self.options, self.vertexcache, self.selectednode)
+                newnode=placement.delnode(self.tile, self.selectednode)
             if newnode:
                 self.undostack.append(newundo)
                 self.selectednode=newnode
@@ -1318,7 +1316,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             deleted=[]
             placements=self.placements[self.tile]
             for placement in self.selected:
-                placement.clearlayout(self.vertexcache)	# no point taking up space in vbo
+                placement.clearlayout()			# no point taking up space in vbo
                 i=placements.index(placement)
                 deleted.insert(0, (i, placement))	# LIFO
                 placements.pop(i)
@@ -1347,7 +1345,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         for placement in self.clipboard:
             clone = placement.clone()
             clone.load(self.lookup, self.defs, self.vertexcache, True)
-            clone.move(lat, lon, 0, 0, None, self.tile, self.options, self.vertexcache)
+            clone.move(lat, lon, 0, 0, None, self.tile)
             newplacements.append(clone)
         placements = self.placements[self.tile]
         self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD, [(len(placements), placement) for placement in newplacements]))
@@ -1385,7 +1383,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 (lat, lon, newplacements, nets, mesh) = readDSF(dsf, netdefs, {}, bbox, Exclude.TYPES[exc.name])
                 for placement in newplacements:
                     placement.load(self.lookup, self.defs, self.vertexcache, True)
-                    placement.layout(self.tile, self.options, self.vertexcache)
+                    placement.layout(self.tile)
                 if newplacements:
                     placements = self.placements[self.tile]
                     self.undostack.append(UndoEntry(self.tile, UndoEntry.ADD, [(len(placements), placement) for placement in newplacements]))
@@ -1414,14 +1412,14 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if undo.kind==UndoEntry.ADD:
             for (i, placement) in undo.data:
-                placement.clearlayout(self.vertexcache)
+                placement.clearlayout()
                 placements.pop(i)	# assumes all were added at the same index
                 avlat+=placement.lat
                 avlon+=placement.lon
         elif undo.kind==UndoEntry.DEL:
             for (i, placement) in undo.data:
                 placement.load(self.lookup, self.defs, self.vertexcache, True)
-                placement.layout(undo.tile, self.options, self.vertexcache)
+                placement.layout(undo.tile)
                 placements.insert(i, placement)
                 avlat+=placement.lat
                 avlon+=placement.lon
@@ -1429,8 +1427,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         elif undo.kind in [UndoEntry.MOVE, UndoEntry.MODIFY]:
             for (i, placement) in undo.data:
                 placement.load(self.lookup, self.defs, self.vertexcache, True)
-                placement.layout(undo.tile, self.options, self.vertexcache)
-                placements[i].clearlayout(self.vertexcache)
+                placement.layout(undo.tile)
+                placements[i].clearlayout()
                 placements[i]=placement
                 avlat+=placement.lat
                 avlon+=placement.lon
@@ -1440,8 +1438,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             assert len(undo.data)==2
             (i, placement) = undo.data[0]
             placement.load(self.lookup, self.defs, self.vertexcache, True)
-            placement.layout(undo.tile, self.options, self.vertexcache)
-            placements[i].clearlayout(self.vertexcache)
+            placement.layout(undo.tile)
+            placements[i].clearlayout()
             placements[i] = placement
             avlat = placement.lat*2	# Hack!
             avlon = placement.lon*2
@@ -1541,7 +1539,6 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def reload(self, prefs, airports, navaids, aptdatfile, netdefs, netfile, lookup, placements, terrain, dsfdirs):
         self.valid=False
-        self.options=prefs.options
         self.airports=airports	# [runways] by code
         self.runways={}		# need to re-layout airports
         self.navaids=navaids
@@ -1555,9 +1552,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.lookup=lookup
         self.defs={}
         self.vertexcache.reset(terrain, dsfdirs)
-        self.imageryprovider=prefs.imageryprovider
-        self.imageryopacity=prefs.imageryopacity
-        self.imagery.reset(self.vertexcache)
+        self.imagery.reset()
         self.tile=(0,999)	# force reload on next goto
 
         # load networks - have to do this every reload since texcache has been reset
@@ -1572,7 +1567,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.unsorted = self.placements
             for placements in self.placements.values():
                 for placement in placements:
-                    placement.clearlayout(self.vertexcache)
+                    placement.clearlayout()
         self.placements={}
 
         self.background=None	# Force reload of texture in next line
@@ -1594,7 +1589,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                 print "Choice:\t%s" %self.frame.palette.GetChoiceCtrl().GetId()
 
 
-    def goto(self, latlon, hdg=None, elev=None, dist=None, prefs=None):
+    def goto(self, latlon, hdg=None, elev=None, dist=None):
         if __debug__: print "goto", latlon
         if not self.valid: return	# Hack: can get spurious events on Mac during startup (progress dialogs aren't truly modal)
         errdsf=None
@@ -1606,14 +1601,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         if hdg!=None: self.h=hdg
         if elev!=None: self.e=elev
         if dist!=None: self.d=dist
-        if prefs!=None:
-            options=prefs.options
-            self.imageryprovider=prefs.imageryprovider
-            self.imageryopacity=prefs.imageryopacity
-        else:
-            options=self.options
 
-        if newtile!=self.tile or options&Prefs.REDRAW!=self.options&Prefs.REDRAW:
+        if newtile!=self.tile or prefs.options&Prefs.REDRAW!=self.options&Prefs.REDRAW:
             if newtile!=self.tile:
                 self.selected=set()
                 self.selectednode=None
@@ -1627,40 +1616,38 @@ class MyGL(wx.glcanvas.GLCanvas):
 
             progress=wx.ProgressDialog('Loading', 'Terrain', 16, self.frame)
             progress.SetSize
-            self.vertexcache.loadMesh(newtile, options, self.netdefs)
+            self.vertexcache.loadMesh(newtile, self.netdefs)
 
             progress.Update(1, 'Terrain textures')
             try:
-                self.vertexcache.getMesh(newtile, options)	# allocates into VBO
+                self.vertexcache.getMesh(newtile)	# allocates into VBO
             except EnvironmentError, e:
                 if __debug__: print_exc()
                 if e.filename:
                     errdsf=u"%s: %s" % (e.filename, e.strerror)
                 else:
                     errdsf=unicode(e)
-                self.vertexcache.loadFallbackMesh(newtile, options)
-                self.vertexcache.getMesh(newtile, options)
+                self.vertexcache.loadFallbackMesh(newtile)
+                self.vertexcache.getMesh(newtile)
             except:
                 if __debug__: print_exc()
                 errdsf=unicode(exc_info()[1])
-                self.vertexcache.loadFallbackMesh(newtile, options)
-                self.vertexcache.getMesh(newtile, options)
+                self.vertexcache.loadFallbackMesh(newtile)
+                self.vertexcache.getMesh(newtile)
 
             progress.Update(2, 'Mesh')
 
-            if options&Prefs.ELEVATION!=self.options&Prefs.ELEVATION:
+            if prefs.options&Prefs.ELEVATION!=self.options&Prefs.ELEVATION:
                 # Elevation preference chaged - clear all layout (other than airports)
                 for placements in self.placements.values() + self.navaidplacements.values():
                     for placement in placements:
-                        placement.clearlayout(self.vertexcache)
+                        placement.clearlayout()
             else:
                 # Just a new tile - forget all dynamic VBO allocation
                 for placements in self.placements.values() + self.navaidplacements.values():
                     for placement in placements:
-                        placement.flush(self.vertexcache)
+                        placement.flush()
                 
-            self.options=options
-
             # load placements
             progress.Update(3, 'Objects')
             if newtile in self.unsorted:
@@ -1695,7 +1682,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                         
                     if not placement.islaidout():
                         if __debug__: clock2 = time.clock()
-                        placement.layout(newtile, options, self.vertexcache)
+                        placement.layout(newtile)
                         if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
                 if log_load: print "%6.3f time in load&layout" % (time.clock()-clock)
             elif newtile not in self.placements:
@@ -1703,14 +1690,14 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 # This tile has been previously viewed - placements are already loaded
                 for placement in self.placements[newtile]:
-                    placement.layout(newtile, options, self.vertexcache, recalc=False)	# ensure allocated
+                    placement.layout(newtile, recalc=False)	# ensure allocated
 
             # Lay out runways
             progress.Update(13, 'Airports')
-            key=(newtile[0],newtile[1],options&Prefs.ELEVATION)
+            key=(newtile[0],newtile[1],prefs.options&Prefs.ELEVATION)
             if key not in self.runways:
                 if log_load: clock=time.clock()	# Processor time
-                (self.runways[key], self.codes[newtile]) = layoutApt(newtile, self.aptdatfile, self.airports, self.vertexcache.getElevationMesh(newtile, options))
+                (self.runways[key], self.codes[newtile]) = layoutApt(newtile, self.aptdatfile, self.airports, self.vertexcache.getElevationMesh(newtile))
                 if log_load: print "%6.3f time in runways" % (time.clock()-clock)
             (varray,shoulderlen,taxiwaylen,runwaylen,marray,mindices) = self.runways[key]
             self.aptdata = {}
@@ -1774,7 +1761,7 @@ class MyGL(wx.glcanvas.GLCanvas):
                                 else:
                                     if __debug__: clock2 = time.clock()
                                     x,z=placement.position(self.tile, lat, lon)
-                                    placement.layout(self.tile, self.options, self.vertexcache, x+xinc*coshdg-zinc*sinhdg, None, z+xinc*sinhdg+zinc*coshdg)
+                                    placement.layout(self.tile, x+xinc*coshdg-zinc*sinhdg, None, z+xinc*sinhdg+zinc*coshdg)
                                     if __debug__: print "%6.3f time to layout %s" % (time.clock()-clock2, placement.name)
                                     placements.append(placement)
                         elif __debug__: print "Missing navaid type %d" % i
@@ -1783,7 +1770,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             else:
                 # This tile has been previously viewed - placements are already loaded
                 for placement in self.navaidplacements[newtile]:
-                    placement.layout(newtile, options, self.vertexcache, recalc=False)	# ensure allocated
+                    placement.layout(newtile, recalc=False)	# ensure allocated
 
             # labels
             progress.Update(15, 'Layout')
@@ -1793,7 +1780,7 @@ class MyGL(wx.glcanvas.GLCanvas):
             if __debug__ and platform=='win32':
                 pass	# hacky workaround for https://www.virtualbox.org/ticket/8666
             elif self.codes[self.tile]:
-                elev = self.vertexcache.getElevationMesh(self.tile, self.options)
+                elev = self.vertexcache.getElevationMesh(self.tile)
                 self.codeslist=glGenLists(1)
                 glNewList(self.codeslist, GL_COMPILE)
                 glColor3f(1.0, 0.25, 0.25)	# Labels are pink
@@ -1811,24 +1798,25 @@ class MyGL(wx.glcanvas.GLCanvas):
                 nodes=self.background.nodes[0]
                 for i in range(len(nodes)):
                     if (int(floor(nodes[i].lat)),int(floor(nodes[i].lon)))==newtile:
-                        self.background.layout(newtile, options, self.vertexcache)
+                        self.background.layout(newtile)
                         break
                 else:
-                    self.background.clearlayout(self.vertexcache)
-            self.imagery.reset(self.vertexcache)	# Always recalc
+                    self.background.clearlayout()
+            self.imagery.reset()	# Always recalc
 
             # Done
             progress.Update(16, 'Done')
             progress.Destroy()
             self.valid=True
 
+        self.options = prefs.options
+
         # cursor position
-        self.options=options
-        self.y = self.vertexcache.getElevationMesh(self.tile, self.options).height(self.x, self.z)
+        self.y = self.vertexcache.getElevationMesh(self.tile).height(self.x, self.z)
 
         # initiate imagery load. Does layout so must be after getMeshdata.
         # Python isn't really multithreaded so don't delay reload by initiating this earlier
-        self.imagery.goto(self.imageryprovider, latlon, self.d, self.GetClientSize())
+        self.imagery.goto(prefs.imageryprovider, latlon, self.d, self.GetClientSize())
 
         # Redraw can happen under MessageBox, so do this last
         if errdsf:
@@ -1864,8 +1852,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.glstate.set_depthtest(True)
         self.glstate.set_poly(False)	# DepthMask=True
         glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE)
-        if self.options&Prefs.ELEVATION:
-            for (base,number,texno) in self.vertexcache.getMesh(self.tile,self.options)[0]:
+        if prefs.options&Prefs.ELEVATION:
+            for (base,number,texno) in self.vertexcache.getMesh(self.tile)[0]:
                 glDrawArrays(GL_TRIANGLES, base, number)
         else:
             glBegin(GL_QUADS)

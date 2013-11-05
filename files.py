@@ -26,7 +26,7 @@ from clutterdef import BBox, SkipDefs, NetworkDef
 from DSFLib import readDSF
 from elevation import ElevationMesh, DummyElevationMesh, onedeg
 from palette import PaletteEntry
-from prefs import Prefs
+from prefs import Prefs, prefs
 from version import appname, appversion
 
 downsamplemin=64	# Don't downsample textures this size or smalller
@@ -580,14 +580,14 @@ class VertexCache:
         else:
             return False
 
-    def loadMesh(self, tile, options, netdefs):
-        key=(tile[0],tile[1],options&Prefs.TERRAIN)
-        netkey=(tile[0],tile[1],options&Prefs.NETWORK)
+    def loadMesh(self, tile, netdefs):
+        key=(tile[0],tile[1],prefs.options&Prefs.TERRAIN)
+        netkey=(tile[0],tile[1],prefs.options&Prefs.NETWORK)
         if key in self.mesh and netkey in self.nets:
             if __debug__: print "loadMesh: already loaded"
             return	# don't reload
         dsfs=[]
-        if options&Prefs.TERRAIN:
+        if prefs.options&Prefs.TERRAIN:
             for path in self.dsfdirs:
                 if not glob(path): continue
                 pathlen=len(glob(path)[0])+1
@@ -615,10 +615,10 @@ class VertexCache:
         gc.enable()
         if __debug__: print "%6.3f time in loadMesh" % (time.clock()-clock)
         if not key in self.mesh:
-            self.loadFallbackMesh(tile, options)
+            self.loadFallbackMesh(tile)
 
-    def loadFallbackMesh(self, tile, options):
-        key=(tile[0],tile[1],options&Prefs.TERRAIN)
+    def loadFallbackMesh(self, tile):
+        key=(tile[0],tile[1],prefs.options&Prefs.TERRAIN)
         for path in self.dsfdirs[1:]:
             if glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))) or glob(join(path, pardir, '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[eE][nN][vV]" % (tile[0], tile[1]))):
                 # DSF or ENV exists but can't read it
@@ -636,7 +636,7 @@ class VertexCache:
         self.elevation[(tile[0],tile[1],0)] = self.elevation[(tile[0],tile[1],Prefs.ELEVATION)] = DummyElevationMesh(tile)
 
     # return mesh data sorted by tex and net data for drawing
-    def getMesh(self, tile, options):
+    def getMesh(self, tile):
 
         if tile==self.currenttile:
             #if __debug__: print "getMesh: cached"
@@ -646,13 +646,13 @@ class VertexCache:
         if __debug__: clock=time.clock()	# Processor time
 
         self.meshcache = []
-        for (texture, wrap), v in self.mesh[(tile[0],tile[1],options&Prefs.TERRAIN)].iteritems():
+        for (texture, wrap), v in self.mesh[(tile[0],tile[1],prefs.options&Prefs.TERRAIN)].iteritems():
             vdata = v.flatten()
             base=self.allocate_instance(vdata)
             texno=self.texcache.get(texture, wrap, False, True)
             self.meshcache.append((base, len(vdata)/5, texno))
 
-        nets = self.nets[(tile[0],tile[1],options&Prefs.NETWORK)]
+        nets = self.nets[(tile[0],tile[1],prefs.options&Prefs.NETWORK)]
         if nets:
             (points, indices) = nets
             base = self.allocate_vector(points.flatten())
@@ -664,5 +664,5 @@ class VertexCache:
         self.currenttile=tile
         return (self.meshcache, self.netcache)
 
-    def getElevationMesh(self, tile, options):
-        return self.elevation[(tile[0],tile[1],options&Prefs.ELEVATION)]
+    def getElevationMesh(self, tile):
+        return self.elevation[(tile[0],tile[1],prefs.options&Prefs.ELEVATION)]

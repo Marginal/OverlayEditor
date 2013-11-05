@@ -13,7 +13,7 @@ import time
 from urllib2 import HTTPError, URLError, Request, urlopen
 if __debug__:
     from traceback import print_exc
-    from prefs import Prefs
+    from prefs import Prefs, prefs
 
 from clutter import Draped, DrapedImage, Polygon
 from elevation import ElevationMeshBase
@@ -244,13 +244,13 @@ class Imagery:
             t.join()
 
 
-    def reset(self, vertexcache):
+    def reset(self):
         # Called on reload or on new tile. Empty the cache and forget allocations since:
         # a) in the case of reload, textures have been dropped and so would need to be reloaded anyway;
         # b) try to limit cluttering up the VBO with allocations we may not need again;
         # c) images by straddle multiple tiles and these would need to be recalculated anyway.
         for placement in self.placementcache.itervalues():
-            if placement: placement.clearlayout(vertexcache)
+            if placement: placement.clearlayout()
         self.placementcache={}
 
 
@@ -269,7 +269,7 @@ class Imagery:
         if not self.provider_url or self.tile!=newtile:
             # New tile - drop cache of Clutter
             for placement in self.placementcache.itervalues():
-                if placement: placement.clearlayout(self.canvas.vertexcache)
+                if placement: placement.clearlayout()
             self.placementcache={}
         self.tile=newtile
         self.loc=loc
@@ -285,7 +285,7 @@ class Imagery:
             return []	# Don't do anything on startup. Can't do anything without a valid provider.
 
         # layout assumes mesh loaded
-        assert (int(floor(self.loc[0])),int(floor(self.loc[1])),self.canvas.options&Prefs.ELEVATION) in self.canvas.vertexcache.elevation, '%s %s' % ((int(floor(self.loc[0])),int(floor(self.loc[1])),self.canvas.options&Prefs.ELEVATION), self.canvas.vertexcache.elevation.keys())
+        assert (int(floor(self.loc[0])),int(floor(self.loc[1])),prefs.options&Prefs.ELEVATION) in self.canvas.vertexcache.elevation, '%s %s' % ((int(floor(self.loc[0])),int(floor(self.loc[1])),prefs.options&Prefs.ELEVATION), self.canvas.vertexcache.elevation.keys())
 
         # http://msdn.microsoft.com/en-us/library/bb259689.aspx
         # http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#Resolution_and_Scale
@@ -415,7 +415,7 @@ class Imagery:
             except:
                 if __debug__: print_exc()
                 # Some failure - perhaps corrupted image?
-                placement.clearlayout(self.canvas.vertexcache)
+                placement.clearlayout()
                 placement=None
                 self.placementcache[name]=None
 
@@ -540,7 +540,7 @@ class Imagery:
             self.placementcache[name]=None
         else:
             if __debug__: clock=time.clock()
-            placement.layout(self.tile, self.canvas.options, self.canvas.vertexcache, tls=tls)
+            placement.layout(self.tile, tls=tls)
             if not placement.dynamic_data.size:
                 if __debug__: print "DrapedImage layout failed for %s - no tris" % placement.name
                 self.placementcache[name]=None

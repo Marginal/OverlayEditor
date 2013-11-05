@@ -22,8 +22,8 @@ class Prefs:
         self.xplane=None
         self.package=None
         self.options=Prefs.TERRAIN
-        self.imageryprovider=None
-        self.imageryopacity=50	# percent
+        self.imageryprovider = None	# map image provider, eg 'Bing'
+        self.imageryopacity = 50	# percent
         self.packageprops={}
 
         if platform=='win32':
@@ -79,3 +79,7 @@ class Prefs:
             handle.close()
         except:
             if __debug__: print_exc()
+
+
+# Globals
+prefs = Prefs()
