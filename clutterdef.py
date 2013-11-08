@@ -1332,7 +1332,7 @@ class LineDef(PolygonDef):
         self.color = None
         self.even = False
         hscale = 0
-        width = 0
+        width = 1
         texno = 0
         offsets = []
         
