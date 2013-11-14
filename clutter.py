@@ -46,7 +46,6 @@ from nodes import Node, BezierNode, ParamNode, BezierParamNode, NetworkNode
 from palette import PaletteEntry
 from prefs import Prefs, prefs
 
-f2m=0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use for airport layout)
 twopi=pi*2
 piby2=pi/2
 

@@ -21,7 +21,7 @@ import time
 import wx
 
 from buckets import Buckets
-from clutter import Clutter, f2m
+from clutter import Clutter
 from clutterdef import BBox, SkipDefs, NetworkDef
 from DSFLib import readDSF
 from elevation import ElevationMesh, DummyElevationMesh, onedeg

@@ -9,8 +9,6 @@ if __debug__:
     from traceback import print_exc
 
 from elevation import BBox, onedeg
-from clutter import f2m
-
 
 surfaces = {0:  [0.125, 0.125],	# unknown
             1:  [0.375, 0.125],	# asphalt
@@ -84,6 +82,8 @@ def scanApt(filename):
 # - without offset, return all airports and navs (used for custom apt.dats)
 # - with offset, just return data for airport at offset (used for global apt.dat)
 def readApt(filename, offset=None):
+
+    f2m = 0.3041	# 1 foot [m] (not accurate, but what X-Plane appears to use for old pre-850 style runways and taxiways)
 
     COL_UNKNOWN = (0.75,0.75,0.75)
     COL_ROAD    = (0.9, 0.9, 0.9 )
