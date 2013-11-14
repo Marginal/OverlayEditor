@@ -230,15 +230,17 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
     if __debug__: print "%6.3f time in GEOD atom" % (time.clock()-clock)
     
     # Rescale pools
-    if __debug__: clock=time.clock()	# Processor time
-    for i in range(len(pool)):			# number of pools
+    if __debug__: clock=time.clock()			# Processor time
+    for i in range(len(pool)):				# number of pools
         curpool = pool[i]
         curscale= scal[i]
-        newpool = empty(curpool.shape, float32)
-        for plane in range(len(curscale)):	# number of planes in this pool
+        newpool = empty(curpool.shape, float)		# need double precision for placements
+        for plane in range(len(curscale)):		# number of planes in this pool
             (scale,offset) = curscale[plane]
-            scale = scale/0xffff or 1
-            newpool[:,plane] = curpool[:,plane].astype(float32) * scale + offset
+            if scale:
+                newpool[:,plane] = curpool[:,plane] * (scale/0xffff) + float(offset)
+            else:
+                newpool[:,plane] = curpool[:,plane] + float(offset)
         # numpy doesn't work efficiently skipping around the variable sized pools, so don't consolidate
         pool[i] = newpool
 
@@ -246,26 +248,25 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
     while po32 and not len(po32[-1]): po32.pop()	# v10 DSFs have a bogus zero-dimensioned pool at the end
     if po32:
         if len(po32)!=1 or sc32[0].shape!=(4,2):
-            raise IOError, baddsf		# code below is optimized for one big pool
+            raise IOError, baddsf			# code below is optimized for one big pool
         if wantoverlay:
-            newpool = empty((len(po32[0]),3), float32)	# drop junction IDs
+            newpool = empty((len(po32[0]),3), float)	# Drop junction IDs. Need double precision for placements
             for plane in range(3):
                 (scale,offset) = sc32[0][plane]
-                scale = scale/0xffffffffL
-                newpool[:,plane] = po32[0][:,plane].astype(float32) * scale + offset
+                newpool[:,plane] = po32[0][:,plane] * (scale/0xffffffffL) + float(offset)
             po32 = newpool
         else:
-            # convert to local coords if we just want network lines
+            # convert to local coords if we just want network lines. Do calculations in double, store result as single.
             centrelat = south+0.5
             centrelon = west+0.5
-            newpool = empty((len(po32[0]),6), float32)		# drop junction IDs, add space for color
-            newpool[:,2] = po32[0][:,1].astype(float32) * sc32[0][1][0]/0xffffffffL + sc32[0][1][1]	# lat
-            newpool[:,0] =(po32[0][:,0].astype(float32) * onedeg*sc32[0][0][0]/0xffffffffL + onedeg*(sc32[0][0][1] - centrelon)) * numpy.cos(numpy.radians(newpool[:,2]))	# lon -> x
-            newpool[:,2] = onedeg*centrelat - onedeg*newpool[:,2]	# lat -> z
-            newpool[:,1] = po32[0][:,2].astype(float32) * sc32[0][2][0]/0xffffffffL + sc32[0][2][1]	# y
+            newpool = empty((len(po32[0]),6), float32)	# drop junction IDs, add space for color
+            lat = po32[0][:,1] * (sc32[0][1][0]/0xffffffffL) + float(sc32[0][1][1])	# double
+            newpool[:,0] =(po32[0][:,0] * onedeg*(sc32[0][0][0]/0xffffffffL) + onedeg*(sc32[0][0][1] - centrelon)) * numpy.cos(numpy.radians(lat))	# lon -> x
+            newpool[:,1] = po32[0][:,2] * (sc32[0][2][0]/0xffffffffL) + float(sc32[0][2][1])	# y
+            newpool[:,2] = onedeg*centrelat - onedeg*lat	# lat -> z
             if __debug__:
-                assert not sc32[0][3].any()			# Junction IDs are unscaled
-                newpool[:,3] = po32[0][:,3].astype(float32)	# Junction ID for splitting (will be overwritten at consolidation stage)
+                assert not sc32[0][3].any()		# Junction IDs are unscaled
+                newpool[:,3] = po32[0][:,3]		# Junction ID for splitting (will be overwritten at consolidation stage)
             po32 = newpool
 
     if __debug__:
@@ -711,7 +712,7 @@ def makemesh(mesh,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,t
     # Make mesh
     centrelat=south+0.5
     centrelon=west+0.5
-    v = vstack(patch)[:,:7]
+    v = vstack(patch)[:,:7].astype(float32)	# down to single precision for OpenGL
 
     heights = v[:,2].copy()
     e = (heights == -32768)	# indices of points that take elevation from raster data
