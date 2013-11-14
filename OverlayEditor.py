@@ -103,6 +103,7 @@ gaptdat=join(gnavdata,'[aA][pP][tT].[dD][aA][tT]')
 gdefault=join(gresources,'[dD][eE][fF][aA][uU][lL][tT] [sS][cC][eE][nN][eE][rR][yY]')
 gglobal='[gG][lL][oO][bB][aA][lL] [sS][cC][eE][nN][eE][rR][yY]'
 gcustom='[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]'
+gglobapt='[gG][lL][oO][bB][aA][lL] [aA][iI][rR][pP][oO][rR][tT][sS]'
 gmain8aptdat=join(gresources,gaptdat)
 gmain8navdat=join(gresources,gnavdata,'[nN][aA][vV].[dD][aA][tT]')
 gmain9aptdat=join(gdefault,'[dD][eE][fF][aA][uU][lL][tT] [aA][pP][tT] [dD][aA][tT]',gaptdat)
@@ -1432,9 +1433,12 @@ class MainWindow(wx.Frame):
         else:
             pkgdir=None
 
-        progress.Update(1, 'Global airports')
+        progress.Update(1, 'Default airports')
         if glob(join(prefs.xplane, gmain9aptdat)):
-            xpver=9
+            if glob(join(prefs.xplane,gcustom,gglobapt,gaptdat)):
+                xpver=10	# actually >= 10.21
+            else:
+                xpver=9
             mainaptdat=glob(join(prefs.xplane, gmain9aptdat))[0]
         elif glob(join(prefs.xplane, gmain8aptdat)):
             xpver=8
