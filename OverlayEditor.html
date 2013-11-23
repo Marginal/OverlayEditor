@@ -325,8 +325,8 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
   <dd><img class="inlsymbol" alt="obj" src="Resources/obj.png"> - 3D Object (<code>.obj</code>)</dd>
   <dd><img class="inlsymbol" alt="fac" src="Resources/fac.png"> - Facade polygon (<code>.fac</code>)</dd>
   <dd><img class="inlsymbol" alt="for" src="Resources/for.png"> - Forest polygon (<code>.for</code>)</dd>
-  <dd><img class="inlsymbol" alt="pol" src="Resources/pol.png"> - Draped polygon (<code>.pol</code>) with a <a target="_blank" href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later)</dd>
-  <dd><img class="inlsymbol" alt="ortho" src="Resources/ortho.png"> - Draped polygon (<code>.pol</code>) for use as an <a target="_blank" href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later)</dd>
+  <dd><img class="inlsymbol" alt="pol" src="Resources/pol.png"> - Draped polygon (<code>.pol</code>) with a repeating texture (requires X-Plane 8.50 or later)</dd>
+  <dd><img class="inlsymbol" alt="ortho" src="Resources/ortho.png"> - Draped polygon (<code>.pol</code>) for use as a quadrilateral <a target="_blank" href="http://en.wikipedia.org/wiki/Orthophoto">orthophoto</a> or <a target="_blank" href="http://en.wikipedia.org/wiki/Decal">decal</a> (requires X-Plane 8.60 or later)</dd>
   <dd><img class="inlsymbol" alt="lin" src="Resources/lin.png"> - Line polygon (<code>.lin</code>)</dd>
   <dd><img class="inlsymbol" alt="str" src="Resources/str.png"> - String polygon (<code>.str</code>)</dd>
   <dd><img class="inlsymbol" alt="unknown" src="Resources/unknown.png"> - Other polygon</dd>
@@ -398,17 +398,10 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
   <li>When you add a new draped polygon this application behaves differently
 depending on the contents of the <code>.pol</code> file:
     <ul>
-      <li>A draped polygon (<code>.pol</code>) file that contains a
-<code>TEXTURE</code> statement is assumed to be intended for use as a
-<a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-3-airport-grass-terrain.html">repeating texture</a> (requires X-Plane 8.50 or later).</li>
-      <li>A draped polygon (<code>.pol</code>) file that contains a
-<code>TEXTURE_NOWRAP</code> statement is assumed to be intended for use as a quadrilateral <a href="http://xplanescenery.blogspot.com/2007/02/polygons-part-5-orthophotos.html">orthophoto</a> (requires X-Plane 8.60 or later).
-OverlayEditor does not allow you to add nodes or holes to orthophotos.</li>
+      <li>A draped polygon (<code>.pol</code>) file that contains a <code>TEXTURE</code> statement is assumed to be intended for use as a repeating texture (requires X-Plane 8.50 or later).</li>
+      <li>A draped polygon (<code>.pol</code>) file that contains a <code>TEXTURE_NOWRAP</code> statement is assumed to be intended for use as a quadrilateral <a target="_blank" href="http://en.wikipedia.org/wiki/Orthophoto">orthophoto</a> or <a target="_blank" href="http://en.wikipedia.org/wiki/Decal">decal</a> (requires X-Plane 8.60 or later). OverlayEditor does not allow you to add nodes or holes to orthophotos.</li>
     </ul>
-X-Plane lets you use the same draped polygon (<code>.pol</code>) file
-for either purpose but you will see visual artefacts if you use a
-<code>TEXTURE</code> statement in an orthophoto or use a
-<code>TEXTURE_NOWRAP</code> statement in a repeating texture.</li>
+    X-Plane lets you use the same draped polygon (<code>.pol</code>) file for either purpose but you will see visual artefacts if you use a <code>TEXTURE</code> statement in an orthophoto/decal or use a <code>TEXTURE_NOWRAP</code> statement in a repeating texture.</li>
   <li>Network bridges can be constructed and edited, but all networks are displayed at ground level.</li>
   <li>Terrain textures are simplified - no beaches or overlay textures.</li>
   <li>No flattening of terrain around airports. Terrain is displayed as if the X-Plane &ldquo;allow sloped runways&rdquo; rendering setting is turned on.</li>
