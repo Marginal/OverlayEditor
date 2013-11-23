@@ -1461,7 +1461,7 @@ class MainWindow(wx.Frame):
                 self.nav=[]
                 myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
             try:
-                if xpver==9:
+                if xpver>=9:
                     self.nav.extend(readNav(glob(join(prefs.xplane,gmain9navdat))[0]))
                 else:
                     self.nav.extend(readNav(glob(join(prefs.xplane,gmain8navdat))[0]))
