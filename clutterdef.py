@@ -456,14 +456,14 @@ class ObjectDef(ClutterDef):
                 try:
                     self.texture_draped=vertexcache.texcache.get(texture_draped)
                 except EnvironmentError, e:
-                    self.texerr=(texture_draped, e.strerror)
+                    self.texerr=(texture_draped, unicode(e.strerror or e.message))
                 except:
                     self.texerr=(texture_draped, unicode(exc_info()[1]))
             if texture:	# can be None
                 try:
                     self.texture=vertexcache.texcache.get(texture)
                 except EnvironmentError, e:
-                    self.texerr=(texture, e.strerror)
+                    self.texerr=(texture, unicode(e.strerror or e.message))
                 except:
                     self.texerr=(texture, unicode(exc_info()[1]))
                 if draped and not texture_draped:
@@ -769,7 +769,7 @@ class AutoGenPointDef(ObjectDef):
                 try:
                     self.texture_draped=vertexcache.texcache.get(texture_draped)
                 except EnvironmentError, e:
-                    self.texerr=(texture_draped, e.strerror)
+                    self.texerr=(texture_draped, unicode(e.strerror or e.message))
                 except:
                     self.texerr=(texture_draped, unicode(exc_info()[1]))
             assert len(crop)==4, crop
@@ -905,7 +905,7 @@ class DrapedDef(PolygonDef):
         try:
             self.texture=vertexcache.texcache.get(texture, not self.ortho, alpha)
         except EnvironmentError, e:
-            self.texerr=(texture, e.strerror)
+            self.texerr=(texture, unicode(e.strerror or e.message))
         except:
             self.texerr=(texture, unicode(exc_info()[1]))
 
@@ -1022,7 +1022,7 @@ class FacadeDef(PolygonDef):
                     else:
                         self.texture=vertexcache.texcache.get(texture)
                 except EnvironmentError, e:
-                    self.texerr=(texture, e.strerror)
+                    self.texerr=(texture, unicode(e.strerror or e.message))
                 except:
                     self.texerr=(texture, unicode(exc_info()[1]))
             elif id=='RING':
@@ -1277,7 +1277,7 @@ class ForestDef(PolygonDef):
                 try:
                     self.texture=vertexcache.texcache.get(texture)
                 except EnvironmentError, e:
-                    self.texerr=(texture, e.strerror)
+                    self.texerr=(texture, unicode(e.strerror or e.message))
                 except:
                     self.texerr=(texture, unicode(exc_info()[1]))
             elif id=='SCALE_X':
@@ -1352,7 +1352,7 @@ class LineDef(PolygonDef):
                 try:
                     texno=vertexcache.texcache.get(texture)
                 except EnvironmentError, e:
-                    self.texerr=(texture, e.strerror)
+                    self.texerr=(texture, unicode(e.strerror or e.message))
                 except:
                     self.texerr=(texture, unicode(exc_info()[1]))
             elif id=='SCALE':
@@ -1623,7 +1623,7 @@ class NetworkDef(StringDef,LineDef):
                 texture = vertexcache.texcache.get(texname)
             except EnvironmentError, e:
                 if __debug__: print_exc()
-                self.texerr=(texname, e.strerror)
+                self.texerr=(texname, unicode(e.strerror or e.message))
             except:
                 if __debug__: print_exc()
                 self.texerr=(texname, unicode(exc_info()[1]))

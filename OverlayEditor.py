@@ -8,7 +8,7 @@ import os	# for startfile
 from os import chdir, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
 import sys	# for path
-from sys import exit, argv, executable, platform, version
+from sys import exit, argv, executable, exc_info, platform, version
 if __debug__:
     import time
     from traceback import print_exc
@@ -566,9 +566,18 @@ class BackgroundDialog(wx.Frame):
                           "Image files|*.dds;*.jpg;*.jpeg;*.png|DDS files (*.dds)|*.bmp|JPEG files (*.jpg, *.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png|All files|*.*",
                           wx.OPEN)
         if dlg.ShowModal()==wx.ID_OK:
-            self.image=dlg.GetPath()
-            if self.image.startswith(self.prefix):
-                self.image=curdir+self.image[len(self.prefix):]
+            img = dlg.GetPath()
+            self.image = ''
+            if img:
+                # failure is silently ignored during display so test loading the image now
+                try:
+                    self.parent.canvas.vertexcache.texcache.get(img, False, fixsize=True)
+                    self.image = img.startswith(self.prefix) and curdir+img[len(self.prefix):] or img
+                except EnvironmentError, e:
+                    # PIL isn't very diligent about making a well-formed exception so try both strerror and message
+                    myMessageBox(unicode(e.strerror or e.message), "Can't read %s" % basename(img), wx.ICON_INFORMATION|wx.OK, self)
+                except:
+                    myMessageBox(unicode(exc_info()[1]), "Can't read %s" % basename(img), wx.ICON_INFORMATION|wx.OK, self)
         dlg.Destroy()
         self.OnUpdate(event)
 

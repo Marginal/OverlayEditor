@@ -1153,18 +1153,19 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.background.canbezier = False
             for i in range(len(self.background.nodes[0])):
                 self.background.nodes[0][i].rest = [(i+1)/2%2,i/2]	# assign UVs
-            if layoutnow:
-                self.background.layout(self.tile)
 
         if self.background.name!=backgroundfile:
             self.background.name=backgroundfile
             if backgroundfile[0]==curdir:
                 backgroundfile=join(glob(join(prefs.xplane,'[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]',prefs.package))[0], backgroundfile)
             try:
-                self.background.definition.texture=self.vertexcache.texcache.get(backgroundfile, False)
+                self.background.definition.texture=self.vertexcache.texcache.get(backgroundfile, False, fixsize=True)
             except:
                 self.background.definition.texture=self.vertexcache.texcache.get(fallbacktexture)
+            self.background.flush()	# force layout with new texture
 
+        if layoutnow:
+            self.background.layout(self.tile)
 
     def add(self, name, lat, lon, hdg, size):
         # Add new clutter
