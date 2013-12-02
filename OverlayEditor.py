@@ -97,6 +97,15 @@ else:
 zoom2=sqrt(2)
 zoom=sqrt(zoom2)
 maxzoom=32768*zoom2
+if platform=='darwin':
+    # Trackpad on Mac sends lots of messages so zoom less.
+    # Can't tell if user is using an external mouse with scroll wheel (GetWheelDelta() is unhelpful).
+    mousezoom2 = sqrt(sqrt(zoom2))
+    mousezoom  = sqrt(mousezoom2)
+else:
+    mousezoom2 = zoom2
+    mousezoom  = zoom
+
 gresources='[rR][eE][sS][oO][uU][rR][cC][eE][sS]'
 gnavdata='[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]'
 gaptdat=join(gnavdata,'[aA][pP][tT].[dD][aA][tT]')
@@ -1200,6 +1209,7 @@ class MainWindow(wx.Frame):
 
 
     def OnMouseWheel(self, event):
+        # print "MW:", event.GetLinesPerAction(), event.GetWheelRotation(), '/', event.GetWheelDelta()
         if event.GetX()<0 or event.GetX()>=self.Size[0] or event.GetY()<0 or event.GetY()>=self.canvas.Size[1] or not event.GetWheelRotation():
             return	# outside frame
         elif event.GetX()>self.canvas.Size[0]:
@@ -1207,10 +1217,10 @@ class MainWindow(wx.Frame):
                 self.palette.cb.GetCurrentPage().ScrollLines(event.GetLinesPerAction() * -event.GetWheelRotation() / event.GetWheelDelta())
             return
         elif event.GetWheelRotation()>0:
-            r=event.ShiftDown() and 1.0/zoom2 or 1.0/zoom
+            r = event.ShiftDown() and 1.0/mousezoom2 or 1.0/mousezoom
             if self.dist*r < 1.0: r = 1.0/self.dist
         elif event.GetWheelRotation()<0:
-            r=event.ShiftDown() and zoom2 or zoom
+            r = event.ShiftDown() and mousezoom2 or mousezoom
             if self.dist*r > maxzoom: r = maxzoom/self.dist
         try:
             (mx,my,mz)=self.canvas.getlocalloc(event.GetX(),event.GetY())	# OpenGL coords of mouse / zoom point
