@@ -56,17 +56,16 @@ fakeroot "dpkg-deb -b $RPMRT ."	# requires gnu-tar
 # mac
 mkdir -p ${APPNAME}.app/Contents/MacOS
 for i in $DATA; do cp -p "$i" ${APPNAME}.app/Contents/; done
-cp -pr MacOS/* ${APPNAME}.app/Contents/MacOS/
-rm -f ${APPNAME}.app/Contents/MacOS/Info.plist
-rm -f ${APPNAME}.app/Contents/MacOS/*.bak
 for i in $PY; do cp -p "$i" ${APPNAME}.app/Contents/MacOS/; done
 mkdir -p ${APPNAME}.app/Contents/Resources
 for i in $RSRC; do cp -p "$i" ${APPNAME}.app/Contents/Resources/; done
 mkdir -p ${APPNAME}.app/Contents/Resources/previews
 for i in $PREV; do cp -p "$i" ${APPNAME}.app/Contents/Resources/previews/; done
+cp -p MacOS/${APPNAME} MacOS/DSFTool ${APPNAME}.app/Contents/MacOS/
+cp -p MacOS/*.egg ${APPNAME}.app/Contents/MacOS/
+cp -pr MacOS/2.5 ${APPNAME}.app/Contents/MacOS/
+cp -pr MacOS/2.7 ${APPNAME}.app/Contents/MacOS/
+cp -p MacOS/*.icns MacOS/*.png MacOS/screenshot.jpg ${APPNAME}.app/Contents/Resources/	# overwrite with Mac versions
 sed s/appversion/$VERSION/ <MacOS/Info.plist >${APPNAME}.app/Contents/Info.plist
-mv ${APPNAME}.app/Contents/MacOS/*.icns ${APPNAME}.app/Contents/Resources/
-mv -f ${APPNAME}.app/Contents/MacOS/*.png ${APPNAME}.app/Contents/Resources/	# overwrite with Mac versions
-mv -f ${APPNAME}.app/Contents/MacOS/screenshot.jpg ${APPNAME}.app/Contents/Resources/
 codesign -s "Developer ID Application: Jonathan Harris" ${APPNAME}.app
 zip -ry ${APPNAME}_${VER}_mac.zip ${APPNAME}.app

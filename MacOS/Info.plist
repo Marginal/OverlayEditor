@@ -21,59 +21,194 @@
 	<key>CFBundleShortVersionString</key>
 	<string>appversion</string>
 	<key>CFBundleGetInfoString</key>
-	<string>OverlayEditor appversion, © 2007-2012 Jonathan Harris</string>
+	<string>OverlayEditor appversion, © 2007-2013 Jonathan Harris</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.5</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
-			<key>CFBundleTypeExtensions</key>
-			<array>
-				<string>fac</string>
-			</array>
 			<key>CFBundleTypeIconFile</key>
 			<string>fac.icns</string>
-			<key>CFBundleTypeName</key>
-			<string>X-Plane Facade</string>
 			<key>CFBundleTypeRole</key>
 			<string>None</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.laminar.fac</string>
+			</array>
 		</dict>
 		<dict>
-			<key>CFBundleTypeExtensions</key>
-			<array>
-				<string>for</string>
-			</array>
 			<key>CFBundleTypeIconFile</key>
 			<string>for.icns</string>
-			<key>CFBundleTypeName</key>
-			<string>X-Plane Forest</string>
 			<key>CFBundleTypeRole</key>
 			<string>None</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.laminar.for</string>
+			</array>
 		</dict>
 		<dict>
-			<key>CFBundleTypeExtensions</key>
+			<key>CFBundleTypeIconFile</key>
+			<string>lin.icns</string>
+			<key>CFBundleTypeRole</key>
+			<string>None</string>
+			<key>LSItemContentTypes</key>
 			<array>
-				<string>obj</string>
+				<string>com.laminar.lin</string>
 			</array>
+		</dict>
+		<dict>
 			<key>CFBundleTypeIconFile</key>
 			<string>obj.icns</string>
-			<key>CFBundleTypeName</key>
-			<string>X-Plane Scenery Object</string>
 			<key>CFBundleTypeRole</key>
 			<string>None</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.laminar.obj</string>
+			</array>
 		</dict>
 		<dict>
-			<key>CFBundleTypeExtensions</key>
-			<array>
-				<string>pol</string>
-			</array>
 			<key>CFBundleTypeIconFile</key>
 			<string>pol.icns</string>
-			<key>CFBundleTypeName</key>
-			<string>X-Plane Draped Polygon</string>
 			<key>CFBundleTypeRole</key>
 			<string>None</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.laminar.pol</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>str.icns</string>
+			<key>CFBundleTypeRole</key>
+			<string>None</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.laminar.str</string>
+			</array>
 		</dict>
 	</array>
-	<key>LSMinimumSystemVersion</key>
-	<string>10.5</string>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>X-Plane facade</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.laminar.fac</string>
+			<key>UTTypeReferenceURL</key>
+			<string>http://developer.x-plane.com/?article=x-plane-10-facade-fac-file-format-specification</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>fac</string>
+					<string>FAC</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>X-Plane forest</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.laminar.for</string>
+			<key>UTTypeReferenceURL</key>
+			<string>http://developer.x-plane.com/?article=forest-for-file-format-specification</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>for</string>
+					<string>FOR</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>X-Plane painted line</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.laminar.lin</string>
+			<key>UTTypeReferenceURL</key>
+			<string>http://developer.x-plane.com/?article=painted-line-lin-file-format-specification</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>lin</string>
+					<string>LIN</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>X-Plane 3D object</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.laminar.obj</string>
+			<key>UTTypeReferenceURL</key>
+			<string>http://developer.x-plane.com/?article=obj8-file-format-specification</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>obj</string>
+					<string>OBJ</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>X-Plane draped polygon</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.laminar.pol</string>
+			<key>UTTypeReferenceURL</key>
+			<string>http://developer.x-plane.com/?article=draped-polygon-polfac-file-format-specification</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>pol</string>
+					<string>POL</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>X-Plane object string</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.laminar.str</string>
+			<key>UTTypeReferenceURL</key>
+			<string>http://developer.x-plane.com/?article=object-string-str-file-format-specification</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>str</string>
+					<string>STR</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

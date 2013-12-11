@@ -29,6 +29,41 @@ BrandingText "http://marginal.org.uk/x-planescenery"
 
 !insertmacro MUI_LANGUAGE "English"
 
+; based loosely on http://nsis.sourceforge.net/FileAssoc , but doesn't register an open command, and does set type to text
+; see also http://msdn.microsoft.com/en-us/library/windows/desktop/cc144148%28v=vs.85%29.aspx
+!macro APP_ASSOCIATE EXT PROGID DESCRIPTION ICON
+  !define ID ${__LINE__}
+  ; Backup the previous file type
+  ReadRegStr $R0 HKCR ".${EXT}" ""
+  StrCmp "$R0" "" NoBackup_${ID}		; don't backup if empty
+  StrCmp "$R0" "${PROGID}" NoBackup_${ID}	; don't backup if it's registered to us
+  WriteRegStr HKCR ".${EXT}" "backup" "$R0"	; backup current value  
+NoBackup_${ID}:
+  ; Write my file type and ProgID
+  WriteRegStr HKCR ".${EXT}" "" "${PROGID}"
+  WriteRegStr HKCR ".${EXT}" "Content Type" "text/plain"
+  WriteRegStr HKCR ".${EXT}" "PerceivedType" "text"
+ 
+  WriteRegStr HKCR "${PROGID}" "" `${DESCRIPTION}`
+  WriteRegStr HKCR "${PROGID}\DefaultIcon" "" `${ICON}`
+  !undef ID
+!macroend
+
+!macro APP_UNASSOCIATE EXT PROGID
+  !define ID ${__LINE__}
+  ReadRegStr $R0 HKCR ".${EXT}" ""
+  StrCmp "$R0" "${PROGID}" 0 NoRestore_${ID}	; don't restore it if we don't own it
+  ReadRegStr $R0 HKCR ".${EXT}" "backup"
+  StrCmp "$R0" "" NoRestore_${ID}		; don't restore it if empty
+  WriteRegStr HKCR ".${EXT}" "" "$R0"		; restore
+  DeleteRegValue HKCR ".${EXT}" "backup"
+NoRestore_${ID}:
+  ; http://msdn.microsoft.com/en-us/library/windows/desktop/cc144148%28v=vs.85%29.aspx#uninstall says don't delete the file type
+  DeleteRegKey HKCR `${PROGID}`
+  !undef ID
+!macroend
+
+
 Icon "win32\installer.ico"
 UninstallIcon "win32\installer.ico"
 
@@ -62,6 +97,15 @@ Section "Install"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OverlayEditor" "URLUpdateInfo" "http://marginal.org.uk/x-planescenery"
 
   WriteUninstaller "$INSTDIR\uninstall.exe"
+
+  !insertmacro APP_ASSOCIATE "fac" "X-Plane.Fac" "X-Plane Facade"         "$INSTDIR\OverlayEditor.exe,1"
+  !insertmacro APP_ASSOCIATE "for" "X-Plane.For" "X-Plane Forest"         "$INSTDIR\OverlayEditor.exe,2"
+  !insertmacro APP_ASSOCIATE "lin" "X-Plane.Lin" "X-Plane Painted Line"   "$INSTDIR\OverlayEditor.exe,3"
+  !insertmacro APP_ASSOCIATE "obj" "X-Plane.Obj" "X-Plane 3D Object"      "$INSTDIR\OverlayEditor.exe,4"
+  !insertmacro APP_ASSOCIATE "pol" "X-Plane.Pol" "X-Plane Draped Polygon" "$INSTDIR\OverlayEditor.exe,5"
+  !insertmacro APP_ASSOCIATE "str" "X-Plane.Str" "X-Plane Object String"  "$INSTDIR\OverlayEditor.exe,6"
+  System::Call "shell32::SHChangeNotify(i,i,i,i) (0x08000000, 0x1000, 0, 0)"	; SHCNE_ASSOCCHANGED, SHCNF_FLUSH
+
 SectionEnd
 
 Section "" SEC32
@@ -95,7 +139,16 @@ Section "Uninstall"
   RMDir /r "$INSTDIR\win32"
   RMDir "$INSTDIR"
 
+  !insertmacro APP_UNASSOCIATE "fac" "X-Plane.Fac"
+  !insertmacro APP_UNASSOCIATE "for" "X-Plane.For"
+  !insertmacro APP_UNASSOCIATE "lin" "X-Plane.Lin"
+  !insertmacro APP_UNASSOCIATE "obj" "X-Plane.Obj"
+  !insertmacro APP_UNASSOCIATE "pol" "X-Plane.Pol"
+  !insertmacro APP_UNASSOCIATE "str" "X-Plane.Str"
+  System::Call "shell32::SHChangeNotify(i,i,i,i) (0x08000000, 0x1000, 0, 0)"	; SHCNE_ASSOCCHANGED, SHCNF_FLUSH
+
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OverlayEditor"
+
 SectionEnd
 
 Function .onInit

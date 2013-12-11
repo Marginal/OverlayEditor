@@ -157,7 +157,13 @@ setup(name='OverlayEditor',
       
       # win32
       windows = [{'script':'OverlayEditor.py',
-                  'icon_resources':[(1,'win32/OverlayEditor.ico')],
+                  'icon_resources':[(0,'win32/OverlayEditor.ico'),
+                                    (1,'win32/fac.ico'),
+                                    (2,'win32/for.ico'),
+                                    (3,'win32/lin.ico'),
+                                    (4,'win32/obj.ico'),
+                                    (5,'win32/pol.ico'),
+                                    (6,'win32/str.ico')],
                   'other_resources':[(24,1,manifest)],
                   }],
 
