@@ -357,6 +357,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             # We're not using the stencil buffer so would prefer to specify a 32bit depth buffer, but this can cause e.g. Intel Windows drivers to fall back to 16 even though they support 24
             wx.glcanvas.GLCanvas.__init__(self, parent, style=wx.FULL_REPAINT_ON_RESIZE|wx.WANTS_CHARS,
                                           attribList=[wx.glcanvas.WX_GL_RGBA,wx.glcanvas.WX_GL_DOUBLEBUFFER,wx.glcanvas.WX_GL_DEPTH_SIZE, 24])
+            if wx.VERSION >= (2,9):
+                self.context = wx.glcanvas.GLContext(self)
+
         except:
             # Failed - try with safe 16bit depth buffer.
             try:
@@ -364,12 +367,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                 # wxGTK<=2.8 has no way to discover if this fails, so will segfault later
                 wx.glcanvas.GLCanvas.__init__(self, parent, style=wx.FULL_REPAINT_ON_RESIZE|wx.WANTS_CHARS,
                                               attribList=[wx.glcanvas.WX_GL_RGBA,wx.glcanvas.WX_GL_DOUBLEBUFFER,wx.glcanvas.WX_GL_DEPTH_SIZE, 16])
+                if wx.VERSION >= (2,9):
+                    self.context = wx.glcanvas.GLContext(self)
             except:
-                myMessageBox('Try updating the drivers for your graphics card.', "Can't initialise OpenGL.", wx.ICON_ERROR|wx.OK, self)
+                myMessageBox('Try updating the drivers for your graphics card.', "Can't initialise OpenGL.", wx.ICON_ERROR|wx.OK, frame)
                 exit(1)
-
-        if wx.VERSION >= (2,9):
-            self.context = wx.glcanvas.GLContext(self)
 
         # Allocate this stuff in glInit
         self.glstate=None
@@ -399,13 +401,11 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if not vbo.get_implementation():
             myMessageBox('This application requires the use of OpenGL Vertex Buffer Objects (VBOs) which are not supported by your graphics card.\nTry updating the drivers for your graphics card.',
-                         "Can't initialise OpenGL.",
-                         wx.ICON_ERROR|wx.OK, self)
+                         "Can't initialise OpenGL.", wx.ICON_ERROR|wx.OK, self.frame)
             exit(1)
         if not glInitTextureCompressionS3TcEXT() and not __debug__:
             myMessageBox('This application requires the use of DXT texture compression which is not supported by your graphics card.\nTry updating the drivers for your graphics card.',
-                         "Can't initialise OpenGL.",
-                         wx.ICON_ERROR|wx.OK, self)
+                         "Can't initialise OpenGL.", wx.ICON_ERROR|wx.OK, self.frame)
             exit(1)
 
         try:
@@ -413,7 +413,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         except:
             if __debug__: print_exc()
             myMessageBox('This application requires GLSL 1.20 or later, which is not supported by your graphics card.\nTry updating the drivers for your graphics card.',
-                         "Can't initialise OpenGL.", wx.ICON_ERROR|wx.OK, self)
+                         "Can't initialise OpenGL.", wx.ICON_ERROR|wx.OK, self.frame)
             exit(1)
 
         self.vertexcache=VertexCache()	# member so can free resources
