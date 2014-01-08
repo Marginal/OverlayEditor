@@ -21,7 +21,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>appversion</string>
 	<key>CFBundleGetInfoString</key>
-	<string>OverlayEditor appversion, © 2007-2013 Jonathan Harris</string>
+	<string>OverlayEditor appversion, © 2007-2014 Jonathan Harris</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>10.5</string>
 	<key>CFBundleDocumentTypes</key>
