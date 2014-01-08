@@ -440,9 +440,7 @@ class PreferencesDialog(wx.Dialog):
 
     def OnBrowse(self, event):
         while True:
-            style=wx.DEFAULT_DIALOG_STYLE|wx.RESIZE_BORDER
-            if 'DD_DIR_MUST_EXIST' in dir(wx): style|=wx.DD_DIR_MUST_EXIST
-            dlg=wx.DirDialog(self, 'Please locate your X-Plane folder', self.path.GetValue(), style)
+            dlg = wx.DirDialog(self, 'X-Plane location', self.path.GetValue(), wx.DEFAULT_DIALOG_STYLE|wx.RESIZE_BORDER|wx.DD_DIR_MUST_EXIST)
             if dlg.ShowModal()!=wx.ID_OK:
                 dlg.Destroy()
                 return wx.ID_CANCEL
@@ -1973,27 +1971,39 @@ app.SetTopWindow(frame)
 
 # user prefs
 if not prefs.xplane or not (glob(join(prefs.xplane, gcustom)) and (glob(join(prefs.xplane, gmain8aptdat)) or glob(join(prefs.xplane, gmain9aptdat)))):
-    if platform.startswith('linux'):	# prompt is not displayed on Linux
-        myMessageBox("OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications.", "Please locate your X-Plane folder", wx.ICON_INFORMATION|wx.OK, frame)
-    if platform=='win32' and glob(join('C:\\X-Plane', gcustom)) and (glob(join('C:\\X-Plane', gmain8aptdat)) or glob(join('C:\\X-Plane', gmain9aptdat))):
-        prefs.xplane=u'C:\\X-Plane'
-    elif platform=='win32':
-        prefs.xplane=u'C:\\'
-    elif isdir(join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'X-Plane')):
-        prefs.xplane=join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'X-Plane')
-    elif isdir(join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'Desktop', 'X-Plane')):
-        prefs.xplane=join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), 'Desktop', 'X-Plane')
-    elif isdir(join(sep, u'Applications', 'X-Plane')):
-        prefs.xplane=join(sep, u'Applications', 'X-Plane')
-    elif platform=='darwin':
-        prefs.xplane=join(sep, u'Applications')
-    else:
-        prefs.xplane=expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8')
-    dlg=PreferencesDialog(frame, wx.ID_ANY, '')
-    if dlg.OnBrowse(None)!=wx.ID_OK: exit(1)	# User cancelled
-    prefs.xplane=dlg.path.GetValue()
-    prefs.write()
-    dlg.Destroy()
+    try:
+        # X-Plane installer defaults to the Desktop so look there
+        if platform=='win32':
+            from _winreg import OpenKey, QueryValueEx, HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER, REG_SZ, REG_EXPAND_SZ
+            handle = OpenKey(HKEY_CURRENT_USER, 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders')
+            (v,t) = QueryValueEx(handle, 'Desktop')
+            handle.Close()
+            if t==REG_EXPAND_SZ:
+                dirs = v.rstrip('\0').decode('mbcs').strip().split('\\')
+                for i in range(len(dirs)):
+                    if dirs[i][0] == dirs[i][-1] == '%':
+                        dirs[i] = getenv(dirs[i][1:-1],dirs[i]).decode('mbcs')
+                v = '\\'.join(dirs)
+            if t in [REG_SZ,REG_EXPAND_SZ] and isdir(v):
+                desktop = v
+        else:
+            desktop = join(expanduser('~').decode(sys.getfilesystemencoding() or 'utf-8'), u'Desktop')	# Unicode so paths listed as unicode
+    except:
+        if __debug__: print_exc()
+        desktop = u''
+
+    myMessageBox('OverlayEditor needs to know which folder contains your X-Plane, PlaneMaker etc applications. In the next dialog please locate your X-Plane folder.\n\nIf you want the scenery packages that you create with OverlayEditor to work with older versions of X-Plane, in the next dialog please choose the oldest version of X-Plane that you want your scenery package to work with.' , 'Welcome', wx.ICON_INFORMATION|wx.OK, frame)
+    dlg = wx.DirDialog(frame, 'Please locate your X-Plane folder', desktop, wx.DEFAULT_DIALOG_STYLE|wx.RESIZE_BORDER|wx.DD_DIR_MUST_EXIST)
+    dlg.CenterOnParent()	# Otherwise is centred on screen
+    while True:
+        if dlg.ShowModal() != wx.ID_OK:	# User cancelled
+            dlg.Destroy()
+            exit(1)
+        prefs.xplane = dlg.GetPath()
+        if glob(join(prefs.xplane, gcustom)) and (glob(join(prefs.xplane, gmain8aptdat)) or glob(join(prefs.xplane, gmain9aptdat))):
+            prefs.write()
+            dlg.Destroy()
+            break
 
 if __debug__:
     # allow package name on command line
