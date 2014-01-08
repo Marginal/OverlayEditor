@@ -164,7 +164,7 @@ class ObjectDef(ClutterDef):
         self.type=Locked.OBJ
         self.poly=0
         self.bbox=BBox()
-        self.height=0.5	# musn't be 0
+        self.height=1.0		# musn't be 0
         self.radius=1.0
         self.base=None
         self.draped=[]
@@ -688,7 +688,7 @@ class ObjectFallback(ObjectDef):
                           0.5,1.0,-0.5, 1.0,1.0,
                           0.0,0.0,0.0, 1.0,0.5,
                           0.5,1.0,0.5, 1.0,0.0],float32)
-        self.culled=len(self.vdata)
+        self.culled = len(self.vdata)/5
         self.nocull=0
         self.poly=0
         self.bbox=BBox(-0.5,0.5,-0.5,0.5)

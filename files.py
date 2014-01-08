@@ -504,6 +504,7 @@ class VertexCache:
     def allocate_instance(self, data):
         # cache geometry data, but don't update OpenGL arrays yet
         assert isinstance(data,ndarray), data
+        assert len(data)		# shouldn't be empty
         base=self.instance_count
         self.instance_count+=len(data)/5
         self.instance_pending.append(data)
