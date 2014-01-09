@@ -1,4 +1,5 @@
 import codecs
+import wx
 from glob import glob
 from hashlib import md5
 from os import listdir
@@ -6,6 +7,18 @@ from os.path import abspath, basename, dirname, exists, isdir, join, normpath, s
 from shutil import copy2
 from sys import platform
 from tempfile import gettempdir
+if __debug__:
+    from traceback import print_exc
+
+from clutterdef import ObjectDef, PolygonDef
+from MessageBox import myMessageBox
+from prefs import prefs
+
+
+# 2.5-only version of case-insensitive sort for str or unicode
+def sortfolded(seq):
+    seq.sort(key=lambda x: x.lower())
+
 
 def objpaths(pkgpath, srcpath):
     # find base texture location
@@ -63,6 +76,10 @@ def importpaths(pkgpath, paths):
     (oldpath, oldtexpath, newpath, newtexpath, newtexprefix)=objpaths(pkgpath, dirname(paths[0]))
 
     for path in paths:
+        if isdir(path):
+            raise IOError(0, "Can't import an entire folder; select individual files instead.", path)
+        if path.lower().startswith(pkgpath.lower()):
+            raise IOError(0, "Can't import objects from the same package!", path)
         basename(path).decode()	# names must be ASCII only - may raise UnicodeError
         (name,ext)=splitext(basename(path))
         if ext.lower() in ['.dds', '.png']:
@@ -76,10 +93,13 @@ def importpaths(pkgpath, paths):
                 n=join(newtexpath, basename(f))
                 if not samefile(f, n):
                     retval.append((f, n))
+        elif ext.lower() not in [ObjectDef.OBJECT, PolygonDef.FOREST, PolygonDef.FACADE, PolygonDef.LINE, PolygonDef.DRAPED]:
+            # we can only handle non-compound types
+            raise IOError, (0, "Can't import this type of file.", path)
         else:
             # Import some kind of object
             retval.append((path, join(newpath, basename(path))))
-            badobj=(0, "This is not a valid X-Plane file", path)
+            badobj=(0, "This is not a valid X-Plane file.", path)
             h=codecs.open(path, 'rU', 'latin1')
             if not h.readline()[0] in ['I','A']: raise IOError, badobj
             c=h.readline().split()
@@ -93,7 +113,7 @@ def importpaths(pkgpath, paths):
                                  (c[0]=='FACADE' and version=='800') or	# can't import v10 facades yet
                                  (c[0]=='LINE_PAINT' and version=='850') or
                                  (c[0]=='DRAPED_POLYGON' and version=='850')):
-                    raise IOError, (0, "I don't understand this type of file", path)
+                    raise IOError, (0, "Can't import this type of file", path)
             if version in ['2','700']:
                 while True:
                     line=h.readline()
@@ -199,3 +219,48 @@ def samefile(src, dst):
         return digest[0]==digest[1]
     except IOError:
         return False
+
+
+# import files
+# returns list of files that need loading into the palette, or True if a full reload is required
+def doimport(paths, palette):
+    if not paths or not prefs.package: return False
+    pkgpath = glob(join(prefs.xplane, '[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]', prefs.package))[0]
+    try:
+        files=importpaths(pkgpath, paths)
+    except EnvironmentError, e:
+        if __debug__: print_exc()
+        myMessageBox(str(e.strerror), "Can't import %s" % e.filename, wx.ICON_ERROR|wx.OK, palette.frame)
+        return False
+    except UnicodeError, e:
+        if __debug__: print_exc()
+        myMessageBox('Filename uses non-ASCII characters.', "Can't import %s." % e.object, wx.ICON_ERROR|wx.OK, palette.frame)
+        return False
+
+    existing=[]
+    for (src, dst) in files:
+        if exists(dst): existing.append(dst[len(pkgpath)+1:])
+    sortfolded(existing)
+    if existing:
+        if len(existing) > 1:
+            r = myMessageBox('This scenery package already contains the following files:\n  ' + '\n  '.join(existing) + '\n\nDo you want to replace them?', 'Replace files', wx.ICON_QUESTION|wx.YES_NO|wx.CANCEL, palette.frame)
+        else:
+            r = myMessageBox('This scenery package already contains the following file:\n  ' + existing[0] + '\n\nDo you want to replace it?', 'Replace files', wx.ICON_QUESTION|wx.YES_NO, palette.frame)
+        if r==wx.NO:
+            # Strip out existing
+            for (src, dst) in list(files):
+                if exists(dst): files.remove((src,dst))
+            if not files: return False	# None to do
+            existing=[]		# No need to do reload
+        elif r!=wx.YES:
+            return False
+
+    try:
+        importobjs(pkgpath, files)
+    except EnvironmentError, e:
+        if __debug__: print_exc()
+        myMessageBox(str(e.strerror), "Can't import %s." % e.filename, wx.ICON_ERROR|wx.OK, palette.frame)
+        return False
+
+    return existing and True or files        # Some existing files may be in use - do full reload
+

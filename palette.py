@@ -1,11 +1,14 @@
 from sys import platform
 import wx
-from os.path import dirname, exists, join
+from glob import glob
+from os.path import dirname, exists, join, sep, splitext
 if __debug__:
     from traceback import print_exc
 
 from clutterdef import ClutterDef, ObjectDef, PolygonDef, DrapedDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
+from importobjs import doimport
 from MessageBox import myMessageBox
+from prefs import prefs
 
 
 # Focus is a pain.
@@ -26,7 +29,37 @@ class PaletteEntry:
         self.private = private
         self.deprecated = deprecated
         self.multiple = False
-    
+
+
+class PaletteDropTarget(wx.FileDropTarget):
+
+    def __init__(self, palette):
+        wx.FileDropTarget.__init__(self)
+        self.palette = palette
+        self.badcursor = wx.StockCursor(wx.CURSOR_NO_ENTRY)
+
+    def OnDropFiles(self, x, y, paths):
+        files = doimport(paths, self.palette)
+        if files is True:
+            # self.palette.frame.OnReload(True)	# do the following instead so the drop animation can complete first
+            wx.PostEvent(self.palette.frame.toolbar, wx.PyCommandEvent(wx.EVT_TOOL.typeId, wx.ID_REFRESH))
+        elif files:
+            pkgpath = glob(join(prefs.xplane, '[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]', prefs.package))[0]
+            for (src, dst) in files:
+                ext=splitext(src)[1].lower()
+                if ext in ['.dds', '.png']: continue
+                name=dst[len(pkgpath)+1:].replace(sep, '/')
+                if name.lower().startswith('custom objects') and ext==ObjectDef.OBJECT:
+                    name=name[15:]
+                self.palette.frame.canvas.lookup[name]=PaletteEntry(dst)
+                self.palette.add(name)
+            self.palette.set(name)	# show last added
+        return True
+
+    def OnDragOver(self, x, y, defResult):
+        # no way of querying content while drag is in progress, so just indicate whether we can accept something
+        return prefs.package and wx.DragCopy or wx.DragNone	# indicate copy not move
+
 
 class PaletteListBox(wx.VListBox):
 
@@ -52,6 +85,7 @@ class PaletteListBox(wx.VListBox):
         wx.EVT_LISTBOX(self, self.GetId(), self.parent.OnChoice)
         wx.EVT_KEY_DOWN(self, self.parent.palette.OnKeyDown)
         wx.EVT_SET_FOCUS(self, self.parent.palette.OnSetFocus)
+        self.SetDropTarget(PaletteDropTarget(self.parent.palette))
 
     def populate(self, objects):
         self.SetSelection(-1)

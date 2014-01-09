@@ -75,7 +75,7 @@ from clutterdef import ClutterDef, ObjectDef, PolygonDef, KnownDefs, ExcludeDef,
 from draw import MyGL
 from elevation import minres, round2res, ElevationMesh
 from files import readLib, readNet, sortfolded
-from importobjs import importpaths, importobjs
+from importobjs import doimport
 from lock import LockDialog
 from palette import Palette, PaletteEntry
 from DSFLib import readDSF, writeDSF
@@ -1721,48 +1721,12 @@ class MainWindow(wx.Frame):
             return
         paths=dlg.GetPaths()
         dlg.Destroy()
-        if not paths: return
-        pkgpath=glob(join(prefs.xplane,gcustom,prefs.package))[0]
-        if paths[0].lower().startswith(pkgpath.lower()):
-            myMessageBox("Can't import objects from the same package!", "Import", wx.ICON_ERROR|wx.OK, self)
-            return
-        try:
-            files=importpaths(pkgpath, paths)
-        except EnvironmentError, e:
-            if __debug__: print_exc()
-            myMessageBox(str(e.strerror), "Can't import %s" % e.filename, wx.ICON_ERROR|wx.OK, self)
-            return
-        except UnicodeError, e:
-            if __debug__: print_exc()
-            myMessageBox('Filename uses non-ASCII characters', "Can't import %s." % e.object, wx.ICON_ERROR|wx.OK, self)
-            return
 
-        existing=[]
-        for (src, dst) in files:
-            if exists(dst): existing.append(dst[len(pkgpath)+1:])
-        sortfolded(existing)
-        if existing:
-            r=myMessageBox('This scenery package already contains the following file(s):\n  '+'\n  '.join(existing)+'\n\nDo you want to replace them?', 'Replace files', wx.ICON_QUESTION|wx.YES_NO|wx.CANCEL, self)
-            if r==wx.NO:
-                # Strip out existing
-                for (src, dst) in list(files):
-                    if exists(dst): files.remove((src,dst))
-                if not files: return	# None to do
-                existing=[]		# No need to do reload
-            elif r!=wx.YES:
-                return
-
-        try:
-            importobjs(pkgpath, files)
-        except EnvironmentError, e:
-            if __debug__: print_exc()
-            myMessageBox(str(e.strerror), "Can't import %s." % e.filename, wx.ICON_ERROR|wx.OK, self)
-            return
-
-        if existing:
-            # Some of those files may be in use - do full reload
+        files = doimport(paths, self.palette)
+        if files is True:
             self.OnReload(True)
-        else:
+        elif files:
+            pkgpath = glob(join(prefs.xplane, gcustom, prefs.package))[0]
             for (src, dst) in files:
                 ext=splitext(src)[1].lower()
                 if ext in ['.dds', '.png']: continue
