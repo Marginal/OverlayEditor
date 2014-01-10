@@ -44,6 +44,7 @@ class PaletteDropTarget(wx.FileDropTarget):
             # self.palette.frame.OnReload(True)	# do the following instead so the drop animation can complete first
             wx.PostEvent(self.palette.frame.toolbar, wx.PyCommandEvent(wx.EVT_TOOL.typeId, wx.ID_REFRESH))
         elif files:
+            first = None
             pkgpath = glob(join(prefs.xplane, '[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]', prefs.package))[0]
             for (src, dst) in files:
                 ext=splitext(src)[1].lower()
@@ -53,7 +54,8 @@ class PaletteDropTarget(wx.FileDropTarget):
                     name=name[15:]
                 self.palette.frame.canvas.lookup[name]=PaletteEntry(dst)
                 self.palette.add(name)
-            self.palette.set(name)	# show last added
+                first = first or name
+            self.palette.set(first)	# show first added
         return True
 
     def OnDragOver(self, x, y, defResult):

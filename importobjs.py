@@ -10,7 +10,7 @@ from tempfile import gettempdir
 if __debug__:
     from traceback import print_exc
 
-from clutterdef import ObjectDef, PolygonDef
+from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef
 from MessageBox import myMessageBox
 from prefs import prefs
 
@@ -75,7 +75,9 @@ def importpaths(pkgpath, paths):
     retval=[]
     (oldpath, oldtexpath, newpath, newtexpath, newtexprefix)=objpaths(pkgpath, dirname(paths[0]))
 
-    for path in paths:
+    pathno = 0
+    while pathno < len(paths):
+        path = paths[pathno]
         if isdir(path):
             raise IOError(0, "Can't import an entire folder; select individual files instead.", path)
         if path.lower().startswith(pkgpath.lower()):
@@ -93,7 +95,7 @@ def importpaths(pkgpath, paths):
                 n=join(newtexpath, basename(f))
                 if not samefile(f, n):
                     retval.append((f, n))
-        elif ext.lower() not in [ObjectDef.OBJECT, PolygonDef.FOREST, PolygonDef.FACADE, PolygonDef.LINE, PolygonDef.DRAPED]:
+        elif ext.lower() not in [ObjectDef.OBJECT, AutoGenPointDef.AGP, PolygonDef.FOREST, PolygonDef.FACADE, PolygonDef.LINE, PolygonDef.DRAPED]:
             # we can only handle non-compound types
             raise IOError, (0, "Can't import this type of file.", path)
         else:
@@ -109,8 +111,9 @@ def importpaths(pkgpath, paths):
             if version!='2':
                 c=h.readline().split()
                 if not c or not (c[0]=='OBJ' or
+                                 (c[0]=='AG_POINT' and version=='1000') or
+                                 (c[0]=='FACADE' and version in ['800','1000']) or
                                  (c[0]=='FOREST' and version=='800') or
-                                 (c[0]=='FACADE' and version=='800') or	# can't import v10 facades yet
                                  (c[0]=='LINE_PAINT' and version=='850') or
                                  (c[0]=='DRAPED_POLYGON' and version=='850')):
                     raise IOError, (0, "Can't import this type of file", path)
@@ -147,9 +150,18 @@ def importpaths(pkgpath, paths):
                             n=join(newtexpath, basename(f))
                             if (f, n) not in retval and not samefile(f, n):
                                 retval.append((f, n))
+                    elif c[0] in ['VEGETATION','OBJECT','FACADE',	# .agp
+                                  'OBJ', 'ROOF_OBJ']:			# v10 facade
+                        # child object
+                        if exists(join(dirname(path), c[1])):
+                            paths.append(join(dirname(path), c[1]))
+                        elif __debug__:
+                            # skip missing children - might be a library object, but if not then a UI becoms cumbersome
+                            print 'skipping %s in %s' % (c[1], path)
                     elif c[0]=='VT':
                         break	# Stop at first vertex
             h.close()
+        pathno += 1
 
     return retval
 

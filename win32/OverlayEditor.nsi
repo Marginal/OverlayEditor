@@ -104,6 +104,7 @@ Section "Install"
   !insertmacro APP_ASSOCIATE "obj" "X-Plane.Obj" "X-Plane 3D Object"      "$INSTDIR\OverlayEditor.exe,4"
   !insertmacro APP_ASSOCIATE "pol" "X-Plane.Pol" "X-Plane Draped Polygon" "$INSTDIR\OverlayEditor.exe,5"
   !insertmacro APP_ASSOCIATE "str" "X-Plane.Str" "X-Plane Object String"  "$INSTDIR\OverlayEditor.exe,6"
+  !insertmacro APP_ASSOCIATE "agp" "X-Plane.Agp" "X-Plane Autogen Point"  "$INSTDIR\OverlayEditor.exe,7"
   System::Call "shell32::SHChangeNotify(i,i,i,i) (0x08000000, 0x1000, 0, 0)"	; SHCNE_ASSOCCHANGED, SHCNF_FLUSH
 
 SectionEnd
@@ -145,6 +146,7 @@ Section "Uninstall"
   !insertmacro APP_UNASSOCIATE "obj" "X-Plane.Obj"
   !insertmacro APP_UNASSOCIATE "pol" "X-Plane.Pol"
   !insertmacro APP_UNASSOCIATE "str" "X-Plane.Str"
+  !insertmacro APP_UNASSOCIATE "agp" "X-Plane.Agp"
   System::Call "shell32::SHChangeNotify(i,i,i,i) (0x08000000, 0x1000, 0, 0)"	; SHCNE_ASSOCCHANGED, SHCNF_FLUSH
 
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\OverlayEditor"

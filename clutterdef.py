@@ -735,6 +735,7 @@ class AutoGenPointDef(ObjectDef):
             raise IOError
         if not h.readline().strip() in ['AG_POINT']:
             raise IOError
+        # TODO: OBJ_GRADED, OBJ_SCRAPER, OBJ_DELTA, GROUND_PT
         for line in h:
             c=line.split()
             if not c: continue
@@ -1067,6 +1068,7 @@ class FacadeDef(PolygonDef):
                 currentwall.vpanels[['BOTTOM','MIDDLE','TOP'].index(id)].append(panel)
 
             # v10
+            # TODO: ROOF_OBJ
             elif id in ['SHADER_WALL','SHADER_ROOF']:
                 rooftex=(id=='SHADER_ROOF')
             elif id=='ROOF_SCALE':

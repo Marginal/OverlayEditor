@@ -1726,6 +1726,7 @@ class MainWindow(wx.Frame):
         if files is True:
             self.OnReload(True)
         elif files:
+            first = None
             pkgpath = glob(join(prefs.xplane, gcustom, prefs.package))[0]
             for (src, dst) in files:
                 ext=splitext(src)[1].lower()
@@ -1735,7 +1736,8 @@ class MainWindow(wx.Frame):
                     name=name[15:]
                 self.canvas.lookup[name]=PaletteEntry(dst)
                 self.palette.add(name)
-            self.palette.set(name)	# show last added
+                first = first or name
+            self.palette.set(first)	# show first added
 
     def OnImportRegion(self, event):
         wx.BeginBusyCursor()

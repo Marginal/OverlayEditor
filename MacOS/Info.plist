@@ -28,6 +28,16 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeIconFile</key>
+			<string>agp.icns</string>
+			<key>CFBundleTypeRole</key>
+			<string>None</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.laminar.agp</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeIconFile</key>
 			<string>fac.icns</string>
 			<key>CFBundleTypeRole</key>
 			<string>None</string>
@@ -89,6 +99,26 @@
 	</array>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>X-Plane autogen point</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.laminar.agp</string>
+			<key>UTTypeReferenceURL</key>
+			<string>http://developer.x-plane.com/?article=x-plane-10-autogen-scenery-file-format</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>agp</string>
+					<string>AGP</string>
+				</array>
+			</dict>
+		</dict>
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
