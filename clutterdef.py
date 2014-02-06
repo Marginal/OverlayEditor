@@ -162,6 +162,7 @@ class ObjectDef(ClutterDef):
         self.layer=ClutterDef.OBJECTLAYER
         self.canpreview=True
         self.type=Locked.OBJ
+        self.vdata=None
         self.poly=0
         self.bbox=BBox()
         self.height=1.0		# musn't be 0
@@ -449,9 +450,10 @@ class ObjectDef(ClutterDef):
             (self.vdata, self.culled, self.nocull, self.poly, self.bbox, self.height, self.base, self.canpreview)=(fb.vdata, fb.culled, fb.nocull, fb.poly, fb.bbox, fb.height, fb.base, fb.canpreview)	# skip texture
             # re-use above allocation
         else:
-            self.vdata=array(culled+nocull, float32).flatten()
             self.culled=len(culled)
             self.nocull=len(nocull)
+            if self.culled+self.nocull:	# can be empty in draped-only objects
+                self.vdata=array(culled+nocull, float32).flatten()
             if texture_draped:	# can be None
                 try:
                     self.texture_draped=vertexcache.texcache.get(texture_draped)
