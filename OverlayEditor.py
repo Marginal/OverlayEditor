@@ -16,11 +16,25 @@ if __debug__:
 if platform.lower().startswith('linux') and not getenv("DISPLAY"):
     print "Can't run: DISPLAY is not set"
     exit(1)
+
+# Path validation
+mypath = sys.path[0]
+if platform=='win32' and  mypath.lower().endswith('.exe'):
+    mypath = dirname(mypath)		# py2exe
+    chdir(mypath)
 elif platform=='darwin':
-    mypath=sys.path[0]
-    for f in listdir(mypath):
-        if f.endswith('-py%s.egg' % version[:3]): sys.path.insert(0, join(mypath,f))
-    sys.path.insert(0, join(mypath, version[:3]))
+    if basename(mypath)=='MacOS':	# App starts in MacOS folder
+        importpath = mypath
+        mypath = dirname(mypath)
+        chdir(mypath)
+    else:
+        importpath = 'MacOS'		# development
+    for f in listdir(importpath):
+        if f.endswith('-py%s.egg' % version[:3]): sys.path.insert(0, join(importpath,f))
+    sys.path.insert(0, join(importpath, version[:3]))
+    argv[0]=basename(argv[0])		# wx doesn't like non-ascii chars in argv[0]
+else:
+    chdir(mypath)
 
 try:
     import wx
@@ -82,16 +96,6 @@ from DSFLib import readDSF, writeDSF
 from MessageBox import myCreateStdDialogButtonSizer, myMessageBox, AboutBox
 from prefs import Prefs, prefs
 from version import appname, appversion
-
-# Path validation
-mypath=dirname(abspath(argv[0]))
-if not isdir(mypath):
-    exit('"%s" is not a folder' % mypath)
-if basename(mypath)=='MacOS':
-    chdir(normpath(join(mypath,pardir)))	# Starts in MacOS folder
-    argv[0]=basename(argv[0])	# wx doesn't like non-ascii chars in argv[0]
-else:
-    chdir(mypath)
 
 # constants
 zoom2=sqrt(2)
