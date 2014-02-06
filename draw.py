@@ -46,9 +46,10 @@ from version import appname
 
 sband=16	# width of mouse scroll band around edge of window
 
-debugapt = __debug__ and False
-log_glstate = __debug__ and True
-log_load = __debug__ and True
+debugapt   = __debug__ and False
+log_glstate= __debug__ and True
+log_load   = __debug__ and True
+log_paint  = __debug__ and True
 
 class UndoEntry:
     ADD=0
@@ -707,7 +708,8 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             self.SetCurrent()
 
-        if __debug__: clock=time.clock()
+        if log_paint:
+            clock=clock2=time.clock()
 
         glViewport(0, 0, *size)
         vd=self.d*size.y/size.x
@@ -773,7 +775,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         
         # Map imagery & background
         imagery=self.imagery.placements(self.d, size)	# May allocate into dynamic VBO
-        #if __debug__: print "%6.3f time to get imagery" % (time.clock()-clock)
+        if log_paint:
+            print "%6.3f time to get imagery" % (time.clock()-clock2)
+            clock2=time.clock()
         if self.background and self.background.islaidout():
             imagery.append(self.background)
             if self.frame.bkgd:
@@ -839,7 +843,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.glstate.set_color(None)
             self.glstate.set_depthtest(False)	# Need line to appear over terrain
             glDrawRangeElements(GL_LINES, netindices[0], netindices[-1], len(netindices), GL_UNSIGNED_INT, netindices)
-        #if __debug__: print "%6.3f time to draw mesh" % (time.clock()-clock)
+        if log_paint:
+            print "%6.3f time to draw mesh" % (time.clock()-clock2)
+            clock2=time.clock()
 
         # Objects and Polygons
         placements=self.placements[self.tile]
@@ -866,6 +872,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         else:
             glVertexAttrib1f(self.glstate.skip_pos, 0)
             self.vertexcache.buckets.draw(self.glstate, None, self.aptdata, imagery, prefs.imageryopacity)
+        if log_paint:
+            print "%6.3f time to draw dynamic" % (time.clock()-clock2)
+            clock2=time.clock()
 
         # Draw clutter with static geometry and sorted by texture (ignoring layer ordering since it doesn't really matter so much for Objects)
         self.glstate.set_instance(self.vertexcache)
@@ -898,6 +907,9 @@ class MyGL(wx.glcanvas.GLCanvas):
             for objdef in self.defs.values():	# benefit of sorting by texture would be marginal
                 objdef.draw_instanced(self.glstate, selected)
             glUniform4f(self.glstate.transform_pos, *zeros(4,float32))	# drawing Objects alters the matrix
+        if log_paint:
+            print "%6.3f time to draw static" % (time.clock()-clock2)
+            clock2=time.clock()
 
         # Overlays
         self.glstate.set_texture(None)	# resets shader
@@ -968,7 +980,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glDisable(GL_POINT_SMOOTH)	# Make selection etc slightly easier on the GPU
         self.glstate.set_poly(False)
 
-        #if __debug__: print "%6.3f time in OnPaint" % (time.clock()-clock)
+        if log_paint: print "%6.3f time in OnPaint" % (time.clock()-clock)
 
         # Display
         self.SwapBuffers()
@@ -1869,13 +1881,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE)
         #self.SwapBuffers()	# debug
         glClear(GL_DEPTH_BUFFER_BIT)
-        if __debug__: print "%3d %3d %.6f, %5d %5.1f %5d" % (mx,my,mz, x,y,z)
+        #if __debug__: print "%3d %3d %.6f, %5d %5.1f %5d" % (mx,my,mz, x,y,z)
         return (x,y,z)
 
     def xz2latlon(self, x, z):
         lat=round2res(self.centre[0]-z/onedeg)
         lon=round2res(self.centre[1]+x/(onedeg*cos(radians(lat))))
-        if __debug__: print "%11.7f %12.7f" % (lat,lon)
+        #if __debug__: print "%11.7f %12.7f" % (lat,lon)
         return (lat,lon)
 
     def getworldloc(self, mx, my):
