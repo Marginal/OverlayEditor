@@ -312,7 +312,7 @@ class PaletteChoicebook(wx.Choicebook):
         else:
             # no key, or listed in DSF but not present - eg unrecognised poly
             self.lists[self.GetSelection()].SetSelection(-1)
-            self.SetSelection(0)	# default to first tab
+            if name: self.SetSelection(0)	# default to first tab
             self._postselection(False)
 
     def _postselection(self, found):
