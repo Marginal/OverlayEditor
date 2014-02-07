@@ -2,7 +2,6 @@ from collections import defaultdict	# Requires Python 2.5
 from numpy import array, zeros, float32
 from OpenGL.GL import *
 from OpenGL.extensions import alternate
-from OpenGL.GL.ARB.instanced_arrays import glVertexAttribDivisorARB
 from OpenGL.GL.EXT.multi_draw_arrays import glMultiDrawArraysEXT
 glMultiDrawArrays = alternate(glMultiDrawArrays, glMultiDrawArraysEXT)
 
@@ -93,19 +92,6 @@ class Buckets:
         glstate.set_poly(True)
         glstate.set_depthtest(True)
 
-        selectbyskipping = selected and glstate.shaders and glstate.multi_draw_arrays
-        if selectbyskipping:
-            selv = zeros((len(self.vertexcache.dynamic_data)/6,), float32)
-            for placement in selected:
-                if placement.dynamic_data is not None:
-                    assert placement.base+len(placement.dynamic_data)/6 <= len(selv)
-                    selv[placement.base:placement.base+len(placement.dynamic_data)/6] = 1
-            glEnableVertexAttribArray(glstate.skip_pos)
-            if glstate.instanced_arrays: glVertexAttribDivisorARB(glstate.skip_pos, 0)	# not drawing instanced
-            glstate.set_attrib_selected(glstate.skip_pos, selv)
-        elif glstate.shaders:
-            glVertexAttrib1f(glstate.skip_pos, 0)
-
         # draped layers - unselected
         for layer in range(ClutterDef.LAYERCOUNT):
             self.layerbuckets[layer].draw(glstate)	# draw per layer
@@ -116,28 +102,18 @@ class Buckets:
                 glstate.set_texture(None)
                 glstate.set_color(None)
                 glstate.set_depthtest(False)	# Need line to appear over terrain
-                if selectbyskipping:
-                    glDisableVertexAttribArray(glstate.skip_pos)
-                    glVertexAttrib1f(glstate.skip_pos, 0)
                 glShadeModel(GL_FLAT)
                 glDrawRangeElements(GL_LINES, indices[0], indices[-1], len(indices), GL_UNSIGNED_INT, indices)
                 glstate.set_dynamic(self.vertexcache)
                 glstate.set_color(COL_UNPAINTED)
                 glstate.set_depthtest(True)
-                if selectbyskipping:
-                    glEnableVertexAttribArray(glstate.skip_pos)
                 glShadeModel(GL_SMOOTH)
             elif layer in aptdata:
                 (base, length) = aptdata[layer]
                 glstate.set_instance(self.vertexcache)
                 glstate.set_texture(self.vertexcache.texcache.get('Resources/surfaces.png'))
-                if selectbyskipping:
-                    glDisableVertexAttribArray(glstate.skip_pos)
-                    glVertexAttrib1f(glstate.skip_pos, 0)
                 glDrawArrays(GL_TRIANGLES, base, length)
                 glstate.set_dynamic(self.vertexcache)
-                if selectbyskipping:
-                    glEnableVertexAttribArray(glstate.skip_pos)
             if layer == ClutterDef.RUNWAYSLAYER and imagery:	# draw imagery out of order
                 glstate.set_color(COL_SELECTED)	# trick glstate there's been a change in colour
                 glColor4f(1.0, 1.0, 1.0, imageryopacity/100.0)	# not using glstate!
@@ -160,22 +136,16 @@ class Buckets:
         # selected - last so overwrites unselected
         if selected:
 
+            # build temporary filtered buckets
+            filtered = Buckets(self.vertexcache)
+            for placement in selected:
+                if placement.base is not None:
+                    placement.bucket_dynamic(placement.base, filtered)
+
+            # draped layers - selected
             glstate.set_color(COL_SELECTED)
             glstate.set_cull(True)
             glstate.set_poly(True)
-
-            if selectbyskipping:
-                selv = 1 - selv
-                glstate.set_attrib_selected(glstate.skip_pos, selv)
-                filtered = self
-            else:
-                # build temporary filtered buckets
-                filtered = Buckets(self.vertexcache)
-                for placement in selected:
-                    if placement.base is not None:
-                        placement.bucket_dynamic(placement.base, filtered)
-
-            # draped layers - selected
             for layer in range(ClutterDef.LAYERCOUNT):
                 filtered.layerbuckets[layer].draw(glstate)	# draw per layer
 
@@ -183,13 +153,7 @@ class Buckets:
             glstate.set_depthtest(False)		# Need line to appear over terrain
             filtered.layerbuckets[ClutterDef.OUTLINELAYER].draw(glstate)
 
-            if selectbyskipping:
-                glstate.set_poly(False)
             glstate.set_depthtest(True)
             filtered.layerbuckets[ClutterDef.GEOMCULLEDLAYER].draw(glstate)
             glstate.set_cull(False)
             filtered.layerbuckets[ClutterDef.GEOMNOCULLLAYER].draw(glstate)
-
-            if selectbyskipping:
-                glDisableVertexAttribArray(glstate.skip_pos)
-                glVertexAttrib1f(glstate.skip_pos, 0)

@@ -124,11 +124,8 @@ class GLstate():
                                                 compileShader(unlit, GL_FRAGMENT_SHADER))
             if __debug__: print glGetProgramInfoLog(self.textureshader)
             self.transform_pos = glGetUniformLocation(self.textureshader, 'transform')
-            self.skip_pos      = glGetAttribLocation(self.textureshader, 'skip')
             self.colorshader   = compileProgram(compileShader(colorvs, GL_VERTEX_SHADER),
                                                 compileShader(colorfs, GL_FRAGMENT_SHADER))
-            glBindAttribLocation(self.colorshader, self.skip_pos, 'skip')
-            glLinkProgram(self.colorshader)	# re-link with above location
             if __debug__: print glGetProgramInfoLog(self.colorshader)
             assert glGetProgramiv(self.colorshader, GL_LINK_STATUS), glGetProgramInfoLog(self.colorshader)
             if glInitInstancedArraysARB():
@@ -142,7 +139,6 @@ class GLstate():
                 self.instancedshader = self.instanced_transform_pos = self.instanced_selected_pos = None
                 self.instanced_arrays = False
             glUseProgram(self.textureshader)
-            glVertexAttrib1f(self.skip_pos, 0)
             glUniform4f(self.transform_pos, *zeros(4,float32))
             self.shaders = True
         except:
@@ -831,7 +827,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.glstate.set_depthtest(True)
         self.glstate.set_texture(0)	# texture shader
         if self.glstate.shaders:
-            glVertexAttrib1f(self.glstate.skip_pos, 0)
             if not prefs.options&Prefs.ELEVATION:
                 glUniform4f(self.glstate.transform_pos, 0, -1, 0, 0)	# Defeat elevation data
             else:
