@@ -1,5 +1,3 @@
-// -*- mode: c -*-
-
 #version 120
 
 attribute vec4 transform;	// x,y,z,hdg

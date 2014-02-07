@@ -487,11 +487,11 @@ class ObjectDef(ClutterDef):
 
         if not self.transform_valid:
             if __debug__:
-                for o in self.instances: assert o.matrix is not None, "Empty matrix %s" % o
+                for o in self.instances: assert o.transform is not None, "Empty matrix %s" % o
             if glstate.instanced_arrays:
-                self.transform_vbo.set_array(concatenate([o.matrix for o in self.instances]))
+                self.transform_vbo.set_array(concatenate([o.transform for o in self.instances]))
             else:
-                self.transform_vbo = vstack([o.matrix for o in self.instances])	# not actually a VBO
+                self.transform_vbo = vstack([o.transform for o in self.instances])	# not actually a VBO
                 self.transform_vbo[:,3] = 1		# drop rotation and make homogenous
             self.transform_valid = True
 
@@ -508,28 +508,46 @@ class ObjectDef(ClutterDef):
                 glstate.set_cull(False)
                 glDrawArraysInstanced(GL_TRIANGLES, self.base+self.culled, self.nocull, len(self.instances))
         else:
-            pos = glstate.transform_pos
             projected = numpy.abs(dot(self.transform_vbo, glstate.proj)[:,:2])	# |x|,|y| in NDC space
             clip = 1 + numpy.max(numpy.abs(dot(array([[self.radius, 0, self.radius, 0], [self.radius, self.height, self.radius, 0]]), glstate.proj)[:,:2]))	# add largest dimension of bounding cylinder in NDC space
             instances = set([item for (item,inview) in zip(self.instances, numpy.all(projected <= clip, axis=1)) if inview])	# filter to those in view
             selected = instances.intersection(selected)	# subset of selected that are instances of this def
             unselected = instances.difference(selected)
-            if unselected:
-                glstate.set_color(COL_UNPAINTED)
-                for obj in unselected:
-                    glUniform4f(pos, *obj.matrix)
-                    if self.culled:
-                        glstate.set_cull(True)
-                        glDrawArrays(GL_TRIANGLES, self.base, self.culled)
-                    if self.nocull:
-                        glstate.set_cull(False)
-                        glDrawArrays(GL_TRIANGLES, self.base+self.culled, self.nocull)
-            if selected:
-                glstate.set_color(COL_SELECTED)
-                glstate.set_cull(False)		# draw rear side of "invisible" faces when selected
-                for obj in selected:
-                    glUniform4f(pos, *obj.matrix)
-                    glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
+            if glstate.shaders:
+                pos = glstate.transform_pos
+                if unselected:
+                    glstate.set_color(COL_UNPAINTED)
+                    for obj in unselected:
+                        glUniform4f(pos, *obj.transform)
+                        if self.culled:
+                            glstate.set_cull(True)
+                            glDrawArrays(GL_TRIANGLES, self.base, self.culled)
+                        if self.nocull:
+                            glstate.set_cull(False)
+                            glDrawArrays(GL_TRIANGLES, self.base+self.culled, self.nocull)
+                if selected:
+                    glstate.set_color(COL_SELECTED)
+                    glstate.set_cull(False)		# draw rear side of "invisible" faces when selected
+                    for obj in selected:
+                        glUniform4f(pos, *obj.transform)
+                        glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
+            else:
+                if unselected:
+                    glstate.set_color(COL_UNPAINTED)
+                    for obj in unselected:
+                        glLoadMatrixf(obj.matrix)
+                        if self.culled:
+                            glstate.set_cull(True)
+                            glDrawArrays(GL_TRIANGLES, self.base, self.culled)
+                        if self.nocull:
+                            glstate.set_cull(False)
+                            glDrawArrays(GL_TRIANGLES, self.base+self.culled, self.nocull)
+                if selected:
+                    glstate.set_color(COL_SELECTED)
+                    glstate.set_cull(False)		# draw rear side of "invisible" faces when selected
+                    for obj in selected:
+                        glLoadMatrixf(obj.matrix)
+                        glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
 
     def pick_instanced(self, glstate, proj, selections, lookup):
         if not self.instances:
@@ -537,11 +555,11 @@ class ObjectDef(ClutterDef):
 
         if not self.transform_valid:	# won't be valid for AGPs since they are not drawn instanced
             if __debug__:
-                for o in self.instances: assert o.matrix is not None, "Empty matrix %s" % o
+                for o in self.instances: assert o.transform is not None, "Empty matrix %s" % o
             if glstate.instanced_arrays:
-                self.transform_vbo.set_array(concatenate([o.matrix for o in self.instances]))
+                self.transform_vbo.set_array(concatenate([o.transform for o in self.instances]))
             else:
-                self.transform_vbo = vstack([o.matrix for o in self.instances])	# not actually a VBO
+                self.transform_vbo = vstack([o.transform for o in self.instances])	# not actually a VBO
                 self.transform_vbo[:,3] = 1		# drop rotation and make homogenous
             self.transform_valid = True
 
@@ -559,25 +577,40 @@ class ObjectDef(ClutterDef):
         if self.vdata is None: return	# don't have to do anything else for AGPs
 
 	# query those with bounding cylinder in view (but not those with centre in view)
-        pos = glstate.transform_pos
         clip = 1 + numpy.max(numpy.abs(dot(array([[self.radius, 0, self.radius, 0], [self.radius, self.height, self.radius, 0]]), proj)[:,:2]))	# add largest dimension of bounding cylinder in NDC space
         instances = [item for (item,inview) in zip(self.instances, logical_and(numpy.all(projected <= clip, axis=1), numpy.any(projected > 1, axis=1))) if inview]
 
         queryidx = len(lookup)
         lookup.extend(instances)
-        if glstate.occlusion_query:
-            for obj in instances:
-                glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
-                glUniform4f(pos, *obj.matrix)
-                glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
-                glEndQuery(glstate.occlusion_query)
-                queryidx += 1
+        if glstate.shaders:
+            pos = glstate.transform_pos
+            if glstate.occlusion_query:
+                for obj in instances:
+                    glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
+                    glUniform4f(pos, *obj.transform)
+                    glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
+                    glEndQuery(glstate.occlusion_query)
+                    queryidx += 1
+            else:
+                for obj in instances:
+                    glLoadName(queryidx)
+                    glUniform4f(pos, *obj.transform)
+                    glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
+                    queryidx += 1
         else:
-            for obj in instances:
-                glLoadName(queryidx)
-                glUniform4f(pos, *obj.matrix)
-                glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
-                queryidx += 1
+            if glstate.occlusion_query:
+                for obj in instances:
+                    glBeginQuery(glstate.occlusion_query, glstate.queries[queryidx])
+                    glLoadMatrixf(obj.matrix)
+                    glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
+                    glEndQuery(glstate.occlusion_query)
+                    queryidx += 1
+            else:
+                for obj in instances:
+                    glLoadName(queryidx)
+                    glLoadMatrixf(obj.matrix)
+                    glDrawArrays(GL_TRIANGLES, self.base, self.culled+self.nocull)
+                    queryidx += 1
 
     def preview(self, canvas, vertexcache):
         if not self.canpreview: return None
@@ -600,13 +633,16 @@ class ObjectDef(ClutterDef):
         glOrtho(-maxsize, maxsize, -maxsize/2, maxsize*1.5, -2*maxsize, 2*maxsize)
         glRotatef( 30, 1,0,0)
         glRotatef(120, 0,1,0)
+        if not canvas.glstate.shaders:
+            glTranslatef(sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz)
 
         canvas.glstate.set_color(COL_UNPAINTED)
         canvas.glstate.set_depthtest(False)
         canvas.glstate.set_cull(True)
         if self.draped:
             canvas.glstate.set_texture(self.texture_draped)
-            glUniform4f(canvas.glstate.transform_pos, sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz, 0)
+            if canvas.glstate.shaders:
+                glUniform4f(canvas.glstate.transform_pos, sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz, 0)
             glBegin(GL_TRIANGLES)
             for i in range(0,len(self.draped),3):
                 for j in range(3):
@@ -618,7 +654,12 @@ class ObjectDef(ClutterDef):
             child=p[1]
             if child.draped:
                 canvas.glstate.set_texture(child.texture_draped)
-                glUniform4f(canvas.glstate.transform_pos, p[2] + sizex-self.bbox.maxx, 0, p[3] + sizez-self.bbox.maxz, radians(p[4]))
+                if canvas.glstate.shaders:
+                    glUniform4f(canvas.glstate.transform_pos, p[2] + sizex-self.bbox.maxx, 0, p[3] + sizez-self.bbox.maxz, radians(p[4]))
+                else:
+                    glPushMatrix()
+                    glTranslatef(p[2],0,p[3])
+                    glRotatef(-p[4], 0,1,0)
                 glBegin(GL_TRIANGLES)
                 for i in range(0,len(child.draped),3):
                     for j in range(3):
@@ -626,11 +667,16 @@ class ObjectDef(ClutterDef):
                         glTexCoord2f(v[3],v[4])
                         glVertex3f(v[0],v[1],v[2])
                 glEnd()
+                if not canvas.glstate.shaders:
+                    glPopMatrix()
 
         canvas.glstate.set_texture(None)
         canvas.glstate.set_color(COL_CURSOR)
         glBegin(GL_POINTS)
-        glVertex3f(sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz)
+        if canvas.glstate.shaders:
+            glVertex3f(sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz)
+        else:
+            glVertex3f(0, 0, 0)
         glEnd()
 
         canvas.glstate.set_color(COL_UNPAINTED)
@@ -638,7 +684,8 @@ class ObjectDef(ClutterDef):
         canvas.glstate.set_poly(False)
         if self.vdata is not None:
             canvas.glstate.set_texture(self.texture)
-            glUniform4f(canvas.glstate.transform_pos, sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz, 0)
+            if canvas.glstate.shaders:
+                glUniform4f(canvas.glstate.transform_pos, sizex-self.bbox.maxx, 0, sizez-self.bbox.maxz, 0)
             if self.culled:
                 glDrawArrays(GL_TRIANGLES, self.base, self.culled)
             if self.nocull:
@@ -648,13 +695,21 @@ class ObjectDef(ClutterDef):
             child=p[1]
             if child.vdata is not None:
                 canvas.glstate.set_texture(child.texture)
-                glUniform4f(canvas.glstate.transform_pos, p[2] + sizex-self.bbox.maxx, 0, p[3] + sizez-self.bbox.maxz, radians(p[4]))
+                if canvas.glstate.shaders:
+                    glUniform4f(canvas.glstate.transform_pos, p[2] + sizex-self.bbox.maxx, 0, p[3] + sizez-self.bbox.maxz, radians(p[4]))
+                else:
+                    glPushMatrix()
+                    glTranslatef(p[2],0,p[3])
+                    glRotatef(-p[4], 0,1,0)
                 if child.culled:
                     canvas.glstate.set_cull(True)
                     glDrawArrays(GL_TRIANGLES, child.base, child.culled)
                 if child.nocull:
                     canvas.glstate.set_cull(False)
                     glDrawArrays(GL_TRIANGLES, child.base+child.culled, child.nocull)
+                if not canvas.glstate.shaders:
+                    glPopMatrix()
+
         data=glReadPixels(xoff,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
         img.SetData(data)
@@ -845,7 +900,8 @@ class PolygonDef(ClutterDef):
         glLoadIdentity()
         canvas.glstate.set_color(COL_WHITE)
         canvas.glstate.set_texture(self.texture)
-        glUniform4f(canvas.glstate.transform_pos, *zeros(4,float32))
+        if canvas.glstate.shaders:
+            glUniform4f(canvas.glstate.transform_pos, *zeros(4,float32))
         glBegin(GL_QUADS)
         glTexCoord2f(l,b)
         glVertex3f(-hscale,  1, 0)
@@ -1196,7 +1252,8 @@ class FacadeDef(PolygonDef):
         canvas.glstate.set_poly(False)
         canvas.glstate.set_cull(True)
         canvas.glstate.set_texture(self.texture)
-        glUniform4f(canvas.glstate.transform_pos, *zeros(4,float32))
+        if canvas.glstate.shaders:
+            glUniform4f(canvas.glstate.transform_pos, *zeros(4,float32))
         glBegin(GL_TRIANGLES)
         hoffset=0
         for segment in spelling.segments:
@@ -1216,13 +1273,20 @@ class FacadeDef(PolygonDef):
                 (childname, definition, is_draped, xdelta, ydelta, zdelta, hdelta)=child
                 if definition.vdata is not None:
                     canvas.glstate.set_texture(definition.texture)
-                    glUniform4f(canvas.glstate.transform_pos, xdelta, ydelta, hoffset+zdelta, radians(hdelta))
+                    if canvas.glstate.shaders:
+                        glUniform4f(canvas.glstate.transform_pos, xdelta, ydelta, hoffset+zdelta, radians(hdelta))
+                    else:
+                        glPushMatrix()
+                        glTranslatef(xdelta,ydelta,hoffset+zdelta)
+                        glRotatef(-hdelta, 0,1,0)
                     if definition.culled:
                         canvas.glstate.set_cull(True)
                         glDrawArrays(GL_TRIANGLES, definition.base, definition.culled)
                     if definition.nocull:
                         canvas.glstate.set_cull(False)
                         glDrawArrays(GL_TRIANGLES, definition.base+definition.culled, definition.nocull)
+                    if not canvas.glstate.shaders:
+                        glPopMatrix()
             hoffset-=segment.width
         data=glReadPixels(xoff,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)
         img=wx.EmptyImage(ClutterDef.PREVIEWSIZE, ClutterDef.PREVIEWSIZE, False)
@@ -1392,7 +1456,8 @@ class LineDef(PolygonDef):
             scale = 2.0 / self.length
         for segment in self.segments:
             canvas.glstate.set_texture(segment.texture)
-            glUniform4f(canvas.glstate.transform_pos, *zeros(4,float32))
+            if canvas.glstate.shaders:
+                glUniform4f(canvas.glstate.transform_pos, *zeros(4,float32))
             glBegin(GL_QUADS)
             glTexCoord2f(segment.s_left, segment.t_ratio)
             glVertex3f(segment.x_left*scale,  -self.length*scale*0.5, segment.y1)
@@ -1510,7 +1575,12 @@ class StringDef(PolygonDef):
             child = p.definition
             if child.draped:
                 canvas.glstate.set_texture(child.texture_draped)
-                glUniform4f(canvas.glstate.transform_pos, sizex-defn.bbox.maxx, 0, sizez-defn.bbox.maxz, radians(p.hdelta))
+                if canvas.glstate.shaders:
+                    glUniform4f(canvas.glstate.transform_pos, sizex-defn.bbox.maxx, 0, sizez-defn.bbox.maxz, radians(p.hdelta))
+                else:
+                    glPushMatrix()
+                    glTranslatef(sizex-defn.bbox.maxx, 0, sizez-defn.bbox.maxz)
+                    glRotatef(-p.hdelta, 0,1,0)
                 glBegin(GL_TRIANGLES)
                 for i in range(0,len(child.draped),3):
                     for j in range(3):
@@ -1518,6 +1588,8 @@ class StringDef(PolygonDef):
                         glTexCoord2f(v[3],v[4])
                         glVertex3f(v[0],v[1],v[2])
                 glEnd()
+                if not canvas.glstate.shaders:
+                    glPopMatrix()
 
         canvas.glstate.set_depthtest(True)
         canvas.glstate.set_poly(False)
@@ -1525,12 +1597,19 @@ class StringDef(PolygonDef):
             child = p.definition
             if child.vdata is not None:
                 canvas.glstate.set_texture(child.texture)
-                glUniform4f(canvas.glstate.transform_pos, sizex-defn.bbox.maxx, 0, sizez-defn.bbox.maxz, radians(p.hdelta))
+                if canvas.glstate.shaders:
+                    glUniform4f(canvas.glstate.transform_pos, sizex-defn.bbox.maxx, 0, sizez-defn.bbox.maxz, radians(p.hdelta))
+                else:
+                    glPushMatrix()
+                    glTranslatef(sizex-defn.bbox.maxx, 0, sizez-defn.bbox.maxz)
+                    glRotatef(-p.hdelta, 0,1,0)
                 if child.culled:
                     glDrawArrays(GL_TRIANGLES, child.base, child.culled)
                 if child.nocull:
                     canvas.glstate.set_cull(False)
                     glDrawArrays(GL_TRIANGLES, child.base+child.culled, child.nocull)
+                if not canvas.glstate.shaders:
+                    glPopMatrix()
             if self.alternate: break	# just do the first one
 
         data=glReadPixels(0,0, ClutterDef.PREVIEWSIZE,ClutterDef.PREVIEWSIZE, GL_RGB, GL_UNSIGNED_BYTE)

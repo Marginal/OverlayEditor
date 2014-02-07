@@ -20,6 +20,7 @@ import gc
 from glob import glob
 from math import atan2, cos, sin, floor, hypot, radians
 from numpy import array, array_equal, concatenate, dot, identity, vstack, zeros, float32, float64, int32
+import os
 from os.path import basename, curdir, join
 from struct import unpack
 from sys import exc_info, exit, platform, version
@@ -111,35 +112,42 @@ class GLstate():
         self.dynamic_vbo =vbo.VBO(None, GL_STATIC_DRAW)
         self.selected_vbo=vbo.VBO(None, GL_STREAM_DRAW)
         # Use of GL_ARB_instanced_arrays requires a shader. Just duplicate fixed pipeline shaders.
-        vanilla   = open('Resources/vanilla.vs').read()
-        instanced = open('Resources/instanced.vs').read()
-        unlit     = open('Resources/unlit.fs').read()
-        colorvs   = open('Resources/color.vs').read()
-        colorfs   = open('Resources/color.fs').read()
-        self.textureshader = compileProgram(compileShader(vanilla, GL_VERTEX_SHADER),
-                                            compileShader(unlit, GL_FRAGMENT_SHADER))
-        if __debug__: print glGetProgramInfoLog(self.textureshader)
-        self.transform_pos = glGetUniformLocation(self.textureshader, 'transform')
-        self.skip_pos      = glGetAttribLocation(self.textureshader, 'skip')
-        self.colorshader   = compileProgram(compileShader(colorvs, GL_VERTEX_SHADER),
-                                            compileShader(colorfs, GL_FRAGMENT_SHADER))
-        glBindAttribLocation(self.colorshader, self.skip_pos, 'skip')
-        glLinkProgram(self.colorshader)	# re-link with above location
-        if __debug__: print glGetProgramInfoLog(self.colorshader)
-        assert glGetProgramiv(self.colorshader, GL_LINK_STATUS), glGetProgramInfoLog(self.colorshader)
-        if glInitInstancedArraysARB():
-            self.instancedshader = compileProgram(compileShader(instanced, GL_VERTEX_SHADER),
-                                                  compileShader(unlit, GL_FRAGMENT_SHADER))
-            if __debug__: print glGetProgramInfoLog(self.instancedshader)
-            self.instanced_transform_pos = glGetAttribLocation(self.instancedshader, 'transform')
-            self.instanced_selected_pos  = glGetAttribLocation(self.instancedshader, 'selected')
-            self.instanced_arrays = True
-        else:
-            self.instancedshader = self.instanced_transform_pos = self.instanced_selected_pos = None
-            self.instanced_arrays = False
-        glUseProgram(self.textureshader)
-        glVertexAttrib1f(self.skip_pos, 0)
-        glUniform4f(self.transform_pos, *zeros(4,float32))
+        try:
+            # MacOS 10.5 drivers are too flakey
+            if platform=='darwin' and int(os.uname()[2].split('.')[0]) < 10: raise NotImplementedError
+            vanilla   = open('Resources/vanilla.vs').read()
+            instanced = open('Resources/instanced.vs').read()
+            unlit     = open('Resources/unlit.fs').read()
+            colorvs   = open('Resources/color.vs').read()
+            colorfs   = open('Resources/color.fs').read()
+            self.textureshader = compileProgram(compileShader(vanilla, GL_VERTEX_SHADER),
+                                                compileShader(unlit, GL_FRAGMENT_SHADER))
+            if __debug__: print glGetProgramInfoLog(self.textureshader)
+            self.transform_pos = glGetUniformLocation(self.textureshader, 'transform')
+            self.skip_pos      = glGetAttribLocation(self.textureshader, 'skip')
+            self.colorshader   = compileProgram(compileShader(colorvs, GL_VERTEX_SHADER),
+                                                compileShader(colorfs, GL_FRAGMENT_SHADER))
+            glBindAttribLocation(self.colorshader, self.skip_pos, 'skip')
+            glLinkProgram(self.colorshader)	# re-link with above location
+            if __debug__: print glGetProgramInfoLog(self.colorshader)
+            assert glGetProgramiv(self.colorshader, GL_LINK_STATUS), glGetProgramInfoLog(self.colorshader)
+            if glInitInstancedArraysARB():
+                self.instancedshader = compileProgram(compileShader(instanced, GL_VERTEX_SHADER),
+                                                      compileShader(unlit, GL_FRAGMENT_SHADER))
+                if __debug__: print glGetProgramInfoLog(self.instancedshader)
+                self.instanced_transform_pos = glGetAttribLocation(self.instancedshader, 'transform')
+                self.instanced_selected_pos  = glGetAttribLocation(self.instancedshader, 'selected')
+                self.instanced_arrays = True
+            else:
+                self.instancedshader = self.instanced_transform_pos = self.instanced_selected_pos = None
+                self.instanced_arrays = False
+            glUseProgram(self.textureshader)
+            glVertexAttrib1f(self.skip_pos, 0)
+            glUniform4f(self.transform_pos, *zeros(4,float32))
+            self.shaders = True
+        except:
+            if __debug__: print_exc()
+            self.instanced_arrays = self.shaders = False
 
     def set_texture(self, id):
         if self.texture!=id:
@@ -149,7 +157,7 @@ class GLstate():
                 if __debug__:
                     if self.debug: print "set_texture disable GL_TEXTURE_COORD_ARRAY"
                 glDisableClientState(GL_TEXTURE_COORD_ARRAY)
-                glUseProgram(self.colorshader)
+                if self.shaders: glUseProgram(self.colorshader)
                 if self.texture!=0:
                     glBindTexture(GL_TEXTURE_2D, 0)
             else:
@@ -157,7 +165,7 @@ class GLstate():
                     if __debug__:
                         if self.debug: print "set_texture enable GL_TEXTURE_COORD_ARRAY"
                     glEnableClientState(GL_TEXTURE_COORD_ARRAY)
-                    glUseProgram(self.textureshader)
+                    if self.shaders: glUseProgram(self.textureshader)
                 glBindTexture(GL_TEXTURE_2D, id)
             self.texture=id
         elif __debug__:
@@ -409,15 +417,8 @@ class MyGL(wx.glcanvas.GLCanvas):
                          "Can't initialise OpenGL.", wx.ICON_ERROR|wx.OK, self.frame)
             exit(1)
 
-        try:
-            self.glstate=GLstate()
-        except:
-            if __debug__: print_exc()
-            myMessageBox('This application requires GLSL 1.20 or later, which is not supported by your graphics card.\nTry updating the drivers for your graphics card.',
-                         "Can't initialise OpenGL.", wx.ICON_ERROR|wx.OK, self.frame)
-            exit(1)
-
         self.vertexcache=VertexCache()	# member so can free resources
+        self.glstate=GLstate()
         self.imagery=Imagery(self)
 
         #glClearDepth(1.0)
@@ -436,7 +437,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glPixelStorei(GL_PACK_ALIGNMENT,1)	# byte aligned glReadPixels
         glReadBuffer(GL_BACK)			# for unproject
         #glPixelStorei(GL_UNPACK_LSB_FIRST,1)
-        #glEnsable(GL_TEXTURE_2D)		# Don't need fixed function texturing
+        glEnable(GL_TEXTURE_2D)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glEnable(GL_BLEND)
         glAlphaFunc(GL_GREATER, 1.0/256)	# discard wholly transparent
@@ -444,7 +445,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         glMatrixMode(GL_TEXTURE)
         glTranslatef(0, 1, 0)
         glScalef(1, -1, 1)			# OpenGL textures are backwards
-        glMatrixMode(GL_PROJECTION)		# We always leave the modelview matrix as identity and the active matrix mode as projection
+        glMatrixMode(GL_PROJECTION)		# We always leave the modelview matrix as identity and the active matrix mode as projection, except briefly when drawing objects via the non-shader path
         wx.EVT_PAINT(self, self.OnPaint)	# start generating paint events only now we're set up
 
         if log_glstate:
@@ -453,9 +454,10 @@ class MyGL(wx.glcanvas.GLCanvas):
             print 'texture_compression:\t\t%s' % (self.vertexcache.texcache.compress and 'yes' or 'no')
             print 'texture_compression_s3tc:\t%s' % (self.vertexcache.texcache.s3tc and 'yes' or 'no')
             print 'bgra:\t\t\t\t%s' % (self.vertexcache.texcache.bgra and 'yes' or 'no')
+            print 'shaders:\t\t\t%s' % (self.glstate.shaders and 'yes' or 'no')
+            print 'gpu_shader4:\t\t\t%s' % (glInitGpuShader4EXT() and 'yes' or 'no')
             print 'instanced_arrays:\t\t%s' % (self.glstate.instanced_arrays and 'yes' or 'no')
             print 'multi_draw_arrays:\t\t%s' % (self.glstate.multi_draw_arrays and 'yes' or 'no')
-            print 'gpu_shader4:\t\t\t%s' % (glInitGpuShader4EXT() and 'yes' or 'no')
 
 
     def OnEraseBackground(self, event):
@@ -757,7 +759,10 @@ class MyGL(wx.glcanvas.GLCanvas):
             # Sea
             glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
             self.glstate.set_color((0.25, 0.25, 0.50))
-            self.glstate.set_texture(None)
+            if self.glstate.shaders:
+                self.glstate.set_texture(None)	# ATI drivers don't like 0
+            else:
+                self.glstate.set_texture(0)
             glBegin(GL_QUADS)
             glVertex3f( onedeg*cos(radians(1+self.tile[0]))/2, 0, -onedeg/2)
             glVertex3f( onedeg*cos(radians(self.tile[0]))/2, 0,  onedeg/2)
@@ -825,16 +830,26 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glEnd()
         self.glstate.set_depthtest(True)
         self.glstate.set_texture(0)	# texture shader
-        glVertexAttrib1f(self.glstate.skip_pos, 0)
-        if not prefs.options&Prefs.ELEVATION:
-            glUniform4f(self.glstate.transform_pos, 0, -1, 0, 0)	# Defeat elevation data
+        if self.glstate.shaders:
+            glVertexAttrib1f(self.glstate.skip_pos, 0)
+            if not prefs.options&Prefs.ELEVATION:
+                glUniform4f(self.glstate.transform_pos, 0, -1, 0, 0)	# Defeat elevation data
+            else:
+                glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
         else:
-            glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
+            glMatrixMode(GL_MODELVIEW)
+            glLoadIdentity()
+            if not self.options&Prefs.ELEVATION:
+                glScalef(1,0,1)		# Defeat elevation data:
         (mesh, netindices) = self.vertexcache.getMesh(self.tile)
         for (base,number,texno) in mesh:
             self.glstate.set_texture(texno)
             glDrawArrays(GL_TRIANGLES, base, number)
-        glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
+        if not self.options&Prefs.ELEVATION:
+            if self.glstate.shaders:
+                glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
+            else:
+                glLoadIdentity()
         if __debug__:
             if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
         if netindices is not None:
@@ -852,31 +867,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         navaidplacements=self.navaidplacements[self.tile]
 
         self.glstate.set_dynamic(self.vertexcache)	# realize
-        if self.selected and not self.frame.bkgd:	# background image is always drawn with its own opacity setting
-            selected = zeros((len(self.vertexcache.dynamic_data)/6,), float32)
-            for placement in self.selected:
-                if placement.dynamic_data is not None:
-                    assert placement.base+len(placement.dynamic_data)/6 <= len(selected)
-                    selected[placement.base:placement.base+len(placement.dynamic_data)/6] = 1
-            glEnableVertexAttribArray(self.glstate.skip_pos)
-            if self.glstate.instanced_arrays: glVertexAttribDivisorARB(self.glstate.skip_pos, 0)
-            self.glstate.set_attrib_selected(self.glstate.skip_pos, selected)
-            self.vertexcache.buckets.draw(self.glstate, False, self.aptdata, imagery, prefs.imageryopacity)
-
-            # Selected dynamic - last so overwrites unselected dynamic
-            selected = 1 - selected
-            self.glstate.set_attrib_selected(self.glstate.skip_pos, selected)
-            self.vertexcache.buckets.draw(self.glstate, True)
-            glDisableVertexAttribArray(self.glstate.skip_pos)
-            glVertexAttrib1f(self.glstate.skip_pos, 0)
-        else:
-            glVertexAttrib1f(self.glstate.skip_pos, 0)
-            self.vertexcache.buckets.draw(self.glstate, None, self.aptdata, imagery, prefs.imageryopacity)
+        # Draw clutter with dynamic geometry
+        self.vertexcache.buckets.draw(self.glstate, self.frame.bkgd and set() or self.selected, self.aptdata, imagery, prefs.imageryopacity)	# background image is always drawn with its own opacity setting
         if log_paint:
             print "%6.3f time to draw dynamic" % (time.clock()-clock2)
             clock2=time.clock()
 
-        # Draw clutter with static geometry and sorted by texture (ignoring layer ordering since it doesn't really matter so much for Objects)
+        # Draw clutter with static geometry (ignoring layer ordering since it doesn't really matter so much for Objects)
         self.glstate.set_instance(self.vertexcache)
         self.glstate.set_poly(False)
         self.glstate.set_depthtest(True)
@@ -906,7 +903,11 @@ class MyGL(wx.glcanvas.GLCanvas):
                 for o in self.selected: selected.update(o.placements)	# include children
             for objdef in self.defs.values():	# benefit of sorting by texture would be marginal
                 objdef.draw_instanced(self.glstate, selected)
-            glUniform4f(self.glstate.transform_pos, *zeros(4,float32))	# drawing Objects alters the matrix
+            if self.glstate.shaders:
+                glUniform4f(self.glstate.transform_pos, *zeros(4,float32))	# drawing Objects alters the matrix
+            else:
+                glLoadIdentity()	# Drawing Objects alters the matrix
+                glMatrixMode(GL_PROJECTION)
         if log_paint:
             print "%6.3f time to draw static" % (time.clock()-clock2)
             clock2=time.clock()
@@ -1044,9 +1045,15 @@ class MyGL(wx.glcanvas.GLCanvas):
             glPushName(0)
 
         self.glstate.set_instance(self.vertexcache)
+        if not self.glstate.shaders:
+            glMatrixMode(GL_MODELVIEW)
         for objdef in objdefs:
             objdef.pick_instanced(self.glstate, proj, selections, lookup)
-        glUniform4f(self.glstate.transform_pos, *zeros(4,float32))
+        if self.glstate.shaders:
+            glUniform4f(self.glstate.transform_pos, *zeros(4,float32))	# drawing Objects alters the matrix
+        else:
+            glLoadIdentity()	# Drawing Objects alters the matrix
+            glMatrixMode(GL_PROJECTION)
         if __debug__: print "%6.3f time to issue instance" %(time.clock()-clock)
 
         self.glstate.set_dynamic(self.vertexcache)

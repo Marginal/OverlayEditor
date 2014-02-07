@@ -1,5 +1,3 @@
-// -*- mode: c -*-
-
 #version 120
 
 attribute float skip;	// would prefer bool, but that requires GLSL 1.30

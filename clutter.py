@@ -112,6 +112,7 @@ class Object(Clutter):
         self.parent = parent
         self.hdg=hdg
         self.y=0
+        self.transform=None
         self.matrix=None
 
     def __str__(self):
@@ -203,6 +204,7 @@ class Object(Clutter):
         return self.dynamic_data
 
     def clearlayout(self):
+        self.transform=None
         self.matrix=None
         self.dynamic_data=None	# Can be removed from dynamic VBO
         self.flush()
@@ -211,7 +213,7 @@ class Object(Clutter):
         # number of children is fixed, so no need to delete and re-create them
 
     def islaidout(self):
-        return self.matrix is not None
+        return self.transform is not None
 
     def flush(self):
         self.vertexcache.allocate_dynamic(self, False)
@@ -243,8 +245,11 @@ class Object(Clutter):
             self.y = elev.height(x,z,meshtris)
         if hdg is not None:
             self.hdg=hdg
-        h=radians(self.hdg)
-        self.matrix = array([x,self.y,z,h],float32)
+        h = radians(self.hdg)
+        s = sin(h)
+        c = cos(h)
+        self.transform = array([x,self.y,z,h],float32)
+        self.matrix = array([c,0.0,s,0.0, 0.0,1.0,0.0,0.0, -s,0.0,c,0.0, x,self.y,z,1.0],float32)
         self.definition.allocate(self.vertexcache)	# ensure allocated
         for p in self.placements:
             p.layout(tile, meshtris=meshtris)
