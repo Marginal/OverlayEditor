@@ -50,7 +50,9 @@ mv $RPM/RPMS/noarch/${APPLINUX}-$VERSION-$RELEASE.noarch.rpm .
 mkdir -p $RPMRT/DEBIAN
 echo Version: $VERSION-$RELEASE> $RPMRT/DEBIAN/control
 cat   linux/control >> $RPMRT/DEBIAN/control
-cp -p linux/postinst $RPMRT/DEBIAN/
+cp -p linux/postinst   $RPMRT/DEBIAN/
+mkdir -p $RPMRT/usr/local/share/doc/${APPLINUX}/
+cp -p linux/copyright  $RPMRT/usr/local/share/doc/${APPLINUX}/
 fakeroot "dpkg-deb -b $RPMRT ."	# requires gnu-tar
 
 # mac

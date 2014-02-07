@@ -2,8 +2,8 @@ Summary: X-Plane DSF overlay editor
 Name: overlayeditor
 Version: %{version}
 Release: %{release}
-License: Creative Commons Attribution-NonCommercial-ShareAlike 3.0
-Group: Amusements/Games
+License: CC-BY-NC-SA
+Group: Multimedia/Graphics
 URL: http://marginal.org.uk/x-planescenery
 Vendor: Jonathan Harris <x-plane@marginal.org.uk>
 Prefix: /usr/local
