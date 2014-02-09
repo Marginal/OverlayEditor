@@ -56,11 +56,12 @@ class Filecache:
             self.cachedir=join(self.cachedir, appname)
             if not isdir(self.cachedir):
                 makedirs(self.cachedir)
+            open(join(self.cachedir, Filecache.directory), 'at').close()	# check writeable
         except:
-            if __debug__: print_exc()
             self.cachedir=join(gettempdir(), appname)
             if not isdir(self.cachedir):
                 makedirs(self.cachedir)
+            open(join(self.cachedir, Filecache.directory), 'at').close()	# check writeable
 
         self.files={}
         self.starttime=int(time.time())
@@ -169,13 +170,16 @@ class Filecache:
 
 
     def writedir(self):
-        h=open(join(self.cachedir, Filecache.directory), 'wt')
-        for name, rec in sorted(self.files.items()):
-            if rec:
-                (accessed, modified)=rec
-                h.write('%s\t%d\t%d\n' % (name, accessed, modified))
-        h.close()
-                
+        try:
+            h=open(join(self.cachedir, Filecache.directory), 'wt')
+            for name, rec in sorted(self.files.items()):
+                if rec:
+                    (accessed, modified)=rec
+                    h.write('%s\t%d\t%d\n' % (name, accessed, modified))
+            h.close()
+        except:
+            # silently fail
+            if __debug__: print_exc()
 
 class Imagery:
 
