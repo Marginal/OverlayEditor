@@ -13,6 +13,9 @@ from OpenGL.extensions import alternate
 from OpenGL.GL.ARB.instanced_arrays import glVertexAttribDivisorARB
 from OpenGL.GL.ARB.draw_instanced import glDrawArraysInstancedARB
 glDrawArraysInstanced = alternate(glDrawArraysInstanced, glDrawArraysInstancedARB, platform.createExtensionFunction('glDrawArraysInstancedARB', dll=platform.GL, extension='GL_ARB_instanced_arrays', argTypes=(constants.GLenum,constants.GLint,constants.GLsizei,constants.GLsizei)))	# Handle systems that support GL_ARB_instanced_arrays but not GL_ARB_draw_instanced
+from OpenGL.GL.ARB.occlusion_query import *
+glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
+glEndQuery = alternate(glEndQuery, glEndQueryARB)
 
 from elevation import BBox
 
