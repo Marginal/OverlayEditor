@@ -1680,7 +1680,7 @@ class NetworkDef(StringDef,LineDef):
                     lines.append((int(c[1]), netdef.texs[int(c[1])], round(float(c[4]),4), round(float(c[5])-center,4), round(float(c[6]),4), float(c[7])/scale, round(float(c[8])-center,4), round(float(c[9]),4), float(c[10])/scale))
             elif id=='OBJECT_GRADED':	# mode lat_offset? lat_offset? rot rot repeat_len repeat_len offsets?
                 if c[1]=='VERT':	# only support this mode
-                    assert float(c[7]) == float(c[8]) == self.length, self.name	# only handle repeat == length
+                    assert float(c[7]) == float(c[8]) and (float(c[7]) == self.length or not float(c[7])), netdef.name	# only handle repeat == length
                     childname = c[2]
                     if childname in lookup:
                         childfilename = lookup[childname].file
