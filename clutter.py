@@ -1471,20 +1471,23 @@ class Facade(Polygon):
             # http://wiki.x-plane.com/Facade_Overview
             hgrid=[]
             vgrid=[]
-            for (target,panels,scale,grid,is_horiz) in [(size,wall.hpanels,wall.scale[0],hgrid,True), (float(self.param),wall.vpanels,wall.scale[1],vgrid,False)]:	# horizontal then vertical
+            for (target,panels,scale,grid,is_vert) in [(size,wall.hpanels,wall.scale[0],hgrid,False), (float(self.param),wall.vpanels,wall.scale[1],vgrid,True)]:	# horizontal then vertical
                 width=0		# cumulative width
                 ltex=None	# end tex coord for left panel(s)
                 mltex=[]	# end tex coord for middle-left panel(s)
                 mrtex=[]	# start tex coord for middle-right panel(s)
                 rtex=None	# start tex coord for right panel(s)
                 top=None	# top floor kept separate for sloping
+                floors_count=0	# number of floors that we've deployed (X-Plane 10+)
                 for i in range(max(len(panels[0]),len(panels[2]))):
-                    if not is_horiz:		# different rules appear to apply for vertical bottom and tops
+                    if prefs.xpver<10 and is_vert:
+                        # prior to X-Plane 10.20 top and bottom always added in pairs, and only when strictly lower than target height
                         if width<=target:
                             if i<len(panels[0]):
                                 panel=panels[0][i]
                                 ltex=panel.texcoords[1]
                                 width+=panel.width
+                                floors_count+=1
                             if i<len(panels[2]):
                                 panel=panels[2][-i-1]	# add from right
                                 if wall.roofslope and i==0:
@@ -1492,22 +1495,28 @@ class Facade(Polygon):
                                 else:
                                     rtex=panel.texcoords[0]
                                 width+=panel.width
+                                floors_count+=1
                         continue
                     for left in [False,True]:	# despite the documentation, X-Plane appears to fill from right
                         if left:
                             if i<len(panels[0]):
                                 panel=panels[0][i]
-                                if width+panel.width-target < target-width:
+                                if (width+panel.width-target < target-width and (floors_count<self.definition.floors_max or not is_vert)) or (is_vert and floors_count<self.definition.floors_min):
                                     ltex=panel.texcoords[1]
                                     width+=panel.width
+                                    floors_count+=1
                                 else:
                                     break
                         else:
                             if i<len(panels[2]):
                                 panel=panels[2][-i-1]	# add from right
-                                if width+panel.width-target < target-width:
-                                    rtex=panel.texcoords[0]
+                                if (width+panel.width-target < target-width and (floors_count<self.definition.floors_max or not is_vert))or (is_vert and floors_count<self.definition.floors_min):
+                                    if is_vert and wall.roofslope and i==0:
+                                        top=panel.texcoords[0]	# need to keep top floor separate for sloping
+                                    else:
+                                        rtex=panel.texcoords[0]
                                     width+=panel.width
+                                    floors_count+=1
                                 else:
                                     break
                     else:
@@ -1515,23 +1524,26 @@ class Facade(Polygon):
                     break
                 else:
                     # left and right panels have not filled the target
+                    if is_vert: print 'Here', self.param
                     while panels[1]:
                         for i in range(len(panels[1])):
                             for left in [False,True]:
                                 if left:
                                     panel=panels[1][i]
-                                    if width+panel.width-target <= (is_horiz and target-width or 0):
+                                    if (width+panel.width-target <= ((prefs.xpver>=10 or not is_vert) and target-width or 0) and (floors_count<self.definition.floors_max or not is_vert)) or (prefs.xpver>=10 and is_vert and floors_count<self.definition.floors_min):
                                         if i==0: mltex.append(0)
                                         mltex[-1]=panel.texcoords[1]
                                         width+=panel.width
+                                        floors_count+=1
                                     else:
                                         break
                                 else:
                                     panel=panels[1][-i-1]
-                                    if width+panel.width-target <= (is_horiz and target-width or 0):
+                                    if (width+panel.width-target <= ((prefs.xpver>=10 or not is_vert) and target-width or 0) and (floors_count<self.definition.floors_max or not is_vert)) or (prefs.xpver>=10 and is_vert and floors_count<self.definition.floors_min):
                                         if i==0: mrtex.insert(0,0)
                                         mrtex[0]=panel.texcoords[0]
                                         width+=panel.width
+                                        floors_count+=1
                                     else:
                                         break
                             else:
@@ -1541,7 +1553,7 @@ class Facade(Polygon):
                             continue
                         break
 
-                if is_horiz and rtex is None and not mrtex:	# if nothing fits, just cram in rightmost panel
+                if not is_vert and rtex is None and not mrtex:	# if nothing fits, just cram in rightmost panel
                     if panels[2]:
                         panel=panels[2][-1]
                         rtex=panel.texcoords[0]
@@ -1560,7 +1572,7 @@ class Facade(Polygon):
                     rtex=mrtex.pop()	# optimisation - merge last middle-right with right
 
                 # make list of (offset[m], texcoord)
-                texscale=scale*(is_horiz and target/width or 1)	# vertical doesn't stretch
+                texscale=scale*(is_vert and 1 or target/width)	# vertical doesn't stretch
                 width=0			# cumulative width
                 if ltex:
                     grid.append((0,panels[0][0].texcoords[0]))

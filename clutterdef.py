@@ -1050,6 +1050,8 @@ class FacadeDef(PolygonDef):
         self.texture_roof=0		# separate texture for roof
         self.walls=[]	# v8 facade
         self.roof=[]	# v8 facade
+        self.floors_min = 1	# v8 facade
+        self.floors_max = 1000	# v8 facade (arbitrary)
         self.floors=[]	# v10 facade
         self.version=800
 
@@ -1095,6 +1097,10 @@ class FacadeDef(PolygonDef):
                 self.fittomesh=False
             elif id=='ATTR_layer_group_draped':
                 self.setlayer(c[1], int(c[2]))
+            elif id=='FLOORS_MIN':
+                self.floors_min = int(c[1]) or 1
+            elif id=='FLOORS_MAX':
+                self.floors_max = int(c[1])
 
             # v8
             elif id=='LOD':
@@ -1313,6 +1319,8 @@ class FacadeFallback(FacadeDef):
         self.two_sided=True
         self.texture_roof=0
         self.roof=[]
+        self.floors_min = 1
+        self.floors_max = 1000
         wall=FacadeDef.v8Wall()
         wall.scale=[10,10]
         panel=FacadeDef.v8Panel()
