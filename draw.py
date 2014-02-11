@@ -42,7 +42,7 @@ from imagery import Imagery
 from lock import Locked
 from MessageBox import myMessageBox
 from nodes import Node
-from prefs import Prefs, prefs
+from prefs import Prefs, prefs, gcustom, gnavdata
 from version import appname
 
 sband=16	# width of mouse scroll band around edge of window
@@ -1171,7 +1171,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         if self.background.name!=backgroundfile:
             self.background.name=backgroundfile
             if backgroundfile[0]==curdir:
-                backgroundfile=join(glob(join(prefs.xplane,'[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]',prefs.package))[0], backgroundfile)
+                backgroundfile=join(glob(join(prefs.xplane,gcustom,prefs.package))[0], backgroundfile)
             try:
                 self.background.definition.texture=self.vertexcache.texcache.get(backgroundfile, False, fixsize=True)
             except:
@@ -1385,7 +1385,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         for path in dsfdirs:
             if not glob(path): continue
             pathlen=len(glob(path)[0])+1
-            thisdsfs=glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(self.tile[0]/10), int(self.tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (self.tile[0], self.tile[1])))
+            thisdsfs=glob(join(path, '*', gnavdata, "%+02d0%+03d0" % (int(self.tile[0]/10), int(self.tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (self.tile[0], self.tile[1])))
             # asciibetical, except global is last
             thisdsfs.sort(lambda x,y: ((x[pathlen:].lower().startswith('-global ') and 1) or
                                        (y[pathlen:].lower().startswith('-global ') and -1) or

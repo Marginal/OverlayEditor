@@ -1,4 +1,5 @@
 import codecs
+from glob import glob
 from os import getenv, makedirs
 from os.path import dirname, isdir, join, expanduser
 from sys import platform, getfilesystemencoding
@@ -8,6 +9,20 @@ from version import appname, appversion
 
 if __debug__:
     from traceback import print_exc
+
+gresources='[rR][eE][sS][oO][uU][rR][cC][eE][sS]'
+gnavdata='[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]'
+gaptdat=join(gnavdata,'[aA][pP][tT].[dD][aA][tT]')
+gdefault=join(gresources,'[dD][eE][fF][aA][uU][lL][tT] [sS][cC][eE][nN][eE][rR][yY]')
+gglobal='[gG][lL][oO][bB][aA][lL] [sS][cC][eE][nN][eE][rR][yY]'
+gcustom='[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]'
+gglobapt='[gG][lL][oO][bB][aA][lL] [aA][iI][rR][pP][oO][rR][tT][sS]'
+gmain8aptdat=join(gresources,gaptdat)
+gmain8navdat=join(gresources,gnavdata,'[nN][aA][vV].[dD][aA][tT]')
+gmain9aptdat=join(gdefault,'[dD][eE][fF][aA][uU][lL][tT] [aA][pP][tT] [dD][aA][tT]',gaptdat)
+gmain9navdat=join(gresources,'[dD][eE][fF][aA][uU][lL][tT] [d][aA][tT][aA]','[eE][aA][rR][tT][hH]_[nN][aA][vV].[dD][aA][tT]')
+glibrary='[lL][iI][bB][rR][aA][rR][yY].[tT][xX][tT]'
+
 
 class Prefs:
     TERRAIN=1
@@ -20,6 +35,7 @@ class Prefs:
     def __init__(self):
         self.filename=None
         self.xplane=None
+        self.xpver=8			# not actually saved with preferences, but a convenient place to keep this
         self.package=None
         self.options=Prefs.TERRAIN
         self.imageryprovider = None	# map image provider, eg 'Bing'
@@ -63,10 +79,12 @@ class Prefs:
                 except:
                     pass
             handle.close()
+            self.setxpver()
         except:
             if __debug__: print_exc()
 
     def write(self):
+        self.setxpver()	# since this is called after changing prefs
         try:
             handle=codecs.open(self.filename, 'w', 'utf-8')
             handle.write('%s\n%s\n*options=%d\n' % (
@@ -80,6 +98,15 @@ class Prefs:
         except:
             if __debug__: print_exc()
 
+    def setxpver(self):
+        self.xpver = 8
+        if glob(join(self.xplane, gmain9aptdat)):
+            if glob(join(self.xplane,gcustom,gglobapt,gaptdat)):
+                self.xpver=10.2	# actually >= 10.21
+            elif glob(join(self.xplane,gresources,gdefault,'1000 *')):
+                self.xpver=10
+            else:
+                self.xpver=9        
 
 # Globals
 prefs = Prefs()

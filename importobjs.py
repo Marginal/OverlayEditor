@@ -12,7 +12,7 @@ if __debug__:
 
 from clutterdef import ObjectDef, AutoGenPointDef, PolygonDef
 from MessageBox import myMessageBox
-from prefs import prefs
+from prefs import prefs, gcustom
 
 
 # 2.5-only version of case-insensitive sort for str or unicode
@@ -237,7 +237,7 @@ def samefile(src, dst):
 # returns list of files that need loading into the palette, or True if a full reload is required
 def doimport(paths, palette):
     if not paths or not prefs.package: return False
-    pkgpath = glob(join(prefs.xplane, '[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]', prefs.package))[0]
+    pkgpath = glob(join(prefs.xplane, gcustom, prefs.package))[0]
     try:
         files=importpaths(pkgpath, paths)
     except EnvironmentError, e:

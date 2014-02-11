@@ -26,7 +26,7 @@ from clutterdef import BBox, SkipDefs, NetworkDef
 from DSFLib import readDSF
 from elevation import ElevationMesh, DummyElevationMesh, onedeg
 from palette import PaletteEntry
-from prefs import Prefs, prefs
+from prefs import Prefs, prefs, gnavdata
 from version import appname, appversion
 
 downsamplemin=64	# Don't downsample textures this size or smalller
@@ -592,7 +592,7 @@ class VertexCache:
             for path in self.dsfdirs:
                 if not glob(path): continue
                 pathlen=len(glob(path)[0])+1
-                thisdsfs=glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1])))
+                thisdsfs=glob(join(path, '*', gnavdata, "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1])))
                 # asciibetical, except global is last
                 thisdsfs.sort(lambda x,y: ((x[pathlen:].lower().startswith('-global ') and 1) or
                                            (y[pathlen:].lower().startswith('-global ') and -1) or
@@ -621,7 +621,7 @@ class VertexCache:
     def loadFallbackMesh(self, tile):
         key=(tile[0],tile[1],prefs.options&Prefs.TERRAIN)
         for path in self.dsfdirs[1:]:
-            if glob(join(path, '*', '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))) or glob(join(path, pardir, '[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]', "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[eE][nN][vV]" % (tile[0], tile[1]))):
+            if glob(join(path, '*', gnavdata, "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[dD][sS][fF]" % (tile[0], tile[1]))) or glob(join(path, pardir, gnavdata, "%+02d0%+03d0" % (int(tile[0]/10), int(tile[1]/10)), "%+03d%+04d.[eE][nN][vV]" % (tile[0], tile[1]))):
                 # DSF or ENV exists but can't read it
                 tex=join('Resources','airport0_000.png')
                 break

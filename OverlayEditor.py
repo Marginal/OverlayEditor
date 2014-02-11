@@ -94,7 +94,7 @@ from lock import LockDialog
 from palette import Palette, PaletteEntry
 from DSFLib import readDSF, writeDSF
 from MessageBox import myCreateStdDialogButtonSizer, myMessageBox, AboutBox
-from prefs import Prefs, prefs
+from prefs import Prefs, prefs, gcustom, gglobal, gdefault, glibrary, gaptdat, gmain8aptdat, gmain9aptdat, gnavdata, gmain8navdat, gmain9navdat
 from version import appname, appversion
 
 # constants
@@ -109,19 +109,6 @@ if platform=='darwin':
 else:
     mousezoom2 = zoom2
     mousezoom  = zoom
-
-gresources='[rR][eE][sS][oO][uU][rR][cC][eE][sS]'
-gnavdata='[eE][aA][rR][tT][hH] [nN][aA][vV] [dD][aA][tT][aA]'
-gaptdat=join(gnavdata,'[aA][pP][tT].[dD][aA][tT]')
-gdefault=join(gresources,'[dD][eE][fF][aA][uU][lL][tT] [sS][cC][eE][nN][eE][rR][yY]')
-gglobal='[gG][lL][oO][bB][aA][lL] [sS][cC][eE][nN][eE][rR][yY]'
-gcustom='[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]'
-gglobapt='[gG][lL][oO][bB][aA][lL] [aA][iI][rR][pP][oO][rR][tT][sS]'
-gmain8aptdat=join(gresources,gaptdat)
-gmain8navdat=join(gresources,gnavdata,'[nN][aA][vV].[dD][aA][tT]')
-gmain9aptdat=join(gdefault,'[dD][eE][fF][aA][uU][lL][tT] [aA][pP][tT] [dD][aA][tT]',gaptdat)
-gmain9navdat=join(gresources,'[dD][eE][fF][aA][uU][lL][tT] [d][aA][tT][aA]','[eE][aA][rR][tT][hH]_[nN][aA][vV].[dD][aA][tT]')
-glibrary='[lL][iI][bB][rR][aA][rR][yY].[tT][xX][tT]'
 
 
 if platform=='darwin':
@@ -1455,22 +1442,16 @@ class MainWindow(wx.Frame):
             pkgdir=None
 
         progress.Update(1, 'Default airports')
-        if glob(join(prefs.xplane, gmain9aptdat)):
-            if glob(join(prefs.xplane,gcustom,gglobapt,gaptdat)):
-                xpver=10	# actually >= 10.21
-            else:
-                xpver=9
+        if prefs.xpver > 8:
             mainaptdat=glob(join(prefs.xplane, gmain9aptdat))[0]
         elif glob(join(prefs.xplane, gmain8aptdat)):
-            xpver=8
             mainaptdat=glob(join(prefs.xplane, gmain8aptdat))[0]
         else:
             mainaptdat = None
-        if not mainaptdat:
             self.nav=[]
             myMessageBox("Can't find the X-Plane global apt.dat file.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
-            xpver=8
-        elif not self.airports:	# Default apt.dat
+
+        if mainaptdat and not self.airports:	# Default apt.dat
             try:
                 if __debug__: clock=time.clock()	# Processor time
                 (self.airports,self.nav)=scanApt(mainaptdat)
@@ -1482,7 +1463,7 @@ class MainWindow(wx.Frame):
                 self.nav=[]
                 myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
             try:
-                if xpver>=9:
+                if prefs.xpver>=9:
                     self.nav.extend(readNav(glob(join(prefs.xplane,gmain9navdat))[0]))
                 else:
                     self.nav.extend(readNav(glob(join(prefs.xplane,gmain8navdat))[0]))
@@ -1678,7 +1659,7 @@ class MainWindow(wx.Frame):
         if self.goto: self.goto.Close()	# Needed on wxMac 2.5
         self.goto=GotoDialog(self, airports)	# build only
 
-        if xpver>=9:
+        if prefs.xpver>=9:
             dsfdirs=[join(prefs.xplane, gcustom),
                      join(prefs.xplane, gglobal),
                      join(prefs.xplane, gdefault)]

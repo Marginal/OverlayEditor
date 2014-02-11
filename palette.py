@@ -8,7 +8,7 @@ if __debug__:
 from clutterdef import ClutterDef, ObjectDef, PolygonDef, DrapedDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
 from importobjs import doimport
 from MessageBox import myMessageBox
-from prefs import prefs
+from prefs import prefs, gcustom
 
 
 # Focus is a pain.
@@ -45,7 +45,7 @@ class PaletteDropTarget(wx.FileDropTarget):
             wx.PostEvent(self.palette.frame.toolbar, wx.PyCommandEvent(wx.EVT_TOOL.typeId, wx.ID_REFRESH))
         elif files:
             first = None
-            pkgpath = glob(join(prefs.xplane, '[cC][uU][sS][tT][oO][mM] [sS][cC][eE][nN][eE][rR][yY]', prefs.package))[0]
+            pkgpath = glob(join(prefs.xplane, gcustom, prefs.package))[0]
             for (src, dst) in files:
                 ext=splitext(src)[1].lower()
                 if ext in ['.dds', '.png']: continue
