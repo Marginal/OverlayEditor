@@ -1002,6 +1002,11 @@ class FacadeDef(PolygonDef):
             self.roofs=[]
             self.walls=[]
 
+    class Roof:
+        def __init__(self, height):
+            self.height=height
+            self.children=[]	# [name, definition, xdelta, zdelta, hdelta]
+
     class Wall:
         def __init__(self, name):
             self.name=name
@@ -1135,7 +1140,6 @@ class FacadeDef(PolygonDef):
                 currentwall.vpanels[['BOTTOM','MIDDLE','TOP'].index(id)].append(panel)
 
             # v10
-            # TODO: ROOF_OBJ
             elif id in ['SHADER_WALL','SHADER_ROOF']:
                 rooftex=(id=='SHADER_ROOF')
             elif id=='ROOF_SCALE':
@@ -1167,8 +1171,12 @@ class FacadeDef(PolygonDef):
                 currentwall=None
                 self.floors.append(currentfloor)
             elif id=='ROOF_HEIGHT':
-                currentfloor.roofs.append(float(c[1]))
+                currentfloor.roofs.append(FacadeDef.Roof(float(c[1])))
                 currentfloor.height=max(currentfloor.height, float(c[1]))
+            elif id in ['ROOF_OBJ', 'ROOF_OBJ_HEADING']:
+                (childname, definition)=objects[int(c[1])]
+                if not isinstance(definition, ObjectFallback):	# skip fallbacks
+                    currentfloor.roofs[-1].children.append([childname, definition, float(c[2]), float(c[3]), id=='ROOF_OBJ_HEADING' and float(c[4]) or 0])
 
             elif id=='SEGMENT':
                 assert len(segments)==int(c[1])	# Assume segements are in order
@@ -1204,7 +1212,7 @@ class FacadeDef(PolygonDef):
             if not self.floors: raise IOError
             self.floors.sort(key=attrgetter('height'))		# layout code assumes floors are in ascending height
             for floor in self.floors:
-                floor.roofs.sort()				# draw roofs in ascending height due to poly_os on height 0
+                floor.roofs.sort(key=attrgetter('height'))	# draw roofs in ascending height due to poly_os on height 0
                 if not floor.walls: raise IOError
                 for wall in floor.walls:
                     if not wall.spellings: raise IOError

@@ -351,10 +351,7 @@ class AutoGenPoint(Object):
         for v in self.definition.draped:
             self.bbox.include(x+v[0]*coshdg-v[2]*sinhdg, z+v[0]*sinhdg+v[2]*coshdg)
         elev = self.vertexcache.getElevationMesh(tile)
-        if elev.flat:
-            mymeshtris = None
-        else:
-            mymeshtris = elev.getbox(self.bbox)
+        mymeshtris = elev.getbox(self.bbox)
 
         Object.layout(self, tile, x, None, z, self.hdg, mymeshtris)
         assert len(self.placements)==len(self.definition.children), "%s %s %s %s" % (self, len(self.placements), self.definition, len(self.definition.children))
@@ -1811,16 +1808,19 @@ class Facade(Polygon):
 
         if floor.roofs:
             # Tessellate to generate tri vertices with UV data, and check polygon is simple
+            elev = self.vertexcache.getElevationMesh(tile)
+            mymeshtris = elev.getbox(self.bbox)
             try:
                 (x,y,z) = nodes[0].loc
                 (tox,toy,toz) = nodes[1].loc
-                h=atan2(tox-x, z-toz) + piby2	# texture heading determined by nodes 0->1
+                h=atan2(tox-x, z-toz) + 3*piby2	# texture heading determined by nodes 0->1 - along v axis
+                hdg=degrees(h)
                 coshdg=cos(h)
                 sinhdg=sin(h)
                 s=self.definition.roofscale
-                maxu = max([((node.loc[0]*coshdg + node.loc[2]*sinhdg) / s) for node in nodes])
-                minv = min([((node.loc[0]*sinhdg - node.loc[2]*coshdg) / s) for node in nodes])
-                if floor.roofs[0]==0:
+                u0 = min([node.loc[0]*coshdg + node.loc[2]*sinhdg for node in nodes])
+                v0 = (nodes[0].loc[0]*sinhdg - nodes[0].loc[2]*coshdg)
+                if floor.roofs[0].height==0:
                     # "Roof" at height 0 is special and always gets draped (irrespective of "GRADED" setting in .fac)
                     rooftris=[]
                     gluTessBeginPolygon(Facade.tess, rooftris)
@@ -1828,13 +1828,12 @@ class Facade(Polygon):
                     if self.definition.fittomesh:
                         for j in range(n):
                             (x,y,z) = nodes[j].loc
-                            gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, y, z, (x*coshdg+z*sinhdg)/s-maxu, (x*sinhdg-z*coshdg)/s-minv, 0])
+                            gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, y, z, (x*coshdg+z*sinhdg-u0)/s, (x*sinhdg-z*coshdg-v0)/s, 0])
                     else:
                         # Facade as a whole isn't draped but this floor at height 0 should be, so find elevations
-                        elev = self.vertexcache.getElevationMesh(tile)
                         for j in range(n):
                             (x,y,z) = nodes[j].loc
-                            gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, elev.height(x,z), z, (x*coshdg+z*sinhdg)/s-maxu, (x*sinhdg-z*coshdg)/s-minv, 0])
+                            gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, elev.height(x,z,mymeshtris), z, (x*coshdg+z*sinhdg-u0)/s, (x*sinhdg-z*coshdg-v0)/s, 0])
                     gluTessEndContour(Facade.tess)
                     gluTessEndPolygon(Facade.tess)
                     if __debug__:
@@ -1849,7 +1848,7 @@ class Facade(Polygon):
                 gluTessBeginContour(Facade.tess)
                 for j in range(n):
                     (x,y,z) = nodes[j].loc
-                    gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, y, z, (x*coshdg+z*sinhdg)/s-maxu, (x*sinhdg-z*coshdg)/s-minv, 0])
+                    gluTessVertex(Facade.tess, array([x, 0, z],float64), [x, y, z, (x*coshdg+z*sinhdg-u0)/s, (x*sinhdg-z*coshdg-v0)/s, 0])
                 gluTessEndContour(Facade.tess)
                 gluTessEndPolygon(Facade.tess)
                 if __debug__:
@@ -1868,10 +1867,56 @@ class Facade(Polygon):
                 self.drapedlen=len(rooftris)
                 for roof in floor.roofs[rooftris and 1 or 0:]:
                     for tri in tris:
-                        rooftris.append([tri[0],roof+tri[1]]+tri[2:6])
+                        rooftris.append([tri[0],roof.height+tri[1]]+tri[2:6])
                 roofdata=array(rooftris, float32).flatten()
                 self.rooflen=len(roofdata)/6-self.drapedlen
                 self.dynamic_data=concatenate((self.dynamic_data, roofdata))
+
+                # add children
+                # projection point where u = v = 0
+                d = sinhdg*sinhdg + coshdg*coshdg
+                x = (u0*coshdg + v0*sinhdg)/d
+                z = (u0*sinhdg - v0*coshdg)/d
+                # work out which tiles are complete
+                maxu = int(max([tri[3] for tri in tris]))+1
+                maxv = int(max([tri[4] for tri in tris]))+1
+                inpoints = set()
+                for u,v in [(u,v) for u in range(1,maxu) for v in range(1,maxv)]:
+                    xt = x + u*s*coshdg + v*s*sinhdg
+                    zt = z + u*s*sinhdg - v*s*coshdg
+                    # http://paulbourke.net/geometry/polygonmesh/
+                    for t in range(0,len(tris),3):
+                        c = False
+                        for i in range(t,t+3):
+                            j = t+(i+1)%3
+                            if ((((tris[i][2] <= zt) and (zt < tris[j][2])) or
+                                 ((tris[j][2] <= zt) and (zt < tris[i][2]))) and
+                                (xt < (tris[j][0]-tris[i][0]) * (zt - tris[i][2]) / (tris[j][2] - tris[i][2]) + tris[i][0])):
+                                c = not c
+                        if c:
+                            inpoints.add((u,v))
+                            break
+                for u,v in [(u,v) for u in range(1,maxu) for v in range(1,maxv)]:
+                    if (u,v) in inpoints and (u+1,v) in inpoints and (u,v+1) in inpoints and (u+1,v+1) in inpoints:
+                        for roof in floor.roofs:
+                            for child in roof.children:
+                                (childname, definition, xdelta, zdelta, hdelta)=child
+                                placement = Object(childname, self.lat, self.lon, hdg+hdelta, parent=self)
+                                placement.load(None, None, self.vertexcache, definition=definition)	# Child Def should have been created when FacadeDef was loaded
+                                xdelta += s*u
+                                zdelta += s*v
+                                childx = x + xdelta*coshdg + zdelta*sinhdg
+                                childz = z + xdelta*sinhdg - zdelta*coshdg
+                                if self.definition.fittomesh or not roof.height:
+                                    childy = elev.height(childx,childz,mymeshtris) + roof.height
+                                else:
+                                    childy = y + roof.height
+                                placement.layout(tile, childx, childy, childz)
+                                self.placements.append(placement)
+
+        if self.datalen + self.drapedlen + self.rooflen == 0:
+            self.nonsimple=True
+            self.dynamic_data=concatenate([array(p+COL_NONSIMPLE,float32) for w in self.points for p in w])
 
         self.vertexcache.allocate_dynamic(self, True)
         return selectednode
