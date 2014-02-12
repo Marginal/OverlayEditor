@@ -1,2 +1,2 @@
 appname='OverlayEditor'
-appversion=2.46	# Must be numeric
+appversion=2.47	# Must be numeric
