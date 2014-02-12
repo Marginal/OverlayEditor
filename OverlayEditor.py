@@ -1430,7 +1430,6 @@ class MainWindow(wx.Frame):
     # Load or reload current package
     def OnReload(self, reload, package=None):
         progress=wx.ProgressDialog('Loading', '', 5, self)
-        self.palette.flush()
         if reload:
             package=prefs.package
         pkgnavdata=None
@@ -1532,6 +1531,7 @@ class MainWindow(wx.Frame):
                 lookupbylib[lib][name] = obj
 
         # Populate palette with library items
+        self.palette.flush()	# Don't do this earlier to avoid crash on importing under wxMac 2.8
         self.palette.load('Objects in this package', objects, pkgdir)
         libnames = lookupbylib.keys()
         sortfolded(libnames)	# dislay order in palette

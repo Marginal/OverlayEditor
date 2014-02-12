@@ -41,7 +41,7 @@ class PaletteDropTarget(wx.FileDropTarget):
     def OnDropFiles(self, x, y, paths):
         files = doimport(paths, self.palette)
         if files is True:
-            # self.palette.frame.OnReload(True)	# do the following instead so the drop animation can complete first
+            # do this instead of a direct Reload so the drop animation can complete first
             wx.PostEvent(self.palette.frame.toolbar, wx.PyCommandEvent(wx.EVT_TOOL.typeId, wx.ID_REFRESH))
         elif files:
             first = None
