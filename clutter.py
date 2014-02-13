@@ -1521,7 +1521,6 @@ class Facade(Polygon):
                     break
                 else:
                     # left and right panels have not filled the target
-                    if is_vert: print 'Here', self.param
                     while panels[1]:
                         for i in range(len(panels[1])):
                             for left in [False,True]:
