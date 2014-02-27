@@ -104,10 +104,11 @@ class PaletteListBox(wx.VListBox):
                 try:
                     realname=name.encode()	# X-Plane only supports ASCII
                     ext=name[-4:].lower()
-                    if ext in UnknownDefs:
-                        imgno=self.parent.imgno_unknown
-                    elif realname in self.parent.bad:
+                    if realname in self.parent.bad or not exists(entry.file):
                         imgno=self.parent.imgno_bad
+                        self.parent.bad[realname]=True
+                    elif ext in UnknownDefs:
+                        imgno=self.parent.imgno_unknown
                     elif ext==PolygonDef.DRAPED:
                         imgno=self.parent.imgno_pol
                         if self.tabno==0 and self.pkgdir:
@@ -343,7 +344,7 @@ class PaletteChoicebook(wx.Choicebook):
                     if realname in self.bad: return	# already bad
                     self.bad[realname]=True
                     l.choices[i]=(self.imgno_bad, name, realname)
-                    self.Refresh()
+                    l.Refresh()
                     return
 
         if name in self.bad: return	# already bad
@@ -568,7 +569,7 @@ class Palette(wx.SplitterWindow):
                                 (imgno, name, realname)=l.choices[i]
                                 if imgno!=self.cb.imgno_ortho:
                                     l.choices[i]=(self.cb.imgno_ortho, name, realname)
-                                    self.Refresh()
+                                    l.Refresh()
                                 break
                     self.previewimg=definition.preview(self.frame.canvas, self.frame.canvas.vertexcache)
                 except:

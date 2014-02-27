@@ -97,9 +97,7 @@ def readLib(filename, objects, terrain, iscustom, thiscustom):
                 if not iscustom and basename(obj).startswith('blank.'):
                     continue	# no point adding placeholders
                 obj=join(path, normpath(obj))
-                if not exists(obj):
-                    continue	# no point adding missing objects
-                elif name[-4:]=='.ter':
+                if name[-4:]=='.ter':
                     if name not in terrain:
                         terrain[name] =  obj
                 elif name in thisfileobjs:		# already processed this name
