@@ -522,13 +522,6 @@ class Polygon(Clutter):
                         glVertex3f(*node.loc)
                         glVertex3f(*node.bz2loc)
             glEnd()
-            glBegin(GL_POINTS)
-            for winding in self.nodes:
-                for node in winding:
-                    if node.bezier:
-                        glVertex3f(*node.bezloc)
-                        glVertex3f(*node.bz2loc)
-            glEnd()
 
         glstate.set_color(COL_SELECTED)
         for winding in self.points:
@@ -536,11 +529,6 @@ class Polygon(Clutter):
             for p in winding:
                 glVertex3f(*p)
             glEnd()
-        glBegin(GL_POINTS)
-        for winding in self.nodes:
-            for node in winding:
-                glVertex3f(*node.loc)
-        glEnd()
 
         # draw selected on top
         if selectednode:
@@ -555,12 +543,47 @@ class Polygon(Clutter):
                 glVertex3f(*node.bz2loc)
                 glEnd()
             glstate.set_color(COL_SELNODE)
+
+        # Points
+        if glstate.shaders:		# have to do point smoothing with a shader if we're using shaders
+            glUseProgram(glstate.pointshader)
+        else:
+            glEnable(GL_POINT_SMOOTH)
+
+        # bezier control handles
+        if self.canbezier:
+            glstate.set_color(COL_SELBEZ)
+            glBegin(GL_POINTS)
+            for winding in self.nodes:
+                for node in winding:
+                    if node.bezier:
+                        glVertex3f(*node.bezloc)
+                        glVertex3f(*node.bz2loc)
+            glEnd()
+
+        glstate.set_color(COL_SELECTED)
+        glBegin(GL_POINTS)
+        for winding in self.nodes:
+            for node in winding:
+                glVertex3f(*node.loc)
+        glEnd()
+
+        # draw selected on top
+        if selectednode:
+            (i,j) = selectednode
+            node = self.nodes[i][j]
+            glstate.set_color(COL_SELNODE)
             glBegin(GL_POINTS)
             glVertex3f(*node.loc)
             if self.canbezier and node.bezier:
                 glVertex3f(*node.bezloc)
                 glVertex3f(*node.bz2loc)
             glEnd()
+
+        if glstate.shaders:
+            glUseProgram(glstate.colorshader)
+        else:
+            glDisable(GL_POINT_SMOOTH)	# Make selection etc slightly easier on the GPU
         
     def bucket_dynamic(self, base, buckets):
         # allocate for drawing, assuming outlines

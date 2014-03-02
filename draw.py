@@ -120,6 +120,7 @@ class GLstate():
             unlit     = open('Resources/unlit.fs').read()
             colorvs   = open('Resources/color.vs').read()
             colorfs   = open('Resources/color.fs').read()
+            pointfs   = open('Resources/point.fs').read()
             self.textureshader = compileProgram(compileShader(vanilla, GL_VERTEX_SHADER),
                                                 compileShader(unlit, GL_FRAGMENT_SHADER))
             if __debug__: print glGetProgramInfoLog(self.textureshader)
@@ -128,6 +129,10 @@ class GLstate():
                                                 compileShader(colorfs, GL_FRAGMENT_SHADER))
             if __debug__: print glGetProgramInfoLog(self.colorshader)
             assert glGetProgramiv(self.colorshader, GL_LINK_STATUS), glGetProgramInfoLog(self.colorshader)
+            self.pointshader   = compileProgram(compileShader(colorvs, GL_VERTEX_SHADER),
+                                                compileShader(pointfs, GL_FRAGMENT_SHADER))
+            if __debug__: print glGetProgramInfoLog(self.pointshader)
+            glEnable(GL_POINT_SPRITE)	# for pointshader
             if glInitInstancedArraysARB():
                 self.instancedshader = compileProgram(compileShader(instanced, GL_VERTEX_SHADER),
                                                       compileShader(unlit, GL_FRAGMENT_SHADER))
@@ -423,7 +428,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         glShadeModel(GL_SMOOTH)
         glEnable(GL_LINE_SMOOTH)
         glPointSize(7.0)			# for nodes
-        glEnable(GL_POINT_SMOOTH)
         glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)	# we can hope
         glFrontFace(GL_CW)
         glPolygonMode(GL_FRONT, GL_FILL)
@@ -716,7 +720,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         proj=dot(array([[cos(radians(self.h)),0,-sin(radians(self.h)),0], [0,1,0,0], [sin(radians(self.h)),0,cos(radians(self.h)),0], [0,0,0,1]], float64), proj)	# glRotatef(self.h, 0.0,1.0,0.0)
         self.glstate.proj = dot(array([[1,0,0,0], [0,1,0,0], [0,0,1,0], [-self.x,-self.y,-self.z,1]], float64), proj)	# glTranslatef(-self.x, -self.y, -self.z)
         glLoadMatrixd(self.glstate.proj)
-        glEnable(GL_POINT_SMOOTH)
 
         # Workaround for buggy ATI drivers: Check that occlusion queries actually work
         if self.glstate.occlusion_query is None:
@@ -973,7 +976,6 @@ class MyGL(wx.glcanvas.GLCanvas):
                 glEnd()
 
         glLoadMatrixd(self.glstate.proj)	# Restore state for unproject
-        glDisable(GL_POINT_SMOOTH)	# Make selection etc slightly easier on the GPU
         self.glstate.set_poly(False)
 
         if log_paint: print "%6.3f time in OnPaint" % (time.clock()-clock)
