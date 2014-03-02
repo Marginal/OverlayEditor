@@ -26,7 +26,7 @@ class myCreateStdDialogButtonSizer(wx.BoxSizer):
             if ok: buttonok=wx.Button(parent, wx.ID_OK)
             self.Add([0,0], 1)		# push following buttons to right
             if no: self.Add(buttonno, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 2)
-            if ok and no: self.Add([6,0], 0)	# cosmetic
+            if ok and no: self.Add([16,0], 0)	# cosmetic
             if ok: self.Add(buttonok, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 2)
             self.Add([0,0], 1)	# centre
         if ok: buttonok.SetDefault()
@@ -120,9 +120,9 @@ def myMessageBox(message, caption, style=wx.OK, parent=None):
     if (style&wx.YES_NO):
         grid.Add(wx.Button(panel0, wx.ID_NO), (5,3), flag=wx.ALIGN_LEFT)
     if (style&wx.YES_NO) and (style&wx.CANCEL):
-        grid.Add(wx.Button(panel0, wx.ID_CANCEL), (5,5), flag=wx.ALIGN_RIGHT|wx.RIGHT, border=4)
+        grid.Add(wx.Button(panel0, wx.ID_CANCEL), (5,5), flag=wx.ALIGN_RIGHT|wx.RIGHT, border=14)
     grid.Add(button, (5,6), flag=wx.ALIGN_RIGHT)
-    grid.Add([24,20], (6,7))
+    grid.Add([20,20], (6,7))
     
     panel0.SetSizerAndFit(grid)
 
