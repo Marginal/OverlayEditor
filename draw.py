@@ -127,10 +127,15 @@ class GLstate():
                                                 compileShader(colorfs, GL_FRAGMENT_SHADER))
             if __debug__: print glGetProgramInfoLog(self.colorshader)
             assert glGetProgramiv(self.colorshader, GL_LINK_STATUS), glGetProgramInfoLog(self.colorshader)
-            self.pointshader   = compileProgram(compileShader(colorvs, GL_VERTEX_SHADER),
-                                                compileShader(pointfs, GL_FRAGMENT_SHADER))
-            if __debug__: print glGetProgramInfoLog(self.pointshader)
-            glEnable(GL_POINT_SPRITE)	# for pointshader
+            if platform=='win32' and glGetString(GL_VENDOR)=='Intel' and glGetString(GL_VERSION).startswith('2.'):
+                # gl_PointCoord broken on Gen5 and older - http://lists.freedesktop.org/archives/mesa-commit/2012-March/036247.html
+                self.pointshader = None
+                glPointSize(5.0)
+            else:
+                self.pointshader   = compileProgram(compileShader(colorvs, GL_VERTEX_SHADER),
+                                                    compileShader(pointfs, GL_FRAGMENT_SHADER))
+                if __debug__: print glGetProgramInfoLog(self.pointshader)
+                glEnable(GL_POINT_SPRITE)
             if glInitInstancedArraysARB():
                 self.instancedshader = compileProgram(compileShader(instanced, GL_VERTEX_SHADER),
                                                       compileShader(unlit, GL_FRAGMENT_SHADER))
@@ -147,6 +152,7 @@ class GLstate():
         except:
             if __debug__: print_exc()
             self.instanced_arrays = self.shaders = False
+            self.textureshader = self.colorshader = self.pointshader = self.instancedshader = None
 
     def set_texture(self, id):
         if self.texture!=id:

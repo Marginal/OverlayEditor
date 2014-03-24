@@ -545,7 +545,7 @@ class Polygon(Clutter):
             glstate.set_color(COL_SELNODE)
 
         # Points
-        if glstate.shaders:		# have to do point smoothing with a shader if we're using shaders
+        if glstate.pointshader:	# have to do point smoothing with a shader if we're using shaders
             glUseProgram(glstate.pointshader)
         else:
             glEnable(GL_POINT_SMOOTH)
@@ -580,7 +580,7 @@ class Polygon(Clutter):
                 glVertex3f(*node.bz2loc)
             glEnd()
 
-        if glstate.shaders:
+        if glstate.pointshader:
             glUseProgram(glstate.colorshader)
         else:
             glDisable(GL_POINT_SMOOTH)	# Make selection etc slightly easier on the GPU
