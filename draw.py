@@ -24,12 +24,10 @@ import os
 from os.path import basename, curdir, join
 from struct import unpack
 from sys import exc_info, exit, platform, version
+from traceback import print_exc
 import time
 import wx
 import wx.glcanvas
-
-if __debug__:
-    from traceback import print_exc
 
 from apt import layoutApt
 from files import VertexCache, sortfolded, glInitTextureCompressionS3TcEXT
@@ -1138,11 +1136,20 @@ class MyGL(wx.glcanvas.GLCanvas):
             backgroundfile=prefs.packageprops[prefs.package][0]
         else:
             backgroundfile=newfile	# may be '' if just cleared
+
         if not backgroundfile:
-            if self.background: self.background.clearlayout(self.vertexcache)
+            if self.background: self.background.clearlayout()
             self.background=None
             prefs.packageprops.pop(prefs.package,False)
             return
+        elif not self.background or self.background.name!=backgroundfile:
+            if backgroundfile[0]==curdir:
+                backgroundfile = join(glob(join(prefs.xplane,gcustom,prefs.package))[0], backgroundfile[2:])
+            try:
+                texture = self.vertexcache.texcache.get(backgroundfile, wrap=False, downsample=False, fixsize=True)
+            except:
+                if __debug__: print_exc()
+                texture=self.vertexcache.texcache.get(fallbacktexture)
 
         if not self.background:
             if prefs.package in prefs.packageprops:
@@ -1162,9 +1169,32 @@ class MyGL(wx.glcanvas.GLCanvas):
                 else:
                     nodes = [Node([p[i], p[i+1]]) for i in range(0, len(p), 2)]
                 self.background=DrapedImage('*background', 65535, [nodes])
-            else:
-                self.background=DrapedImage('*background', 65535, loc[0], loc[1], self.d, self.h)
+            else:	# new
+                try:	# georeferenced
+                    from osgeo import osr, gdal
+
+                    ds = gdal.Open(backgroundfile.encode('utf8'))	# Needs to be utf8 for old versions on Linux!
+                    gt = ds.GetGeoTransform()
+                    width, height = ds.RasterXSize, ds.RasterYSize
+
+                    old_cs= osr.SpatialReference()
+                    old_cs.ImportFromWkt(ds.GetProjectionRef())
+
+                    new_cs = osr.SpatialReference()
+                    new_cs.SetWellKnownGeogCS('WGS84')
+
+                    tr = osr.CoordinateTransformation(old_cs,new_cs)
+                    nodes = [Node(tr.TransformPoint(gt[0],                              gt[3] + width*gt[4] + height*gt[5])),
+                             Node(tr.TransformPoint(gt[0] + width*gt[1] + height*gt[2], gt[3] + width*gt[4] + height*gt[5])),
+                             Node(tr.TransformPoint(gt[0] + width*gt[1] + height*gt[2], gt[3]                             )),
+                             Node(tr.TransformPoint(gt[0],                              gt[3]                             ))]
+                    self.background=DrapedImage('*background', 65535, [nodes])
+                except:
+                    if __debug__: print_exc()
+                    self.background=DrapedImage('*background', 65535, loc[0], loc[1], self.d, self.h)
+
             self.background.load(self.lookup, self.defs, self.vertexcache)
+            self.background.definition.layer = ClutterDef.IMAGEFILELAYER
             self.background.singlewinding = self.background.fixednodes = True
             self.background.canbezier = False
             for i in range(len(self.background.nodes[0])):
@@ -1172,12 +1202,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         if self.background.name!=backgroundfile:
             self.background.name=backgroundfile
-            if backgroundfile[0]==curdir:
-                backgroundfile=join(glob(join(prefs.xplane,gcustom,prefs.package))[0], backgroundfile)
-            try:
-                self.background.definition.texture=self.vertexcache.texcache.get(backgroundfile, False, fixsize=True)
-            except:
-                self.background.definition.texture=self.vertexcache.texcache.get(fallbacktexture)
+            self.background.definition.texture = texture
             self.background.flush()	# force layout with new texture
 
         if layoutnow:

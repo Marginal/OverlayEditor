@@ -70,7 +70,8 @@ class ClutterDef:
     GEOMCULLEDLAYER = LAYERCOUNT+1			# for non-draped dynamic geometry (i.e. Facades)
     GEOMNOCULLLAYER = LAYERCOUNT+2			# for non-draped dynamic geometry (i.e. Facades)
     IMAGERYLAYER    = LAYERCOUNT+3			# for background imagery (actually drawn earlier)
-    DRAWLAYERCOUNT  = LAYERCOUNT+4			# including stuff lifted out of the X-Plane layers
+    IMAGEFILELAYER  = LAYERCOUNT+4			# for background image file (actually drawn earlier)
+    DRAWLAYERCOUNT  = LAYERCOUNT+5			# including stuff lifted out of the X-Plane layers
 
     PREVIEWSIZE=400	# size of image in preview window
 

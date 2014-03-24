@@ -5,7 +5,7 @@ from glob import glob
 from math import cos, floor, hypot, sin, pi, radians, sqrt
 import numpy
 import os	# for startfile
-from os import chdir, getenv, listdir, mkdir, walk
+from os import chdir, environ, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
 import sys	# for path
 from sys import exit, argv, executable, exc_info, platform, version
@@ -28,9 +28,10 @@ elif platform=='darwin':
         mypath = dirname(mypath)
         chdir(mypath)
     else:
-        importpath = 'MacOS'		# development
+        importpath = join(mypath, 'MacOS')	# development
     for f in listdir(importpath):
         if f.endswith('-py%s.egg' % version[:3]): sys.path.insert(0, join(importpath,f))
+    sys.path.insert(0, importpath)
     sys.path.insert(0, join(importpath, version[:3]))
     argv[0]=basename(argv[0])		# wx doesn't like non-ascii chars in argv[0]
 else:
@@ -70,6 +71,7 @@ except:
 if not __debug__:
     import warnings
     warnings.simplefilter('ignore', DeprecationWarning)
+    warnings.simplefilter('ignore', UserWarning)	# Glymur uses this
     if hasattr(wx,'wxPyDeprecationWarning'):
         warnings.simplefilter('ignore', wx.wxPyDeprecationWarning)
     wx.Log.SetLogLevel(wx.LOG_Error)	# wx warnings are seldom helpful
@@ -508,7 +510,7 @@ class BackgroundDialog(wx.Frame):
 
         sizer3 = wx.StaticBoxSizer(wx.StaticBox(panel, -1, 'Opacity'))
         sizer.Add(sizer3, 0, wx.ALL|wx.EXPAND, pad+pad)
-        self.opacity=wx.Slider(panel, -1, prefs.imageryopacity, 10, 100, style=wx.SL_LABELS)
+        self.opacity=wx.Slider(panel, -1, prefs.imageryopacity, 0, 100, style=wx.SL_LABELS)
         sizer3.Add(self.opacity, 1, wx.ALL|wx.EXPAND, pad)
 
         if platform!='darwin':	# Mac users are used to dialogs withaout an OK button
@@ -560,22 +562,29 @@ class BackgroundDialog(wx.Frame):
         else:
             dir=self.prefix
             f=''
-        dlg=wx.FileDialog(self, "Location of background image:", dir, f,
-                          "Image files|*.dds;*.jpg;*.jpeg;*.png|DDS files (*.dds)|*.bmp|JPEG files (*.jpg, *.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png|All files|*.*",
-                          wx.OPEN)
+        dlg=wx.FileDialog(self, "Background image:", dir, f,
+                          platform=='darwin' and wx.VERSION>=(2,9) and "*.dds;*.jpg;*.jpeg;*.jp2;*.j2k;*.jpx;*.png;*.tif;*.tiff" or "Image files|*.dds;*.jpg;*.jpeg;*.jp2;*.j2k;*.jpx;*.png;*.tif;*.tiff|DDS files (*.dds)|*.dds|JPEG files (*.jpg, *.jpeg)|*.jpg;*.jpeg|JPEG2000 files (*.jp2, *.j2k, *.jpx)|*.jp2;*.j2k;*.jpx|PNG files (*.png)|*.png|TIFF files (*.tif, *.tiff)|*.tif;*.tiff|All files|*.*",
+                          wx.OPEN|wx.FD_FILE_MUST_EXIST)
         if dlg.ShowModal()==wx.ID_OK:
             img = dlg.GetPath()
             self.image = ''
             if img:
                 # failure is silently ignored during display so test loading the image now
                 try:
-                    self.parent.canvas.vertexcache.texcache.get(img, False, fixsize=True)
+                    wx.BeginBusyCursor()	# These images tend to require lots of processing
+                    self.parent.canvas.vertexcache.texcache.get(img, wrap=False, downsample=False, fixsize=True)
                     self.image = img.startswith(self.prefix) and curdir+img[len(self.prefix):] or img
+                    wx.EndBusyCursor()
                 except EnvironmentError, e:
+                    wx.EndBusyCursor()
                     # PIL isn't very diligent about making a well-formed exception so try both strerror and message
-                    myMessageBox(unicode(e.strerror or e.message), "Can't read %s" % basename(img), wx.ICON_INFORMATION|wx.OK, self)
+                    myMessageBox(unicode(e.strerror or e.message), "Can't read %s" % basename(img), wx.ICON_ERROR|wx.OK, self)
+                except MemoryError, e:
+                    wx.EndBusyCursor()
+                    myMessageBox(unicode('Out of memory. '+e.message), "Can't read %s" % basename(img), wx.ICON_ERROR|wx.OK, self)
                 except:
-                    myMessageBox(unicode(exc_info()[1]), "Can't read %s" % basename(img), wx.ICON_INFORMATION|wx.OK, self)
+                    wx.EndBusyCursor()
+                    myMessageBox(unicode(exc_info()[1]), "Can't read %s" % basename(img), wx.ICON_ERROR|wx.OK, self)
         dlg.Destroy()
         self.OnUpdate(event)
 
@@ -1448,7 +1457,7 @@ class MainWindow(wx.Frame):
         else:
             mainaptdat = None
             self.nav=[]
-            myMessageBox("Can't find the X-Plane global apt.dat file.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
+            myMessageBox("Can't find the X-Plane global apt.dat file.", "Can't load airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
 
         if mainaptdat and not self.airports:	# Default apt.dat
             try:
@@ -1460,7 +1469,7 @@ class MainWindow(wx.Frame):
                     print "Invalid apt.dat:"
                     print_exc()
                 self.nav=[]
-                myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
+                myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
             try:
                 if prefs.xpver>=9:
                     self.nav.extend(readNav(glob(join(prefs.xplane,gmain9navdat))[0]))
@@ -1555,7 +1564,7 @@ class MainWindow(wx.Frame):
                 if not netdefs: raise IOError	# empty
                 netfile = netfile[len(pkgdir)+1:].replace('\\','/')
             except:
-                myMessageBox("The %s file in this package is invalid." % netfile[len(pkgdir)+1:], "Can't load network data.", wx.ICON_INFORMATION|wx.OK, self)
+                myMessageBox("The %s file in this package is invalid." % netfile[len(pkgdir)+1:], "Can't load network data.", wx.ICON_EXCLAMATION|wx.OK, self)
                 netfile = None
                 netdefs = {}
 
@@ -1643,13 +1652,13 @@ class MainWindow(wx.Frame):
                     (name, pkgloc, run)=thisapt[thiscode]
             except AssertionError, e:
                 if prefs.package and apt[:-23].endswith(sep+prefs.package):
-                    myMessageBox(e.message, "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
+                    myMessageBox(e.message, "Can't load airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
             except:
                 if __debug__:
                     print "Invalid %s" % apt
                     print_exc()
                 if prefs.package and apt[:-23].endswith(sep+prefs.package):
-                    myMessageBox("The apt.dat file in this package is invalid.", "Can't load airport data.", wx.ICON_INFORMATION|wx.OK, self)
+                    myMessageBox("The apt.dat file in this package is invalid.", "Can't load airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
 
         # Merge in custom airports
         airports=dict(self.airports)
@@ -1700,7 +1709,9 @@ class MainWindow(wx.Frame):
         self.Refresh()
 
     def OnImport(self, event):
-        dlg=wx.FileDialog(self, "Import", glob(join(prefs.xplane,gcustom))[0], '', "Objects, Draped, Facades, Forests, Lines, Textures|*.obj;*.pol;*.fac;*.for;*.lin;*.dds;*.png|Object files (*.obj)|*.obj|Draped polygon files (*.pol)|*.pol|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|Line files (*.lin)|*.lin|Textures (*.dds, *.png)|*.dds;*.png|All files|*.*", wx.OPEN|wx.MULTIPLE|wx.FILE_MUST_EXIST)
+        dlg=wx.FileDialog(self, "Import", glob(join(prefs.xplane,gcustom))[0], '',
+                          platform=='darwin' and wx.VERSION>=(2,9) and "*.obj;*.pol;*.fac;*.for;*.lin;*.dds;*.png" or "All supported file types|*.obj;*.pol;*.fac;*.for;*.lin;*.dds;*.png|Object files (*.obj)|*.obj|Draped polygon files (*.pol)|*.pol|Facade files (*.fac)|*.fac|Forest files (*.for)|*.for|Line files (*.lin)|*.lin|Textures (*.dds, *.png)|*.dds;*.png|All files|*.*",
+                          wx.OPEN|wx.MULTIPLE|wx.FILE_MUST_EXIST)
         if dlg.ShowModal()!=wx.ID_OK:
             dlg.Destroy()
             return
@@ -1915,6 +1926,7 @@ if platform=='win32':
         wx.SystemOptions.SetOptionInt('msw.remap', 2)
     else:
         wx.SystemOptions.SetOptionInt('msw.remap', 0)
+
 if __debug__:
     wx.Log.SetActiveTarget(wx.LogStderr())
 frame=MainWindow(None, wx.ID_ANY, appname)

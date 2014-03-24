@@ -11,8 +11,9 @@ rm -f ${APPLINUX}-$VERSION-$RELEASE.noarch.rpm
 rm -f ${APPLINUX}_$VERSION-$RELEASE_all.deb
 rm -f ${APPNAME}_${VER}_mac.zip
 rm -rf ${APPNAME}.app
+find . -name "*.bak" -exec rm {} \;
 
-PY='OverlayEditor.py apt.py buckets.py clutter.py clutterdef.py draw.py elevation.py DSFLib.py files.py fixed8x13.py MessageBox.py imagery.py importobjs.py lock.py nodes.py palette.py prefs.py version.py'
+PY='OverlayEditor.py apt.py buckets.py clutter.py clutterdef.py contextlib2.py draw.py elevation.py DSFLib.py files.py fixed8x13.py MessageBox.py imagery.py importobjs.py lock.py nodes.py palette.py prefs.py version.py'
 DATA='OverlayEditor.html'
 RSRC='Resources/*.png Resources/*.vs Resources/*.fs Resources/windsock.obj Resources/screenshot.jpg'
 PREV='Resources/previews/*.jpg'
@@ -63,10 +64,13 @@ mkdir -p ${APPNAME}.app/Contents/Resources
 for i in $RSRC; do cp -p "$i" ${APPNAME}.app/Contents/Resources/; done
 mkdir -p ${APPNAME}.app/Contents/Resources/previews
 for i in $PREV; do cp -p "$i" ${APPNAME}.app/Contents/Resources/previews/; done
-cp -p MacOS/${APPNAME} MacOS/DSFTool ${APPNAME}.app/Contents/MacOS/
-cp -p MacOS/*.egg ${APPNAME}.app/Contents/MacOS/
-cp -pr MacOS/2.5 ${APPNAME}.app/Contents/MacOS/
-cp -pr MacOS/2.7 ${APPNAME}.app/Contents/MacOS/
+find MacOS/* -name .DS_Store -exec rm {} \;
+find MacOS/glymur -name "*.pyc" -o -name "*.pyo" -exec rm {} \;
+cp -pr MacOS/${APPNAME} MacOS/DSFTool MacOS/2.5 MacOS/2.7 MacOS/glymur MacOS/*.egg ${APPNAME}.app/Contents/MacOS/
+# copy osgeo unoptimized since shared between Python 2.5 and 2.7
+python2.5 ./bundledeps.py -f osgeo -o ${APPNAME}.app/Contents/MacOS ${APPNAME}.py
+# copy wx optimized for 2.7
+python2.7 -OO ./bundledeps.py -f wx -o ${APPNAME}.app/Contents/MacOS/2.7 ${APPNAME}.py
 cp -p MacOS/*.icns MacOS/*.png MacOS/screenshot.jpg ${APPNAME}.app/Contents/Resources/	# overwrite with Mac versions
 sed s/appversion/$VERSION/ <MacOS/Info.plist >${APPNAME}.app/Contents/Info.plist
 codesign -s "Developer ID Application: Jonathan Harris" ${APPNAME}.app

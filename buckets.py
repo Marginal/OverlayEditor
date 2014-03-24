@@ -118,6 +118,7 @@ class Buckets:
                 glstate.set_color(COL_SELECTED)	# trick glstate there's been a change in colour
                 glColor4f(1.0, 1.0, 1.0, imageryopacity/100.0)	# not using glstate!
                 self.layerbuckets[ClutterDef.IMAGERYLAYER].draw(glstate)
+                self.layerbuckets[ClutterDef.IMAGEFILELAYER].draw(glstate)	# draw file after imagery
                 glstate.set_color(COL_UNPAINTED)
 
         # other layers - unselected

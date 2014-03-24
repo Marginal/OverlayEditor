@@ -1,5 +1,6 @@
 import PIL.Image
-import PIL.PngImagePlugin, PIL.BmpImagePlugin, PIL.JpegImagePlugin 	# force for py2exe
+import PIL.BmpImagePlugin, PIL.JpegImagePlugin, PIL.PngImagePlugin, PIL.TiffImagePlugin 	# force for py2exe
+
 import OpenGL	# for __version__
 from OpenGL.GL import *
 from OpenGL.GL.EXT.bgra import glInitBgraEXT, GL_BGR_EXT, GL_BGRA_EXT
@@ -11,11 +12,11 @@ import codecs
 import gc
 from glob import glob
 from math import cos, log, pi, radians
-from numpy import array, arange, concatenate, empty, ndarray, repeat, float32, uint32
+from numpy import array, arange, concatenate, empty, ndarray, repeat, float32, uint8, uint16, uint32
 from os import listdir, mkdir
 from os.path import basename, dirname, exists, join, normpath, pardir, splitext
 from struct import unpack
-from sys import platform, maxint
+from sys import exc_info, platform, maxint
 from traceback import print_exc
 import time
 import wx
@@ -366,45 +367,82 @@ class TexCache:
                 else:	# wtf?
                     raise Exception, 'Invalid compression type'
 
-            else:	# supported PIL formats
-                image = PIL.Image.open(base+ext)
-                size=[image.size[0],image.size[1]]
+            else:
+                try:	# JPEG2000?
+                    import xml.etree.ElementTree	# force for py2exe
+                    import glymur
+                    jp2 = glymur.Jp2k(base+ext)
+
+                except:	# supported PIL formats
+                    if __debug__:
+                        if ext=='.jp2': print_exc()
+                    image = PIL.Image.open(base+ext)
+                    mode = image.mode
+                    formats = {'L':GL_LUMINANCE, 'LA':GL_LUMINANCE_ALPHA, 'RGB':GL_RGB, 'RGBA':GL_RGBA}
+                    if mode in formats:
+                        format = formats[mode]
+                    else:	# convert weird formats to RGB - http://effbot.org/imagingbook/concepts.htm
+                        format, mode = 'transparency' in image.info and (GL_RGBA, 'RGBA') or (GL_RGB, 'RGB')
+                        image = image.convert(mode)
+                    width, height = image.size
+                    data = None
+
+                else:	# JPEG2000
+                    data = jp2.read()
+                    height, width = data.shape[0:2]
+                    channels = len(data.shape)==2 and 1 or data.shape[2]
+                    format, mode = {1:(GL_LUMINANCE,'L'), 2:(GL_LUMINANCE_ALPHA,'LA'), 3:(GL_RGB,'RGB'), 4:(GL_RGBA,'RGBA')}[channels]
+                    if data.dtype!=uint8:
+                        for superbox in jp2.box:
+                            if isinstance(superbox, glymur.jp2box.JP2HeaderBox):
+                                for box in superbox.box:
+                                    if isinstance(box, glymur.jp2box.ImageHeaderBox):
+                                        data = (data>>(box.bits_per_component-8)).astype(uint8)	# simple downscale
+                    if data.dtype!=uint8:
+                        data = data.astype(uint8)	# didn't find image header! - just truncate
+
+                # check size
+                size = [width, height]
                 for i in [0,1]:
                     l=log(size[i],2)
-                    if l!=int(l): size[i]=2**(1+int(l))
-                    if size[i]>self.maxtexsize:
-                        size[i]=self.maxtexsize
-                    if size!=[image.size[0],image.size[1]]:
-                        if not fixsize:
-                            raise Exception, "Width and/or height not a power of two"
-                        elif not self.npot:
-                            image=image.resize((size[0], size[1]), PIL.Image.BICUBIC)
+                    if l!=int(l):
+                        if not fixsize: raise Exception, "Width and/or height not a power of two"
+                        size[i]=2**(1+int(l))	# expand to next power of two
+                if downsample and size[0]>downsamplemin and size[1]>downsamplemin:
+                    if data is not None: image = PIL.Image.frombuffer(mode, (width,height), data, "raw", mode, 0, 1)
+                    image = image.resize((min(size[0]/4,self.maxtexsize),min(size[1]/4,self.maxtexsize)), PIL.Image.BICUBIC)
+                    width, height = image.size
+                    data = image.tostring("raw", mode)
+                elif (size!=[width, height] and not self.npot) or size[0]>self.maxtexsize or size[1]>self.maxtexsize:
+                    if data is not None: image = PIL.Image.frombuffer(mode, (width,height), data, "raw", mode, 0, 1)
+                    image = image.resize((min(size[0],self.maxtexsize),min(size[1],self.maxtexsize)), PIL.Image.BICUBIC)
+                    width, height = image.size
+                    data = image.tostring("raw", mode)
+                elif data is None:
+                    # obtain data from Image
+                    data = image.tostring("raw", mode)
 
-                if downsample and image.size[0]>4 and image.size[1]>4:
-                    image=image.resize((image.size[0]/4,image.size[1]/4), PIL.Image.NEAREST)
-                
-                if image.mode=='RGBA':
-                    data = image.tostring("raw", 'RGBA')
-                    format=iformat=GL_RGBA
-                elif image.mode=='RGB':
-                    data = image.tostring("raw", 'RGB')
-                    format=iformat=GL_RGB
-                elif image.mode=='LA' or 'transparency' in image.info:
-                    image=image.convert('RGBA')
-                    data = image.tostring("raw", 'RGBA')
-                    format=iformat=GL_RGBA
-                else:
-                    image=image.convert('RGB')
-                    data = image.tostring("raw", 'RGB')
-                    format=iformat=GL_RGB
-                width=image.size[0]
-                height=image.size[1]
-
+            # Common code for uncompressed DDS, JPEG2000 and PIL formats.
             # variables used: data, format, iformat, width, height
-            if not alpha:	# Discard alpha
-                iformat=GL_RGB
+
+            # Discard alpha?
+            if alpha:
+                iformat = format
+            elif format == GL_RGBA:
+                iformat = GL_RGB
+            elif format == GL_LUMINANCE_ALPHA:
+                iformat = GL_LUMINANCE
+            else:
+                iformat = format
+
             if self.compress and (width>compressmin or height>compressmin):	# Don't compress small textures, including built-ins
-                if iformat==GL_RGB:
+                if iformat==GL_LUMINANCE:
+                    iformat=GL_COMPRESSED_LUMINANCE
+                    self.stats[path]=width*height/2	# Assume DXT1
+                elif iformat==GL_LUMINANCE_ALPHA:
+                    iformat=GL_COMPRESSED_LUMINANCE_ALPHA
+                    self.stats[path]=width*height/2	# Assume DXT1
+                elif iformat==GL_RGB:
                     iformat=GL_COMPRESSED_RGB
                     self.stats[path]=width*height/2	# Assume DXT1
                 elif iformat==GL_RGBA:
@@ -436,8 +474,7 @@ class TexCache:
             return id
 
         except:
-            if __debug__:
-                print_exc()
+            if __debug__: print_exc()
             raise
 
 

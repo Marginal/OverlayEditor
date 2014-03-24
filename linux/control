@@ -3,7 +3,8 @@ Section: graphics
 Priority: extra
 Architecture: all
 Installed-Size: 3552
-Depends: bash, desktop-file-utils, p7zip, python (>=2.4), python-imaging (>=1.1.4), python-numpy, python-opengl (>=3.0.1~a1), python-tk, python-wxgtk2.8
+Depends: bash, desktop-file-utils, libopenjpeg2, p7zip, python (>=2.7), python-imaging (>=1.1.6), python-gdal, python-numpy, python-opengl (>=3.0.1~a1), python-setuptools, python-tk, python-wxgtk2.8
+Recommends: python-glymur
 Provides: overlayeditor
 Maintainer: Jonathan Harris <x-plane@marginal.org.uk>
 Homepage: http://marginal.org.uk/x-planescenery/

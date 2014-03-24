@@ -413,7 +413,7 @@ class Imagery:
                 if __debug__: clock=time.clock()
                 filename=self.filecache.get(name)	# downloaded image or None
                 self.canvas.vertexcache.allocate_dynamic(placement, True)	# couldn't do this in thread context
-                placement.definition.texture=self.canvas.vertexcache.texcache.get(filename, False, False)	# discard alpha
+                placement.definition.texture=self.canvas.vertexcache.texcache.get(filename, wrap=False, downsample=False, fixsize=True)
                 if __debug__: print "%6.3f time in imagery load   for %s" % (time.clock()-clock, placement.name)
                 assert placement.islaidout()
             except:
