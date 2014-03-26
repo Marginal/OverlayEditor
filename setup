@@ -66,7 +66,7 @@ mkdir -p ${APPNAME}.app/Contents/Resources/previews
 for i in $PREV; do cp -p "$i" ${APPNAME}.app/Contents/Resources/previews/; done
 find MacOS/* -name .DS_Store -exec rm {} \;
 find MacOS/glymur -name "*.pyc" -o -name "*.pyo" -exec rm {} \;
-cp -pr MacOS/${APPNAME} MacOS/DSFTool MacOS/2.5 MacOS/2.7 MacOS/glymur MacOS/*.egg ${APPNAME}.app/Contents/MacOS/
+cp -pR MacOS/${APPNAME} MacOS/DSFTool MacOS/2.5 MacOS/2.7 MacOS/glymur MacOS/*.egg MacOS/*.dylib ${APPNAME}.app/Contents/MacOS/
 # copy osgeo unoptimized since shared between Python 2.5 and 2.7
 python2.5 ./bundledeps.py -f osgeo -o ${APPNAME}.app/Contents/MacOS ${APPNAME}.py
 # copy wx optimized for 2.7

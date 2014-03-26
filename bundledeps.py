@@ -4,7 +4,7 @@ import errno
 import getopt
 import modulefinder
 import os
-from os.path import basename, dirname, isdir, isfile, join, sep
+from os.path import basename, dirname, isdir, isfile, join, realpath, sep
 import py_compile
 import shutil
 import subprocess
@@ -12,8 +12,6 @@ import sys
 
 
 def copylib(filename, outpath, leafname, dryrun):
-    if leafname.endswith('.dylib'):
-        leafname = join(dirname(leafname), basename(leafname).split('.')[0]+'.dylib')	# just use generic name so we don't have to bother with symlinks
     newfile = join(outpath, leafname)
     if not dryrun and isfile(newfile): return	# already done
     print leafname
@@ -26,11 +24,11 @@ def copylib(filename, outpath, leafname, dryrun):
     for line in otool:
         if '.dylib' in line and not line.startswith("\t/usr/lib"):
             depfile = line.split()[0]
-            newdepfile = join(dirname(depfile), basename(depfile).split('.')[0]+'.dylib')	# just use generic name so we don't have to bother with symlinks
+            newdepfile = realpath(depfile)	# use most specific name so we don't have to bother with duplicates / symlinks
             if basename(newdepfile) == leafname:
                 change = ['-id', leafname] + change
             else:
-                dependencies.append(depfile)
+                dependencies.append(newdepfile)
                 change.extend(['-change', depfile, '@loader_path/' + '../' * (len(leafname.split(sep))-1) + basename(newdepfile)])
     if not dryrun:
         shutil.copy2(filename, newfile)
