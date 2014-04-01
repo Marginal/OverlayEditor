@@ -1,0 +1,44 @@
+> 10.2 Facades can span DSF boundary
+< 10.2 Facades clipped at DSF boundary
+all    Other polygons clipped at DSF boundary
+
+
+Picking: ARB_occlusion_query with stencil, and with depth testing disabled
+Baseline spec: ARB_shader_objects  + ARB_vertex_shader. No ARB_fragment_shader (http://homepage.mac.com/arekkusu/bugs/GLInfo_1058.html)
+No ARB_draw_instanced, limited ARB_instanced_arrays except on 10.7
+Two arrays/vbos: per-placement (facades, polygons) and per-object (.obj)
+For objects, Separate out draped/poly_os into per-placement
+
+For each layer, sort per-placement and per-object by physical texture
+
+To draw:
+instance:
+vbo contains vertex & uv data. Color set manually depending on whether selected (GL_COLOR_ARRAY disabled)
+allocate() accumlates object pointers, vbo and object.base updated on realize.
+When a new object is allocated, pre-instance data appended to vbo on realize
+
+dynamic:
+vbo contains vertex, color and uv data. If selected, GL_COLOR_ARRAY disabled and selection color set manually.
+vbo rebuilt every time a clutter layout changes.
+
+
+
+ToDo:
+
+Palette selected colour on windows
+Terrain overlays?
+Repaint after mouse motion when poly selected
+Facades w/ roofs
+Background
+
+The most efficient way to do is to bind the VBO buffer, setup various array pointers (glNormalPointer etc) and then call glVertexPointer(). glVertexPointer should be called one time for one VBO.
+You might think the essentials of VBO management are done in glBindBufferARB(), but it’s the opposite. VBO systems wait for the next upcoming important function (like glVertexPointer).
+The binding operation is cheap compared to the setup of various pointers.
+This advice fits any other function working in the same manner as glVertexPointer().
+
+
+Facades:
+Roof texture u axis is aligned with line nodes 0->1. (See draped polygon algorithm?)
+Number of floors determined by top roof height nearest to param? (what if equally near?)
+Fit to mesh depending on presence of GRADED. If not fit to mesh, elevation set to mid point of line nodes 0->1
+
