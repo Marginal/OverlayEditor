@@ -29,6 +29,5 @@ for X-Plane 8.30 or later.
 
 
 %post
-easy_install -q Glymur
 gtk-update-icon-cache -f -q -t /usr/local/share/icons/hicolor &>/dev/null
 exit 0	# ignore errors from updating icon cache

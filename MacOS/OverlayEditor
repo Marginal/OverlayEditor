@@ -4,8 +4,8 @@
 # Force default Python so picks up system wxPython
 exec /bin/bash -s<<EOF
 if (( `sw_vers -productVersion | cut -d. -f2` < 7 )); then
-    LD_LIBRARY_PATH=MacOS exec /usr/bin/python2.5 -OO "$0.py";	# Leopard. And stay with 32bit version on Snow Leopard so builtin wxPython works
+    exec /usr/bin/python2.5 -OO "$0.py";	# Leopard. And stay with 32bit version on Snow Leopard so builtin wxPython works
 else
-    LD_LIBRARY_PATH=MacOS exec /usr/bin/python2.7 -OO "$0.py";	# Lion, MountainLion, Mavericks, Yosemite
+    exec /usr/bin/python2.7 -OO "$0.py";	# Lion, Mountain Lion, Mavericks, Yosemite
 fi
 EOF

@@ -193,7 +193,7 @@ class TexCache:
         self.terraintexs=[]	# terrain textures will not be reloaded
         self.stats={}
         # Must be after init
-        self.maxtexsize=glGetIntegerv(GL_MAX_TEXTURE_SIZE)
+        self.maxtexsize = glGetString(GL_VENDOR)=='Humper' and 2048 or glGetIntegerv(GL_MAX_TEXTURE_SIZE)	# VirtualBox limitation
         self.npot=glInitTextureNonPowerOfTwoARB()
         self.compress=glInitTextureCompressionARB()
         self.s3tc=self.compress and glInitTextureCompressionS3TcEXT()
@@ -367,39 +367,17 @@ class TexCache:
                 else:	# wtf?
                     raise Exception, 'Invalid compression type'
 
-            else:
-                try:	# JPEG2000?
-                    import xml.etree.ElementTree	# force for py2exe
-                    import glymur
-                    jp2 = glymur.Jp2k(base+ext)
-
-                except:	# supported PIL formats
-                    if __debug__:
-                        if ext=='.jp2': print_exc()
-                    image = PIL.Image.open(base+ext)
-                    mode = image.mode
-                    formats = {'L':GL_LUMINANCE, 'LA':GL_LUMINANCE_ALPHA, 'RGB':GL_RGB, 'RGBA':GL_RGBA}
-                    if mode in formats:
-                        format = formats[mode]
-                    else:	# convert weird formats to RGB - http://effbot.org/imagingbook/concepts.htm
-                        format, mode = 'transparency' in image.info and (GL_RGBA, 'RGBA') or (GL_RGB, 'RGB')
-                        image = image.convert(mode)
-                    width, height = image.size
-                    data = None
-
-                else:	# JPEG2000
-                    data = jp2.read()
-                    height, width = data.shape[0:2]
-                    channels = len(data.shape)==2 and 1 or data.shape[2]
-                    format, mode = {1:(GL_LUMINANCE,'L'), 2:(GL_LUMINANCE_ALPHA,'LA'), 3:(GL_RGB,'RGB'), 4:(GL_RGBA,'RGBA')}[channels]
-                    if data.dtype!=uint8:
-                        for superbox in jp2.box:
-                            if isinstance(superbox, glymur.jp2box.JP2HeaderBox):
-                                for box in superbox.box:
-                                    if isinstance(box, glymur.jp2box.ImageHeaderBox):
-                                        data = (data>>(box.bits_per_component-8)).astype(uint8)	# simple downscale
-                    if data.dtype!=uint8:
-                        data = data.astype(uint8)	# didn't find image header! - just truncate
+            else:	# supported PIL formats
+                image = PIL.Image.open(base+ext)
+                mode = image.mode
+                formats = {'L':GL_LUMINANCE, 'LA':GL_LUMINANCE_ALPHA, 'RGB':GL_RGB, 'RGBA':GL_RGBA}
+                if mode in formats:
+                    format = formats[mode]
+                else:	# convert weird formats to RGB - http://effbot.org/imagingbook/concepts.htm
+                    format, mode = 'transparency' in image.info and (GL_RGBA, 'RGBA') or (GL_RGB, 'RGB')
+                    image = image.convert(mode)
+                width, height = image.size
+                data = None
 
                 # check size
                 size = [width, height]
@@ -422,7 +400,7 @@ class TexCache:
                     # obtain data from Image
                     data = image.tostring("raw", mode)
 
-            # Common code for uncompressed DDS, JPEG2000 and PIL formats.
+            # Common code for uncompressed DDS and PIL formats.
             # variables used: data, format, iformat, width, height
 
             # Discard alpha?

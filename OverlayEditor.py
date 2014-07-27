@@ -8,7 +8,7 @@ import os	# for startfile
 from os import chdir, environ, getenv, listdir, mkdir, walk
 from os.path import abspath, basename, curdir, dirname, exists, expanduser, isdir, join, normpath, pardir, sep, splitext
 import sys	# for path
-from sys import exit, argv, executable, exc_info, platform, version
+from sys import exit, argv, executable, exc_info, platform, version_info
 if __debug__:
     import time
     from traceback import print_exc
@@ -19,27 +19,19 @@ if platform.lower().startswith('linux') and not getenv("DISPLAY"):
 
 # Path validation
 mypath = sys.path[0]
-if platform=='win32' and  mypath.lower().endswith('.exe'):
+if platform=='win32' and mypath.lower().endswith('.exe'):
     mypath = dirname(mypath)		# py2exe
-    chdir(mypath)
-elif platform=='darwin':
-    if basename(mypath)=='MacOS':	# App starts in MacOS folder
-        importpath = mypath
-        mypath = dirname(mypath)
-        chdir(mypath)
-    else:
-        importpath = join(mypath, 'MacOS')	# development
-    for f in listdir(importpath):
-        if f.endswith('-py%s.egg' % version[:3]): sys.path.insert(0, join(importpath,f))
-    sys.path.insert(0, importpath)
-    sys.path.insert(0, join(importpath, version[:3]))
+elif platform=='darwin' and basename(mypath)=='MacOS':
+    mypath = dirname(mypath)		# App starts in MacOS folder
+    sys.path.insert(0, join(mypath, 'Resources', '%d.%d' % version_info[:2]))
     argv[0]=basename(argv[0])		# wx doesn't like non-ascii chars in argv[0]
-else:
-    chdir(mypath)
+chdir(mypath)
 
 try:
     import wx
 except:
+    from traceback import print_exc
+    print_exc()
     if __debug__: print_exc()
     import Tkinter, tkMessageBox
     Tkinter.Tk().withdraw()
@@ -51,16 +43,27 @@ try:
     import OpenGL
     if OpenGL.__version__ >= '3':
         # Not defined in PyOpenGL 2.x.
-	if __debug__ and not platform.startswith('linux'):
+        import logging
+        logging.basicConfig()
+        if __debug__ and not platform.startswith('linux'):
             OpenGL.ERROR_ON_COPY =True	# force array conversion/flattening to be explicit
         else:
             OpenGL.ERROR_CHECKING=False	# don't check OGL errors for speed
             OpenGL.ERROR_LOGGING =False	# or log
+            #OpenGL.WARN_ON_FORMAT_UNAVAILABLE = True	# For testing packaging
         if platform=='win32':
             # force for py2exe
             from OpenGL.platform import win32
+        elif platform=='darwin':
+            from OpenGL.platform import darwin
+        import OpenGL.arrays.lists
+        import OpenGL.arrays.nones
+        import OpenGL.arrays.numbers
         import OpenGL.arrays.numpymodule
         import OpenGL.arrays.ctypesarrays
+        import OpenGL.arrays.ctypesparameters
+        import OpenGL.arrays.ctypespointers
+        import OpenGL.arrays.strings
 except:
     if __debug__: print_exc()
     import Tkinter, tkMessageBox
@@ -562,8 +565,14 @@ class BackgroundDialog(wx.Frame):
         else:
             dir=self.prefix
             f=''
+        try:
+            import PIL.Jpeg2KImagePlugin
+        except:
+            have_jpeg2000 = False
+        else:
+            have_jpeg2000 = True
         dlg=wx.FileDialog(self, "Background image:", dir, f,
-                          platform=='darwin' and wx.VERSION>=(2,9) and "*.dds;*.jpg;*.jpeg;*.jp2;*.j2k;*.jpx;*.png;*.tif;*.tiff" or "Image files|*.dds;*.jpg;*.jpeg;*.jp2;*.j2k;*.jpx;*.png;*.tif;*.tiff|DDS files (*.dds)|*.dds|JPEG files (*.jpg, *.jpeg)|*.jpg;*.jpeg|JPEG2000 files (*.jp2, *.j2k, *.jpx)|*.jp2;*.j2k;*.jpx|PNG files (*.png)|*.png|TIFF files (*.tif, *.tiff)|*.tif;*.tiff|All files|*.*",
+                          (platform=='darwin' and wx.VERSION>=(2,9) and "*.dds;*.jpg;*.jpeg;*.jp2;*.j2k;*.jpx;*.png;*.tif;*.tiff") or (have_jpeg2000 and "Image files|*.dds;*.jpg;*.jpeg;*.jp2;*.j2k;*.jpx;*.png;*.tif;*.tiff|DDS files (*.dds)|*.dds|JPEG files (*.jpg, *.jpeg)|*.jpg;*.jpeg|JPEG2000 files (*.jp2, *.j2k, *.jpx)|*.jp2;*.j2k;*.jpx|PNG files (*.png)|*.png|TIFF files (*.tif, *.tiff)|*.tif;*.tiff|All files|*.*") or "Image files|*.dds;*.jpg;*.jpeg;*.png;*.tif;*.tiff|DDS files (*.dds)|*.dds|JPEG files (*.jpg, *.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png|TIFF files (*.tif, *.tiff)|*.tif;*.tiff|All files|*.*",
                           wx.OPEN|wx.FD_FILE_MUST_EXIST)
         if dlg.ShowModal()==wx.ID_OK:
             img = dlg.GetPath()

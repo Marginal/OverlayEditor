@@ -105,10 +105,10 @@ class GLstate():
         glDisable(GL_POLYGON_OFFSET_FILL)
         glDepthMask(GL_TRUE)
         self.current_vbo=None
-        self.instance_vbo=vbo.VBO(None, GL_STATIC_DRAW)
-        self.vector_vbo  =vbo.VBO(None, GL_STATIC_DRAW)
-        self.dynamic_vbo =vbo.VBO(None, GL_STATIC_DRAW)
-        self.selected_vbo=vbo.VBO(None, GL_STREAM_DRAW)
+        self.instance_vbo=vbo.VBO(None, GL_STATIC_DRAW, size=0)	# explicit size for PyOpenGL_accelerate
+        self.vector_vbo  =vbo.VBO(None, GL_STATIC_DRAW, size=0)
+        self.dynamic_vbo =vbo.VBO(None, GL_STATIC_DRAW, size=0)
+        self.selected_vbo=vbo.VBO(None, GL_STREAM_DRAW, size=0)
         # Use of GL_ARB_instanced_arrays requires a shader. Just duplicate fixed pipeline shaders.
         try:
             # MacOS 10.5 drivers are too flakey
@@ -453,6 +453,13 @@ class MyGL(wx.glcanvas.GLCanvas):
         wx.EVT_PAINT(self, self.OnPaint)	# start generating paint events only now we're set up
 
         if log_glstate:
+            try:
+                import OpenGL_accelerate.formathandler	# for py2exe
+                import OpenGL_accelerate.nones_formathandler	# for py2exe
+                import OpenGL.acceleratesupport
+                print 'PyOpenGL acceleration:\t\t%s' % (OpenGL.acceleratesupport.ACCELERATE_AVAILABLE and 'yes' or 'no')
+            except:
+                print 'PyOpenGL acceleration:\t\tnot supported'
             print 'max_texture_size:\t\t%d' % self.vertexcache.texcache.maxtexsize
             print 'texture_non_power_of_two:\t%s' % (self.vertexcache.texcache.npot and 'yes' or 'no')
             print 'texture_compression:\t\t%s' % (self.vertexcache.texcache.compress and 'yes' or 'no')

@@ -12,7 +12,7 @@ from OpenGL.arrays import vbo
 from OpenGL.extensions import alternate
 from OpenGL.GL.ARB.instanced_arrays import glVertexAttribDivisorARB
 from OpenGL.GL.ARB.draw_instanced import glDrawArraysInstancedARB
-glDrawArraysInstanced = alternate(glDrawArraysInstanced, glDrawArraysInstancedARB, platform.createExtensionFunction('glDrawArraysInstancedARB', dll=platform.GL, extension='GL_ARB_instanced_arrays', argTypes=(constants.GLenum,constants.GLint,constants.GLsizei,constants.GLsizei)))	# Handle systems that support GL_ARB_instanced_arrays but not GL_ARB_draw_instanced
+glDrawArraysInstanced = alternate(glDrawArraysInstanced, glDrawArraysInstancedARB, platform.createExtensionFunction('glDrawArraysInstancedARB', dll=platform.PLATFORM.GL, extension='GL_ARB_instanced_arrays', argTypes=(constants.GLenum,constants.GLint,constants.GLsizei,constants.GLsizei)))	# Handle systems that support GL_ARB_instanced_arrays but not GL_ARB_draw_instanced
 from OpenGL.GL.ARB.occlusion_query import *
 glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
 glEndQuery = alternate(glEndQuery, glEndQueryARB)
@@ -177,7 +177,7 @@ class ObjectDef(ClutterDef):
         # For instancing
         self.instances=set()	# Objects in current tile
         self.transform_valid=False
-        self.transform_vbo=vbo.VBO(None, GL_DYNAMIC_DRAW)
+        self.transform_vbo=vbo.VBO(None, GL_DYNAMIC_DRAW, size=0)	# explicit size for PyOpenGL_accelerate
 
         h=None
         culled=[]
@@ -761,7 +761,7 @@ class ObjectFallback(ObjectDef):
         # For instancing
         self.instances=set()	# Objects in current tile
         self.transform_valid=False
-        self.transform_vbo=vbo.VBO(None, GL_DYNAMIC_DRAW)
+        self.transform_vbo=vbo.VBO(None, GL_DYNAMIC_DRAW, size=0)	# explicit size for PyOpenGL_accelerate
 
 
 class AutoGenPointDef(ObjectDef):
@@ -784,7 +784,7 @@ class AutoGenPointDef(ObjectDef):
         # For instancing
         self.instances=set()		# Objects in current tile
         self.transform_valid=False
-        self.transform_vbo=vbo.VBO(None, GL_DYNAMIC_DRAW)
+        self.transform_vbo=vbo.VBO(None, GL_DYNAMIC_DRAW, size=0)	# explicit size for PyOpenGL_accelerate
 
         hscale=vscale=width=hanchor=vanchor=crop=texture_draped=None
         objects=[]
