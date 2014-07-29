@@ -171,8 +171,7 @@ class PaletteListBox(wx.VListBox):
         dc.SetTextForeground(self.GetSelection()==n and self.actfg or self.inafg)
         (imgno, name, realname)=self.choices[n]
         assert 0<=imgno<self.imgs.GetImageCount(), "Palette imgno %d out of range for %s (%s)" % (imgno, name, realname)
-        self.imgs.Draw(imgno, dc, rect.x+self.indent, rect.y,
-                       wx.IMAGELIST_DRAW_TRANSPARENT, True)
+        self.imgs.Draw(imgno, dc, rect.x+self.indent, rect.y + (rect.height - self.imgs.GetSize(imgno)[1])/2, wx.IMAGELIST_DRAW_TRANSPARENT, True)
         dc.DrawText(name, rect.x+12+2*self.indent, rect.y)
 
     def OnDrawBackground(self, dc, rect, n):
@@ -232,7 +231,7 @@ class PaletteChoicebook(wx.Choicebook):
         if 'GetChoiceCtrl' in dir(self):	# not available on wxMac 2.5
             ctrl = self.GetChoiceCtrl()
             if platform=='win32':
-                ctrl.SetWindowVariant(wx.WINDOW_VARIANT_LARGE)
+                pass
             elif platform=='darwin':
                 wx.EVT_SET_FOCUS(ctrl, self.palette.OnSetFocus)	# can get focus under Carbon, which looks ugly
                 ctrl.GetContainingSizer().InsertSpacer(0, 3)	# needs extra space under Cocoa
