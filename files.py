@@ -476,6 +476,9 @@ class VertexCache:
         self.vector_data=empty((0,6),float32)	# Copy of vbo data
         self.vector_pending=[]			# Vector data not yet allocated into vbo
         self.vector_count=0			# Allocated and pending vertices
+        self.vector_indices=empty((0,),uint32)	# Copy of vbo indices
+        self.vector_indices_pending=[]		# Vector indices not yet allocated into vbo
+        self.vector_indices_count=0		# Allocated and pending indices
         self.vector_valid=False
         self.dynamic_data=empty((0,6),float32)
         self.dynamic_pending={}
@@ -508,6 +511,9 @@ class VertexCache:
         self.vector_data=empty((0,6),float32)
         self.vector_pending=[]
         self.vector_count=0
+        self.vector_indices=empty((0,),uint32)	# Copy of vbo indices
+        self.vector_indices_pending=[]		# Vector indices not yet allocated into vbo
+        self.vector_indices_count=0
         self.vector_valid=False
         self.dynamic_data=empty((0,6),float32)
         self.dynamic_pending={}
@@ -537,24 +543,33 @@ class VertexCache:
         else:
             return False
 
-    def allocate_vector(self, data):
+    def allocate_vector(self, data, indices):
         # cache geometry data, but don't update OpenGL arrays yet
         assert isinstance(data,ndarray), data
-        base=self.vector_count
+        assert data.ndim==1, data.shape
+        assert isinstance(indices,ndarray), indices
+        assert indices.ndim==1, indices.shape
+        count=self.vector_count
         self.vector_count+=len(data)/6
         self.vector_pending.append(data)
+        base=self.vector_indices_count
+        self.vector_indices_count+=len(indices)
+        self.vector_indices_pending.append(count + indices)	# add scalar to vector
         self.vector_valid=False	# new geometry -> need to update OpenGL
         return base
 
-    def realize_vector(self, vector_vbo):
+    def realize_vector(self, vector_vbo, vector_indices_vbo):
         # Allocate into VBO if required. Returns True if VBO updated.
         if not self.vector_valid:
             if __debug__: clock=time.clock()
             self.vector_data=concatenate(self.vector_pending)
-            self.vector_pending=[self.vector_data]	# so gets included in concatenate next time round
-            self.vector_valid=True
+            self.vector_pending=[self.vector_data]	# take a reference so gets included in concatenate next time round
             vector_vbo.set_array(self.vector_data)
-            if __debug__: print "%6.3f time to realize vector VBO, size %dK" % (time.clock()-clock, self.vector_data.size/256)
+            self.vector_indices=concatenate(self.vector_indices_pending)
+            self.vector_indices_pending=[self.vector_indices]	# take a reference so gets included in concatenate next time round
+            vector_indices_vbo.set_array(self.vector_indices)
+            self.vector_valid=True
+            if __debug__: print "%6.3f time to realize vector VBO, size %dK + %dK" % (time.clock()-clock, self.vector_data.size/256, self.vector_indices.size/256)
             return True
         else:
             return False
@@ -669,8 +684,8 @@ class VertexCache:
         nets = self.nets[(tile[0],tile[1],prefs.options&Prefs.NETWORK)]
         if nets:
             (points, indices) = nets
-            base = self.allocate_vector(points.flatten())
-            self.netcache = base+indices
+            base = self.allocate_vector(points.flatten(), indices)
+            self.netcache = (base, len(indices))
         else:
             self.netcache = None
 

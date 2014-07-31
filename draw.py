@@ -105,10 +105,11 @@ class GLstate():
         glDisable(GL_POLYGON_OFFSET_FILL)
         glDepthMask(GL_TRUE)
         self.current_vbo=None
-        self.instance_vbo=vbo.VBO(None, GL_STATIC_DRAW, size=0)	# explicit size for PyOpenGL_accelerate
-        self.vector_vbo  =vbo.VBO(None, GL_STATIC_DRAW, size=0)
-        self.dynamic_vbo =vbo.VBO(None, GL_STATIC_DRAW, size=0)
-        self.selected_vbo=vbo.VBO(None, GL_STREAM_DRAW, size=0)
+        self.instance_vbo       =vbo.VBO(None, GL_STATIC_DRAW, size=0)	# explicit size for PyOpenGL_accelerate
+        self.vector_vbo         =vbo.VBO(None, GL_STATIC_DRAW, size=0)
+        self.vector_indices_vbo =vbo.VBO(None, GL_STATIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, size=0)
+        self.dynamic_vbo        =vbo.VBO(None, GL_STATIC_DRAW, size=0)
+        self.selected_vbo       =vbo.VBO(None, GL_STREAM_DRAW, size=0)
         # Use of GL_ARB_instanced_arrays requires a shader. Just duplicate fixed pipeline shaders.
         try:
             # MacOS 10.5 drivers are too flakey
@@ -247,7 +248,6 @@ class GLstate():
             if __debug__:
                 if self.debug: print "set_instance"
             self.instance_vbo.bind()
-            vertexcache.realize_instance(self.instance_vbo)
             glTexCoordPointer(2, GL_FLOAT, 20, self.instance_vbo+12)
             glVertexPointer(3, GL_FLOAT, 20, self.instance_vbo)
             self.current_vbo=self.instance_vbo
@@ -255,11 +255,11 @@ class GLstate():
             if self.debug: print "set_instance already instance_vbo"
 
     def set_vector(self, vertexcache):
-        if vertexcache.realize_vector(self.vector_vbo) or self.current_vbo!=self.vector_vbo:
+        if vertexcache.realize_vector(self.vector_vbo, self.vector_indices_vbo) or self.current_vbo!=self.vector_vbo:
             if __debug__:
                 if self.debug: print "set_vector"
+            self.vector_indices_vbo.bind()
             self.vector_vbo.bind()
-            vertexcache.realize_vector(self.vector_vbo)
             glColorPointer(3, GL_FLOAT, 24, self.vector_vbo+12)
             glVertexPointer(3, GL_FLOAT, 24, self.vector_vbo)
             self.current_vbo=self.vector_vbo
@@ -862,11 +862,12 @@ class MyGL(wx.glcanvas.GLCanvas):
         if __debug__:
             if debugapt: glPolygonMode(GL_FRONT, GL_FILL)
         if netindices is not None:
+            (base, count) = netindices
             self.glstate.set_vector(self.vertexcache)
             self.glstate.set_texture(None)
             self.glstate.set_color(None)
             self.glstate.set_depthtest(False)	# Need line to appear over terrain
-            glDrawRangeElements(GL_LINES, netindices[0], netindices[-1], len(netindices), GL_UNSIGNED_INT, netindices)
+            glDrawElements(GL_LINES, count, GL_UNSIGNED_INT, self.glstate.vector_indices_vbo + base*4)
         if log_paint:
             print "%6.3f time to draw mesh" % (time.clock()-clock2)
             clock2=time.clock()
@@ -1769,8 +1770,8 @@ class MyGL(wx.glcanvas.GLCanvas):
             if marray:
                 if __debug__:
                     for p in marray: assert p.dtype==float32 and p.shape[1]==6, p
-                base = self.vertexcache.allocate_vector(vstack(marray).flatten())
-                self.aptdata[ClutterDef.MARKINGSLAYER] = (base + mindices)
+                base = self.vertexcache.allocate_vector(vstack(marray).flatten(), mindices)
+                self.aptdata[ClutterDef.MARKINGSLAYER] = (base, len(mindices))
 
             progress.Update(14, 'Navaids')
             assert self.tile==newtile

@@ -97,13 +97,13 @@ class Buckets:
             self.layerbuckets[layer].draw(glstate)	# draw per layer
             # Special handling - yuck
             if layer == ClutterDef.MARKINGSLAYER and layer in aptdata:
-                (indices) = aptdata[layer]
+                (base,count) = aptdata[layer]
                 glstate.set_vector(self.vertexcache)
                 glstate.set_texture(None)
                 glstate.set_color(None)
                 glstate.set_depthtest(False)	# Need line to appear over terrain
                 glShadeModel(GL_FLAT)
-                glDrawRangeElements(GL_LINES, indices[0], indices[-1], len(indices), GL_UNSIGNED_INT, indices)
+                glDrawElements(GL_LINES, count, GL_UNSIGNED_INT, glstate.vector_indices_vbo + base*4)
                 glstate.set_dynamic(self.vertexcache)
                 glstate.set_color(COL_UNPAINTED)
                 glstate.set_depthtest(True)
