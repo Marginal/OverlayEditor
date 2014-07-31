@@ -1026,6 +1026,7 @@ class MainWindow(wx.Frame):
         if pos<ClutterDef.PREVIEWSIZE: pos=ClutterDef.PREVIEWSIZE	# required for preview
         self.splitter.SetSashPosition(pos, False)
         self.lastwidth=event.GetSize().x
+        wx.CallAfter(self.canvas.Refresh)	# wx.FULL_REPAINT_ON_RESIZE unreliable on wx 3
         event.Skip()
 
     def OnSashPositionChanging(self, event):
@@ -1716,6 +1717,7 @@ class MainWindow(wx.Frame):
 
         # redraw
         self.Refresh()
+        self.Raise()	# needed on Windows
 
     def OnImport(self, event):
         dlg=wx.FileDialog(self, "Import", glob(join(prefs.xplane,gcustom))[0], '',
