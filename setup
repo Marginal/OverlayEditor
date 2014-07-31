@@ -70,5 +70,5 @@ python2.5 -OO ./bundledeps.py -x wx -o ${APPNAME}.app ${APPNAME}.py	# exclude wx
 python2.7 -OO ./bundledeps.py -o ${APPNAME}.app ${APPNAME}.py
 cp -p MacOS/*.icns MacOS/*.png MacOS/screenshot.jpg ${APPNAME}.app/Contents/Resources/	# overwrite with Mac versions
 sed s/appversion/$VERSION/ <MacOS/Info.plist >${APPNAME}.app/Contents/Info.plist
-codesign -s "Developer ID Application: Jonathan Harris" ${APPNAME}.app
-zip -ry ${APPNAME}_${VER}_mac.zip ${APPNAME}.app
+codesign --deep -s "Developer ID Application: Jonathan Harris" ${APPNAME}.app
+ditto -ck --keepParent --sequesterRsrc ${APPNAME}.app ${APPNAME}_${VER}_mac.zip
