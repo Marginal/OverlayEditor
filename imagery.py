@@ -50,8 +50,11 @@ class Filecache:
         elif platform=='win32':
             import ctypes.wintypes
             buf= ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
-            ctypes.windll.shell32.SHGetFolderPathW(0, 0x801c, 0, 0, buf)	# CSIDL_LOCAL_APPDATA
-            self.cachedir=buf.value
+            if not ctypes.windll.shell32.SHGetFolderPathW(0, 0x801c, 0, 0, buf):	# CSIDL_LOCAL_APPDATA
+                self.cachedir=buf.value
+            else:
+                # can fail on 64 bit - race condition?
+                self.cachedir=getenv('APPDATA', '.')
         try:
             self.cachedir=join(self.cachedir, appname)
             if not isdir(self.cachedir):
