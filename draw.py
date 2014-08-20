@@ -21,7 +21,7 @@ from glob import glob
 from math import atan2, cos, sin, floor, hypot, radians
 from numpy import array, array_equal, concatenate, dot, identity, vstack, zeros, float32, float64, int32
 import os
-from os.path import basename, curdir, join
+from os.path import basename, curdir, join, splitext
 from struct import unpack
 from sys import exc_info, exit, platform, version
 from traceback import print_exc
@@ -1227,8 +1227,11 @@ class MyGL(wx.glcanvas.GLCanvas):
         if not name:
             return False
         texerr=None
+        ext = splitext(name)[1].lower()
         try:
-            if name.lower()[-4:] in [ObjectDef.OBJECT, AutoGenPointDef.AGP]:
+            if not ext and not name.startswith(PolygonDef.EXCLUDE):
+                raise	# probably a space in a library export statement
+            elif ext in [ObjectDef.OBJECT, AutoGenPointDef.AGP]:
                 placement = Object.factory(name, lat, lon, hdg)
             else:
                 placement = Polygon.factory(name, None, lat, lon, size, hdg)

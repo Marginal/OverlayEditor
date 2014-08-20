@@ -93,18 +93,27 @@ class PaletteListBox(wx.VListBox):
         self.SetSelection(-1)
         self.choices=[]
         if self.tabname==NetworkDef.TABNAME:
-            for name,entry in objects.iteritems(): self.choices.append((self.parent.imgno_net, name[:-4], name))
+            self.choices = [(self.parent.imgno_net, name[:-4], name) for name in objects]
             self.SetItemCount(len(self.choices))
         elif self.tabname==ExcludeDef.TABNAME:
-            for name,entry in objects.iteritems(): self.choices.append((self.parent.imgno_exc, name, name))
+            self.choices = [(self.parent.imgno_exc, name, name) for name in objects]
             self.SetItemCount(len(self.choices))
         else:
             names=objects.keys()
-            for name,entry in objects.iteritems():
+            for realname,entry in objects.iteritems():
+                name,ext = splitext(realname)	# display name
+                ext = ext.lower()
                 try:
-                    realname=name.encode()	# X-Plane only supports ASCII
-                    ext=name[-4:].lower()
-                    if realname in self.parent.bad or not exists(entry.file):
+                    realname.encode()	# X-Plane only supports ASCII
+                    if realname in self.parent.bad:
+                        imgno=self.parent.imgno_bad
+                    elif not ext:
+                        imgno=self.parent.imgno_bad
+                        self.parent.bad[realname]=True
+                    elif ext==NetworkDef.NETWORK:	# Networks don't have a valid file
+                        imgno=self.parent.imgno_net
+                    elif not exists(entry.file):
+                        if entry.deprecated: continue	# Don't list missing deprecated stuff
                         imgno=self.parent.imgno_bad
                         self.parent.bad[realname]=True
                     elif ext in UnknownDefs:
@@ -125,28 +134,20 @@ class PaletteListBox(wx.VListBox):
                                 h.close()
                             except:
                                 pass
-                    elif ext==NetworkDef.NETWORK:
-                        imgno=self.parent.imgno_net
                     elif ext in KnownDefs:
                         imgno=KnownDefs.index(ext)
                     else:
                         imgno=self.parent.imgno_unknown	# wtf?
-                except:
-                    realname=name
-                    self.parent.bad[name]=True
-                    imgno=self.parent.imgno_bad		# non-ASCII
+                except:		# non-ASCII
+                    imgno=self.parent.imgno_bad
+                    self.parent.bad[realname]=True
                 if not self.pkgdir:
                     # library object
                     if name.startswith('/'): name=name[1:]
                     if name.lower().startswith(self.tabname.lower()+'/'):	# merge headings that differ only in case
                         name=name[len(self.tabname)+1:]
-                    name=name[:-4]
-                elif name.lower().startswith('objects/') and name[8:] not in names:
-                    name=name[8:-4]
-                elif ext==ObjectDef.OBJECT and name.lower().startswith('custom objects/') and name[15:] not in names:
-                    name=name[15:-4]
-                else:
-                    name=name[:-4]
+                elif name.lower().startswith('objects/') and realname[8:] not in names:
+                    name=name[8:]
                 if entry.multiple and imgno<=self.parent.imgno_multiple: imgno+=self.parent.imgno_multiple
                 self.choices.append((imgno, name, realname))
             self.SetItemCount(len(self.choices))

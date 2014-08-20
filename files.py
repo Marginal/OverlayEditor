@@ -73,7 +73,7 @@ def readLib(filename, objects, terrain, iscustom, thiscustom):
             raise IOError
         regionskip=False
         for line in h:
-            c=line.split()
+            c = line.split(None,2)
             if not c: continue
             id=c[0]
             if id=='REGION':
@@ -90,11 +90,12 @@ def readLib(filename, objects, terrain, iscustom, thiscustom):
                 deprecated = True
             elif id in ['EXPORT', 'EXPORT_RATIO', 'EXPORT_EXTEND', 'EXPORT_EXCLUDE']:
                 # ignore EXPORT_BACKUP
-                if id=='EXPORT_RATIO': c.pop(1)
+                if id=='EXPORT_RATIO':
+                    c = line.split(None,3)
+                    c.pop(1)
                 if len(c)<3 or (c[1][-4:].lower() in SkipDefs and c[1]!=NetworkDef.DEFAULTFILE): continue
-                name=c[1].replace(':','/').replace('\\','/')
-                # allow single spaces
-                obj=' '.join(c[2:]).replace(':','/').replace('\\','/')
+                name = c[1].replace(':','/').replace('\\','/')
+                obj = c[2].strip().replace(':','/').replace('\\','/')	# allow spaces in physical file
                 if not iscustom and basename(obj).startswith('blank.'):
                     continue	# no point adding placeholders
                 obj=join(path, normpath(obj))
