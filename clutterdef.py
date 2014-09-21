@@ -1195,7 +1195,7 @@ class FacadeDef(PolygonDef):
                 currentsegment.width=max(currentsegment.width,-z)
                 vt.append([x,y,z, float(c[7]),float(c[8])])
             elif id=='IDX' and currentsegment:
-                currentsegment.mesh.extend(itemgetter(*map(int,c[1:7]))(vt))
+                currentsegment.mesh.extend(itemgetter(*map(int,c[1:]))(vt))
             elif id in ['ATTACH_DRAPED', 'ATTACH_GRADED'] and currentsegment:
                 (childname, definition)=objects[int(c[1])]
                 if not isinstance(definition, ObjectFallback):	# skip fallbacks
