@@ -131,9 +131,11 @@ Section "Uninstall"
   Delete "$INSTDIR\OverlayEditor.exe.log"
   Delete "$INSTDIR\OverlayEditor.html"
   Delete "$INSTDIR\python27.dll"
-  Delete "$INSTDIR\*.pyd"		; 64bit unbundled
-  Delete "$INSTDIR\libiomp5md.dll"	; 64bit unbundled
-  Delete "$INSTDIR\wx*.dll"		; 64bit unbundled
+  Delete "$INSTDIR\*.pyd"
+  Delete "$INSTDIR\gdal*.dll"
+  Delete "$INSTDIR\libiomp5md.dll"
+  Delete "$INSTDIR\openjp2.dll"
+  Delete "$INSTDIR\wx*.dll"
   Delete "$INSTDIR\uninstall.exe"
   RMDir /r "$INSTDIR\Microsoft.VC90.CRT"
   RMDir /r "$INSTDIR\Resources"
