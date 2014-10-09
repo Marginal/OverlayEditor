@@ -48,7 +48,7 @@ sband=16	# width of mouse scroll band around edge of window
 debugapt   = __debug__ and False
 log_glstate= __debug__ and True
 log_load   = __debug__ and True
-log_paint  = __debug__ and True
+log_paint  = __debug__ and False
 
 class UndoEntry:
     ADD=0
@@ -1649,7 +1649,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
 
     def goto(self, latlon, hdg=None, elev=None, dist=None):
-        if __debug__: print "goto", latlon
+        # if __debug__: print "goto", latlon
         if not self.valid: return	# Hack: can get spurious events on Mac during startup (progress dialogs aren't truly modal)
         errdsf=None
         errobjs=[]

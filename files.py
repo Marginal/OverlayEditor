@@ -194,7 +194,7 @@ class TexCache:
         self.terraintexs=[]	# terrain textures will not be reloaded
         self.stats={}
         # Must be after init
-        self.maxtexsize = glGetString(GL_VENDOR)=='Humper' and 2048 or glGetIntegerv(GL_MAX_TEXTURE_SIZE)	# VirtualBox limitation
+        self.maxtexsize = glGetString(GL_VENDOR)=='Humper' and 2048 or glGetIntegerv(GL_MAX_TEXTURE_SIZE)	# VirtualBox limitation - https://www.virtualbox.org/ticket/5720
         self.npot=glInitTextureNonPowerOfTwoARB()
         self.compress=glInitTextureCompressionARB()
         self.s3tc=self.compress and glInitTextureCompressionS3TcEXT()

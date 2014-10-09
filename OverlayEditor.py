@@ -30,8 +30,6 @@ chdir(mypath)
 try:
     import wx
 except:
-    from traceback import print_exc
-    print_exc()
     if __debug__: print_exc()
     import Tkinter, tkMessageBox
     Tkinter.Tk().withdraw()

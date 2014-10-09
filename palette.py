@@ -487,7 +487,7 @@ class Palette(wx.SplitterWindow):
         dc.Clear()
 
     def OnPaint(self, event):
-        if __debug__: print "preview", self.previewkey, self.lastkey
+        # if __debug__: print "preview", self.previewkey, self.lastkey
         dc = wx.PaintDC(self.preview)
         if wx.VERSION >= (2,9):
             self.frame.canvas.SetCurrent(self.frame.canvas.context)
