@@ -23,7 +23,7 @@ if platform=='win32' and mypath.lower().endswith('.exe'):
     mypath = dirname(mypath)		# py2exe
 elif platform=='darwin' and basename(mypath)=='MacOS':
     mypath = dirname(mypath)		# App starts in MacOS folder
-    sys.path.insert(0, join(mypath, 'Resources', '%d.%d' % version_info[:2]))
+    sys.path.insert(0, join(mypath, 'MacOS', '%d%d' % version_info[:2]))
     argv[0]=basename(argv[0])		# wx doesn't like non-ascii chars in argv[0]
 chdir(mypath)
 
@@ -1843,7 +1843,7 @@ class MainWindow(wx.Frame):
         self.ShowSel()
 
     def OnHelp(self, evt):
-        filename=abspath(appname+'.html')
+        filename = abspath(join('Resources',appname+'.html'))
         if 'startfile' in dir(os):
             os.startfile(filename)
         else:

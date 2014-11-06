@@ -2,7 +2,7 @@ Summary: X-Plane DSF overlay editor
 Name: overlayeditor
 Version: %{version}
 Release: %{release}
-License: CC-BY-NC-SA
+License: GPLv2
 Group: Multimedia/Graphics
 URL: http://marginal.org.uk/x-planescenery
 Vendor: Jonathan Harris <x-plane@marginal.org.uk>
@@ -23,8 +23,8 @@ for X-Plane 8.30 or later.
 /usr/local/share/applications/overlayeditor.desktop
 /usr/local/share/icons/hicolor/48x48/apps/overlayeditor.png
 /usr/local/share/icons/hicolor/128x128/apps/overlayeditor.png
-/usr/local/lib/overlayeditor
-%doc /usr/local/lib/overlayeditor/OverlayEditor.html
+/usr/local/lib/overlayeditor/*.py
+/usr/local/lib/overlayeditor/Resources
 %attr(755,root,root) /usr/local/lib/overlayeditor/linux/DSFTool
 
 

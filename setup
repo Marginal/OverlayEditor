@@ -11,11 +11,9 @@ rm -f ${APPLINUX}-$VERSION-$RELEASE.noarch.rpm
 rm -f ${APPLINUX}_$VERSION-$RELEASE_all.deb
 rm -f ${APPNAME}_${VER}_mac.zip
 rm -rf ${APPNAME}.app
-find . -name "*.bak" -exec rm {} \;
 
 PY='OverlayEditor.py apt.py buckets.py clutter.py clutterdef.py contextlib2.py draw.py elevation.py DSFLib.py files.py fixed8x13.py MessageBox.py imagery.py importobjs.py lock.py nodes.py palette.py prefs.py version.py'
-DATA='OverlayEditor.html'
-RSRC='Resources/*.png Resources/*.vs Resources/*.fs Resources/windsock.obj Resources/screenshot.jpg'
+RSRC=`ls Resources/*.{html,png,vs,fs,obj,jpg}`
 PREV='Resources/previews/*.jpg'
 
 # linux
@@ -40,9 +38,9 @@ cp -p Resources/${APPNAME}.png $RPMRT/usr/local/share/icons/hicolor/48x48/apps/$
 cp -p linux/${APPNAME}-128.png $RPMRT/usr/local/share/icons/hicolor/128x128/apps/${APPLINUX}.png
 cp -p linux/${APPNAME}-128.png $RPMRT/usr/local/lib/${APPLINUX}/Resources/
 for i in $PY; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/; done
-sed -e 's/Cmd/Ctrl/g' -e 's/&#8598;/Home/g' -e 's/&#8600;/End/g' -e 's/&nbsp;&#8670;&nbsp;/PageUp/g' -e 's/&nbsp;&#8671;&nbsp;/PageDn/g' OverlayEditor.html > $RPMRT/usr/local/lib/${APPLINUX}/OverlayEditor.html
 for i in $RSRC; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/Resources/; done
 for i in $PREV; do cp -p "$i" $RPMRT/usr/local/lib/${APPLINUX}/Resources/previews/; done
+sed -i '' -e 's/Cmd/Ctrl/g' -e 's/&#8598;/Home/g' -e 's/&#8600;/End/g' -e 's/&nbsp;&#8670;&nbsp;/PageUp/g' -e 's/&nbsp;&#8671;&nbsp;/PageDn/g' $RPMRT/usr/local/lib/${APPLINUX}/Resources/${APPNAME}.html
 cp -p linux/DSFTool $RPMRT/usr/local/lib/${APPLINUX}/linux/
 rpmbuild -bb --buildroot $RPMRT --define "_target_os linux" --define "_target_vendor pc" --define "_topdir $RPM" --define "_unpackaged_files_terminate_build 0" --define "version $VERSION" --define "release $RELEASE" --quiet $RPM/SPECS/${APPLINUX}.spec
 mv $RPM/RPMS/noarch/${APPLINUX}-$VERSION-$RELEASE.noarch.rpm .
@@ -57,18 +55,18 @@ cp -p linux/copyright  $RPMRT/usr/local/share/doc/${APPLINUX}/
 fakeroot "dpkg-deb -b $RPMRT ."	# requires gnu-tar
 
 # mac
+mkdir -p ${APPNAME}.app/Contents
+sed s/appversion/${VERSION}/ <MacOS/Info.plist >${APPNAME}.app/Contents/Info.plist
 mkdir -p ${APPNAME}.app/Contents/MacOS
-for i in $DATA; do cp -p "$i" ${APPNAME}.app/Contents/; done
+cp -p MacOS/${APPNAME} MacOS/DSFTool ${APPNAME}.app/Contents/MacOS/
 for i in $PY; do cp -p "$i" ${APPNAME}.app/Contents/MacOS/; done
 mkdir -p ${APPNAME}.app/Contents/Resources
 for i in $RSRC; do cp -p "$i" ${APPNAME}.app/Contents/Resources/; done
+cp -p MacOS/*.icns MacOS/*.png MacOS/screenshot.jpg ${APPNAME}.app/Contents/Resources/	# overwrite with Mac versions
 mkdir -p ${APPNAME}.app/Contents/Resources/previews
 for i in $PREV; do cp -p "$i" ${APPNAME}.app/Contents/Resources/previews/; done
-find MacOS/* -name .DS_Store -exec rm {} \;
-cp -pR MacOS/${APPNAME} MacOS/DSFTool ${APPNAME}.app/Contents/MacOS/
 python2.5 -OO ./bundledeps.py -x wx -o ${APPNAME}.app ${APPNAME}.py	# exclude wx - included with 10.5 and 10.6
 python2.7 -OO ./bundledeps.py -o ${APPNAME}.app ${APPNAME}.py
-cp -p MacOS/*.icns MacOS/*.png MacOS/screenshot.jpg ${APPNAME}.app/Contents/Resources/	# overwrite with Mac versions
-sed s/appversion/$VERSION/ <MacOS/Info.plist >${APPNAME}.app/Contents/Info.plist
+xattr -r ${APPNAME}.app	# warn about superfluous resource forks / metadata
 codesign --deep -s "Developer ID Application: Jonathan Harris" ${APPNAME}.app
 ditto -ck --keepParent --sequesterRsrc ${APPNAME}.app ${APPNAME}_${VER}_mac.zip

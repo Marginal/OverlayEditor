@@ -17,7 +17,7 @@ filtered = None
 addpath = []
 excludes = []
 outpath = None	# app folder
-respath = None	# Python version specific subfolder of app Resources folder - equivalent of /Library/Python/x.y
+respath = None	# Python version specific subfolder of app MacOS folder - equivalent of /Library/Python/x.y
 dylpath = None	# app MacOS folder - equivalent of /usr/local/lib
 
 
@@ -60,7 +60,7 @@ def copylib(filename, leafname):
                 change.extend(['-change', depfile, '@loader_path/' + basename(newdepfile)])	# other dylibs are with us
             else:
                 dependencies.append(newdepfile)
-                change.extend(['-change', depfile, '@loader_path/' + '../' * (len(leafname.split(sep))+1) + 'MacOS/' + basename(newdepfile)])
+                change.extend(['-change', depfile, '@loader_path/' + '../' * len(leafname.split(sep)) + basename(newdepfile)])
     if not dryrun:
         shutil.copy2(filename, newfile)
         subprocess.check_call(['strip', '-x', newfile])
@@ -106,10 +106,10 @@ if not outpath:
     print 'Missing outpath'
     printhelp()
     exit(2)
-respath = join(outpath, 'Contents', 'Resources', '%d.%d' % sys.version_info[:2])
-if not dryrun and not isdir(respath): os.makedirs(respath)
 dylpath = join(outpath, 'Contents', 'MacOS')
 if not dryrun and not isdir(dylpath): os.makedirs(dylpath)
+respath = join(dylpath, '%d%d' % sys.version_info[:2])
+if not dryrun and not isdir(respath): os.makedirs(respath)
 
 
 path = sys.path[:]

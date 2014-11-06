@@ -69,7 +69,7 @@ if sys.platform=='win32':
                 ]),
               ]
     # Substitute Macisms in documentation
-    hin = open('OverlayEditor.html', 'rU')
+    hin = open('Resources/OverlayEditor.html', 'rU')
     hout = open(join(gettempdir(),'OverlayEditor.html'), 'wt')
     subs = { 'Cmd':     'Ctrl',
              '&#8598;': 'Home',
@@ -96,10 +96,9 @@ elif sys.platform.lower().startswith('darwin'):
               #  ]),
               ]
 
-res=["Resources/windsock.obj",
-     "Resources/screenshot.jpg"]
+res=[join(gettempdir(),'OverlayEditor.html')]
 for f in listdir('Resources'):
-    if f[-3:]in ['png', '.vs', '.fs']: res.append('Resources/%s' % f)
+    if f[-3:]in ['png', '.vs', '.fs', 'obj', 'jpg']: res.append('Resources/%s' % f)
 
 setup(name='OverlayEditor',
       version=("%4.2f" % appversion),
@@ -107,10 +106,7 @@ setup(name='OverlayEditor',
       author='Jonathan Harris',
       author_email='x-plane@marginal.org.uk',
       url='http://marginal.org.uk/xplanescenery',
-      data_files=[('',
-                   [join(gettempdir(),'OverlayEditor.html'),
-                    ]),
-                  ('Resources',
+      data_files=[('Resources',
                    res),
                   ('Resources/previews',
                    glob('Resources/previews/*.jpg')

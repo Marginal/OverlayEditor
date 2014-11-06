@@ -37,7 +37,7 @@ Scenery</a> &rarr; <a href="http://marginal.org.uk/x-planescenery/tools.html">To
   </tbody>
 </table>
 <hr>
-<h2><img style="border: 0px solid; vertical-align: middle;" src="Resources/OverlayEditor.png"> DSF overlay scenery editor</h2>
+<h2><img style="border: 0px solid; vertical-align: middle;" src="OverlayEditor.png"> DSF overlay scenery editor</h2>
 
 <h3>Overview</h3>
 <p>This application edits X-Plane<small><sup>&reg;</sup></small> DSF &ldquo;overlay&rdquo; scenery packages for X-Plane 8.30 or later. It runs on Windows 2000 or later, MacOS 10.5 or later and Linux.</p>
@@ -46,12 +46,12 @@ Scenery</a> &rarr; <a href="http://marginal.org.uk/x-planescenery/tools.html">To
 
 <h3><a name="quickstart">Quick Start</a></h3>
 <ul>
-  <li>Press the <img class="inlbutton" alt="New" src="Resources/new.png"> button to create a new scenery package:</li>
+  <li>Press the <img class="inlbutton" alt="New" src="new.png"> button to create a new scenery package:</li>
   <ul>
     <li>Supply a name for your new scenery package. Many people use the convention of &ldquo;&lt;ICAO&nbsp;code&gt; &lt;Airport&nbsp;name&gt;&rdquo; (<i>e.g.</i> EGLC London&nbsp;City), but it's up to you.</li>
     <li>Press <samp>OK</samp>.</li>
   </ul>
-  <li>Press the <img class="inlbutton" alt="Go To" src="Resources/goto.png"> button to take you to the area that you want to model:</li>
+  <li>Press the <img class="inlbutton" alt="Go To" src="goto.png"> button to take you to the area that you want to model:</li>
   <ul>
     <li>Click in the <samp>Airports by name</samp> column and type to seach by name; or</li>
     <li>Click in the <samp>Airports by code</samp> column and type to seach by ICAO code.</li>
@@ -60,17 +60,17 @@ Scenery</a> &rarr; <a href="http://marginal.org.uk/x-planescenery/tools.html">To
   <li>We're going to place a 3D Object of a static aircraft at this airport, so point to the airport's ramp area with the mouse and use the Mouse wheel or Zoom gesture to zoom in.</li>
   <li>From the menu titled <samp>Objects in this package</samp> choose <samp>lib/airport</samp>.</li>
   <li>Choose the top item <samp>aircraft/corporate_biz/P180_avanti_ferrari</samp>. You'll see a preview of this aircraft in the <a href="#preview">space</a> below.</li>
-  <li>Press the <img class="inlbutton" alt="Add" src="Resources/add.png"> button to place this aircraft. It appears at the centre of the screen, and is colored pink to indicate that it is selected.</li>
+  <li>Press the <img class="inlbutton" alt="Add" src="add.png"> button to place this aircraft. It appears at the centre of the screen, and is colored pink to indicate that it is selected.</li>
   <li>Use the <kbd>Q</kbd> and <kbd>E</kbd> to rotate the aircraft to your satisfaction (you can hold down <kbd>Shift</kbd> for bigger steps or <kbd>Ctrl</kbd> for tiny steps). Its current heading is shown to the right of the <a href="#statusbar">status bar</a>.</li>
   <li>You can click and drag the aircraft to change its position, or use the <kbd>W</kbd>, <kbd>S</kbd>, <kbd>A</kbd> and <kbd>D</kbd> keys.</li>
-  <li>When you're happy, press the <img class="inlbutton" alt="Save" src="Resources/save.png"> button.</li>
+  <li>When you're happy, press the <img class="inlbutton" alt="Save" src="save.png"> button.</li>
   <li>Start X-Plane, go to this airport and you'll see the static aircraft sitting where you placed it.</li>
 </ul>
 <p>That's it; you have created your first scenery package. You can continue to place additional objects in this scenery package if you like. You should probably also read the <a href="#toolbar">Tool bar</a>, <a href="#mainwindow">Main window</a> and <a href="#objectlist">List of objects</a> sections of this document.</p>
 
 <h3>The application window</h3>
 <p>The application window consists of five parts. Click on this screenshot for a description:</p>
-<img style="border: 0px solid; width: 1024px; height: 768px;" alt="application window" src="Resources/screenshot.jpg" usemap="#appwinmap">
+<img style="border: 0px solid; width: 1024px; height: 768px;" alt="application window" src="screenshot.jpg" usemap="#appwinmap">
 <map name="appwinmap">
   <area shape="rect" coords="0,0,1023,63" href="#toolbar" title="Tool bar">
   <area shape="rect" coords="0,64,681,739" href="#mainwindow" title="Main window">
@@ -83,23 +83,23 @@ Scenery</a> &rarr; <a href="http://marginal.org.uk/x-planescenery/tools.html">To
 <table class="kbdtable">
   <tbody>
     <tr>
-      <td class="button"><img class="tlbbutton" alt="New" src="Resources/new.png"></td>
+      <td class="button"><img class="tlbbutton" alt="New" src="new.png"></td>
       <td>Create a new scenery package.<br>
 This creates a new folder in X-Plane's<code> Custom&nbsp;Scenery </code>folder.</td>
     </tr>
     <tr>
-      <td class="button"><img class="tlbbutton" alt="Open" src="Resources/open.png"></td>
+      <td class="button"><img class="tlbbutton" alt="Open" src="open.png"></td>
       <td>Open an existing scenery package.<br>
 All the packages in X-Plane's<code> Custom&nbsp;Scenery </code>folder are listed, but you can only actually edit those that use DSF overlays
 (rather than ENVs or &ldquo;full&rdquo; DSFs that contain a terrain mesh).</td>
     </tr>
     <tr>
-      <td class="button"><img class="tlbbutton" alt="Save" src="Resources/save.png"></td>
+      <td class="button"><img class="tlbbutton" alt="Save" src="save.png"></td>
       <td>Save the scenery package.<br>
 <small>Note: Any existing <code>.dsf</code> files are backed up with the extension <code>.dsf.bak</code></small></td>
     </tr>
     <tr>
-      <td class="button"><a name="import"><img class="tlbbutton" alt="Import" src="Resources/import.png"></td>
+      <td class="button"><a name="import"><img class="tlbbutton" alt="Import" src="import.png"></td>
       <td>Import objects (and their textures) from another scenery package or from a downloaded collection of scenery objects, and add them to the <a href="#objectlist">list of objects</a>. You can also import <code>.dds</code> and <code>.png</code> texture files directly for use as draped polygons.<br>
 The imported objects are copied to<code> custom&nbsp;objects </code>or<code> objects </code>if either of these folders exist, otherwise to the package's top-level folder.
 <small>(So this button is only available once you have saved the scenery package).</small><br>
@@ -108,42 +108,42 @@ the license terms; these often prohibit re-distribution of individual
 objects.</td>
     </tr>
     <tr>
-      <td class="button"><a name="import-region"><img class="tlbbutton" alt="Import Region" src="Resources/import-region.png"></td>
+      <td class="button"><a name="import-region"><img class="tlbbutton" alt="Import Region" src="import-region.png"></td>
       <td>Import objects from the default scenery and place them in your scenery package.<br>
 This is most useful for &ldquo;tweaking&rdquo; small areas of roads or forests; place an Exclusion region of appropriate type and use this button to pull in the roads or forests from the default scenery that are within the area of the Exclusion region.</td>
     </tr>
     <tr>
-      <td class="button"><img class="tlbbutton" alt="Add" src="Resources/add.png"></td>
+      <td class="button"><img class="tlbbutton" alt="Add" src="add.png"></td>
       <td>Add the object that is highlighted in the <a href="#objectlist">list of objects</a> to the scenery.<br>
 The object is added at the current cursor location and with the current heading.</td>
     </tr>
     <tr>
-      <td class="button"><img class="tlbbutton" alt="AddNode" src="Resources/addnode.png"></td>
+      <td class="button"><img class="tlbbutton" alt="AddNode" src="addnode.png"></td>
       <td>
 If you have a forest or draped polygon selected - Add a hole in it.<br>
 If you have a polygon <u>node</u> selected - Add new polygon node next to it.</td>
     </tr>
     <tr>
-      <td class="button"><img class="tlbbutton" alt="AddBezier" src="Resources/bezier.png"></td>
+      <td class="button"><img class="tlbbutton" alt="AddBezier" src="bezier.png"></td>
       <td>Give the selected polygon node curve control handles.</td>
     </tr>
     <tr>
-      <td class="button"><img class="tlbbutton" alt="Delete" src="Resources/delete.png"></td>
+      <td class="button"><img class="tlbbutton" alt="Delete" src="delete.png"></td>
       <td>Delete the selected object(s) or selected node.</td>
     </tr>
     <tr>
-      <td class="button"><img class="tlbbutton" alt="Undo" src="Resources/undo.png"></td>
+      <td class="button"><img class="tlbbutton" alt="Undo" src="undo.png"></td>
       <td>Undo the last edit.</td>
     </tr>
     <tr>
-      <td class="button"><a name="background"><img class="tlbbutton" alt="Background" src="Resources/background.png"></a></td>
+      <td class="button"><a name="background"><img class="tlbbutton" alt="Background" src="background.png"></a></td>
       <td>Turn background imagery on or off.<br>
 You can use a mapping service or a simple file to provide background imagery <small>(just for reference; it's not saved with the scenery package).</small><br>
 If you use a file you can adjust its position while the <samp>Background imagery</samp> dialog is displayed.<br>
 If you use a GeoTIFF or JPEG2000 file it will be placed according to any geolocation info that it contains. (Note: it may not be placed on-screen - click on the main window and press <kbd>C</kbd> to centre the view on it).</td>
     </tr>
     <tr>
-      <td class="button"><a name="reload"><img class="tlbbutton" alt="Reload" src="Resources/reload.png"></a></td>
+      <td class="button"><a name="reload"><img class="tlbbutton" alt="Reload" src="reload.png"></a></td>
       <td>Reload the object, texture and apt.dat files in the scenery package.<br>
 Use this if you have modified any of these files outside of this application.
 Also use this if you have added new objects and you want these new objects
@@ -151,21 +151,21 @@ to appear in the <a href="#objectlist">list of objects</a>.
 <small>(Note that the DSF files are not reloaded - just re-open the package if you want to revert to the last saved version)</small>.</td>
     </tr>
     <tr>
-      <td class="button"><img class="tlbbutton" alt="Go To" src="Resources/goto.png"></td>
+      <td class="button"><img class="tlbbutton" alt="Go To" src="goto.png"></td>
       <td>Go to an airport or lat/lon location.</td>
     </tr>
     <tr>
-      <td class="button"><a name="lock"><img class="tlbbutton" alt="Lock" src="Resources/padlock.png"></a></td>
+      <td class="button"><a name="lock"><img class="tlbbutton" alt="Lock" src="padlock.png"></a></td>
       <td>Lock object types. Locked objects can't be selected or modified.<br>
 Use this to avoid accidentally selecting or editing certain kinds of objects.</td>
     </tr>
     <tr>
-      <td class="button"><a name="preferences"><img class="tlbbutton" alt="Preferences" src="Resources/prefs.png"></a></td>
+      <td class="button"><a name="preferences"><img class="tlbbutton" alt="Preferences" src="prefs.png"></a></td>
       <td>Change X-Plane's top-level folder and display options.<br>
 Do not change the location of X-Plane's top-level folder while you are editing a scenery package, otherwise your unsaved changes will be lost.</td>
     </tr>
     <tr>
-      <td class="button"><img class="tlbbutton" alt="Help" src="Resources/help.png"></a></td>
+      <td class="button"><img class="tlbbutton" alt="Help" src="help.png"></a></td>
       <td>Show this help file.</td>
     </tr>
   </tbody>
@@ -173,7 +173,7 @@ Do not change the location of X-Plane's top-level folder while you are editing a
 
 <h4><a name="mainwindow">Main window</a></h4>
 <p>This shows the objects that have been placed in a 1&deg;&times;1&deg; region of the loaded scenery package.</p>
-<p>By default terrain is textured, displayed as flat, and roads and taxiway markings are omitted - you can change this with <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> and/or add mapping imagery with <a href="#background"><img class="inlbutton" alt="Background" src="Resources/background.png"></a>. Runways, taxiways, navaids and X-Plane's default road and rail networks are displayed in simplified form and cannot be edited. Scenery objects from other scenery packages and &ldquo;autogen&rdquo; scenery objects from the default scenery are not displayed at all.<p>
+<p>By default terrain is textured, displayed as flat, and roads and taxiway markings are omitted - you can change this with <a href="#preferences"><img class="inlbutton" alt="Preferences" src="prefs.png"></a> and/or add mapping imagery with <a href="#background"><img class="inlbutton" alt="Background" src="background.png"></a>. Runways, taxiways, navaids and X-Plane's default road and rail networks are displayed in simplified form and cannot be edited. Scenery objects from other scenery packages and &ldquo;autogen&rdquo; scenery objects from the default scenery are not displayed at all.<p>
 <p>Navigate with the cursor keys or mouse. Hold down <kbd>Shift</kbd> for bigger steps or <kbd>Ctrl</kbd> for tiny steps:</p>
 <div style="margin-left: 40px;">
 <table class="kbdtable">
@@ -296,19 +296,19 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
       <td>Select all uses in this 1&deg;&times;1&deg; region of the highlighted object.</td>
     </tr>
     <tr>
-      <td class="keys"><kbd>Enter</kbd> or <img class="inlbutton" alt="Add" src="Resources/add.png"></td>
+      <td class="keys"><kbd>Enter</kbd> or <img class="inlbutton" alt="Add" src="add.png"></td>
       <td>Add the object that is highlighted in the <a href="#objectlist">list of objects</a> to the scenery.</td>
     </tr>
     <tr>
-      <td class="keys"><kbd>Cmd</kbd> <kbd>Enter</kbd> or <img class="inlbutton" alt="Add" src="Resources/addnode.png"></td>
+      <td class="keys"><kbd>Cmd</kbd> <kbd>Enter</kbd> or <img class="inlbutton" alt="Add" src="addnode.png"></td>
       <td>Add new polygon node next to the currently selected node, or add hole in the selected forest or draped polygon.</td>
     </tr>
     <tr>
-      <td class="keys"><kbd>Delete</kbd> or <img class="inlbutton" alt="Delete" src="Resources/delete.png"></td>
+      <td class="keys"><kbd>Delete</kbd> or <img class="inlbutton" alt="Delete" src="delete.png"></td>
       <td>Delete selected object(s) or polygon node.</td>
     </tr>
     <tr>
-      <td class="keys"><kbd>Cmd</kbd> <kbd>Z</kbd> or <img class="inlbutton" alt="Undo" src="Resources/undo.png"></td>
+      <td class="keys"><kbd>Cmd</kbd> <kbd>Z</kbd> or <img class="inlbutton" alt="Undo" src="undo.png"></td>
       <td>Undo the last edit.</td>
     </tr>
     <tr>
@@ -321,25 +321,25 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
 
 <h4><a name="objectlist">List of objects</a></h4>
 <p>All the objects, facades etc in the scenery package folder are listed under the heading &ldquo;<samp>Objects in this package</samp>&rdquo; (including those that are present in the scenery package folder but are not used in the scenery). When you create a new scenery package &ldquo;<samp>Objects in this package</samp>&rdquo; is initially empty, but objects that have been made available by scenery libraries are listed under further headings in the drop-down list. The objects under the various <samp>lib/...</samp> headings are supplied by X-Plane's built-in libraries; the objects under the remaining headings are supplied by library packages found in your <code>Custom&nbsp;Scenery</code> folder. <small>(Note that later versions of X-Plane come with more extensive libraries than older versions, so you should always design using the oldest version of X-Plane that you want your scenery package to work with)</small>.</p>
-<p>You can use any of the objects in these lists in your scenery package - think of these lists as an artist's <a target="_blank" href="http://en.wikipedia.org/wiki/Palette_(painting)">palette</a>. You can also use the <samp>Search</samp> box to search through the available objects by name. Select one of the objects in these lists and press <img class="inlbutton" alt="Add" src="Resources/add.png"></td> to place it in your scenery package.</p>
+<p>You can use any of the objects in these lists in your scenery package - think of these lists as an artist's <a target="_blank" href="http://en.wikipedia.org/wiki/Palette_(painting)">palette</a>. You can also use the <samp>Search</samp> box to search through the available objects by name. Select one of the objects in these lists and press <img class="inlbutton" alt="Add" src="add.png"></td> to place it in your scenery package.</p>
 <p>The type of object is indicated by a symbol:</p>
 <dl>
-  <dd><img class="inlsymbol" alt="obj" src="Resources/obj.png"> - 3D Object (<code>.obj</code>)</dd>
-  <dd><img class="inlsymbol" alt="fac" src="Resources/fac.png"> - Facade polygon (<code>.fac</code>)</dd>
-  <dd><img class="inlsymbol" alt="for" src="Resources/for.png"> - Forest polygon (<code>.for</code>)</dd>
-  <dd><img class="inlsymbol" alt="pol" src="Resources/pol.png"> - Draped polygon (<code>.pol</code>) with a repeating texture (requires X-Plane 8.50 or later)</dd>
-  <dd><img class="inlsymbol" alt="ortho" src="Resources/ortho.png"> - Draped polygon (<code>.pol</code>) for use as a quadrilateral <a target="_blank" href="http://en.wikipedia.org/wiki/Orthophoto">orthophoto</a> or <a target="_blank" href="http://en.wikipedia.org/wiki/Decal">decal</a> (requires X-Plane 8.60 or later)</dd>
-  <dd><img class="inlsymbol" alt="lin" src="Resources/lin.png"> - Line polygon (<code>.lin</code>)</dd>
-  <dd><img class="inlsymbol" alt="str" src="Resources/str.png"> - String polygon (<code>.str</code>)</dd>
-  <dd><img class="inlsymbol" alt="unknown" src="Resources/unknown.png"> - Other polygon</dd>
-  <dd><img class="inlsymbol" alt="net" src="Resources/net.png"> - Road, Railway or Powerline network (requires X-Plane 10 or later)</dd>
-  <dd><img class="inlsymbol" alt="exc" src="Resources/exc.png"> - Exclusion region</dd>
-  <dd><img class="inlsymbol" alt="bad" src="Resources/bad.png"> - Missing or unreadable object or polygon</dd>
+  <dd><img class="inlsymbol" alt="obj" src="obj.png"> - 3D Object (<code>.obj</code>, <code>.agp</code>)</dd>
+  <dd><img class="inlsymbol" alt="fac" src="fac.png"> - Facade polygon (<code>.fac</code>)</dd>
+  <dd><img class="inlsymbol" alt="for" src="for.png"> - Forest polygon (<code>.for</code>)</dd>
+  <dd><img class="inlsymbol" alt="pol" src="pol.png"> - Draped polygon (<code>.pol</code>) with a repeating texture (requires X-Plane 8.50 or later)</dd>
+  <dd><img class="inlsymbol" alt="ortho" src="ortho.png"> - Draped polygon (<code>.pol</code>) for use as a quadrilateral <a target="_blank" href="http://en.wikipedia.org/wiki/Orthophoto">orthophoto</a> or <a target="_blank" href="http://en.wikipedia.org/wiki/Decal">decal</a> (requires X-Plane 8.60 or later)</dd>
+  <dd><img class="inlsymbol" alt="lin" src="lin.png"> - Line polygon (<code>.lin</code>)</dd>
+  <dd><img class="inlsymbol" alt="str" src="str.png"> - String polygon (<code>.str</code>)</dd>
+  <dd><img class="inlsymbol" alt="unknown" src="unknown.png"> - Other polygon</dd>
+  <dd><img class="inlsymbol" alt="net" src="net.png"> - Road, Railway or Powerline network (requires X-Plane 10 or later)</dd>
+  <dd><img class="inlsymbol" alt="exc" src="exc.png"> - Exclusion region</dd>
+  <dd><img class="inlsymbol" alt="bad" src="bad.png"> - Missing or unreadable object or polygon</dd>
 </dl>
-<p>Once you place a 3D Object (denoted by the symbol <img class="inlsymbol" alt="obj" src="Resources/obj.png">) in your scenery package you can move, rotate or delete it <small>(see <a href="#manipkeys">above<a> for the keys to use)</small> and that's about it. The other types of objects are all &ldquo;polygons&rdquo; of various kinds. You can click on the &ldquo;nodes&rdquo; (<i>i.e.</i> corners) of a polygon and drag to change the polygon's shape, and you can press <img class="inlbutton" alt="AddNode" src="Resources/addnode.png"> to add new nodes. Most polygon types also have properties that can be changed with the <kbd>R</kbd> and <kbd>F</kbd></td> <a href="#manipkeys">keys<a>.</p>
-<p>Some library objects are shown in these lists with a symbol <img class="inlsymbol" alt="objs" src="Resources/objs.png"> or <img class="inlsymbol" alt="facs" src="Resources/facs.png"> instead of the normal symbol <img class="inlsymbol" alt="obj" src="Resources/obj.png"> or <img class="inlsymbol" alt="fac" src="Resources/fac.png">. This means that the library object exists in multiple versions; X-Plane will choose which version of the object to display at random, but this application always displays the same version.</p>
-<p>Use <a href="#import"><img class="inlbutton" alt="Import" src="Resources/import.png"></a> to copy objects from another scenery <u>package</u> or from a downloaded collection of scenery objects. Alternatively, just drag objects from Explorer or Finder and drop them on the list of objects. The imported objects will appear under the &ldquo;<samp>Objects in this package</samp>&rdquo; heading. (Don't use this to copy objects from a scenery <u>library</u>; just select the object from the appropriate list).</p>
-<p>Use <a href="#reload"><img class="inlbutton" alt="Reload" src="Resources/reload.png"></a> if you have otherwise added or modified objects in the scenery package folder, or if you have installed a new scenery library.</p>
+<p>Once you place a 3D Object (denoted by the symbol <img class="inlsymbol" alt="obj" src="obj.png">) in your scenery package you can move, rotate or delete it <small>(see <a href="#manipkeys">above<a> for the keys to use)</small> and that's about it. The other types of objects are all &ldquo;polygons&rdquo; of various kinds. You can click on the &ldquo;nodes&rdquo; (<i>i.e.</i> corners) of a polygon and drag to change the polygon's shape, and you can press <img class="inlbutton" alt="AddNode" src="addnode.png"> to add new nodes. Most polygon types also have properties that can be changed with the <kbd>R</kbd> and <kbd>F</kbd></td> <a href="#manipkeys">keys<a>.</p>
+<p>Some library objects are shown in these lists with a symbol <img class="inlsymbol" alt="objs" src="objs.png"> or <img class="inlsymbol" alt="facs" src="facs.png"> instead of the normal symbol <img class="inlsymbol" alt="obj" src="obj.png"> or <img class="inlsymbol" alt="fac" src="fac.png">. This means that the library object exists in multiple versions; X-Plane will choose which version of the object to display at random, but this application always displays the same version.</p>
+<p>Use <a href="#import"><img class="inlbutton" alt="Import" src="import.png"></a> to copy objects from another scenery <u>package</u> or from a downloaded collection of scenery objects. Alternatively, just drag objects from Explorer or Finder and drop them on the list of objects. The imported objects will appear under the &ldquo;<samp>Objects in this package</samp>&rdquo; heading. (Don't use this to copy objects from a scenery <u>library</u>; just select the object from the appropriate list).</p>
+<p>Use <a href="#reload"><img class="inlbutton" alt="Reload" src="reload.png"></a> if you have otherwise added or modified objects in the scenery package folder, or if you have installed a new scenery library.</p>
 
 <h4><a name="preview">Preview picture</a></h4>
 <p>A preview of the currently selected object is shown (when available) underneath the list of objects.</p>
@@ -390,7 +390,7 @@ that is highlighted in the <a href="#objectlist">list of objects</a>.</td>
   <li>Repeat for the end node of the other &ldquo;bridge&rdquo; segment.</li>
 </ul>
 <p>Note: OverlayEditor doesn't display the bridge segments as being raised, so you may have to experiment a little.</p>
-<p>You can use <a href="#preferences"><img class="inlbutton" alt="Preferences" src="Resources/prefs.png"></a> to make OverlayEditor display networks from the default scenery (in outline form). But X-Plane will not join network segments in your scenery package to segments from the default scenery, and traffic will not flow between them. You can place an Exclusion region to hide network segments from the default scenery, use <a href="#import-region"><img class="inlbutton" alt="Import Region" src="Resources/import-region.png"></a> to pull the hidden segments into your scenery package, and then edit them.</p>
+<p>You can use <a href="#preferences"><img class="inlbutton" alt="Preferences" src="prefs.png"></a> to make OverlayEditor display networks from the default scenery (in outline form). But X-Plane will not join network segments in your scenery package to segments from the default scenery, and traffic will not flow between them. You can place an Exclusion region to hide network segments from the default scenery, use <a href="#import-region"><img class="inlbutton" alt="Import Region" src="import-region.png"></a> to pull the hidden segments into your scenery package, and then edit them.</p>
 
 <h3>Differences between this application and X-Plane</h3>
 <p>This application displays terrain and objects in orthogonal projection (no perspective) and in a simplified form. <i>i.e.</i>:</p>
@@ -434,12 +434,12 @@ if the preferences are set to display terrain. Closing other applications,
 particularly applications like X-Plane that also make heavy use of textures,
 will make OverlayEditor load faster. Or you can tell OverlayEditor not to
 display terrain; press
-<a href="#preferences"><img class="inlbutton" alt="Prefs" src="Resources/prefs.png"></a> and select &ldquo;No terrain&rdquo;.</p>
+<a href="#preferences"><img class="inlbutton" alt="Prefs" src="prefs.png"></a> and select &ldquo;No terrain&rdquo;.</p>
 <p>Editing is slower when the preferences are set to display terrain elevation.
 This is particularly noticable when editing polygons because OverlayEditor
 has to fit the polygons to the terrain mesh. OverlayEditor runs much
 faster if you tell it not to display elevation; press
-<a href="#preferences"><img class="inlbutton" alt="Prefs" src="Resources/prefs.png"></a> and select &ldquo;No terrain&rdquo; or &ldquo;Show terrain&rdquo;.
+<a href="#preferences"><img class="inlbutton" alt="Prefs" src="prefs.png"></a> and select &ldquo;No terrain&rdquo; or &ldquo;Show terrain&rdquo;.
 
 <h4>OverlayEditor complains that it &ldquo;Can't read one or more objects&rdquo;</h4>
 <p>Your scenery package uses objects that are either missing or unreadable. Missing or unreadable 3D objects are displayed as small &ldquo;placeholders&rdquo;. Missing or unreadable polygons are displayed as &ldquo;placeholder&rdquo; shapes.</p>
@@ -447,7 +447,7 @@ faster if you tell it not to display elevation; press
   <dt>To delete all uses of the missing or unreadable 3D object or polygon in the current 1&deg;&times;1&deg; region:</dt>
   <dd>Select the 3D object or polygon in the <a href="#objectlist">list of objects</a><br>
     Press <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>N</kbd><br>
-    Press <kbd>Delete</kbd> or <img class="inlbutton" alt="Delete" src="Resources/delete.png"></dd>
+    Press <kbd>Delete</kbd> or <img class="inlbutton" alt="Delete" src="delete.png"></dd>
 </dl>
 
 <h4>OverlayEditor complains that it &ldquo;Can't read one or more textures&rdquo;</h4>
@@ -457,7 +457,7 @@ OverlayEditor expects the texture filename to have the correct case -
 edit your object to correct the texture filename.<br>
 OverlayEditor cannot read interlaced PNG files - save your
 PNG file in 24bit or 32bit non-interlaced format.<br>
-Then press <a href="#reload"><img class="inlbutton" alt="Reload" src="Resources/reload.png"></a> to tell OverlayEditor to re-read your objects and textures.<br>
+Then press <a href="#reload"><img class="inlbutton" alt="Reload" src="reload.png"></a> to tell OverlayEditor to re-read your objects and textures.<br>
 Note that OverlayEditor only reports problems with textures when you load or
 reload a scenery package, and when you first add an object to the scenery.</p>
 
@@ -477,7 +477,7 @@ Laminar's scenery tools encode DSF files with a precision of approximately 0.000
   <dd>Navigate to the area from which you want to remove the scenery objects.</dd>
   <dd>Select &ldquo;Exclusions&rdquo; from the drop-down <a href="#objectlist">Objects</a> menu.</dd>
   <dd>Choose the type of object that you want to exclude.</dd>
-  <dd>Press <kbd>Enter</kbd> or <img class="inlbutton" alt="Add" src="Resources/add.png">.</dd>
+  <dd>Press <kbd>Enter</kbd> or <img class="inlbutton" alt="Add" src="add.png">.</dd>
   <dd>Drag the corners of the new region as desired.</dd>
 </dl>
 <p>OverlayEditor doesn't display the &ldquo;autogen&rdquo; scenery objects, so you may have to experiment a bit.</p>
@@ -500,7 +500,7 @@ using a 3D modelling application.</p>
 it looks OK.</dd>
   <dt>&nbsp;</dt>
   <dt>Check that OverlayEditor saved your package in the correct copy of X-Plane:</dt>
-  <dd>Press <a href="#preferences"><img class="inlbutton" alt="Prefs" src="Resources/prefs.png"></a> and check that the &ldquo;X-Plane location&rdquo; points to the copy of X-Plane that you're running.<br>
+  <dd>Press <a href="#preferences"><img class="inlbutton" alt="Prefs" src="prefs.png"></a> and check that the &ldquo;X-Plane location&rdquo; points to the copy of X-Plane that you're running.<br>
 If it doesn't, change the &ldquo;X-Plane location&rdquo; setting. Then, in Explorer or the Finder, move your scenery package folder to the copy of X-Plane that you're running.</dd>
   <dt>&nbsp;</dt>
   <dt>Check your X-Plane settings:</dt>
@@ -561,7 +561,7 @@ Rename one or both of the packages to change their relative priority.</dd>
 <table style="width: 100%;" border="0" cellpadding="2">
   <tbody>
     <tr>
-      <td class="banner">Version 2.49 &copy; 2007-2014 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
+      <td class="banner">Version 2.49 &copy; 2006-2014 <a href="mailto:x-plane@marginal.org.uk">Jonathan Harris</a>
         <a rel="license" target="_blank" href="http://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html"><img style="border: 0px solid ; width: 88px; height: 62px; vertical-align: middle;" alt="GPLv2 License" src="http://i.creativecommons.org/l/GPL/2.0/88x62.png"></a></td>
     </tr>
   </tbody>

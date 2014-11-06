@@ -129,7 +129,7 @@ Section "Uninstall"
   Delete "$INSTDIR\msvcr90.dll"
   Delete "$INSTDIR\OverlayEditor.exe"
   Delete "$INSTDIR\OverlayEditor.exe.log"
-  Delete "$INSTDIR\OverlayEditor.html"
+  Delete "$INSTDIR\OverlayEditor.html"	; Old location
   Delete "$INSTDIR\python27.dll"
   Delete "$INSTDIR\*.pyd"
   Delete "$INSTDIR\gdal*.dll"

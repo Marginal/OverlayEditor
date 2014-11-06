@@ -6,6 +6,6 @@ exec /bin/bash -s<<EOF
 if (( `sw_vers -productVersion | cut -d. -f2` < 7 )); then
     exec /usr/bin/python2.5 -OO "$0.py";	# Leopard. And stay with 32bit version on Snow Leopard so builtin wxPython works
 else
-    exec /usr/bin/python2.7 -OO "$0.py";	# Lion, Mountain Lion, Mavericks, Yosemite
+    exec /usr/bin/python2.7 -B -OO "$0.py";	# Lion, Mountain Lion, Mavericks, Yosemite. Don't break signature by generating pyo files.
 fi
 EOF
