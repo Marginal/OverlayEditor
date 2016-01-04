@@ -244,6 +244,14 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
         # numpy doesn't work efficiently skipping around the variable sized pools, so don't consolidate
         pool[i] = newpool
 
+    # if __debug__:	# Dump pools
+    #     for p in pool:
+    #         for x in p:
+    #             for y in x:
+    #                 print "%.5f" % y,
+    #             print
+    #         print
+
     # Rescale network pool
     while po32 and not len(po32[-1]): po32.pop()	# v10 DSFs have a bogus zero-dimensioned pool at the end
     if po32:
@@ -339,7 +347,7 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
     roadtype=0
     curter='terrain_Water'
     curpatch=[]
-    tercache={'terrain_Water':(join('Resources','Sea01.png'), 8, 0, 0.001,0.001)}
+    tercache={'terrain_Water':(join('Resources','Sea01.png'), True, 0, 0.001,0.001)}
     stripindices = MakeStripIndices()
     fanindices   = MakeFanIndices()
 
@@ -416,15 +424,19 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
 
         elif c==27:	# Patch Triangle Strip - cross-pool (KSEA demo terrain uses this one)
             (l,)=unpack('<B', h.read(1))
+            #if __debug__: print '27: Triangle strip %d' % l
             if flags&1 and wantmesh:
                 curpatch.append(array([pool[p][d] for (p,d) in fromstring(h.read(l*4), '<H').reshape(-1,2)])[stripindices[l]])
+                assert len(curpatch[-1]) == 3*(l-2), len(curpatch[-1])
             else:
                 h.seek(l*4, 1)
 
         elif c==28:	# Patch Triangle Strip Range (KSEA demo terrain uses this one too)
             (first,last)=unpack('<HH', h.read(4))
+            #if __debug__: print '28: Triangle strip %d' % (last-first)
             if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][first:][stripindices[last-first]])
+                assert len(curpatch[-1]) == 3*(last-first-2), len(curpatch[-1])
 
         elif c==1:	# Coordinate Pool Select
             (curpool,)=unpack('<H', h.read(2))
@@ -489,66 +501,83 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
                 
         elif c==16:	# Terrain Patch
             makemesh(mesh,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
+            #if __debug__: print '\n16: Patch, flags=%d' % flags
             curter=terrain[idx]
             curpatch=[]
             
         elif c==17:	# Terrain Patch w/ flags
             makemesh(mesh,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
             (flags,)=unpack('<B', h.read(1))
+            #if __debug__: print '\n17: Patch, flags=%d' % flags
             curter=terrain[idx]
             curpatch=[]
             
         elif c==18:	# Terrain Patch w/ flags & LOD
             makemesh(mesh,path,curter,curpatch,south,west,elev,elevwidth,elevheight,terrains,tercache)
             (flags,near,far)=unpack('<Bff', h.read(9))
+            #if __debug__: print '18: Patch, flags=%d, lod=%d,%d' % (flags, near,far)
             assert near==0	# We don't currently handle LOD
             curter=terrain[idx]
             curpatch=[]
 
         elif c==23:	# Patch Triangle
             (l,)=unpack('<B', h.read(1))
+            #if __debug__: print '23: Triangles %d' % l
             if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][fromstring(h.read(l*2), '<H')])
+                assert len(curpatch[-1]) == l, len(curpatch[-1])
             else:
                 h.seek(l*2, 1)
 
         elif c==24:	# Patch Triangle - cross-pool
             (l,)=unpack('<B', h.read(1))
+            #if __debug__: print '24: Triangles %d' % l
             if flags&1 and wantmesh:
                 curpatch.append(array([pool[p][d] for (p,d) in fromstring(h.read(l*4), '<H').reshape(-1,2)]))
+                assert len(curpatch[-1]) == l, len(curpatch[-1])
             else:
                 h.seek(l*4, 1)
 
         elif c==25:	# Patch Triangle Range
             (first,last)=unpack('<HH', h.read(4))
+            #if __debug__: print '25: Triangles %d' % (last-first)
             if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][first:last])
-            
+                assert len(curpatch[-1]) == last-first, len(curpatch[-1])
+
         elif c==26:	# Patch Triangle Strip (used by g2xpl and MeshTool)
             (l,)=unpack('<B', h.read(1))
+            #if __debug__: print '26: Triangle strip %d' % l
             if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][fromstring(h.read(l*2), '<H')[stripindices[l]]])
+                assert len(curpatch[-1]) == 3*(l-2), len(curpatch[-1])
             else:
                 h.seek(l*2, 1)
 
         elif c==29:	# Patch Triangle Fan
             (l,)=unpack('<B', h.read(1))
+            #if __debug__: print '29: Triangle fan %d' % l
             if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][fromstring(h.read(l*2), '<H')[fanindices[l]]])
+                assert len(curpatch[-1]) == 3*(l-2), len(curpatch[-1])
             else:
                 h.seek(l*2, 1)
 
         elif c==30:	# Patch Triangle Fan - cross-pool
             (l,)=unpack('<B', h.read(1))
+            #if __debug__: print '30: Triangle fan %d' % l
             if flags&1 and wantmesh:
                 curpatch.append(array([pool[p][d] for (p,d) in fromstring(h.read(l*4), '<H').reshape(-1,2)])[fanindices[l]])
+                assert len(curpatch[-1]) == 3*(l-2), len(curpatch[-1])
             else:
                 h.seek(l*4, 1)
 
         elif c==31:	# Patch Triangle Fan Range
             (first,last)=unpack('<HH', h.read(4))
+            #if __debug__: print '31: Triangle fan %d' % (last-first)
             if flags&1 and wantmesh:
                 curpatch.append(pool[curpool][first:][fanindices[last-first]])
+                assert len(curpatch[-1]) == 3*(last-first-2), len(curpatch[-1])
 
         elif c==32:	# Comment
             (l,)=unpack('<B', h.read(1))
@@ -579,31 +608,6 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
     # consolidate mesh
     for k,v in mesh.iteritems():
         mesh[k] = concatenate(v)
-
-    if len(terrain)>1 and 'g2xpl' in terrain[1]:
-        # Post-processing for g2xpl-generated meshes. This is slow so only do it if a g2xpl texture is used.
-        if __debug__: clock=time.clock()
-        for k,v in mesh.iteritems():
-            # sort vertices of each triangle
-            dtype = [('x1',float32), ('y1',float32), ('z1',float32), ('u1',float32), ('v1',float32),
-                     ('x2',float32), ('y2',float32), ('z2',float32), ('u2',float32), ('v2',float32),
-                     ('x3',float32), ('y3',float32), ('z3',float32), ('u3',float32), ('v3',float32)]
-            v = v.reshape((-1,15))
-            v1 = v.view(dtype)
-            v2 = roll(v, -5, axis=1).view(dtype)
-            v3 = roll(v, -10, axis=1).view(dtype)
-            v12= where(logical_or(v2['x1'] > v1['x1'], logical_and(v2['x1'] == v1['x1'], v2['z1'] > v1['z1'])), v2, v1)
-            v  = where(logical_or(v3['x1'] >v12['x1'], logical_and(v3['x1'] ==v12['x1'], v3['z1'] >v12['z1'])), v3, v12)
-
-            # remove negatives - calculate cross product at middle point p2
-            # http://paulbourke.net/geometry/polygonmesh/ "... vertices ordered clockwise or counterclockwise"
-            v = v[(v['x2']-v['x1']) * (v['z3']-v['z2']) - (v['z2']-v['z1']) * (v['x3']-v['x2']) > 0]
-
-            # Remove dupes. numpy.unique() only works on 1D arrays -
-            # http://mail.scipy.org/pipermail/numpy-discussion/2010-September/052877.html
-            v = unique(v)
-            mesh[k] = v.view(float32).reshape((-1,5))
-        if __debug__: print "%6.3f time in g2xpl post-processing" % (time.clock()-clock)
 
     # apply colors to network points, consolidate and create indices for drawing
     # FIXME: speed this up
@@ -638,13 +642,8 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
 # Indices for making n-2 triangles out of n vertices of a tri strip
 class MakeStripIndices(dict):
     def __missing__(self, n):
-        if n>3:
-            a = concatenate((insert(arange(((n+1)/2)*2-1),  slice(3,n,2), arange(2,n,2)),		# [0,1,2, 2,3,4, 4,5,6, ...]
-                             insert(arange((n/2)*2-1,0,-1), slice(3,n,2), arange((n/2)*2-3,0,-2))))	# [..., 7,6,5, 5,4,3, 3,2,1]
-        elif n==3:
-            a = arange(3)	# above algorithm doesn't work for n==3
-        else:
-            a = empty((0,),int)
+        a = concatenate([i%2 and [i, i+2, i+1] or [i, i+1, i+2] for i in range(n-2)])
+        assert len(a) == 3*(n-2), a
         self[n] = a
         return a
 
@@ -654,6 +653,7 @@ class MakeFanIndices(dict):
         a = zeros(3*(n-2), int)
         a[1:n*3:3] += arange(1,n-1)
         a[2:n*3:3] += arange(2,n)
+        assert len(a) == 3*(n-2), a
         self[n] = a
         return a
 
@@ -665,14 +665,14 @@ def makemesh(mesh,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,t
     if __debug__:
         if "count" not in makemesh.__dict__: makemesh.count = makemesh.total = 0
         makemesh.count += 1
-        makemesh.total += len(patch)
+        makemesh.total += sum([len(p) for p in patch])
 
     # Get terrain info
     if ter in tercache:
-        (texture, texflags, angle, xscale, zscale)=tercache[ter]
+        (texture, wrap, angle, xscale, zscale)=tercache[ter]
     else:
         texture=None
-        texflags=8	# wrap
+        wrap=True	# wrap
         angle=0
         xscale=zscale=0
         try:
@@ -690,7 +690,7 @@ def makemesh(mesh,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,t
                 c=line.split()
                 if not c: continue
                 if c[0] in ['BASE_TEX', 'BASE_TEX_NOWRAP']:
-                    texflags = (c[0]=='BASE_TEX')
+                    wrap = (c[0]=='BASE_TEX')
                     texture=line[len(c[0]):].strip()
                     texture=texture.replace(':', sep)
                     texture=texture.replace('/', sep)
@@ -707,7 +707,7 @@ def makemesh(mesh,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,t
             if __debug__:
                 print 'Failed to load terrain "%s"' % ter
                 print_exc()
-        tercache[ter]=(texture, texflags, angle, xscale, zscale)
+        tercache[ter]=(texture, wrap, angle, xscale, zscale)
 
     # Make mesh
     centrelat=south+0.5
@@ -765,7 +765,16 @@ def makemesh(mesh,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,t
     else:	# explicit st co-ords
         v[:,3:5] = v[:,5:7]
 
-    mesh[(texture,texflags)].append(v[:,:5])
+    # if __debug__:	# dump mesh
+    #     print basename(texture), wrap
+    #     for x in v[:,:5]:
+    #         for y in x:
+    #             print "%.2f" % y,
+    #         print
+    #     assert len(v) == sum([len(p) for p in patch]), "%d %d" % (len(v), sum([len(p) for p in patch]))
+    #     print
+
+    mesh[(texture,wrap)].append(v[:,:5])
 
 
 def writeDSF(dsfdir, key, placements, netfile):
