@@ -1040,11 +1040,14 @@ class MainWindow(wx.Frame):
                  ord('W'), ord('D'), ord('S'), ord('A'),
                  wx.WXK_NUMPAD8, wx.WXK_NUMPAD6, wx.WXK_NUMPAD2, wx.WXK_NUMPAD4]
 
+        # Handling of Control key on Mac changed in 2.9 - http://www.wxpython.org/migrationguide.php
+        controldown = event.RawControlDown() if hasattr(event, 'RawControlDown') else event.ControlDown()
+
         if platform=='darwin' and event.GetKeyCode()==ord('A') and event.CmdDown():
             # Mac Cmd special
             self.canvas.allsel(event.ShiftDown())
         elif event.GetKeyCode() in cursors:
-            if event.ControlDown():
+            if controldown:
                 xinc=zinc=minres
             else:
                 zinc=self.dist/10000000
@@ -1069,14 +1072,14 @@ class MainWindow(wx.Frame):
                 changed=self.canvas.movesel(round2res(zinc*cos(hr)),
                                             round2res(xinc*sin(hr)))
         elif event.GetKeyCode() in [ord('Q'), wx.WXK_NUMPAD7]:
-            if event.ControlDown():
+            if controldown:
                 changed=self.canvas.movesel(0, 0, -0.1, 0, self.loc)
             elif event.ShiftDown():
                 changed=self.canvas.movesel(0, 0, -5,   0, self.loc)
             else:
                 changed=self.canvas.movesel(0, 0, -1,   0, self.loc)
         elif event.GetKeyCode() in [ord('E'), wx.WXK_NUMPAD1]:
-            if event.ControlDown():
+            if controldown:
                 changed=self.canvas.movesel(0, 0,  0.1, 0, self.loc)
             elif event.ShiftDown():
                 changed=self.canvas.movesel(0, 0,  5,   0, self.loc)
@@ -1093,14 +1096,14 @@ class MainWindow(wx.Frame):
             else:
                 changed=self.canvas.movesel(0, 0, 0, -1)
         elif event.GetKeyCode() in [wx.WXK_HOME, wx.WXK_NUMPAD_HOME]:
-            if event.ControlDown():
+            if controldown:
                 self.hdg=(self.hdg+0.1)%360
             elif event.ShiftDown():
                 self.hdg=(self.hdg+5)%360
             else:
                 self.hdg=(self.hdg+1)%360
         elif event.GetKeyCode() in [wx.WXK_END, wx.WXK_NUMPAD_END]:
-            if event.ControlDown():
+            if controldown:
                 self.hdg=(self.hdg-0.1)%360
             elif event.ShiftDown():
                 self.hdg=(self.hdg-5)%360
@@ -1154,12 +1157,12 @@ class MainWindow(wx.Frame):
             return
         elif event.GetKeyCode()==wx.WXK_SPACE:
             # not Cmd because Cmd-Space = Spotlight
-            self.canvas.allsel(event.ControlDown())
+            self.canvas.allsel(event.GetModifiers() & wx.MOD_CONTROL)
         elif event.GetKeyCode()==ord('N'):
             name=self.palette.get()
             if name:
                 # not Cmd because Cmd-N = new
-                loc=self.canvas.nextsel(name, event.ControlDown(), event.ShiftDown())
+                loc=self.canvas.nextsel(name, event.GetModifiers() & wx.MOD_CONTROL, event.ShiftDown())
                 if loc:
                     self.loc=loc
                     self.ShowSel()
@@ -1211,7 +1214,8 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:
                 self.menubar.Enable(wx.ID_UNDO, True)
-        event.Skip(True)
+        else:
+            event.Skip(True)
 
 
     def OnMouseWheel(self, event):
