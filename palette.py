@@ -436,7 +436,7 @@ class Palette(wx.SplitterWindow):
     def OnSearch(self, event):
         if not self.cb.lists: return	# wxMac 2.9 sends spurious event on start
         search=self.sb.GetValue().lower()
-        if search:
+        if search and len(search)>2:
             objects=dict((name,entry) for (name,entry) in self.frame.canvas.lookup.iteritems() if search in name.lower() and not entry.private and not entry.deprecated)
         else:
             objects={}
