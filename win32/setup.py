@@ -21,40 +21,47 @@ sys.path.insert(0, getcwd())
 from version import appname, appversion
 
 # bogus crud to get WinXP "Visual Styles"
-manifest=('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+
-          '<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">\n'+
-          '<assemblyIdentity\n'+
-          '    version="%4.2f.0.0"\n' % appversion +
-          '    processorArchitecture="'+cpu+'"\n'+
-          '    name="%s"\n' % appname +
-          '    type="win32"\n'+
-          '/>\n'+
-          '<description>DSF overlay editor.</description>\n'+
-          '<dependency>\n'+
-          '    <dependentAssembly>\n'+
-          '        <assemblyIdentity\n'+
-          '            type="win32"\n'+
-          '            name="Microsoft.Windows.Common-Controls"\n'+
-          '            version="6.0.0.0"\n'+
-          '            processorArchitecture="'+cpu+'"\n'+
-          '            publicKeyToken="6595b64144ccf1df"\n'+
-          '            language="*"\n'+
-          '        />\n'+
-          '    </dependentAssembly>\n'+
-          '</dependency>\n'+
-          '<dependency>\n'+
-          '    <dependentAssembly>\n'+
-          '        <assemblyIdentity\n'+
-          '            type="win32"\n'+
-          '            name="Microsoft.VC90.CRT"\n'+
-          '            version="9.0.30729.4940"\n'+
-          '            processorArchitecture="'+cpu+'"\n'+
-          '            publicKeyToken="1fc8b3b9a1e18e3b"\n'+
-          '            language="*"\n'+
-          '        />\n'+
-          '    </dependentAssembly>\n'+
-          '</dependency>\n'+
-          '</assembly>\n')
+manifest='''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3" manifestVersion="1.0">
+        <assemblyIdentity
+                version="{APPVERSION:4.2f}.0.0"
+                processorArchitecture="{CPU}"
+                name="{APPNAME}"
+                type="win32"
+        />
+        <description>DSF overlay editor.</description>
+        <asmv3:application>
+                <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">'
+                        <dpiAware>true</dpiAware>
+                </asmv3:windowsSettings>
+        </asmv3:application>
+        <dependency>
+                <dependentAssembly>
+                        <assemblyIdentity
+                                type="win32"
+                                name="Microsoft.Windows.Common-Controls"
+                                version="6.0.0.0"
+                                processorArchitecture="{CPU}"
+                                publicKeyToken="6595b64144ccf1df"
+                                language="*"
+                        />
+                </dependentAssembly>
+        </dependency>
+        <dependency>
+                <dependentAssembly>
+                        <assemblyIdentity
+                                type="win32"
+                                name="Microsoft.VC90.CRT"
+                                version="9.0.30729.4940"
+                                processorArchitecture="{CPU}"
+                                publicKeyToken="1fc8b3b9a1e18e3b"
+                                language="*"
+                        />
+                </dependentAssembly>
+        </dependency>
+</assembly>
+'''.format(APPNAME=appname, APPVERSION=appversion, CPU=cpu)
+
 
 if sys.platform=='win32':
     # http://www.py2exe.org/  Invoke with: setup.py py2exe
