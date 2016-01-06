@@ -11,7 +11,7 @@ Prefix: /usr/local
 #Fedora: PyOpenGL provides python-opengl, tkinter provides tkinter, pyliblzma
 Requires: bash, numpy, p7zip, python >= 2.7, python-imaging >= 1.1.6, python-opengl >= 3.0.1, python-setuptools, wxPython >= 2.8
 #Sigh - Suse: python-gdal, Fedora: gdal-python
-BuildArch: noarch
+BuildArch: x86_64
 
 %description
 This application edits DSF overlay scenery packages

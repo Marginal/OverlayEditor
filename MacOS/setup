@@ -1,0 +1,30 @@
+#!/bin/bash
+
+export PYTHONPATH=$PYTHONPATH:..
+VERSION=`python -c "from version import appversion; print '%4.2f' % appversion"`
+VER=`python -c "from version import appversion; print int(round(appversion*100,0))"`
+APPNAME=`python -c "from version import appname; print appname"`
+
+APP=../${APPNAME}.app
+PY='OverlayEditor.py apt.py buckets.py clutter.py clutterdef.py contextlib2.py draw.py elevation.py DSFLib.py files.py fixed8x13.py MessageBox.py imagery.py importobjs.py lock.py nodes.py palette.py prefs.py version.py'
+RSRC=`ls ../Resources/*.{html,png,vs,fs,obj,jpg}`
+PREV='../Resources/previews/*.jpg'
+
+rm -f ../${APPNAME}_${VER}_mac.zip
+rm -rf ${APP}
+
+mkdir -p ${APP}/Contents
+sed s/appversion/${VERSION}/ <Info.plist >${APP}/Contents/Info.plist
+mkdir -p ${APP}/Contents/MacOS
+cp -p ${APPNAME} DSFTool ${APP}/Contents/MacOS/
+for i in $PY; do cp -p "../$i" ${APP}/Contents/MacOS/; done
+mkdir -p ${APP}/Contents/Resources
+for i in $RSRC; do cp -p "$i" ${APP}/Contents/Resources/; done
+cp -p *.icns *.png screenshot.jpg ${APP}/Contents/Resources/	# overwrite with Mac versions
+mkdir -p ${APP}/Contents/Resources/previews
+for i in $PREV; do cp -p "$i" ${APP}/Contents/Resources/previews/; done
+python2.5 -OO ./bundledeps.py -x wx -o ${APP} ../${APPNAME}.py	# exclude wx - included with 10.5 and 10.6
+python2.7 -OO ./bundledeps.py -x setuptools -x pkg_resources -o ${APP} ../${APPNAME}.py
+xattr -r ${APP}	# warn about superfluous resource forks / metadata
+codesign --deep -s "Developer ID Application: Jonathan Harris" ${APP}
+ditto -ck --keepParent --sequesterRsrc ${APP} ../${APPNAME}_${VER}_mac.zip

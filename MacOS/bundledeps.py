@@ -120,6 +120,7 @@ mf = modulefinder.ModuleFinder(path, debug, excludes)
 for arg in args[1:]: mf.load_file(arg)	# add any additional scripts
 
 mf.run_script(script)
+if debug: mf.report()
 
 if filtered:
     modules = dict((k,v) for k,v in mf.modules.iteritems() if v.__file__ and k.startswith(filtered))
