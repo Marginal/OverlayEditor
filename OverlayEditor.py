@@ -677,7 +677,10 @@ class MainWindow(wx.Frame):
         elif platform.lower().startswith('linux'):	# PNG supported by GTK
             icons=wx.IconBundle()
             icons.AddIconFromFile('Resources/%s.png' % appname, wx.BITMAP_TYPE_PNG)
-            icons.AddIconFromFile('Resources/%s-128.png'% appname, wx.BITMAP_TYPE_PNG)
+            try:
+                icons.AddIconFromFile('Resources/%s-128.png'% appname, wx.BITMAP_TYPE_PNG)
+            except wx._core.PyAssertionError:
+                pass	# raised if missing when running from source under wxGTK>=3
             self.SetIcons(icons)
         
         if platform=='darwin':

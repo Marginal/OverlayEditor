@@ -313,6 +313,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.scrollcursor=wx.StockCursor(wx.CURSOR_HAND)
         self.dragcursor=wx.StockCursor(wx.CURSOR_CROSS)
 
+        self.doneinit=False	# Has glInit been called?
         self.valid=False	# do we have valid data for a redraw?
         self.needclear=False	# pending clear
         self.needrefesh=False	# pending refresh
@@ -404,9 +405,14 @@ class MyGL(wx.glcanvas.GLCanvas):
         
         self.timer=wx.Timer(self, wx.ID_ANY)
         wx.EVT_TIMER(self, self.timer.GetId(), self.OnTimer)
+        wx.EVT_PAINT(self, self.OnPaint)
 
     def glInit(self):
-        # Setup state. Under X must be called after window is shown
+        # Setup state
+        if platform.startswith('linux') and not self.IsShownOnScreen():
+            return	# Under X must be called after window is shown, which is deferred under wxGTK>=3.
+        else:
+            self.doneinit = True
         if wx.VERSION >= (2,9):
             self.SetCurrent(self.context)
         else:
@@ -450,7 +456,6 @@ class MyGL(wx.glcanvas.GLCanvas):
         glTranslatef(0, 1, 0)
         glScalef(1, -1, 1)			# OpenGL textures are backwards
         glMatrixMode(GL_PROJECTION)		# We always leave the modelview matrix as identity and the active matrix mode as projection, except briefly when drawing objects via the non-shader path
-        wx.EVT_PAINT(self, self.OnPaint)	# start generating paint events only now we're set up
 
         if log_glstate:
             try:
@@ -712,6 +717,8 @@ class MyGL(wx.glcanvas.GLCanvas):
 
     def OnPaint(self, event):
         if event: wx.PaintDC(self)	# Tell the window system that we're on the case
+        if not self.doneinit:
+            self.glInit()
         self.needrefresh=False
         size = self.GetClientSize()
         #print "pt", size
@@ -1613,6 +1620,9 @@ class MyGL(wx.glcanvas.GLCanvas):
         self.vertexcache.reset(terrain, dsfdirs)
         self.imagery.reset()
         self.tile=(0,999)	# force reload on next goto
+
+        if not self.doneinit:
+            self.glInit()	# would have expected an OnPaint first, but do this in case we haven't
 
         # load networks - have to do this every reload since texcache has been reset
         if netdefs:
