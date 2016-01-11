@@ -236,16 +236,13 @@ class TexCache:
                 if h.read(4)!='DDS ': raise Exception, 'This is not a DDS file'
                 (ssize,sflags,height,width,size,depth,mipmaps)=unpack('<7I', h.read(28))
                 #print ssize,sflags,height,width,size,depth,mipmaps
-                if sflags&(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT)!=(DDSD_CAPS|DDSD_PIXELFORMAT|DDSD_WIDTH|DDSD_HEIGHT): raise Exception, 'Missing mandatory fields'
+                # according to http://msdn.microsoft.com/en-us/library/bb943982 we ignore DDSD_CAPS|DDSD_PIXELFORMAT in dwFlags, and just assume that sPixelFormat is valid
+                if sflags&(DDSD_WIDTH|DDSD_HEIGHT) != (DDSD_WIDTH|DDSD_HEIGHT): raise Exception, 'Missing mandatory fields'
                 if sflags&DDSD_DEPTH: raise Exception, 'Volume texture not supported'
                 for dim in [width,height]:
                     l=log(dim,2)
                     if l!=int(l):
                         raise Exception, "Width and/or height is not a power of two"
-                if sflags&(DDSD_PITCH|DDSD_LINEARSIZE)==DDSD_PITCH:
-                    size*=height
-                #elif sflags&(DDSD_PITCH|DDSD_LINEARSIZE)!=DDSD_LINEARSIZE:
-                #    raise Exception, 'Invalid size'
                 h.seek(0x4c)
                 (psize,pflags,fourcc,bits,redmask,greenmask,bluemask,alphamask,caps1,caps2)=unpack('<2I4s7I', h.read(40))
                 if not sflags&DDSD_MIPMAPCOUNT or not caps1&DDSCAPS_MIPMAP or not mipmaps:
@@ -253,24 +250,17 @@ class TexCache:
 
                 if pflags&DDPF_FOURCC:
                     # http://oss.sgi.com/projects/ogl-sample/registry/EXT/texture_compression_s3tc.txt
+                    # According to https://msdn.microsoft.com/en-us/library/bb943991 we ignore dwPitchOrLinearSize
+                    # since its unreliable, and in practice Ortho4XP / ImageMagick supplies a bogus value
                     if not self.s3tc: raise Exception, 'This video driver does not support DXT compression'
                     if fourcc=='DXT1':
-                        if not (sflags&(DDSD_PITCH|DDSD_LINEARSIZE)):
-                            size=width*height/2
-                        else:
-                            assert size==width*height/2
+                        size=width*height/2
                         iformat=GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
                     elif fourcc=='DXT3':
-                        if not (sflags&(DDSD_PITCH|DDSD_LINEARSIZE)):
-                            size=width*height
-                        else:
-                            assert size==width*height
+                        size=width*height
                         iformat=GL_COMPRESSED_RGBA_S3TC_DXT3_EXT
                     elif fourcc=='DXT5':
-                        if not (sflags&(DDSD_PITCH|DDSD_LINEARSIZE)):
-                            size=width*height
-                        else:
-                            assert size==width*height
+                        size=width*height
                         iformat=GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
                     else:
                         raise Exception, '%s format not supported' % fourcc
@@ -333,7 +323,8 @@ class TexCache:
                     return id
                     
                 elif pflags&DDPF_RGB:	# uncompressed
-                    assert size==width*height*bits/8	# pitch appears unreliable
+                    # According to https://msdn.microsoft.com/en-us/library/bb943991 we ignore dwPitchOrLinearSize
+                    size = ((width * bits + 7) // 8) * height
                     if bits==24 and redmask==0xff0000 and greenmask==0x00ff00 and bluemask==0x0000ff:
                         if not self.bgra: raise Exception, 'This video driver does not support BGR format'
                         format=GL_BGR_EXT
