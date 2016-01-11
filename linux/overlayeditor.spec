@@ -9,7 +9,7 @@ Vendor: Jonathan Harris <x-plane@marginal.org.uk>
 Prefix: /usr/local
 #Suse: python-wxGTK provides wxPython, python-numpy provides numpy, python-tk provides python-tkinter, python-pylzma
 #Fedora: PyOpenGL provides python-opengl, tkinter provides tkinter, pyliblzma
-Requires: bash, numpy, p7zip, python >= 2.7, python-imaging >= 1.1.6, python-opengl >= 3.0.1, python-setuptools, wxPython >= 2.8
+Requires: bash, desktop-file-utils, numpy, p7zip, python >= 2.7, python-imaging >= 1.1.6, python-opengl >= 3.0.1, python-setuptools, wxPython >= 2.8
 #Sigh - Suse: python-gdal, Fedora: gdal-python
 BuildArch: x86_64
 
@@ -29,5 +29,6 @@ for X-Plane 8.30 or later.
 
 
 %post
+desktop-file-install /usr/local/share/applications/overlayeditor.desktop
 gtk-update-icon-cache -f -q -t /usr/local/share/icons/hicolor &>/dev/null
 exit 0	# ignore errors from updating icon cache
