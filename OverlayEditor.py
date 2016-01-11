@@ -35,7 +35,6 @@ except:
     Tkinter.Tk().withdraw()
     tkMessageBox.showerror("Error", "wxPython is not installed.\nThis application requires wxPython 2.8 or later.")
     exit(1)
-from wx.lib.masked import NumCtrl, EVT_NUM, NumberUpdatedEvent
 
 try:
     import OpenGL
@@ -274,13 +273,6 @@ class GotoDialog(wx.Dialog):
         wx.Dialog.__init__(self, parent, wx.ID_ANY, "Go to")
         wx.EVT_CLOSE(self, self.OnClose)
 
-        numid=wx.NewId()
-        if platform=='darwin':
-            bg=wx.Colour(254,254,254)	# Odd colours = black on wxMac !!!
-        else:
-            bg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_WINDOW)
-        fg=wx.SystemSettings_GetColour(wx.SYS_COLOUR_MENUTEXT)
-
         grid1=wx.FlexGridSizer(0, 2, 0, 0)
         grid1.AddGrowableCol(1,1)
         box1 = wx.StaticBoxSizer(wx.StaticBox(self, -1, "Airports by name"),
@@ -311,78 +303,67 @@ class GotoDialog(wx.Dialog):
         wx.EVT_SET_FOCUS(self.list2, self.OnCode)
 
         locbox=wx.GridSizer(0, 2, 6, 6)
-        locbox.Add(wx.StaticText(self, -1, '  Latitude:'), 1, wx.ALIGN_CENTER_VERTICAL|wx.ALIGN_LEFT|wx.ALL, pad)
-        self.lat=NumCtrl(self, numid, 0, integerWidth=3, fractionWidth=6,
-                         min=-89.999999, max=89.999999, limited=True,
-                         selectOnEntry=False,
-                         foregroundColour=fg, signedForegroundColour=fg,
-                         validBackgroundColour = bg,
-                         invalidBackgroundColour = "Red")
-        if platform=='darwin':	# auto-size broken - wrong font?
-            (c,y)=self.lat.GetSize()
-            (x,c)=self.lat.GetTextExtent("-888.8888888")
-            numsize=(x,y)
-        else:
-            numsize=self.lat.GetSize()
-        self.lat.SetMinSize(numsize)
+        self.lat = wx.TextCtrl(self, -1)
+        self.lon = wx.TextCtrl(self, -1)
+        locbox.Add(wx.StaticText(self, -1, '  Latitude:'),  1, wx.ALIGN_CENTER_VERTICAL|wx.ALIGN_LEFT|wx.ALL, pad)
         locbox.Add(self.lat, 1, wx.BOTTOM|wx.RIGHT|wx.EXPAND, pad)
-        
         locbox.Add(wx.StaticText(self, -1, '  Longitude:'), 1, wx.ALIGN_CENTER_VERTICAL|wx.ALIGN_LEFT|wx.ALL, pad)
-        self.lon=NumCtrl(self, numid, 0, integerWidth=3, fractionWidth=6,
-                         min=-179.999999, max=179.999999, limited=True,
-                         selectOnEntry=False,
-                         foregroundColour=fg, signedForegroundColour=fg,
-                         validBackgroundColour = bg,
-                         invalidBackgroundColour = "Red")
-        self.lon.SetMinSize(numsize)
         locbox.Add(self.lon, 1, wx.BOTTOM|wx.RIGHT|wx.EXPAND, pad)
         box3.Add(locbox, 1, wx.ALL|wx.EXPAND, pad)
-        EVT_NUM(self, numid, self.OnLoc)	# All numeric fields
-        grid1.Add(box3, 0, wx.LEFT|wx.BOTTOM|wx.EXPAND, 14) #
+        wx.EVT_TEXT(self, self.lat.GetId(), self.OnLoc)	# wxPython doesn't (yet) support FloatingPointValidator
+        wx.EVT_TEXT(self, self.lon.GetId(), self.OnLoc)
+        grid1.Add(box3, 0, wx.LEFT|wx.BOTTOM|wx.EXPAND, 14)
         
         box4=myCreateStdDialogButtonSizer(self, wx.OK|wx.CANCEL)
         self.ok=self.FindWindowById(wx.ID_OK)
         self.ok.Disable()
-        #box0=wx.BoxSizer(wx.VERTICAL)
-        #box0.Add(grid1, 1, wx.ALL|wx.EXPAND, 14)
-        #box0.Add(box4, 0, wx.ALL|wx.EXPAND, 14)
-        #self.SetSizerAndFit(box0)
+        wx.EVT_BUTTON(self, wx.ID_OK, self.OnClose)
         grid1.Add(box4, 1, wx.ALL|wx.ALIGN_RIGHT|wx.ALIGN_BOTTOM, 14)
         self.SetSizerAndFit(grid1)
 
     def OnClose(self, event):
         # Prevent kill focus event causing refresh & crash on wxMac 2.5
+        # Prevent kill focus event causing EVT_LISTBOX on wxMac >= 3
         self.list1.SetSelection(-1)
         self.list2.SetSelection(-1)
-        if self.IsModal(): self.EndModal(wx.ID_CANCEL)
+        if self.IsModal(): self.EndModal(event.GetEventObject().GetId())
 
     def OnName(self, event):
         choice=event.GetEventObject().GetStringSelection()
         if choice:
             loc=self.aptname[choice]
-            self.lat.SetValue(loc[0])
-            self.lon.SetValue(loc[1])
+            self.lat.SetValue('%11.6f' % loc[0])
+            self.lon.SetValue('%11.6f' % loc[1])
             self.ok.Enable()
-        event.Skip()
+        event.Skip()	# Update display
 
     def OnCode(self, event):
         choice=event.GetEventObject().GetStringSelection()
         if choice:
             loc=self.aptcode[choice]
-            self.lat.SetValue(loc[0])
-            self.lon.SetValue(loc[1])
+            self.lat.SetValue('%11.6f' % loc[0])
+            self.lon.SetValue('%11.6f' % loc[1])
             self.ok.Enable()
-        event.Skip()
+        event.Skip()	# Update display
 
     def OnLoc(self, event):
-        self.ok.Enable()
+        try:
+            if (-90 < float(self.lat.GetValue()) < 90) and (-180 < float(self.lon.GetValue()) < 180):
+                self.ok.Enable()
+            else:
+                self.ok.Disable()
+        except:
+            self.ok.Disable()
 
     def show(self, loc):
-        self.lat.SetValue(loc[0])
-        self.lon.SetValue(loc[1])
+        self.lat.SetValue('%11.6f' % loc[0])
+        self.lon.SetValue('%11.6f' % loc[1])
         self.ok.Disable()
         if self.ShowModal()!=wx.ID_OK: return None
-        return (self.lat.GetValue(), self.lon.GetValue())
+        try:
+            return (float(self.lat.GetValue()), float(self.lon.GetValue()))
+        except:
+            return None	# shouldn't happen
 
 
 class PreferencesDialog(wx.Dialog):
