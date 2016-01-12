@@ -1188,7 +1188,7 @@ class MainWindow(wx.Frame):
             elif event.GetKeyCode()==ord('M'):
                 print '---', time.asctime(), '---'
         else:
-            event.Skip(True)
+            event.Skip(True)	# Causes beep on wxMac >= 3
             return
         self.canvas.goto(self.loc, self.hdg, self.elev, self.dist)
         self.Update()		# Let window draw first
@@ -1198,8 +1198,6 @@ class MainWindow(wx.Frame):
             self.toolbar.EnableTool(wx.ID_UNDO, True)
             if self.menubar:
                 self.menubar.Enable(wx.ID_UNDO, True)
-        else:
-            event.Skip(True)
 
 
     def OnMouseWheel(self, event):
