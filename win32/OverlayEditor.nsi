@@ -12,8 +12,18 @@
 SetCompressor /SOLID lzma
 RequestExecutionLevel admin
 
+; Installer manifest
+Unicode true
+ManifestSupportedOS all
+ManifestDPIAware true
+VIProductVersion "$%VERSION%.0.0"
+VIAddVersionKey "FileDescription" "OverlayEditor Installer"
+VIAddVersionKey "FileVersion" "$%VERSION%"
+VIAddVersionKey "LegalCopyright" "2007-2016 Jonathan Harris"
+VIAddVersionKey "ProductName" "OverlayEditor"
+
 Name "OverlayEditor $%VERSION%"
-Caption "OverlayEditor $%VERSION% Installer"
+Caption "OverlayEditor Installer"
 OutFile "OverlayEditor_$%VER%_win32.exe"
 BrandingText "http://marginal.org.uk/x-planescenery"
 
