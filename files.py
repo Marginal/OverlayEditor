@@ -368,29 +368,21 @@ class TexCache:
                 else:	# convert weird formats to RGB - http://effbot.org/imagingbook/concepts.htm
                     format, mode = 'transparency' in image.info and (GL_RGBA, 'RGBA') or (GL_RGB, 'RGB')
                     image = image.convert(mode)
-                width, height = image.size
-                data = None
 
                 # check size
-                size = [width, height]
+                size = list(image.size)
                 for i in [0,1]:
                     l=log(size[i],2)
                     if l!=int(l):
                         if not fixsize: raise Exception, "Width and/or height not a power of two"
                         size[i]=2**(1+int(l))	# expand to next power of two
                 if downsample and size[0]>downsamplemin and size[1]>downsamplemin:
-                    if data is not None: image = PIL.Image.frombuffer(mode, (width,height), data, "raw", mode, 0, 1)
                     image = image.resize((min(size[0]/4,self.maxtexsize),min(size[1]/4,self.maxtexsize)), PIL.Image.BICUBIC)
-                    width, height = image.size
-                    data = image.tostring("raw", mode)
-                elif (size!=[width, height] and not self.npot) or size[0]>self.maxtexsize or size[1]>self.maxtexsize:
-                    if data is not None: image = PIL.Image.frombuffer(mode, (width,height), data, "raw", mode, 0, 1)
+                elif (size != list(image.size) and not self.npot) or size[0]>self.maxtexsize or size[1]>self.maxtexsize:
                     image = image.resize((min(size[0],self.maxtexsize),min(size[1],self.maxtexsize)), PIL.Image.BICUBIC)
-                    width, height = image.size
-                    data = image.tostring("raw", mode)
-                elif data is None:
-                    # obtain data from Image
-                    data = image.tostring("raw", mode)
+
+                width, height = image.size
+                data = hasattr(image, 'tobytes') and image.tobytes("raw", mode) or image.tostring("raw", mode)
 
             # Common code for uncompressed DDS and PIL formats.
             # variables used: data, format, iformat, width, height
