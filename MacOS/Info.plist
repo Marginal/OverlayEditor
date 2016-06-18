@@ -21,7 +21,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>appversion</string>
 	<key>CFBundleGetInfoString</key>
-	<string>OverlayEditor appversion, © 2007-2014 Jonathan Harris</string>
+	<string>OverlayEditor appversion, © 2007-2016 Jonathan Harris</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>10.5</string>
         <key>NSHighResolutionCapable</key>
@@ -106,7 +106,7 @@
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>public.data</string>
+				<string>public.text</string>
 			</array>
 			<key>UTTypeDescription</key>
 			<string>X-Plane autogen point</string>
@@ -119,14 +119,13 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>agp</string>
-					<string>AGP</string>
 				</array>
 			</dict>
 		</dict>
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>public.data</string>
+				<string>public.text</string>
 			</array>
 			<key>UTTypeDescription</key>
 			<string>X-Plane facade</string>
@@ -139,14 +138,13 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>fac</string>
-					<string>FAC</string>
 				</array>
 			</dict>
 		</dict>
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>public.data</string>
+				<string>public.text</string>
 			</array>
 			<key>UTTypeDescription</key>
 			<string>X-Plane forest</string>
@@ -159,14 +157,13 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>for</string>
-					<string>FOR</string>
 				</array>
 			</dict>
 		</dict>
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>public.data</string>
+				<string>public.text</string>
 			</array>
 			<key>UTTypeDescription</key>
 			<string>X-Plane painted line</string>
@@ -179,14 +176,14 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>lin</string>
-					<string>LIN</string>
 				</array>
 			</dict>
 		</dict>
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>public.data</string>
+				<string>public.3d-content</string>
+				<string>public.text</string>
 			</array>
 			<key>UTTypeDescription</key>
 			<string>X-Plane 3D object</string>
@@ -199,14 +196,13 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>obj</string>
-					<string>OBJ</string>
 				</array>
 			</dict>
 		</dict>
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>public.data</string>
+				<string>public.text</string>
 			</array>
 			<key>UTTypeDescription</key>
 			<string>X-Plane draped polygon</string>
@@ -219,14 +215,13 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>pol</string>
-					<string>POL</string>
 				</array>
 			</dict>
 		</dict>
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>public.data</string>
+				<string>public.text</string>
 			</array>
 			<key>UTTypeDescription</key>
 			<string>X-Plane object string</string>
@@ -239,7 +234,6 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>str</string>
-					<string>STR</string>
 				</array>
 			</dict>
 		</dict>
