@@ -21,6 +21,7 @@ surfaces = {0:  [0.125, 0.125],	# unknown
             14: [0.625, 0.875],	# ice
             15: [0.875, 0.875]}	# transparent
 
+apt_versions = [600, 703, 715, 810, 850, 1000, 1050]
 
 # Scan global airport list - assumes code is ASCII for speed
 def scanApt(filename):
@@ -28,14 +29,18 @@ def scanApt(filename):
     nav=[]	# (type,lat,lon,hdg)
     h=file(filename, 'rU')	# assumes ascii
     if not h.readline().strip() in ['A','I']:
-        raise IOError
+        raise AssertionError, "Invalid apt.dat file."
     while True:	# NYEXPRO has a blank line here
         c=h.readline().split()
         if c: break
-    ver=c[0]
-    if not ver in ['600','703','715','810','850','1000']:
-        raise IOError
-    ver=int(ver)
+    try:
+        ver = int(c[0])
+    except:
+        raise AssertionError, "Invalid apt.dat file."
+    if not ver in apt_versions:
+        print ver, type(ver)
+        raise AssertionError, "Can't read version %.2f apt.dat files." % (ver/100.0)
+
     code=name=loc=None
     offset=0
     # mixing read and tell - http://www.thescripts.com/forum/post83277-3.html
@@ -104,10 +109,12 @@ def readApt(filename, offset=None):
         while True:	# NYEXPRO has a blank line here
             c=h.readline().split()
             if c: break
-        ver=c[0]
-        if not ver in ['600','703','715','810','850','1000']:
+        try:
+            ver = int(c[0])
+        except:
             raise AssertionError, "The apt.dat file in this package is invalid."
-        ver=int(ver)
+        if not ver in apt_versions:
+            raise AssertionError, "Can't read version %.2f apt.dat file in this package." % (ver/100.0)
 
     code = name = None
     loc = None		# airport location

@@ -1466,12 +1466,13 @@ class MainWindow(wx.Frame):
                 if __debug__: clock=time.clock()	# Processor time
                 (self.airports,self.nav)=scanApt(mainaptdat)
                 if __debug__: print "%6.3f time in global apt" % (time.clock()-clock)
+            except AssertionError, e:
+                myMessageBox(e.message, "Can't load default airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
             except:
                 if __debug__:
                     print "Invalid apt.dat:"
                     print_exc()
-                self.nav=[]
-                myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
+                myMessageBox("The X-Plane global apt.dat file is invalid.", "Can't load default airport data.", wx.ICON_EXCLAMATION|wx.OK, self)
             try:
                 if prefs.xpver>=9:
                     self.nav.extend(readNav(glob(join(prefs.xplane,gmain9navdat))[0]))
