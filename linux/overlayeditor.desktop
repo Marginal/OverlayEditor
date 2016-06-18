@@ -2,7 +2,7 @@
 Version=1.0
 Name=OverlayEditor
 Comment=X-Plane DSF overlay editor
-Exec=overlayeditor
+Exec=/usr/local/bin/overlayeditor
 Icon=overlayeditor
 Terminal=false
 Type=Application
