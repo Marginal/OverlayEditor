@@ -77,7 +77,15 @@ if not __debug__:
     wx.Log.SetLogLevel(wx.LOG_Error)	# wx warnings are seldom helpful
     numpy.seterr(all='ignore', divide='raise')	# default settings vary between numpy versions
 else:
-    numpy.seterr(all='raise')
+    try:
+        numpy.seterr(all='raise')
+        import pdb
+        import signal
+        signal.signal(signal.SIGTERM, lambda sig, frame: pdb.Pdb().set_trace(frame))
+        import faulthandler
+        faulthandler.enable()
+    except:
+        pass
 
 if not 'startfile' in dir(os):
     import types
