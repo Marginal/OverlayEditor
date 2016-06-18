@@ -139,7 +139,8 @@ setup(name='OverlayEditor',
                             # http://www.py2exe.org/index.cgi/OptimizingSize
                             'excludes':['Carbon', 'tcl', 'Tkinter', 'mx', 'webbrowser',
                                         'curses', 'distutils', 'doctest', 'hotshot', 'inspect', 'pdb', 'setuptools', 'win32',	# Python2.5
-                                        'Numeric', 'dotblas', 'numarray', 'scipy', 'nose'],	# Old Numeric stuff
+                                        'Numeric', 'dotblas', 'numarray', 'scipy', 'nose',	# Old Numeric stuff
+                                        'PIL.ImageQt'],	# From Pillow 3 - drags in Qt etc
                             'packages':['encodings.ascii','encodings.mbcs','encodings.latin_1','encodings.utf_8','encodings.utf_16','encodings.cp437'],
                             'optimize':2,
                             },

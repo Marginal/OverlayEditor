@@ -24,7 +24,7 @@ cp -p MacOS/*.icns MacOS/*.png MacOS/screenshot.jpg ${APP}/Contents/Resources/	#
 mkdir -p ${APP}/Contents/Resources/previews
 for i in $PREV; do cp -p "$i" ${APP}/Contents/Resources/previews/; done
 python2.5 -OO MacOS/bundledeps.py -x wx -o ${APP} ${APPNAME}.py	# exclude wx - included with 10.5 and 10.6
-python2.7 -OO MacOS/bundledeps.py -x setuptools -x pkg_resources -o ${APP} ${APPNAME}.py
+python2.7 -OO MacOS/bundledeps.py -x setuptools -x pkg_resources -x PIL.ImageQt -o ${APP} ${APPNAME}.py
 xattr -r ${APP}	# warn about superfluous resource forks / metadata
 codesign --deep -s "Developer ID Application: Jonathan Harris" ${APP}
 ditto -ck --keepParent --sequesterRsrc ${APP} ${APPNAME}_${VER}_mac.zip
