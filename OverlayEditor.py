@@ -104,7 +104,7 @@ from lock import LockDialog
 from palette import Palette, PaletteEntry
 from DSFLib import readDSF, writeDSF
 from MessageBox import myCreateStdDialogButtonSizer, myMessageBox, AboutBox
-from prefs import Prefs, prefs, gcustom, gglobal, gdefault, glibrary, gaptdat, gmain8aptdat, gmain9aptdat, gnavdata, gmain8navdat, gmain9navdat
+from prefs import Prefs, prefs, gglobal, gcustom, gglobapt, gdefault, glibrary, gaptdat, gmain8aptdat, gmain9aptdat, gnavdata, gmain8navdat, gmain9navdat
 from version import appname, appversion
 
 # constants
@@ -1640,7 +1640,17 @@ class MainWindow(wx.Frame):
         pkgapts={}
         nav=list(self.nav)
         pkgloc=None
-        apts=glob(join(prefs.xplane, gcustom, '*', gaptdat))
+        apts = glob(join(prefs.xplane, gcustom, '*', gaptdat))
+        # De-prioritize Global Airports and prioritise this package
+        apt = glob(join(prefs.xplane, gcustom, gglobapt, gaptdat))
+        if apt and apt[0] in apts:
+            apts.remove(apt[0])
+            apts.append(apt[0])
+        if prefs.package:
+            apt = glob(join(prefs.xplane, gcustom, prefs.package, gaptdat))
+            if apt and apt[0] in apts:
+                apts.remove(apt[0])
+                apts.insert(0, apt[0])
         for apt in apts:
             # Package-specific apt.dats
             try:
