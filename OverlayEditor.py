@@ -845,10 +845,11 @@ class MainWindow(wx.Frame):
                 self.setmodifiedfn=Win.WhichWindow(self.MacGetTopLevelWindowRef()).SetWindowModified
             except:
                 try:	# Cocoa
+                    # http://www.mail-archive.com/cocoa-dev@lists.apple.com/msg43196.html
                     import AppKit
-                    # doesn't work: AppKit.NSApp.mainMenu().itemAtIndex_(0).submenu().setTitle_(appname)	 http://www.mail-archive.com/cocoa-dev@lists.apple.com/msg43196.html
-                    AppKit.NSBundle.mainBundle().infoDictionary()['CFBundleName']=appname
-                    self.setmodifiedfn=AppKit.NSApp.mainWindow().setDocumentEdited_
+                    app = AppKit.NSApp
+                    app.mainMenu().itemAtIndex_(0).submenu().setTitle_(appname)
+                    self.setmodifiedfn = app.mainWindow().setDocumentEdited_
                 except:
                     if __debug__: print_exc()
 
