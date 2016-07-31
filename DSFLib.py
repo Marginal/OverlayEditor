@@ -748,8 +748,12 @@ def makemesh(mesh,path,ter,patch,south,west,elev,elevwidth,elevheight,terrains,t
         x_frac = empty(n, float32)
         z = empty(n, int)
         z_frac = empty(n, float32)
-        numpy.modf((v[:,0][e] - west)  * elevwidth,  x_frac, x)
-        numpy.modf((v[:,1][e] - south) * elevheight, z_frac, z)
+        try:
+            numpy.modf((v[:,0][e] - west)  * elevwidth,  x_frac, x, casting='unsafe')	# We need x as int for indexing
+            numpy.modf((v[:,1][e] - south) * elevheight, z_frac, z, casting='unsafe')	# We need z as int for indexing
+        except:	# pre numpy 1.6
+            numpy.modf((v[:,0][e] - west)  * elevwidth,  x_frac, x)
+            numpy.modf((v[:,1][e] - south) * elevheight, z_frac, z)
         x1 = numpy.where(x < elevwidth-1,  x+1, elevwidth-1)
         z1 = numpy.where(z < elevheight-1, z+1, elevheight-1)
         v1 = elev[z,  x ]
