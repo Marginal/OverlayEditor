@@ -99,7 +99,7 @@ class Filecache:
         return None
 
     # Return a file from the cache, blocking to read it from a URL if necessary
-    def fetch(self, name, url):
+    def fetch(self, name, url, minsize=0):
         now=int(time.time())
         filename=join(self.cachedir, name)
         if name in self.files:
@@ -131,7 +131,7 @@ class Filecache:
                 if h.info().getheader('X-VE-Tile-Info')=='no-tile':
                     # Bing serves a placeholder and adds this header if no imagery available at this resolution
                     raise HTTPError(url, 404, None, None, None)
-                if int(h.info().getheader('Content-Length'))<3000:
+                if int(h.info().getheader('Content-Length')) < minsize:
                     # ArcGIS doesn't give any indication that it's serving a placeholder. Assume small filesize = placeholder
                     raise HTTPError(url, 404, None, None, None)
                 f=open(filename, 'wb')
@@ -147,8 +147,7 @@ class Filecache:
                 return filename
             except HTTPError,e:
                 if __debug__:
-                    print request.get_full_url().split('&')[0], request.headers, tries
-                    print str(e)
+                    print request.get_full_url().split('&')[0], e.code
                 if e.code==304:	# Not Modified
                     # http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.3.5
                     self.files[name]=(now, modified)
@@ -192,7 +191,7 @@ class Imagery:
 
     def __init__(self, canvas):
 
-        self.providers={'Bing': self.bing_setup, 'ArcGIS': self.arcgis_setup, 'MapQuest': self.mq_setup }
+        self.providers={'Bing': self.bing_setup, 'ArcGIS': self.arcgis_setup, 'Mapbox': self.mb_setup }
 
         self.canvas=canvas
         self.imageryprovider=None
@@ -288,7 +287,7 @@ class Imagery:
 
         level0mpp=2*pi*6378137/256		# metres per pixel at level 0
 
-        if screensize.width<=0 or not (int(self.loc[0]) or int(self.loc[1])) or not self.provider_url:
+        if screensize.width<=0 or not self.loc or not (int(self.loc[0]) or int(self.loc[1])) or not self.provider_url:
             return []	# Don't do anything on startup. Can't do anything without a valid provider.
 
         # layout assumes mesh loaded
@@ -394,19 +393,19 @@ class Imagery:
 
     # Returns a laid-out placement if possible, or not laid-out if image is still loading, or None if not available.
     def getplacement(self,x,y,level,fetch):
-        (name,url)=self.provider_url(x,y,level)
+        (name, url, minsize) = self.provider_url(x, y, level)
         if name in self.placementcache:
             # Already created
             placement=self.placementcache[name]
         elif fetch:
-            # Make a new one. We could also do this if the image file is available, but don't since layout is expensive.
+            # Make a new one. We could do this automatically if the image file is available, but don't since layout is expensive.
             (north,west)=self.xy2latlon(x,y,level)
             (south,east)=self.xy2latlon(x+1,y+1,level)
             placement=DrapedImage(name, 65535, [[Node([west,north,0,1]),Node([east,north,1,1]),Node([east,south,1,0]),Node([west,south,0,0])]])
             placement.load(self.canvas.lookup, self.canvas.defs, self.canvas.vertexcache)
             self.placementcache[name]=placement
             # Initiate fetch of image and do layout. Prioritise more detail.
-            self.q.put((self.initplacement, (placement,name,url)))
+            self.q.put((self.initplacement, (placement, name, url, minsize)))
         else:
             placement=None
 
@@ -459,7 +458,7 @@ class Imagery:
             i-=1
         url=self.provider_base % quadkey
         name=basename(url).split('?')[0]
-        return (name,url)
+        return (name, url, 0)
 
 
     # Called in worker thread - don't do anything fancy since main body of code is not thread-safe
@@ -492,7 +491,7 @@ class Imagery:
     def arcgis_url(self, x, y, level):
         url=self.provider_base % ("%d/%d/%d" % (level, y, x))
         name="arcgis_%d_%d_%d.jpeg" % (level, y, x)
-        return (name,url)
+        return (name, url, 2560)	# Sends an unhelpful JPEG if imagery not available at this level
 
     # Called in worker thread - don't do anything fancy since main body of code is not thread-safe
     def arcgis_setup(self, tls):
@@ -516,20 +515,20 @@ class Imagery:
         self.canvas.Refresh()	# Might have been waiting on this to get imagery
 
 
-    def mq_url(self, x, y, level):
-        url=self.provider_base % ("%d/%d/%d.jpg" % (level, x, y))
-        name="mq_%d_%d_%d.jpg" % (level, x, y)
-        return (name,url)
+    def mb_url(self, x, y, level):
+        url=self.provider_base % ("%d/%d/%d" % (level, x, y))
+        name="mb_%d_%d_%d.png" % (level, x, y)
+        return (name, url, 0)
 
     # Called in worker thread - don't do anything fancy since main body of code is not thread-safe
-    def mq_setup(self, tls):
+    def mb_setup(self, tls):
         # http://developer.mapquest.com/web/products/open/map
         try:
             self.provider_levelmin=0
             self.provider_levelmax=18
-            self.provider_base='http://otile1.mqcdn.com/tiles/1.0.0/map/%s'
-            self.provider_url=self.mq_url
-            filename=self.filecache.fetch('questy.png', 'http://open.mapquest.com/cdn/toolkit/lite/images/questy.png')
+            self.provider_base='https://api.mapbox.com/styles/v1/mapbox/outdoors-v9/tiles/256/%s?access_token=pk.eyJ1IjoibWFyZ2luYWwiLCJhIjoiY2lyZTl2M2xjMDAwNGlsbTM4aXp0d243aSJ9.SK1DCngwVZhvlP4CLAyz6A'
+            self.provider_url=self.mb_url
+            filename=self.filecache.fetch('mapbox.ico', 'https://www.mapbox.com/img/favicon.ico')
             if filename:
                 image = PIL.Image.open(filename)	# yuck. but at least open is lazy
                 self.provider_logo=(filename,image.size[0],image.size[1])
@@ -540,8 +539,8 @@ class Imagery:
 
     # Called in worker thread - fetches image and does placement layout (which uses it's own tessellator and so is thread-safe).
     # don't do anything fancy since main body of code is not thread-safe
-    def initplacement(self, tls, placement, name, url):
-        filename=self.filecache.fetch(name, url)
+    def initplacement(self, tls, placement, name, url, minsize):
+        filename=self.filecache.fetch(name, url, minsize)
         if not filename:
             # Couldn't fetch image - remove corresponding placement
             self.placementcache[name]=None
