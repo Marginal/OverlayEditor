@@ -465,7 +465,7 @@ class VertexCache:
         self.vector_indices_count=0		# Allocated and pending indices
         self.vector_valid=False
         self.dynamic_data=empty((0,6),float32)
-        self.dynamic_pending={}
+        self.dynamic_pending = set()
         self.dynamic_valid=False
         self.buckets = Buckets(self)
         self.dsfdirs=None	# [custom, global, default]
@@ -500,7 +500,7 @@ class VertexCache:
         self.vector_indices_count=0
         self.vector_valid=False
         self.dynamic_data=empty((0,6),float32)
-        self.dynamic_pending={}
+        self.dynamic_pending = set()
         self.dynamic_valid=False
         self.buckets = Buckets(self)
 
@@ -563,13 +563,15 @@ class VertexCache:
         assert isinstance(placement,Clutter)
         if not alloc:
             # Placement's layout is cleared (e.g. prior to deletion) remove from VBO on next rebuild
-            self.dynamic_pending.pop(placement,False)
+            if placement in self.dynamic_pending:
+                self.dynamic_pending.remove(placement)
+                self.dynamic_valid = False	# new geometry -> need to update OpenGL
             placement.base=None
         else:
             assert placement.dynamic_data is not None, placement
             assert placement.dynamic_data.size, placement	# shouldn't have tried to allocate if no data
-            self.dynamic_pending[placement]=True
-        self.dynamic_valid=False	# new geometry -> need to update OpenGL
+            self.dynamic_pending.add(placement)
+            self.dynamic_valid = False	# new geometry -> need to update OpenGL
 
     def realize_dynamic(self, dynamic_vbo):
         # Allocate into VBO if required. Returns True if VBO updated.
