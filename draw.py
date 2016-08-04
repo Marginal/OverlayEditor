@@ -796,12 +796,12 @@ class MyGL(wx.glcanvas.GLCanvas):
             self.needclear=False
         
         # Map imagery & background
-        imagery=self.imagery.placements(self.d, size)	# May allocate into dynamic VBO
+        has_imagery = self.imagery.placements(self.d, size)	# allocate into dynamic VBO
         if log_paint:
             print "%6.3f time to get imagery" % (time.clock()-clock2)
             clock2=time.clock()
         if self.background and self.background.islaidout():
-            imagery.append(self.background)
+            has_imagery = True
             if self.frame.bkgd:
                 self.selected=set([self.background])	# Override selection while dialog is open
             elif self.background in self.selected:
@@ -885,7 +885,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         self.glstate.set_dynamic(self.vertexcache)	# realize
         # Draw clutter with dynamic geometry
-        self.vertexcache.buckets.draw(self.glstate, self.frame.bkgd and set() or self.selected, self.aptdata, imagery, prefs.imageryopacity)	# background image is always drawn with its own opacity setting
+        self.vertexcache.buckets.draw(self.glstate, self.frame.bkgd and set() or self.selected, self.aptdata, has_imagery, prefs.imageryopacity)	# background image is always drawn with its own opacity setting
         if log_paint:
             print "%6.3f time to draw dynamic" % (time.clock()-clock2)
             clock2=time.clock()

@@ -86,7 +86,7 @@ class Buckets:
     def add(self, layer, texture, first, count):
         self.layerbuckets[layer].add(texture, first, count)
 
-    def draw(self, glstate, selected, aptdata={}, imagery=None, imageryopacity=None):
+    def draw(self, glstate, selected, aptdata={}, has_imagery=None, imagery_opacity=None):
         glstate.set_color(COL_UNPAINTED)
         glstate.set_cull(True)
         glstate.set_poly(True)
@@ -114,9 +114,9 @@ class Buckets:
                 glstate.set_texture(self.vertexcache.texcache.get('Resources/surfaces.png'))
                 glDrawArrays(GL_TRIANGLES, base, length)
                 glstate.set_dynamic(self.vertexcache)
-            if layer == ClutterDef.RUNWAYSLAYER and imagery:	# draw imagery out of order
+            if layer == ClutterDef.RUNWAYSLAYER and has_imagery:	# draw imagery out of order
                 glstate.set_color(COL_SELECTED)	# trick glstate there's been a change in colour
-                glColor4f(1.0, 1.0, 1.0, imageryopacity/100.0)	# not using glstate!
+                glColor4f(1.0, 1.0, 1.0, imagery_opacity/100.0)	# not using glstate!
                 self.layerbuckets[ClutterDef.IMAGERYLAYER].draw(glstate)
                 self.layerbuckets[ClutterDef.IMAGEFILELAYER].draw(glstate)	# draw file after imagery
                 glstate.set_color(COL_UNPAINTED)
