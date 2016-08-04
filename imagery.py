@@ -20,19 +20,6 @@ from elevation import ElevationMeshBase
 from nodes import Node
 from version import appname, appversion
 
-try:
-    from Queue import LifoQueue
-except:	# not in Python 2.5
-    class LifoQueue(Queue):
-        def _init(self, maxsize):
-            self.maxsize = maxsize
-            self.queue = []
-        def _qsize(self, len=len):
-            return len(self.queue)
-        def _put(self, item):
-            self.queue.append(item)
-        def _get(self):
-            return self.queue.pop()
 
 fourpi=4*pi
 
@@ -201,6 +188,7 @@ class Imagery:
         self.provider_levelmin=self.provider_levelmax=0
         self.placementcache={}	# previously created placements (or None if image couldn't be loaded), indexed by quadkey.
                                 # placement may not be laid out if image is still being fetched.
+        self.placementactive=[]	# active placements
         self.tile=(0,999)	# X-Plane 1x1degree tile - [lat,lon] of SW
         self.loc=None
         self.dist=0
@@ -209,7 +197,7 @@ class Imagery:
 
         # Setup a pool of worker threads
         self.workers=[]
-        self.q=LifoQueue()
+        self.q = Queue()
         for i in range(Imagery.connections):
             t=threading.Thread(target=self.worker)
             t.daemon=True	# this doesn't appear to work for threads blocked on Queue
@@ -274,9 +262,7 @@ class Imagery:
         newtile=(int(floor(loc[0])),int(floor(loc[1])))
         if not self.provider_url or self.tile!=newtile:
             # New tile - drop cache of Clutter
-            for placement in self.placementcache.itervalues():
-                if placement: placement.clearlayout()
-            self.placementcache={}
+            self.reset()
         self.tile=newtile
         self.loc=loc
         self.placements(dist, screensize)	# Kick off any image loading
@@ -297,101 +283,120 @@ class Imagery:
         # http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#Resolution_and_Scale
         width=dist+dist				# Width in m of screen (from glOrtho setup)
         ppm=screensize.width/width		# Pixels on screen required by 1 metre, ignoring tilt
-        level=min(int(round(log(ppm*level0mpp*cos(radians(self.loc[0])), 2))), self.provider_levelmax)	# zoom level required
-        levelmin=max(13, self.provider_levelmin)	# arbitrary - tessellating out at higher levels takes too long
-        level=max(level,levelmin+1)
+        levelmin = max(prefs.options&Prefs.ELEVATION and 13 or 10, self.provider_levelmin)	# arbitrary - tessellating out at higher levels takes too long
+        desired = min(int(round(log(ppm*level0mpp*cos(radians(self.loc[0])), 2))), self.provider_levelmax)	# zoom level required
+        desired = max(desired, levelmin + 1)
 
-        ntiles=2**level				# number of tiles per axis at this level
+        #ntiles = 2**desired				# number of tiles per axis at this level
         #mpp=cos(radians(self.loc[0]))*level0mpp/ntiles		# actual resolution at this level
         #coverage=width/(256*mpp)		# how many tiles to cover screen width - in practice varies between ~2.4 and ~4.8
 
-        (cx,cy)=self.latlon2xy(self.loc[0], self.loc[1], level)	# centre tile
-        #print self.loc, width, screensize.width, 1/ppm, ppm, level, ntiles, cx, cy
-        if __debug__: print "Desire imagery level", level
+        (cx, cy) = self.latlon2xy(self.loc[0], self.loc[1], desired)	# centre tile
+        if __debug__: print "Desire imagery level", desired, cx, cy
 
-        # We're using a Lifo queue, so as the user navigates the most important tiles are processed first.
-        # Should remove from the queue those tiles the user is probably not going to see again, but that's difficult so we don't.
+        # Display what we already have available
 
-        # Display 6x6 tiles if available that cover the same area as 3x3 at the next higher level (this is to prevent weirdness when zooming in)
-        cx=2*(cx/2)
-        cy=2*(cy/2)
-        placements=[]
-        needed=set()	# Placements at this level failed either cos imagery not available at this location/level or is pending layout
-        fetch=[]
-        seq=[(-2, 3), (-1, 3), (0, 3), (1, 3), (2, 3), (3, 3), (3, 2), (3, 1), (3, 0), (3, -1), (3, -2), (2, -2), (1, -2), (0, -2), (-1, -2), (-2, -2), (-2, -1), (-2, 0), (-2, 1), (-2, 2), (-1, 2), (0, 2), (1, 2), (2, 2), (2, 1), (2, 0), (2, -1), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (0, 0)]
-        for i in range(len(seq)):
-            (x,y)=seq[i]
-            placement=self.getplacement(cx+x,cy+y,level, False)		# Don't initiate fetch yet
+        placements = []
+        level2 = desired - 1
+        for (x2, y2) in self.zoomout2x2(cx, cy):
+            # prefer desired resolution if available around the centre
+            fail1 = False	# Do we have any missing?
+            for (x1, y1) in [(0, 0), (0, 1), (1, 0), (1, 1)]:
+                placement = self.getplacement(x2*2 + x1, y2*2 + y1, desired, False)
+                if placement and placement.islaidout():
+                    placements.append(placement)
+                else:
+                    fail1 = True
+            if fail1:
+                placement = self.getplacement(x2, y2, level2, False)
+                if placement and placement.islaidout():
+                    placements.insert(0, placement)	# Insert at start so drawn under desired level
+
+        for (x2, y2) in self.margin4x4(cx, cy):
+            placement = self.getplacement(x2, y2, level2, False)
             if placement and placement.islaidout():
                 placements.append(placement)
-            else:
-                needed.add(((cx+x)/2,(cy+y)/2))
-                if 0<=x<=1 and 0<=y<=1:
-                    fetch.append((cx+x,cy+y,level, True))		# schedule fetch of the centre 2x2 tiles
 
-        # Go up and get 5x5 tiles around the centre tile - but only draw them if higher-res imagery not (yet) available.
-        level-=1
-        cx/=2
-        cy/=2
-        fail2=True
-        if self.q.empty():
-            # If the queue is empty then the first (and low importance) tile starts processing immediately.
-            # So here we add the most important centre tile of 5x5 and ensure it starts processing.
-            placement=self.getplacement(cx,cy,level, True)	# Initiate fetch
-            if placement:
-                fail2=False		# Some imagery may be available at this level
-                if placement.islaidout() and (cx,cy) in needed:
-                    placements.insert(0,placement)		# Insert at start so drawn under higher-level
-                    needed.remove((cx,cy))
-            while not self.q.empty():
-                time.sleep(0)		# Allow worker thread to remove from queue
-        # First initiate fetch of higher-level imagery of centre 2x2
-        for args in fetch: self.getplacement(*args)
+        # Initiate fetches in priority order
 
-        seq=[(1, -2), (0, -2), (-1, -2), (-2, -1), (-2, 0), (-2, 1), (-1, 2), (0, 2), (1, 2), (2, 1), (2, 0), (2, -1), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (0, 0)] # 5x5 with corners removed #, (0,3), (3,0), (0,-3), (-3,0)]
-        for i in range(len(seq)):
-            (x,y)=seq[i]
-            placement=self.getplacement(cx+x,cy+y,level, True)	# Initiate fetch
-            if placement:
-                fail2=False		# Some imagery may be available at this level
-                if placement.islaidout() and (abs(x)>1 or abs(y)>1 or (cx+x,cy+y) in needed):
-                    placements.insert(0,placement)	# Insert at start so drawn under higher-level
+        fail2 = True	# did we fail to get anything at the zoomed-out level?
+        for (x2, y2) in self.zoomout2x2(cx, cy):
+            if self.getplacement(x2, y2, level2, True):
+                fail2 = False
+        for (x2, y2) in self.margin4x4(cx, cy):
+            self.getplacement(x2, y2, level2, True)
+        for (x1,y1) in self.square4x4(cx, cy):
+            self.getplacement(x1, y1, desired, True)
 
-        while fail2 and level>levelmin:
-            # No imagery available at all at higher level. Go up and get 3x3 tiles around the centre tile.
-            level-=1
-            cx/=2
-            cy/=2
-            seq=[(1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (0, 0)]
-            for i in range(len(seq)):
-                (x,y)=seq[i]
-                placement=self.getplacement(cx+x,cy+y,level, True)
+        # No imagery available at all zoomed out. Go up again and get 2x2 tiles around the centre tile.
+        while fail2 and level2 > levelmin:
+            level2 -= 1
+            cx /= 2
+            cy /= 2
+            for (x2, y2) in self.zoomout2x2(cx, cy):
+                placement = self.getplacement(x2, y2, level2, True)
                 if placement:
-                    fail2=False		# Some imagery may be available at this level
+                    fail2 = False		# Some imagery may be available at this level
                     if placement.islaidout():
-                        placements.insert(0,placement)	# Insert at start so drawn under higher-level
+                        placements.insert(0, placement)
 
-        if __debug__: print "Actual imagery level", level
-        return placements
+        if __debug__:
+            if level2 < desired-1: print "Actual imagery level", level2
 
+        for placement in self.placementactive:
+            if placement not in placements:
+                placement.flush()			# keep layout in case we need it again but deallocate from VBO to remove from drawing
+        for placement in placements:
+            assert placement.islaidout(), placement	# should only see laid-out (but not necessarily allocated) placements
+            if placement.base is None:
+                placement.layout(self.tile)		# allocate
+        self.placementactive = placements
 
-    # Helper to return coordinates in a spiral from http://stackoverflow.com/questions/398299/looping-in-a-spiral
-    def spiral(self, N, M):
-        x = y = 0
-        dx, dy = 0, -1
-        retval=[]
-        for dumb in xrange(N*M):
-            if abs(x) == abs(y) and [dx,dy] != [1,0] or x>0 and y == 1-x:
-                dx, dy = -dy, dx            # corner, change direction
-            if abs(x)>N/2 or abs(y)>M/2:    # non-square
-                dx, dy = -dy, dx            # change direction
-                x, y = -y+dx, x+dy          # jump
-            retval.append((x,y))
-            x, y = x+dx, y+dy
-        return retval
+        return bool(placements)
 
 
-    # Returns a laid-out placement if possible, or not laid-out if image is still loading, or None if not available.
+    # Returns the 4 tiles that take up the space of a zoomed out tile in priority order
+    def square2x2(self, x, y):
+        ox = x + (x % 2 and -1 or 1)
+        oy = y + (y % 2 and -1 or 1)
+        return [(x, y), (x, oy), (ox, y), (ox, oy)]
+
+    # Returns the 16 adjacent tiles in priority order
+    def square4x4(self, x, y):
+        ox = x + (x % 2 or -1)
+        oy = y + (y % 2 or -1)
+        return self.square2x2(x, y) + self.square2x2(x, oy) + self.square2x2(ox, y) + self.square2x2(ox, oy)
+
+    # Returns the 4 adjacent zoomed out tiles in priority order
+    def zoomout2x2(self, x, y):
+        (x2, y2) = (x/2, y/2)	# zoomed out
+        ox = x2 + (x % 2 or -1)
+        oy = y2 + (y % 2 or -1)
+        return [(x2, y2), (x2, oy), (ox, y2), (ox, oy)]
+
+    # Returns the 12 next adjacent zoomed out tiles in priority order
+    def margin4x4(self, x, y):
+        (x2, y2) = (x/2, y/2)	# zoomed out
+        bx = x2 + (x % 2 and -1 or -2)
+        by = y2 + (y % 2 and -1 or -2)
+        return [(bx+1, by), (bx+2, by), (bx+3, by+1), (bx+3, by+2), (bx+2, by+3), (bx+1, by+3), (bx, by+2), (bx, by+1),
+                (bx, by), (bx+3, by), (bx+3, by+3), (bx, by+3)]	# corners
+
+    # Returns the 16 adjacent zoomed out tiles in priority order
+    def zoomout4x4(self, x, y):
+        (x2, y2) = (x/2, y/2)	# zoomed out
+        ox = x % 2 and -1 or -2
+        oy = y % 2 and -1 or -2
+        delta = [(0,0),					# centre
+                 (0,-1), (1,0), (0,1), (-1,0),		# plus
+                 (-1,-1), (1,-1), (1,1), (-1,1),
+                 (0, oy), (ox, 0),			# adjacent
+                 (1, oy), (-1, oy), (ox, 1), (ox, -1),
+                 (ox,oy)]				# far corner
+        return [(x2 + dx, y2 + dy) for (dx, dy) in delta]
+
+
+    # Returns a laid-out but not allocated placement if possible, or not laid-out if image is still loading, or None if not available.
     def getplacement(self,x,y,level,fetch):
         (name, url, minsize) = self.provider_url(x, y, level)
         if name in self.placementcache:
@@ -414,7 +419,6 @@ class Imagery:
             try:
                 if __debug__: clock=time.clock()
                 filename=self.filecache.get(name)	# downloaded image or None
-                self.canvas.vertexcache.allocate_dynamic(placement, True)	# couldn't do this in thread context
                 placement.definition.texture=self.canvas.vertexcache.texcache.get(filename, wrap=False, downsample=False, fixsize=True)
                 if __debug__: print "%6.3f time in imagery load   for %s" % (time.clock()-clock, placement.name)
                 assert placement.islaidout()
