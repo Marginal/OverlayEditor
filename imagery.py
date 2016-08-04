@@ -186,6 +186,7 @@ class Imagery:
         self.provider_url=None
         self.provider_logo=None	# (filename, width, height)
         self.provider_levelmin=self.provider_levelmax=0
+        self.provider_tilesize = 0
         self.placementcache={}	# previously created placements (or None if image couldn't be loaded), indexed by quadkey.
                                 # placement may not be laid out if image is still being fetched.
         self.placementactive=[]	# active placements
@@ -271,8 +272,6 @@ class Imagery:
     # Return placements to be drawn. May allocate into vertexcache as a side effect.
     def placements(self, dist, screensize):
 
-        level0mpp=2*pi*6378137/256		# metres per pixel at level 0
-
         if screensize.width<=0 or not self.loc or not (int(self.loc[0]) or int(self.loc[1])) or not self.provider_url:
             return []	# Don't do anything on startup. Can't do anything without a valid provider.
 
@@ -283,13 +282,14 @@ class Imagery:
         # http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#Resolution_and_Scale
         width=dist+dist				# Width in m of screen (from glOrtho setup)
         ppm=screensize.width/width		# Pixels on screen required by 1 metre, ignoring tilt
-        levelmin = max(prefs.options&Prefs.ELEVATION and 13 or 10, self.provider_levelmin)	# arbitrary - tessellating out at higher levels takes too long
+        levelmin = max(self.provider_tilesize / 256 + (prefs.options&Prefs.ELEVATION and 12 or 9), self.provider_levelmin)	# arbitrary - tessellating out at higher levels takes too long
+        level0mpp = 2 * pi * 6378137 / self.provider_tilesize  	# metres per pixel at level 0
         desired = min(int(round(log(ppm*level0mpp*cos(radians(self.loc[0])), 2))), self.provider_levelmax)	# zoom level required
         desired = max(desired, levelmin + 1)
 
-        #ntiles = 2**desired				# number of tiles per axis at this level
-        #mpp=cos(radians(self.loc[0]))*level0mpp/ntiles		# actual resolution at this level
-        #coverage=width/(256*mpp)		# how many tiles to cover screen width - in practice varies between ~2.4 and ~4.8
+        # ntiles = 2**desired					# number of tiles per axis at this level
+        # mpp = cos(radians(self.loc[0]))*level0mpp/ntiles	# actual resolution at this level
+        # coverage=width/(self.provider_tilesize * mpp)		# how many tiles to cover screen width - in practice varies between ~2.4 and ~4.8
 
         (cx, cy) = self.latlon2xy(self.loc[0], self.loc[1], desired)	# centre tile
         if __debug__: print "Desire imagery level", desired, cx, cy
@@ -480,6 +480,8 @@ class Imagery:
             # http://msdn.microsoft.com/en-us/library/ff701712.aspx
             self.provider_levelmin=int(res['zoomMin'])
             self.provider_levelmax=int(res['zoomMax'])
+            assert int(res['imageWidth']) == int(res['imageHeight']), (res['imageWidth'], res['imageHeight'])
+            self.provider_tilesize = int(res['imageWidth'])
             self.provider_base=res['imageUrl'].replace('{subdomain}',res['imageUrlSubdomains'][-1]).replace('{culture}','en').replace('{quadkey}','%s') + '&key=' + key	# was random.choice(res['imageUrlSubdomains']) but always picking the same server seems to give better caching
             self.provider_url=self.bing_quadkey
             if info['brandLogoUri']:
@@ -508,6 +510,7 @@ class Imagery:
             # http://resources.arcgis.com/en/help/rest/apiref/mapserver.html
             self.provider_levelmin=min([lod['level'] for lod in info['tileInfo']['lods']])
             self.provider_levelmax=max([lod['level'] for lod in info['tileInfo']['lods']])
+            self.provider_tilesize = 256
             self.provider_base='http://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/%s'
             self.provider_url=self.arcgis_url
             filename=self.filecache.fetch('logo-med.png', 'http://serverapi.arcgisonline.com/jsapi/arcgis/2.8/images/map/logo-med.png')
@@ -528,9 +531,10 @@ class Imagery:
     def mb_setup(self, tls):
         # http://developer.mapquest.com/web/products/open/map
         try:
-            self.provider_levelmin=0
-            self.provider_levelmax=18
-            self.provider_base='https://api.mapbox.com/styles/v1/mapbox/outdoors-v9/tiles/256/%s?access_token=pk.eyJ1IjoibWFyZ2luYWwiLCJhIjoiY2lyZTl2M2xjMDAwNGlsbTM4aXp0d243aSJ9.SK1DCngwVZhvlP4CLAyz6A'
+            self.provider_levelmin = 0
+            self.provider_levelmax = 20
+            self.provider_tilesize = 512
+            self.provider_base='https://api.mapbox.com/styles/v1/mapbox/outdoors-v9/tiles/%s?access_token=pk.eyJ1IjoibWFyZ2luYWwiLCJhIjoiY2lyZTl2M2xjMDAwNGlsbTM4aXp0d243aSJ9.SK1DCngwVZhvlP4CLAyz6A'
             self.provider_url=self.mb_url
             filename=self.filecache.fetch('mapbox.ico', 'https://www.mapbox.com/img/favicon.ico')
             if filename:
