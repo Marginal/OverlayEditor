@@ -13,11 +13,11 @@ import time
 from urllib2 import HTTPError, URLError, Request, urlopen
 if __debug__:
     from traceback import print_exc
-    from prefs import Prefs, prefs
 
 from clutter import Draped, DrapedImage, Polygon
 from elevation import ElevationMeshBase
 from nodes import Node
+from prefs import Prefs, prefs
 from version import appname, appversion
 
 
