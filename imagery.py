@@ -282,31 +282,34 @@ class Imagery:
         # http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#Resolution_and_Scale
         width=dist+dist				# Width in m of screen (from glOrtho setup)
         ppm=screensize.width/width		# Pixels on screen required by 1 metre, ignoring tilt
-        levelmin = max(self.provider_tilesize / 256 + (prefs.options&Prefs.ELEVATION and 12 or 9), self.provider_levelmin)	# arbitrary - tessellating out at higher levels takes too long
+        levelmin = max(self.provider_tilesize / 256 + (prefs.options&Prefs.ELEVATION and 11 or 9), self.provider_levelmin)	# arbitrary - tessellating out at higher levels takes too long
         level0mpp = 2 * pi * 6378137 / self.provider_tilesize  	# metres per pixel at level 0
-        desired = min(int(round(log(ppm*level0mpp*cos(radians(self.loc[0])), 2))), self.provider_levelmax)	# zoom level required
-        desired = max(desired, levelmin + 1)
+        desired = int(round(log(ppm*level0mpp*cos(radians(self.loc[0])), 2)))	# zoom level required
+        actual = max(min(desired, self.provider_levelmax), levelmin + 1)
 
         # ntiles = 2**desired					# number of tiles per axis at this level
         # mpp = cos(radians(self.loc[0]))*level0mpp/ntiles	# actual resolution at this level
         # coverage=width/(self.provider_tilesize * mpp)		# how many tiles to cover screen width - in practice varies between ~2.4 and ~4.8
 
-        (cx, cy) = self.latlon2xy(self.loc[0], self.loc[1], desired)	# centre tile
-        if __debug__: print "Desire imagery level", desired, cx, cy
+        (cx, cy) = self.latlon2xy(self.loc[0], self.loc[1], actual)	# centre tile
+        if __debug__: print "Desire imagery level", desired, actual, cx, cy
 
         # Display what we already have available
 
         placements = []
-        level2 = desired - 1
+        level2 = actual - 1
         for (x2, y2) in self.zoomout2x2(cx, cy):
             # prefer desired resolution if available around the centre
-            fail1 = False	# Do we have any missing?
-            for (x1, y1) in [(0, 0), (0, 1), (1, 0), (1, 1)]:
-                placement = self.getplacement(x2*2 + x1, y2*2 + y1, desired, False)
-                if placement and placement.islaidout():
-                    placements.append(placement)
-                else:
-                    fail1 = True
+            if actual > desired:
+                fail1 = True	# we're already at higher resolution than we'd like to be
+            else:
+                fail1 = False	# Do we have any missing?
+                for (x1, y1) in [(0, 0), (0, 1), (1, 0), (1, 1)]:
+                    placement = self.getplacement(x2*2 + x1, y2*2 + y1, actual, False)
+                    if placement and placement.islaidout():
+                        placements.append(placement)
+                    else:
+                        fail1 = True
             if fail1:
                 placement = self.getplacement(x2, y2, level2, False)
                 if placement and placement.islaidout():
@@ -325,8 +328,9 @@ class Imagery:
                 fail2 = False
         for (x2, y2) in self.margin4x4(cx, cy):
             self.getplacement(x2, y2, level2, True)
-        for (x1,y1) in self.square4x4(cx, cy):
-            self.getplacement(x1, y1, desired, True)
+        if actual <= desired:
+            for (x1,y1) in self.square4x4(cx, cy):
+                self.getplacement(x1, y1, actual, True)
 
         # No imagery available at all zoomed out. Go up again and get 2x2 tiles around the centre tile.
         while fail2 and level2 > levelmin:
@@ -341,7 +345,7 @@ class Imagery:
                         placements.insert(0, placement)
 
         if __debug__:
-            if level2 < desired-1: print "Actual imagery level", level2
+            if level2 < actual-1: print "Actual imagery level", level2
 
         for placement in self.placementactive:
             if placement not in placements:
