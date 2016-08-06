@@ -178,15 +178,13 @@ class Imagery:
 
     def __init__(self, canvas):
 
-        self.providers={'Bing': self.bing_setup, 'ArcGIS': self.arcgis_setup, 'Mapbox': self.mb_setup }
-
+        self.providers = { None     : self.null_setup,
+                           'Bing'   : self.bing_setup,
+                           'ArcGIS' : self.arcgis_setup,
+                           'Mapbox' : self.mb_setup,
+        }
+        self.providers[None]()
         self.canvas=canvas
-        self.imageryprovider=None
-        self.provider_base=None
-        self.provider_url=None
-        self.provider_logo=None	# (filename, width, height)
-        self.provider_levelmin=self.provider_levelmax=0
-        self.provider_tilesize = 0
         self.placementcache={}	# previously created placements (or None if image couldn't be loaded), indexed by quadkey.
                                 # placement may not be laid out if image is still being fetched.
         self.placementactive=[]	# active placements
@@ -204,6 +202,17 @@ class Imagery:
             t.daemon=True	# this doesn't appear to work for threads blocked on Queue
             t.start()
             self.workers.append(t)
+
+
+    def null_setup(self):
+        self.imageryprovider = None
+        self.provider_base = None
+        self.provider_url = None
+        self.provider_logo = None	# (filename, width, height)
+        self.provider_levelmin = 0
+        self.provider_levelmax = 0
+        self.provider_tilesize = 0
+
 
     # Worker thread
     def worker(self):
@@ -249,22 +258,19 @@ class Imagery:
         self.placementcache={}
 
 
-    def goto(self, imageryprovider, loc, dist, screensize):
+    def goto(self, loc, dist, screensize):
 
-        if not imageryprovider: imageryprovider=None
-        if imageryprovider!=self.imageryprovider:
-            self.provider_base=None
-            self.provider_url=None
-            self.provider_logo=None
-            self.imageryprovider=imageryprovider
-            if self.imageryprovider not in self.providers: return
-            self.q.put((self.providers[self.imageryprovider], ()))
+        if self.imageryprovider != prefs.imageryprovider:
+            self.imageryprovider = prefs.imageryprovider in self.providers and prefs.imageryprovider or None
+            self.providers[self.imageryprovider]()	# setup
+            self.reset()
 
         newtile=(int(floor(loc[0])),int(floor(loc[1])))
-        if not self.provider_url or self.tile!=newtile:
+        if self.tile != newtile:
             # New tile - drop cache of Clutter
+            self.tile = newtile
             self.reset()
-        self.tile=newtile
+
         self.loc=loc
         self.placements(dist, screensize)	# Kick off any image loading
 
@@ -470,7 +476,7 @@ class Imagery:
 
 
     # Called in worker thread - don't do anything fancy since main body of code is not thread-safe
-    def bing_setup(self, tls):
+    def bing_setup(self):
         try:
             key='AhATjCXv4Sb-i_YKsa_8lF4DtHwVoicFxl0Stc9QiXZNywFbI2rajKZCsLFIMOX2'
             h=urlopen('http://dev.virtualearth.net/REST/v1/Imagery/Metadata/Aerial?key=%s' % key)
@@ -495,6 +501,7 @@ class Imagery:
                     self.provider_logo=(filename,image.size[0],image.size[1])
         except:
             if __debug__: print_exc()
+            self.null_setup()
         self.canvas.Refresh()	# Might have been waiting on this to get imagery
 
 
@@ -504,7 +511,7 @@ class Imagery:
         return (name, url, 2560)	# Sends an unhelpful JPEG if imagery not available at this level
 
     # Called in worker thread - don't do anything fancy since main body of code is not thread-safe
-    def arcgis_setup(self, tls):
+    def arcgis_setup(self):
         try:
             h=urlopen('http://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer?f=json')
             d=h.read()
@@ -523,6 +530,7 @@ class Imagery:
                 self.provider_logo=(filename,image.size[0],image.size[1])
         except:
             if __debug__: print_exc()
+            self.null_setup()
         self.canvas.Refresh()	# Might have been waiting on this to get imagery
 
 
@@ -532,7 +540,7 @@ class Imagery:
         return (name, url, 0)
 
     # Called in worker thread - don't do anything fancy since main body of code is not thread-safe
-    def mb_setup(self, tls):
+    def mb_setup(self):
         # http://developer.mapquest.com/web/products/open/map
         try:
             self.provider_levelmin = 0
@@ -546,6 +554,7 @@ class Imagery:
                 self.provider_logo=(filename,image.size[0],image.size[1])
         except:
             if __debug__: print_exc()
+            self.null_setup()
         self.canvas.Refresh()	# Might have been waiting on this to get imagery
 
 

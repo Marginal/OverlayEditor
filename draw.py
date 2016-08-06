@@ -1885,7 +1885,7 @@ class MyGL(wx.glcanvas.GLCanvas):
 
         # initiate imagery load. Does layout so must be after getMeshdata.
         # Python isn't really multithreaded so don't delay reload by initiating this earlier
-        self.imagery.goto(prefs.imageryprovider, latlon, self.d, self.GetClientSize())
+        self.imagery.goto(latlon, self.d, self.GetClientSize())
 
         # Redraw can happen under MessageBox, so do this last
         if errdsf:

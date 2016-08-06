@@ -611,8 +611,6 @@ class BackgroundDialog(wx.Frame):
                 self.path.SetValue('...'+sep+label)
 
         imageryprovider = (self.imgbing.GetValue() and 'Bing') or (self.imgarcgis.GetValue() and 'ArcGIS') or (self.imgmapbox.GetValue() and 'Mapbox') or None
-        if imageryprovider!=prefs.imageryprovider:
-            self.parent.canvas.imagery.reset()			# free VBO allocations
         prefs.imageryprovider = imageryprovider
         prefs.imageryopacity=self.opacity.GetValue()
         self.parent.canvas.setbackground(prefs, self.parent.loc, self.image, True)

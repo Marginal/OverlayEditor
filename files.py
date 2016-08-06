@@ -1,5 +1,5 @@
 import PIL.Image
-import PIL.BmpImagePlugin, PIL.JpegImagePlugin, PIL.PngImagePlugin, PIL.TiffImagePlugin 	# force for py2exe
+import PIL.BmpImagePlugin, PIL.IcoImagePlugin, PIL.JpegImagePlugin, PIL.PngImagePlugin, PIL.TiffImagePlugin 	# force for py2exe
 
 import OpenGL	# for __version__
 from OpenGL.GL import *
