@@ -185,8 +185,8 @@ class Imagery:
         }
         self.providers[None]()
         self.canvas=canvas
-        self.placementcache={}	# previously created placements (or None if image couldn't be loaded), indexed by quadkey.
-                                # placement may not be laid out if image is still being fetched.
+        self.placementcache={}	# previously created placements from this provider (or None if image couldn't be loaded),
+                                # indexed by (x, y, level). Placement may not yet have been allocated into VBO or image loaded.
         self.placementactive=[]	# active placements
         self.tile=(0,999)	# X-Plane 1x1degree tile - [lat,lon] of SW
         self.loc=None
@@ -231,18 +231,27 @@ class Imagery:
         gluTessCallback(tls.csgt, GLU_TESS_EDGE_FLAG,    ElevationMeshBase.tessedge)
 
         while True:
-            (fn, args)=self.q.get()
-            if not fn: exit()	# Die!
-            fn(tls, *args)
+            args = self.q.get()
+            if not args: exit()	# Die!
+            self.initplacement(tls, *args)
             self.q.task_done()
 
 
+    def drain(self):
+        try:
+            while True:
+                self.q.get(False)
+                self.q.task_done()
+        except:
+            pass
+
+    # Closing down
     def exit(self):
-        # Closing down
+        self.drain()
         self.filecache.writedir()
 	# kill workers
         for i in range(Imagery.connections):
-            self.q.put((None, ()))	# Top priority! Don't want to hold up program exit
+            self.q.put(None)
         # wait for them
         for t in self.workers:
             t.join()
@@ -253,6 +262,7 @@ class Imagery:
         # a) in the case of reload, textures have been dropped and so would need to be reloaded anyway;
         # b) try to limit cluttering up the VBO with allocations we may not need again;
         # c) images by straddle multiple tiles and these would need to be recalculated anyway.
+        self.drain()
         for placement in self.placementcache.itervalues():
             if placement: placement.clearlayout()
         self.placementcache={}
@@ -326,7 +336,11 @@ class Imagery:
             if placement and placement.islaidout():
                 placements.append(placement)
 
+        # Abandon any un-started fetches
+        self.drain()
+
         # Initiate fetches in priority order
+        # Relies on having only one worker thread, so doesn't matter if a placement being processed is re-added
 
         fail2 = True	# did we fail to get anything at the zoomed-out level?
         for (x2, y2) in self.zoomout2x2(cx, cy):
@@ -408,38 +422,35 @@ class Imagery:
 
     # Returns a laid-out but not allocated placement if possible, or not laid-out if image is still loading, or None if not available.
     def getplacement(self,x,y,level,fetch):
-        (name, url, minsize) = self.provider_url(x, y, level)
-        if name in self.placementcache:
+
+        key = (x, y, level)
+        if key in self.placementcache:
             # Already created
-            placement=self.placementcache[name]
+            placement = self.placementcache[key]
+
+            # Load it if it's not loaded but is ready to be
+            if placement and not placement.islaidout() and Polygon.islaidout(placement):
+                try:
+                    (name, url, minsize) = self.provider_url(*key)
+                    assert self.filecache.get(name)	# shouldn't have created a placement if couldn't load the image for it
+                    if __debug__: clock=time.clock()
+                    placement.definition.texture = self.canvas.vertexcache.texcache.get(self.filecache.get(name), wrap=False, downsample=False, fixsize=True)
+                    if __debug__: print "%6.3f time in imagery load   for %s" % (time.clock()-clock, placement.name)
+                    assert placement.islaidout()
+                except:
+                    # Some failure - perhaps corrupted image?
+                    if __debug__: print_exc()
+                    placement.clearlayout()
+                    placement = None
+                    self.placementcache[(x, y, level)] = None
+            return placement
+
         elif fetch:
-            # Make a new one. We could do this automatically if the image file is available, but don't since layout is expensive.
-            (north,west)=self.xy2latlon(x,y,level)
-            (south,east)=self.xy2latlon(x+1,y+1,level)
-            placement=DrapedImage(name, 65535, [[Node([west,north,0,1]),Node([east,north,1,1]),Node([east,south,1,0]),Node([west,south,0,0])]])
-            placement.load(self.canvas.lookup, self.canvas.defs, self.canvas.vertexcache)
-            self.placementcache[name]=placement
             # Initiate fetch of image and do layout. Prioritise more detail.
-            self.q.put((self.initplacement, (placement, name, url, minsize)))
-        else:
-            placement=None
+            # We could choose  do this automatically if the image file is available, but we don't since layout is expensive.
+            self.q.put((x, y, level))
 
-        # Load it if it's not loaded but is ready to be
-        if placement and not placement.islaidout() and Polygon.islaidout(placement):
-            try:
-                if __debug__: clock=time.clock()
-                filename=self.filecache.get(name)	# downloaded image or None
-                placement.definition.texture=self.canvas.vertexcache.texcache.get(filename, wrap=False, downsample=False, fixsize=True)
-                if __debug__: print "%6.3f time in imagery load   for %s" % (time.clock()-clock, placement.name)
-                assert placement.islaidout()
-            except:
-                if __debug__: print_exc()
-                # Some failure - perhaps corrupted image?
-                placement.clearlayout()
-                placement=None
-                self.placementcache[name]=None
-
-        return placement
+        return None
 
 
     def latlon2xy(self, lat, lon, level):
@@ -560,20 +571,36 @@ class Imagery:
 
     # Called in worker thread - fetches image and does placement layout (which uses it's own tessellator and so is thread-safe).
     # don't do anything fancy since main body of code is not thread-safe
-    def initplacement(self, tls, placement, name, url, minsize):
-        filename=self.filecache.fetch(name, url, minsize)
+    def initplacement(self, tls, x, y, level):
+
+        key = (x, y, level)
+        if key in self.placementcache:
+            return self.placementcache[key]	# was created while this task was queued
+
+        (name, url, minsize) = self.provider_url(*key)
+        filename = self.filecache.fetch(name, url, minsize)
         if not filename:
-            # Couldn't fetch image - remove corresponding placement
-            self.placementcache[name]=None
+            self.placementcache[key] = None	# Couldn't fetch image
+            return None
+
+        # Make a new placement
+        (north,west) = self.xy2latlon(x, y, level)
+        (south,east) = self.xy2latlon(x+1, y+1, level)
+        placement = DrapedImage(name, 65535, [[Node([west, north, 0, 1]),
+                                               Node([east, north, 1, 1]),
+                                               Node([east, south, 1, 0]),
+                                               Node([west, south, 0, 0])]])
+        placement.load(self.canvas.lookup, self.canvas.defs, self.canvas.vertexcache)
+        if __debug__: clock=time.clock()
+        placement.layout(self.tile, tls=tls)
+        if not placement.dynamic_data.size:
+            if __debug__: print "DrapedImage layout failed for %s - no tris" % placement.name
+            placement = None
         else:
-            if __debug__: clock=time.clock()
-            placement.layout(self.tile, tls=tls)
-            if not placement.dynamic_data.size:
-                if __debug__: print "DrapedImage layout failed for %s - no tris" % placement.name
-                self.placementcache[name]=None
-            elif __debug__:
-                print "%6.3f time in imagery layout for %s" % (time.clock()-clock, placement.name)
-        self.canvas.Refresh()	# Probably wanting to display this - corresponding placement will be loaded and laid out during OnPaint
+            if __debug__: print "%6.3f time in imagery layout for %s" % (time.clock()-clock, placement.name)
+            self.canvas.Refresh()	# Probably wanting to display this - will be allocated during OnPaint
+        self.placementcache[key] = placement
+        return
 
 
 # Python 2.5 doesn't have json module, so here's a quick and dirty decoder. Doesn't santise input.
