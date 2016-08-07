@@ -1883,8 +1883,7 @@ class MyGL(wx.glcanvas.GLCanvas):
         # cursor position
         self.y = self.vertexcache.getElevationMesh(self.tile).height(self.x, self.z)
 
-        # initiate imagery load. Does layout so must be after getMeshdata.
-        # Python isn't really multithreaded so don't delay reload by initiating this earlier
+        # imagery position
         self.imagery.goto(latlon, self.d, self.GetClientSize())
 
         # Redraw can happen under MessageBox, so do this last

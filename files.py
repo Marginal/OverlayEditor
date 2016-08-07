@@ -215,7 +215,7 @@ class TexCache:
         if a:
             glDeleteTextures(array(a,uint32))
 
-    def get(self, path, wrap=True, alpha=True, downsample=False, fixsize=False):
+    def get(self, path, wrap=True, alpha=True, downsample=False, fixsize=False, defer=False):
         if not path: return self.blank
         if path in self.texs:
             return self.texs[path]
@@ -413,6 +413,10 @@ class TexCache:
             else:
                 self.stats[path]=width*height*4		# Assume 4bpp even for GL_RGB
 
+            # Just return the data if we're called from a non-main thread
+            if defer:
+                return (path, wrap, False, iformat, width, height, format, data)
+
             id=glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, id)
             if wrap:
@@ -438,6 +442,27 @@ class TexCache:
         except:
             if __debug__: print_exc()
             raise
+
+    # Get with image data - no mipmaps are created
+    def assign(self, path, wrap, mipmaps, iformat, width, height, fmt, data):
+        assert path not in self.texs, path
+        name = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, name)
+        if wrap:
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+        else:
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, self.clampmode)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, self.clampmode)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0)
+        if mipmaps:
+            glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE)
+        else:
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0)
+        glTexImage2D(GL_TEXTURE_2D, 0, iformat, width, height, 0, fmt, GL_UNSIGNED_BYTE, data)
+        self.texs[path] = name
+        return name
 
 
 class VertexCache:

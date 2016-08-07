@@ -185,7 +185,7 @@ class Imagery:
         }
         self.providers[None]()
         self.canvas=canvas
-        self.placementcache={}	# previously created placements from this provider (or None if image couldn't be loaded),
+        self.placementcache={}	# previously created placements from this provider (or False if image couldn't be loaded),
                                 # indexed by (x, y, level). Placement may not yet have been allocated into VBO or image loaded.
         self.placementactive=[]	# active placements
         self.tile=(0,999)	# X-Plane 1x1degree tile - [lat,lon] of SW
@@ -266,6 +266,7 @@ class Imagery:
         for placement in self.placementcache.itervalues():
             if placement: placement.clearlayout()
         self.placementcache={}
+        self.placementactive=[]
 
 
     def goto(self, loc, dist, screensize):
@@ -282,7 +283,6 @@ class Imagery:
             self.reset()
 
         self.loc=loc
-        self.placements(dist, screensize)	# Kick off any image loading
 
 
     # Return placements to be drawn. May allocate into vertexcache as a side effect.
@@ -321,19 +321,19 @@ class Imagery:
             else:
                 fail1 = False	# Do we have any missing?
                 for (x1, y1) in [(0, 0), (0, 1), (1, 0), (1, 1)]:
-                    placement = self.getplacement(x2*2 + x1, y2*2 + y1, actual, False)
-                    if placement and placement.islaidout():
+                    placement = self.getplacement(x2*2 + x1, y2*2 + y1, actual)
+                    if placement:
                         placements.append(placement)
                     else:
                         fail1 = True
             if fail1:
-                placement = self.getplacement(x2, y2, level2, False)
-                if placement and placement.islaidout():
+                placement = self.getplacement(x2, y2, level2)
+                if placement:
                     placements.insert(0, placement)	# Insert at start so drawn under desired level
 
         for (x2, y2) in self.margin4x4(cx, cy):
-            placement = self.getplacement(x2, y2, level2, False)
-            if placement and placement.islaidout():
+            placement = self.getplacement(x2, y2, level2)
+            if placement:
                 placements.append(placement)
 
         # Abandon any un-started fetches
@@ -344,13 +344,13 @@ class Imagery:
 
         fail2 = True	# did we fail to get anything at the zoomed-out level?
         for (x2, y2) in self.zoomout2x2(cx, cy):
-            if self.getplacement(x2, y2, level2, True):
+            if self.fetchplacement(x2, y2, level2):
                 fail2 = False
         for (x2, y2) in self.margin4x4(cx, cy):
-            self.getplacement(x2, y2, level2, True)
+            self.fetchplacement(x2, y2, level2)
         if actual <= desired:
             for (x1,y1) in self.square4x4(cx, cy):
-                self.getplacement(x1, y1, actual, True)
+                self.fetchplacement(x1, y1, actual)
 
         # No imagery available at all zoomed out. Go up again and get 2x2 tiles around the centre tile.
         while fail2 and level2 > levelmin:
@@ -358,11 +358,9 @@ class Imagery:
             cx /= 2
             cy /= 2
             for (x2, y2) in self.zoomout2x2(cx, cy):
-                placement = self.getplacement(x2, y2, level2, True)
-                if placement:
-                    fail2 = False		# Some imagery may be available at this level
-                    if placement.islaidout():
-                        placements.insert(0, placement)
+                if self.fetchplacement(x2, y2, level2):
+                    fail2 = False		# Some imagery is available at this level
+                    placements.insert(0, self.getplacement(x2, y2, level2))
 
         if __debug__:
             if level2 < actual-1: print "Actual imagery level", level2
@@ -370,10 +368,6 @@ class Imagery:
         for placement in self.placementactive:
             if placement not in placements:
                 placement.flush()			# keep layout in case we need it again but deallocate from VBO to remove from drawing
-        for placement in placements:
-            assert placement.islaidout(), placement	# should only see laid-out (but not necessarily allocated) placements
-            if placement.base is None:
-                placement.layout(self.tile)		# allocate
         self.placementactive = placements
 
         return bool(placements)
@@ -420,37 +414,40 @@ class Imagery:
         return [(x2 + dx, y2 + dy) for (dx, dy) in delta]
 
 
-    # Returns a laid-out but not allocated placement if possible, or not laid-out if image is still loading, or None if not available.
-    def getplacement(self,x,y,level,fetch):
+    # Returns a laid-out placement if immediately available, None if not (yet) available, False if not available.
+    def getplacement(self, x, y, level):
 
         key = (x, y, level)
         if key in self.placementcache:
-            # Already created
-            placement = self.placementcache[key]
-
-            # Load it if it's not loaded but is ready to be
-            if placement and not placement.islaidout() and Polygon.islaidout(placement):
-                try:
-                    (name, url, minsize) = self.provider_url(*key)
-                    assert self.filecache.get(name)	# shouldn't have created a placement if couldn't load the image for it
+            placement = self.placementcache[key]	# Already created
+            if placement:
+                # Load texture if it's not already
+                if not placement.definition.texture:
                     if __debug__: clock=time.clock()
-                    placement.definition.texture = self.canvas.vertexcache.texcache.get(self.filecache.get(name), wrap=False, downsample=False, fixsize=True)
+                    assert placement.texdata, self.provider_url(*key)	# shouldn't have created a placement if couldn't load the image for it
+                    placement.definition.texture = self.canvas.vertexcache.texcache.assign(*placement.texdata)
+                    placement.texdata = None	# No longer needed
                     if __debug__: print "%6.3f time in imagery load   for %s" % (time.clock()-clock, placement.name)
-                    assert placement.islaidout()
-                except:
-                    # Some failure - perhaps corrupted image?
-                    if __debug__: print_exc()
-                    placement.clearlayout()
-                    placement = None
-                    self.placementcache[(x, y, level)] = None
+                    assert placement.base is None, placement	# Placement shouldn't have been allocated yet
+
+                # Layout and/or allocate into VBO if it's not already
+                assert placement.islaidout(), placement	# Placement should have been laid out in initplacement
+                if not placement.islaidout() or placement.base is None:
+                    placement.layout(self.tile, recalc=False)
             return placement
+        else:
+            return None
 
-        elif fetch:
-            # Initiate fetch of image and do layout. Prioritise more detail.
-            # We could choose  do this automatically if the image file is available, but we don't since layout is expensive.
-            self.q.put((x, y, level))
 
-        return None
+    # Initiate construction and layout of a placement, if it hasn't already been constructed.
+    # Returns True if the placement is already available, False if not available, None if not yet known.
+    def fetchplacement(self, x, y, level):
+        key = (x, y, level)
+        if key in self.placementcache:
+            return bool(self.placementcache[key])
+        else:
+            self.q.put(key)
+            return None
 
 
     def latlon2xy(self, lat, lon, level):
@@ -575,13 +572,23 @@ class Imagery:
 
         key = (x, y, level)
         if key in self.placementcache:
-            return self.placementcache[key]	# was created while this task was queued
+            return	# was created while this task was queued
 
         (name, url, minsize) = self.provider_url(*key)
         filename = self.filecache.fetch(name, url, minsize)
         if not filename:
-            self.placementcache[key] = None	# Couldn't fetch image
-            return None
+            self.placementcache[key] = False	# Couldn't fetch image
+            self.canvas.Refresh()		# Probably wanting to know this
+            return
+
+        try:
+            if __debug__: clock=time.clock()
+            texdata = self.canvas.vertexcache.texcache.get(filename, alpha=False, wrap=False, downsample=False, fixsize=True, defer=True)
+        except:
+            if __debug__: print_exc()
+            self.placementcache[key] = False	# Couldn't load image
+            self.canvas.Refresh()		# Probably wanting to know this
+            return
 
         # Make a new placement
         (north,west) = self.xy2latlon(x, y, level)
@@ -591,13 +598,17 @@ class Imagery:
                                                Node([east, south, 1, 0]),
                                                Node([west, south, 0, 0])]])
         placement.load(self.canvas.lookup, self.canvas.defs, self.canvas.vertexcache)
+        if isinstance(texdata, tuple):
+            placement.texdata = texdata
+        else:
+            placement.definition.texture = texdata	# already in the cache
         if __debug__: clock=time.clock()
         placement.layout(self.tile, tls=tls)
         if not placement.dynamic_data.size:
             if __debug__: print "DrapedImage layout failed for %s - no tris" % placement.name
-            placement = None
+            placement = False
         else:
-            if __debug__: print "%6.3f time in imagery layout for %s" % (time.clock()-clock, placement.name)
+            if __debug__: print "%6.3f time in imagery read & layout for %s" % (time.clock()-clock, placement.name)
             self.canvas.Refresh()	# Probably wanting to display this - will be allocated during OnPaint
         self.placementcache[key] = placement
         return

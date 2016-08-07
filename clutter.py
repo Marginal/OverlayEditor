@@ -1149,12 +1149,9 @@ class DrapedImage(Draped):
         self.vertexcache = vertexcache
         self.definition=DrapedFallback(self.name, vertexcache, lookup, defs)
         self.definition.layer=ClutterDef.IMAGERYLAYER
-        self.definition.texture=0
+        self.definition.texture = 0	# DrapedImage texture is assigned directly
         self.definition.type=0	# override - we don't want this locked
-
-    def islaidout(self):
-        # DrapedImage texture is assigned *after* layout
-        return self.dynamic_data is not None and self.definition.texture
+        self.texdata = None	# temporary holding place for image data read from file but not yet loaded into OGL
 
 
 class Exclude(Polygon):
