@@ -104,6 +104,9 @@ elif sys.platform.lower().startswith('darwin'):
               ]
 
 res=[join(gettempdir(),'OverlayEditor.html')]
+if sys.platform=='win32':
+    import requests
+    res.append(requests.certs.where())
 for f in listdir('Resources'):
     if f[-3:]in ['png', '.vs', '.fs', 'obj', 'jpg']: res.append('Resources/%s' % f)
 
@@ -122,7 +125,7 @@ setup(name='OverlayEditor',
 
       options = {'py2exe': {'ascii':True,	# suppresss encodings?
                             'dist_dir':'dist.'+cpu,
-                            'dll_excludes':['msvcp90.dll', 'w9xpopen.exe'],
+                            'dll_excludes': ['crypt32.dll', 'msvcp90.dll', 'w9xpopen.exe'],
                             #'bundle_files':win64 and 3 or 2,	# don't bundle pythonX.dll - causes ctypes to fail. Bundling doesn't work on win64, or woth Intel MKL lib
                             'compressed':True,
                             'includes':['OpenGL.platform.win32',
@@ -140,8 +143,9 @@ setup(name='OverlayEditor',
                             'excludes':['Carbon', 'tcl', 'Tkinter', 'mx', 'webbrowser',
                                         'curses', 'distutils', 'doctest', 'hotshot', 'inspect', 'pdb', 'setuptools', 'win32',	# Python2.5
                                         'Numeric', 'dotblas', 'numarray', 'scipy', 'nose',	# Old Numeric stuff
+                                        'simplejson',	# use built-in json
                                         'PIL.ImageQt'],	# From Pillow 3 - drags in Qt etc
-                            'packages':['encodings.ascii','encodings.mbcs','encodings.latin_1','encodings.utf_8','encodings.utf_16','encodings.cp437'],
+                            'packages':['encodings.ascii', 'encodings.hex_codec', 'encodings.idna', 'encodings.latin_1', 'encodings.mbcs', 'encodings.utf_8', 'encodings.utf_16', 'encodings.cp437'],
                             'optimize':2,
                             },
 

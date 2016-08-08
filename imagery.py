@@ -3,14 +3,15 @@ import PIL.Image
 
 from email.utils import formatdate, parsedate_tz
 from math import atan, cos, degrees, exp, floor, log, pi, radians, sin
-from os import getenv, makedirs, unlink
-from os.path import basename, exists, expanduser, isdir, join
+from os import environ, getenv, makedirs, unlink
+from os.path import basename, dirname, exists, expanduser, isdir, join
 from Queue import Queue
-from sys import exit, getfilesystemencoding, platform
+import sys
+from sys import getfilesystemencoding, platform
 from tempfile import gettempdir
 import threading
 import time
-from urllib2 import HTTPError, URLError, Request, urlopen
+
 if __debug__:
     from traceback import print_exc
 
@@ -23,10 +24,66 @@ from version import appname, appversion
 
 fourpi=4*pi
 
+try:
+    from requests import Session
+    from requests.packages import urllib3
+    urllib3.disable_warnings()        # yuck suppress InsecurePlatformWarning under Python < 2.7.9 which lacks SNI support
+    if platform=='win32' and getattr(sys, 'frozen', False):
+        environ['REQUESTS_CA_BUNDLE'] = join(dirname(sys.executable), 'Resources', 'cacert.pem')
+
+except:
+    if __debug__: print_exc()
+    import urllib2
+
+    # mimimal implementation of requests interface
+
+    class Response(object):
+
+        def __init__(self, url, status_code, headers, content):
+            self.url = url
+            self.status_code = status_code
+            self.headers = headers	# actually a mimetools.Message instance
+            self.content = content
+
+        def json(self):
+            # Python 2.5 doesn't have json module, so here's a quick and dirty decoder. Doesn't santise input.
+            null = None
+            true = True
+            false = False
+            text = self.content.decode('utf-8').strip()	# Should look for charset in Content-Type header
+            if not text.startswith('{'): return {}
+            return eval(text.replace('\/','/'))
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise urllib2.HTTPError(self.url, self.status_code, '%d %s' % (self.status_code, self.status_code >= 500 and 'Server Error' or 'Client Error'), self.headers, None)
+
+    class Session(object):
+
+        def __init__(self):
+            self.headers = {}
+
+        def get(self, url, timeout=None, headers={}):
+            request = urllib2.Request(url, None, dict(self.headers, **headers))	# Python 2.5 urllib2 doesn't support timeout
+            try:
+                h = urllib2.urlopen(request)
+                r = Response(h.geturl(), h.code, h.info(), h.read())
+                h.close()
+                return r
+            except urllib2.HTTPError, e:
+                return urllib2.Response(url, e.code, {}, '')
+            except:
+                raise
+
+        def close(self):
+            pass
+
+
 class Filecache:
 
     directory='dir.txt'
     maxage=31*24*60*60	# Max age in cache since last accessed: 1 month
+    timeout = 5
 
     def __init__(self):
         if platform.startswith('linux'):
@@ -85,10 +142,12 @@ class Filecache:
                 return filename
         return None
 
-    # Return a file from the cache, blocking to read it from a URL if necessary
-    def fetch(self, name, url, minsize=0):
+    # Return a filename from the cache, blocking to read it from a URL if necessary,
+    # or False if can't be obtained from the URL permanently, on None if can't be obtained temporarily.
+    def fetch(self, session, name, url, minsize=0):
         now=int(time.time())
         filename=join(self.cachedir, name)
+        headers = {}
         if name in self.files:
             rec=self.files[name]
             if not rec:
@@ -97,65 +156,45 @@ class Filecache:
             if exists(filename):
                 if accessed>=self.starttime or self.starttime-modified<Filecache.maxage:
                     # already accessed this session or downloaded recently - don't check again
-                    self.files[name]=(now, modified)
+                    self.files[name] = (now, modified)
                     return filename
                 # http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.25
                 # However Bing often ignores this and serves anyway, so first check above whether downloaded recently
-                request=Request(url, None, modified and {'If-Modified-Since': formatdate(modified,usegmt=True)} or {})
-            else:
-                request=Request(url)
-        else:
-            request=Request(url)
-        request.add_header('User-Agent', '%s/%4.2f' % (appname, appversion))
+                headers = modified and {'If-Modified-Since': formatdate(modified, usegmt=True)} or {}
 
-        tries=3
-        while tries:
-            tries-=1
-            try:
-                h=urlopen(request)
-                d=h.read()
-                h.close()
-                if h.info().getheader('X-VE-Tile-Info')=='no-tile':
-                    # Bing serves a placeholder and adds this header if no imagery available at this resolution
-                    raise HTTPError(url, 404, None, None, None)
-                if int(h.info().getheader('Content-Length')) < minsize:
-                    # ArcGIS doesn't give any indication that it's serving a placeholder. Assume small filesize = placeholder
-                    raise HTTPError(url, 404, None, None, None)
-                f=open(filename, 'wb')
-                f.write(d)
-                f.close()
-                cachecontrol=h.info().getheader('Cache-Control')
-                if not cachecontrol or 'public' in cachecontrol or 'private' in cachecontrol or ('max-age' in cachecontrol and 'no-cache' not in cachecontrol):
-                    # http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.9
-                    self.files[name]=(now, now)	# just use time of request for modification time
-                else:
-                    self.files[name]=(now, 0)	# set modificaton time to epoch so will be re-fetched on next run
-                if __debug__: self.writedir()
+        try:
+            r = session.get(url, headers=headers, timeout=Filecache.timeout)
+            if r.headers.get('X-VE-Tile-Info') == 'no-tile':
+                # Bing serves a placeholder and adds this header if no imagery available at this resolution
+                self.files[name] = False
+                return False
+            elif int(r.headers.get('Content-Length', 0)) < minsize:
+                # ArcGIS doesn't give any indication that it's serving a placeholder. Assume small filesize = placeholder
+                self.files[name] = False
+                return False
+            elif r.status_code / 100 == 4:	# Client error including Not Found
+                if __debug__: print url, r.status_code
+                self.files[name] = False
+                return False
+            elif r.status_code == 304:	# Not Modified
+                self.files[name] = (now, modified)
                 return filename
-            except HTTPError,e:
-                if __debug__:
-                    print request.get_full_url().split('&')[0], e.code
-                if e.code==304:	# Not Modified
-                    # http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.3.5
-                    self.files[name]=(now, modified)
-                    return filename
-                elif e.code/100==4:
-                    # some kind of unrecoverable error
-                    break
-            except URLError,e:
-                # Retry any other errors
-                if __debug__:
-                    print request.get_full_url().split('&')[0], request.headers, tries
-                    print str(e)
-            except:
-                # Retry any other errors
-                if __debug__:
-                    print request.get_full_url().split('&')[0], request.headers, tries
-                    print_exc()
+            else:
+                r.raise_for_status()
 
-        # Failed after retries
-        self.files[name]=False
-        return False
+            f=open(filename, 'wb')
+            f.write(r.content)
+            f.close()
+            self.files[name]=(now, now)	# just use time of request for modification time
+            if __debug__: self.writedir()
+            return filename
+
+        except:
+            # Some sort of connection or server error
+            if __debug__:
+                print url
+                print_exc()
+            return None	# Try again in future
 
 
     def writedir(self):
@@ -193,6 +232,8 @@ class Imagery:
         self.dist=0
 
         self.filecache=Filecache()
+
+        self.session = None	# requests Session if available
 
         # Setup a pool of worker threads
         self.workers=[]
@@ -232,7 +273,7 @@ class Imagery:
 
         while True:
             args = self.q.get()
-            if not args: exit()	# Die!
+            if not args: sys.exit()	# Die!
             self.initplacement(tls, *args)
             self.q.task_done()
 
@@ -273,6 +314,10 @@ class Imagery:
 
         if self.imageryprovider != prefs.imageryprovider:
             self.imageryprovider = prefs.imageryprovider in self.providers and prefs.imageryprovider or None
+            if self.session:
+                self.session.close()
+            self.session = Session()
+            self.session.headers.update({'User-Agent': '%s/%4.2f' % (appname, appversion)})
             self.providers[self.imageryprovider]()	# setup
             self.reset()
 
@@ -487,10 +532,8 @@ class Imagery:
     def bing_setup(self):
         try:
             key='AhATjCXv4Sb-i_YKsa_8lF4DtHwVoicFxl0Stc9QiXZNywFbI2rajKZCsLFIMOX2'
-            h=urlopen('http://dev.virtualearth.net/REST/v1/Imagery/Metadata/Aerial?key=%s' % key)
-            d=h.read()
-            h.close()
-            info=json_decode(d)
+            r = self.session.get('https://dev.virtualearth.net/REST/v1/Imagery/Metadata/Aerial?key=%s' % key)
+            info = r.json()
             # http://msdn.microsoft.com/en-us/library/ff701707.aspx
             if 'authenticationResultCode' not in info or info['authenticationResultCode']!='ValidCredentials' or 'statusCode' not in info or info['statusCode']!=200:
                 return
@@ -503,7 +546,7 @@ class Imagery:
             self.provider_base=res['imageUrl'].replace('{subdomain}',res['imageUrlSubdomains'][-1]).replace('{culture}','en').replace('{quadkey}','%s') + '&key=' + key	# was random.choice(res['imageUrlSubdomains']) but always picking the same server seems to give better caching
             self.provider_url=self.bing_quadkey
             if info['brandLogoUri']:
-                filename=self.filecache.fetch(basename(info['brandLogoUri']), info['brandLogoUri'])
+                filename = self.filecache.fetch(self.session, basename(info['brandLogoUri']), info['brandLogoUri'])
                 if filename:
                     image = PIL.Image.open(filename)	# yuck. but at least open is lazy
                     self.provider_logo=(filename,image.size[0],image.size[1])
@@ -521,18 +564,16 @@ class Imagery:
     # Called in worker thread - don't do anything fancy since main body of code is not thread-safe
     def arcgis_setup(self):
         try:
-            h=urlopen('http://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer?f=json')
-            d=h.read()
-            h.close()
-            info=json_decode(d)
+            r = self.session.get('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer?f=json')
+            info = r.json()
             # http://resources.arcgis.com/en/help/rest/apiref/index.html
             # http://resources.arcgis.com/en/help/rest/apiref/mapserver.html
             self.provider_levelmin=min([lod['level'] for lod in info['tileInfo']['lods']])
             self.provider_levelmax=max([lod['level'] for lod in info['tileInfo']['lods']])
             self.provider_tilesize = 256
-            self.provider_base='http://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/%s'
-            self.provider_url=self.arcgis_url
-            filename=self.filecache.fetch('logo-med.png', 'http://serverapi.arcgisonline.com/jsapi/arcgis/2.8/images/map/logo-med.png')
+            self.provider_base = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/%s'
+            self.provider_url = self.arcgis_url
+            filename = self.filecache.fetch(self.session, 'logo-med.png', 'https://serverapi.arcgisonline.com/jsapi/arcgis/2.8/images/map/logo-med.png')
             if filename:
                 image = PIL.Image.open(filename)	# yuck. but at least open is lazy
                 self.provider_logo=(filename,image.size[0],image.size[1])
@@ -554,9 +595,9 @@ class Imagery:
             self.provider_levelmin = 0
             self.provider_levelmax = 20
             self.provider_tilesize = 512
-            self.provider_base='https://api.mapbox.com/styles/v1/mapbox/outdoors-v9/tiles/%s?access_token=pk.eyJ1IjoibWFyZ2luYWwiLCJhIjoiY2lyZTl2M2xjMDAwNGlsbTM4aXp0d243aSJ9.SK1DCngwVZhvlP4CLAyz6A'
-            self.provider_url=self.mb_url
-            filename=self.filecache.fetch('mapbox.ico', 'https://www.mapbox.com/img/favicon.ico')
+            self.provider_base = 'https://api.mapbox.com/styles/v1/mapbox/outdoors-v9/tiles/%s?access_token=pk.eyJ1IjoibWFyZ2luYWwiLCJhIjoiY2lyZTl2M2xjMDAwNGlsbTM4aXp0d243aSJ9.SK1DCngwVZhvlP4CLAyz6A'
+            self.provider_url = self.mb_url
+            filename = self.filecache.fetch(self.session, 'mapbox.ico', 'https://www.mapbox.com/img/favicon.ico')
             if filename:
                 image = PIL.Image.open(filename)	# yuck. but at least open is lazy
                 self.provider_logo=(filename,image.size[0],image.size[1])
@@ -575,9 +616,11 @@ class Imagery:
             return	# was created while this task was queued
 
         (name, url, minsize) = self.provider_url(*key)
-        filename = self.filecache.fetch(name, url, minsize)
+        filename = self.filecache.fetch(self.session, name, url, minsize)
         if not filename:
-            self.placementcache[key] = False	# Couldn't fetch image
+            # Couldn't fetch image
+            if filename is False:		# Definitively unavailable
+                self.placementcache[key] = False
             self.canvas.Refresh()		# Probably wanting to know this
             return
 
@@ -614,10 +657,3 @@ class Imagery:
         return
 
 
-# Python 2.5 doesn't have json module, so here's a quick and dirty decoder. Doesn't santise input.
-def json_decode(s):
-    null=None
-    true=True
-    false=False
-    if not s.startswith('{'): return {}
-    return eval(s.decode('utf-8').replace('\/','/'))
