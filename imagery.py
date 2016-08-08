@@ -92,13 +92,12 @@ class Filecache:
         elif platform=='darwin':
             self.cachedir=expanduser('~/Library/Caches').decode(getfilesystemencoding() or 'utf-8')
         elif platform=='win32':
-            import ctypes.wintypes
+            import ctypes, ctypes.wintypes
             buf= ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
-            if not ctypes.windll.shell32.SHGetFolderPathW(0, 0x801c, 0, 0, buf):	# CSIDL_LOCAL_APPDATA
-                self.cachedir=buf.value
+            if not ctypes.windll.shell32.SHGetSpecialFolderPathW(0, buf, 0x001C, True):	# CSIDL_LOCAL_APPDATA
+                self.cachedir = buf.value
             else:
-                # can fail on 64 bit - race condition?
-                self.cachedir=getenv('APPDATA', '.')
+                self.cachedir = getenv('LOCALAPPDATA', gettempdir())
         try:
             self.cachedir=join(self.cachedir, appname)
             if not isdir(self.cachedir):

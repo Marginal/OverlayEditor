@@ -90,6 +90,8 @@ Section "Install"
   ExecWait '"$TMPFILE.exe" /S _?=$R1'
   Delete $TMPFILE.exe
   Delete $TMPFILE
+  StrCmp $APPDATA "" doneuninst
+  RMDir /r "$APPDATA\OverlayEditor"	; Remove current user's old imagery from OverlayEditor < 2.55 under 64bit
   doneuninst:
 
   SetOutPath "$INSTDIR"
