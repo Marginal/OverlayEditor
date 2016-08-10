@@ -1064,6 +1064,7 @@ class AutoGenString(Outline):
         if param == None: param = 257
         Outline.__init__(self, name, param, nodes, lon, size, hdg)
         self.singlewinding = False
+        self.closed = False	# last segment of a winding isn't populated
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         self.vertexcache = vertexcache
@@ -1092,6 +1093,12 @@ class AutoGenString(Outline):
     def decodeparam(self):
         # decode the DSF param into height in 4m increments and code
         return (self.param >> 8, self.param & 0xff)
+
+    def delnode(self, tile, selectednode, clockwise=False):
+        selectednode = Outline.delnode(self, tile, selectednode, clockwise=False)
+        (height, code) = self.decodeparam()
+        self.param = min(len(self.nodes), max(1, code)) + (height << 8)	# Valid ranges are 1:#windings
+        return selectednode
 
     def locationstr(self, dms, imp, node=None):
         if node:
