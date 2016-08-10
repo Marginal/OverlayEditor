@@ -1058,11 +1058,11 @@ class AutoGenBlock(Outline):
             Outline.move(self, dlat,dlon,dhdg, 0, loc, tile)
 
 
-class AutoGenString(Outline):
+class AutoGenString(Polygon):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
         if param == None: param = 257
-        Outline.__init__(self, name, param, nodes, lon, size, hdg)
+        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
         self.singlewinding = False
         self.closed = False	# last segment of a winding isn't populated
 
@@ -1095,14 +1095,20 @@ class AutoGenString(Outline):
         return (self.param >> 8, self.param & 0xff)
 
     def delnode(self, tile, selectednode, clockwise=False):
-        selectednode = Outline.delnode(self, tile, selectednode, clockwise=False)
+        selectednode = Polygon.delnode(self, tile, selectednode, clockwise=False)
         (height, code) = self.decodeparam()
         self.param = min(len(self.nodes), max(1, code)) + (height << 8)	# Valid ranges are 1:#windings
         return selectednode
 
+    def addwinding(self, tile, size, hdg):
+        (height, code) = self.decodeparam()
+        if code == len(self.nodes):
+            self.param = 1 + code + (height << 8)	# Increase number of sides to match
+        return Polygon.addwinding(self, tile, size, hdg)
+
     def locationstr(self, dms, imp, node=None):
         if node:
-            return Outline.locationstr(self, dms, imp, node)
+            return Polygon.locationstr(self, dms, imp, node)
         else:
             (height, code) = self.decodeparam()
             return u'%s  Height\u2195 %dm  Sides\u21e7\u2195 %d  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), height * 4, code, len(self.nodes[0]))
