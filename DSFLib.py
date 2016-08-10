@@ -30,7 +30,7 @@ if not hasattr(numpy,'radians'):
 
 from elevation import DSFdivisions, onedeg
 from nodes import Node
-from clutter import Object, Polygon, Exclude, Network
+from clutter import Object, AutoGenBlock, AutoGenString, Polygon, Exclude, Network
 from clutterdef import NetworkDef, COL_NETWORK
 from version import appname, appversion
 
@@ -655,11 +655,16 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
     else:
         nets = None
 
-    if bbox: placements = [p for p in placements if p.inside(bbox)]	# filter to bounding box
-    if bytype is Object:
-        placements = [p for p in placements if isinstance(bytype, Object)]	# filter by type, including AutoGenPoints
-    elif bytype:
-        placements = [p for p in placements if p.__class__ is bytype]	# filter by type, excluding derived
+    if bbox:	# filter to bounding box
+        if bytype is Object:
+            placements = [p for p in placements if p.inside(bbox) and (isinstance(p, Object) or isinstance(p, AutoGenBlock) or isinstance(p, AutoGenString))]	# filter by type, including AutoGenPoints
+        elif bytype:
+            placements = [p for p in placements if p.inside(bbox) and p.__class__ is bytype]	# filter by type, excluding derived
+    else:
+        if bytype is Object:
+            placements = [p for p in placements if isinstance(p, Object) or isinstance(p, AutoGenBlock) or isinstance(p, AutoGenString)]	# filter by type, including AutoGenPoints
+        elif bytype:
+            placements = [p for p in placements if p.__class__ is bytype]	# filter by type, excluding derived
 
     return (south, west, placements, nets, mesh)
 
