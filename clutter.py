@@ -42,7 +42,7 @@ glEndQuery = alternate(glEndQuery, glEndQueryARB)
 
 from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, AutoGenBlockDef, AutoGenStringDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, StringDef, NetworkDef
 from clutterdef import ObjectFallback, AutoGenPointFallback, AutoGenBlockFallback, AutoGenStringFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, StringFallback, NetworkFallback
-from clutterdef import SkipDefs, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELBEZ, COL_SELBEZHANDLE, COL_SELNODE
+from clutterdef import SkipDefs, COL_UNPAINTED, COL_POLYGON, COL_AUTOGEN, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELBEZ, COL_SELBEZHANDLE, COL_SELNODE
 from elevation import BBox, onedeg, maxres, minres, minhdg, resolution, round2res, ElevationMeshBase
 from nodes import Node, BezierNode, ParamNode, BezierParamNode, NetworkNode
 from palette import PaletteEntry
@@ -1011,6 +1011,7 @@ class AutoGenBlock(Outline):
         if param == None: param = 256
         Outline.__init__(self, name, param, nodes, lon, size, hdg)
         self.fixednodes = True
+        self.col = COL_AUTOGEN
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         self.vertexcache = vertexcache
@@ -1065,6 +1066,7 @@ class AutoGenString(Polygon):
         Polygon.__init__(self, name, param, nodes, lon, size, hdg)
         self.singlewinding = False
         self.closed = False	# last segment of a winding isn't populated
+        self.col = COL_AUTOGEN
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         self.vertexcache = vertexcache
