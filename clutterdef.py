@@ -85,6 +85,10 @@ class ClutterDef:
             return ObjectDef(filename, vertexcache, lookup, defs)
         elif ext==AutoGenPointDef.AGP:
             return AutoGenPointDef(filename, vertexcache, lookup, defs)
+        elif ext==PolygonDef.AGBLOCK:
+            return AutoGenBlockDef(filename, vertexcache, lookup, defs)
+        elif ext==PolygonDef.AGSTRING:
+            return AutoGenStringDef(filename, vertexcache, lookup, defs)
         elif ext==PolygonDef.DRAPED:
             return DrapedDef(filename, vertexcache, lookup, defs)
         elif ext==PolygonDef.FACADE:
@@ -873,7 +877,7 @@ class AutoGenPointDef(ObjectDef):
         assert self.vdata is None	# we're just a container
 
 
-class AutoGenFallback(ObjectFallback):
+class AutoGenPointFallback(ObjectFallback):
 
     def __init__(self, filename, vertexcache, lookup, defs):
         ObjectFallback.__init__(self, filename, vertexcache, lookup, defs)
@@ -883,6 +887,8 @@ class AutoGenFallback(ObjectFallback):
 class PolygonDef(ClutterDef):
 
     EXCLUDE='Exclude: '
+    AGBLOCK ='.agb'
+    AGSTRING ='.ags'
     FACADE='.fac'
     FOREST='.for'
     LINE='.lin'
@@ -925,6 +931,78 @@ class PolygonDef(ClutterDef):
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
         canvas.Refresh()	# Mac draws from the back buffer w/out paint event
         return img
+
+
+class AutoGenBlockDef(PolygonDef):
+
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
+        self.canpreview = True
+
+        # Minimal implementation - just get the base texture for preview
+        h=open(self.filename, 'rU')
+        if not h.readline().strip()[0] in ['I','A']:
+            raise IOError
+        if not h.readline().split('#')[0].strip() in ['1000']:
+            raise IOError
+        if not h.readline().strip() in ['AG_BLOCK']:
+            raise IOError
+        while True:
+            line=h.readline()
+            if not line: break
+            c = line.split()
+            if not c: continue
+            id = c[0]
+            if id == 'TEXTURE' and len(c)>1:
+                texture = self.cleanpath(c[1])
+                try:
+                    self.texture=vertexcache.texcache.get(texture)
+                except EnvironmentError, e:
+                    self.texerr=(texture, unicode(e.strerror or e.message))
+                except:
+                    self.texerr=(texture, unicode(exc_info()[1]))
+                break
+        h.close()
+
+
+class AutoGenBlockFallback(PolygonDef):
+    pass
+
+
+class AutoGenStringDef(PolygonDef):
+
+    def __init__(self, filename, vertexcache, lookup, defs):
+        PolygonDef.__init__(self, filename, vertexcache, lookup, defs)
+        self.canpreview = True
+
+        # Minimal implementation - just get the base texture for preview
+        h=open(self.filename, 'rU')
+        if not h.readline().strip()[0] in ['I','A']:
+            raise IOError
+        if not h.readline().split('#')[0].strip() in ['1000']:
+            raise IOError
+        if not h.readline().strip() in ['AG_STRING']:
+            raise IOError
+        while True:
+            line=h.readline()
+            if not line: break
+            c = line.split()
+            if not c: continue
+            id = c[0]
+            if id == 'TEXTURE' and len(c)>1:
+                texture = self.cleanpath(c[1])
+                try:
+                    self.texture=vertexcache.texcache.get(texture)
+                except EnvironmentError, e:
+                    self.texerr=(texture, unicode(e.strerror or e.message))
+                except:
+                    self.texerr=(texture, unicode(exc_info()[1]))
+                break
+        h.close()
+
+
+class AutoGenStringFallback(PolygonDef):
+    pass
 
 
 class DrapedDef(PolygonDef):
@@ -1762,6 +1840,5 @@ class NetworkFallback(NetworkDef):
         self.segments = [LineDef.Segment(vertexcache.texcache.get(fallbacktexture), self.length, -self.width/2, 0, 0, self.width/2, 0, 1)]
 
 
-UnknownDefs=['.agb','.ags']	# Known unknowns
 SkipDefs = ['.bch','.net','.dcl','.voc']	# Ignore in library
-KnownDefs=[ObjectDef.OBJECT, AutoGenPointDef.AGP, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.LINE, PolygonDef.STRING, PolygonDef.DRAPED]+UnknownDefs
+KnownDefs=[ObjectDef.OBJECT, AutoGenPointDef.AGP, PolygonDef.AGBLOCK, PolygonDef.AGSTRING, PolygonDef.FACADE, PolygonDef.FOREST, PolygonDef.LINE, PolygonDef.STRING, PolygonDef.DRAPED]	# In img number order from PaletteChoicebook

@@ -10,7 +10,7 @@ class Locked:
     FOR=4
     POL=8
     ORTHO=16
-    UNKNOWN=32
+    UNKNOWN=32	# includes autogen
     POLYGON=FAC|FOR|POL|ORTHO|UNKNOWN
     NET=64
     EXCLUSION=128
@@ -42,7 +42,7 @@ class LockDialog(wx.Dialog):
         elif self.canvas.locked&Locked.POLYGON:
             self.polygon.Set3StateValue(wx.CHK_UNDETERMINED)
         grid1.Add(self.polygon)
-        grid1.Add(wx.StaticBitmap(panel1, -1, wx.Bitmap("Resources/unknown.png", wx.BITMAP_TYPE_PNG)))
+        grid1.Add(wx.StaticBitmap(panel1, -1, wx.Bitmap("Resources/autogen.png", wx.BITMAP_TYPE_PNG)))
         grid1.Add([0,0])
         grid1.Add(wx.StaticText(panel1, -1, 'Polygons'))
 
@@ -78,7 +78,7 @@ class LockDialog(wx.Dialog):
         if self.canvas.locked&Locked.UNKNOWN: self.unknown.SetValue(True)
         grid1.Add([0,0])
         grid1.Add(self.unknown)
-        grid1.Add(wx.StaticBitmap(panel1, -1, wx.Bitmap("Resources/unknown.png", wx.BITMAP_TYPE_PNG)))
+        grid1.Add(wx.StaticBitmap(panel1, -1, wx.Bitmap("Resources/autogen.png", wx.BITMAP_TYPE_PNG)))
         grid1.Add(wx.StaticText(panel1, -1, 'Other'))
 
         self.network = wx.CheckBox(panel1, -1)

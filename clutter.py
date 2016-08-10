@@ -40,7 +40,9 @@ from OpenGL.GL.ARB.occlusion_query import *
 glBeginQuery = alternate(glBeginQuery, glBeginQueryARB)
 glEndQuery = alternate(glEndQuery, glEndQueryARB)
 
-from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, StringDef, NetworkDef, ObjectFallback, AutoGenFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, StringFallback, NetworkFallback, SkipDefs, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELBEZ, COL_SELBEZHANDLE, COL_SELNODE
+from clutterdef import ClutterDef, ObjectDef, AutoGenPointDef, PolygonDef, AutoGenBlockDef, AutoGenStringDef, DrapedDef, ExcludeDef, FacadeDef, ForestDef, LineDef, StringDef, NetworkDef
+from clutterdef import ObjectFallback, AutoGenPointFallback, AutoGenBlockFallback, AutoGenStringFallback, DrapedFallback, FacadeFallback, ForestFallback, LineFallback, StringFallback, NetworkFallback
+from clutterdef import SkipDefs, COL_UNPAINTED, COL_POLYGON, COL_FOREST, COL_EXCLUDE, COL_NONSIMPLE, COL_SELECTED, COL_SELBEZ, COL_SELBEZHANDLE, COL_SELNODE
 from elevation import BBox, onedeg, maxres, minres, minhdg, resolution, round2res, ElevationMeshBase
 from nodes import Node, BezierNode, ParamNode, BezierParamNode, NetworkNode
 from palette import PaletteEntry
@@ -314,7 +316,7 @@ class AutoGenPoint(Object):
                 if filename in defs:
                     self.definition=defs[filename]
                 else:
-                    defs[filename]=self.definition=AutoGenFallback(filename, vertexcache, lookup, defs)
+                    defs[filename] = self.definition = AutoGenPointFallback(filename, vertexcache, lookup, defs)
             return False
 
         # load children
@@ -375,7 +377,11 @@ class Polygon(Clutter):
         if name.startswith(PolygonDef.EXCLUDE):
             return Exclude(name, param, nodes, lon, size, hdg)
         ext=name.lower()[-4:]
-        if ext==PolygonDef.DRAPED:
+        if ext==PolygonDef.AGBLOCK:
+            return AutoGenBlock(name, param, nodes, lon, size, hdg)
+        elif ext==PolygonDef.AGSTRING:
+            return AutoGenString(name, param, nodes, lon, size, hdg)
+        elif ext==PolygonDef.DRAPED:
             return Draped(name, param, nodes, lon, size, hdg)
         elif ext==PolygonDef.FACADE:
             return Facade(name, param, nodes, lon, size, hdg)
@@ -933,6 +939,57 @@ class Polygon(Clutter):
         return (p[0][0]*mum13 + 3*p[1][0]*mu*mum1*mum1 + 3*p[2][0]*mu*mu*mum1 + p[3][0]*mu3, p[0][1], p[0][2]*mum13 + 3*p[1][2]*mu*mum1*mum1 + 3*p[2][2]*mu*mu*mum1 + p[3][2]*mu3)
 
 
+# Dummy object used for polygons displayed in outline form
+class Outline(Polygon):
+
+    def tessvertex(vertex, data):
+        data.append(vertex)
+
+    def tessedge(flag):
+        pass	# dummy
+
+    tess=gluNewTess()
+    gluTessNormal(tess, 0, -1, 0)
+    gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NEGATIVE)
+    gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
+    gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
+
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
+        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
+
+    def layout(self, tile, selectednode=None, recalc=True):
+        if self.islaidout() and not recalc:
+            # just ensure allocated
+            return Polygon.layout(self, tile, selectednode, False)
+
+        selectednode=self.layout_nodes(tile, selectednode)
+
+        # tessellate. This is just to check polygon is simple
+        try:
+            tris=[]
+            gluTessBeginPolygon(Outline.tess, tris)
+            for i in range(len(self.nodes)):
+                gluTessBeginContour(Outline.tess)
+                for j in range(len(self.nodes[i])):
+                    gluTessVertex(Outline.tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), self.points[i][j])
+                gluTessEndContour(Outline.tess)
+            gluTessEndPolygon(Outline.tess)
+            if not tris:
+                if __debug__: print "Outline layout failed"
+                self.nonsimple=True
+        except:
+            # Combine required -> not simple
+            if __debug__:
+                print "Outline layout failed:"
+                print_exc()
+            self.nonsimple=True
+
+        col=self.nonsimple and COL_NONSIMPLE or self.col
+        self.dynamic_data=concatenate([array(p+col,float32) for w in self.points for p in w])
+        self.vertexcache.allocate_dynamic(self, True)
+        return selectednode
+
+
 class Beach(Polygon):
     # Editing would zap extra vertex parameters that we don't understand,
     # so make a dummy type to prevent selection and therefore editing
@@ -946,6 +1003,112 @@ class Beach(Polygon):
 
     def pick_dynamic(self, glstate, lookup):
         return False	# Don't draw so can't be picked
+
+
+class AutoGenBlock(Outline):
+
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
+        if param == None: param = 256
+        Outline.__init__(self, name, param, nodes, lon, size, hdg)
+        self.fixednodes = True
+
+    def load(self, lookup, defs, vertexcache, usefallback=False):
+        self.vertexcache = vertexcache
+        try:
+            filename = lookup[self.name].file
+            if filename in defs:
+                self.definition = defs[filename]
+            else:
+                defs[filename] = self.definition = AutoGenBlockDef(filename, vertexcache, lookup, defs)
+            return True
+        except:
+            if __debug__:
+                print_exc()
+            if usefallback:
+                if self.name in lookup:
+                    filename = lookup[self.name].file
+                else:
+                    filename = self.name
+                    lookup[self.name] = PaletteEntry(self.name)
+                if filename in defs:
+                    self.definition = defs[filename]
+                else:
+                    defs[filename] = self.definition = AutoGenBlockFallback(filename, vertexcache, lookup, defs)
+            return False
+
+    def decodeparam(self):
+        # decode the DSF param into height in 4m increments and code
+        return (self.param >> 8, self.param & 0xff)
+
+    def locationstr(self, dms, imp, node=None):
+        if node:
+            return Outline.locationstr(self, dms, imp, node)
+        else:
+            (height, code) = self.decodeparam()
+            return u'%s  Height\u2195 %dm  Spelling\u21e7\u2195 %d' % (self.latlondisp(dms, self.lat, self.lon), height * 4, code)
+
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile):
+        (height, code) = self.decodeparam()
+        if abs(dparam) == 1:	# Height
+            self.param = code + (min(255, max(0, height + dparam)) << 8)
+        elif dparam:		# Spelling
+            dparam = dparam / abs(dparam)
+            self.param = min(4, max(0, code + dparam)) + (height << 8)
+        if dlat or dlon or dhdg:
+            Outline.move(self, dlat,dlon,dhdg, 0, loc, tile)
+
+
+class AutoGenString(Outline):
+
+    def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
+        if param == None: param = 257
+        Outline.__init__(self, name, param, nodes, lon, size, hdg)
+        self.singlewinding = False
+
+    def load(self, lookup, defs, vertexcache, usefallback=False):
+        self.vertexcache = vertexcache
+        try:
+            filename = lookup[self.name].file
+            if filename in defs:
+                self.definition = defs[filename]
+            else:
+                defs[filename] = self.definition = AutoGenStringDef(filename, vertexcache, lookup, defs)
+            return True
+        except:
+            if __debug__:
+                print_exc()
+            if usefallback:
+                if self.name in lookup:
+                    filename = lookup[self.name].file
+                else:
+                    filename = self.name
+                    lookup[self.name] = PaletteEntry(self.name)
+                if filename in defs:
+                    self.definition = defs[filename]
+                else:
+                    defs[filename] = self.definition = AutoGenStringFallback(filename, vertexcache, lookup, defs)
+            return False
+
+    def decodeparam(self):
+        # decode the DSF param into height in 4m increments and code
+        return (self.param >> 8, self.param & 0xff)
+
+    def locationstr(self, dms, imp, node=None):
+        if node:
+            return Outline.locationstr(self, dms, imp, node)
+        else:
+            (height, code) = self.decodeparam()
+            return u'%s  Height\u2195 %dm  Sides\u21e7\u2195 %d  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), height * 4, code, len(self.nodes[0]))
+
+    def move(self, dlat, dlon, dhdg, dparam, loc, tile):
+        (height, code) = self.decodeparam()
+        if abs(dparam) == 1:	# Height
+            self.param = code + (min(255, max(0, height + dparam)) << 8)
+        elif dparam:		# Sides
+            dparam = dparam / abs(dparam)
+            self.param = min(len(self.nodes), max(1, code + dparam)) + (height << 8)	# Valid ranges are 1:#windings
+        if dlat or dlon or dhdg:
+            Outline.move(self, dlat,dlon,dhdg, 0, loc, tile)
 
 
 class Draped(Polygon):
@@ -1941,25 +2104,13 @@ class Facade(Polygon):
         return selectednode
 
 
-class Forest(Polygon):
-
-    def tessvertex(vertex, data):
-        data.append(vertex)
-
-    def tessedge(flag):
-        pass	# dummy
-
-    tess=gluNewTess()
-    gluTessNormal(tess, 0, -1, 0)
-    gluTessProperty(tess, GLU_TESS_WINDING_RULE, GLU_TESS_WINDING_NONZERO)
-    gluTessCallback(tess, GLU_TESS_VERTEX_DATA,  tessvertex)
-    gluTessCallback(tess, GLU_TESS_EDGE_FLAG,    tessedge)	# no strips
+class Forest(Outline):
 
     def __init__(self, name, param, nodes, lon=None, size=None, hdg=None):
-        if param==None: param=127
-        Polygon.__init__(self, name, param, nodes, lon, size, hdg)
+        if param == None: param = 127
+        Outline.__init__(self, name, param, nodes, lon, size, hdg)
         self.singlewinding = False
-        self.col=COL_FOREST
+        self.col = COL_FOREST
 
     def load(self, lookup, defs, vertexcache, usefallback=False):
         self.vertexcache = vertexcache
@@ -1987,45 +2138,13 @@ class Forest(Polygon):
 
     def locationstr(self, dms, imp, node=None):
         if node:
-            return Polygon.locationstr(self, dms, imp, node)
+            return Outline.locationstr(self, dms, imp, node)
         else:
             return u'%s  Density\u2195 %-4.1f%%  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), self.param/2.55, len(self.nodes[0]))
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile):
-        Polygon.move(self, dlat, dlon, dhdg, dparam, loc, tile)
+        Outline.move(self, dlat, dlon, dhdg, dparam, loc, tile)
         if self.param>255: self.param=255
-
-    def layout(self, tile, selectednode=None, recalc=True):
-        if self.islaidout() and not recalc:
-            # just ensure allocated
-            return Polygon.layout(self, tile, selectednode, False)
-
-        selectednode=self.layout_nodes(tile, selectednode)
-
-        # tessellate. This is just to check polygon is simple
-        try:
-            tris=[]
-            gluTessBeginPolygon(Forest.tess, tris)
-            for i in range(len(self.nodes)):
-                gluTessBeginContour(Forest.tess)
-                for j in range(len(self.nodes[i])):
-                    gluTessVertex(Forest.tess, array([self.points[i][j][0], 0, self.points[i][j][2]],float64), self.points[i][j])
-                gluTessEndContour(Forest.tess)
-            gluTessEndPolygon(Forest.tess)
-            if not tris:
-                if __debug__: print "Forest layout failed"
-                self.nonsimple=True
-        except:
-            # Combine required -> not simple
-            if __debug__:
-                print "Forest layout failed:"
-                print_exc()
-            self.nonsimple=True
-
-        col=self.nonsimple and COL_NONSIMPLE or self.col
-        self.dynamic_data=concatenate([array(p+col,float32) for w in self.points for p in w])
-        self.vertexcache.allocate_dynamic(self, True)
-        return selectednode
 
 
 class Line(Polygon):

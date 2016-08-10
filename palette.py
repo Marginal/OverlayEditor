@@ -5,7 +5,7 @@ from os.path import dirname, exists, join, sep, splitext
 if __debug__:
     from traceback import print_exc
 
-from clutterdef import ClutterDef, ObjectDef, PolygonDef, DrapedDef, ExcludeDef, NetworkDef, KnownDefs, UnknownDefs
+from clutterdef import ClutterDef, ObjectDef, PolygonDef, DrapedDef, ExcludeDef, NetworkDef, KnownDefs
 from importobjs import doimport
 from MessageBox import myMessageBox
 from prefs import prefs, gcustom
@@ -116,8 +116,6 @@ class PaletteListBox(wx.VListBox):
                         if entry.deprecated: continue	# Don't list missing deprecated stuff
                         imgno=self.parent.imgno_bad
                         self.parent.bad[realname]=True
-                    elif ext in UnknownDefs:
-                        imgno=self.parent.imgno_unknown
                     elif ext==PolygonDef.DRAPED:
                         imgno=self.parent.imgno_pol
                         if self.tabno==0 and self.pkgdir:
@@ -201,6 +199,9 @@ class PaletteChoicebook(wx.Choicebook):
         # must be in same order as KnownDefs
         self.imgs.Add(wx.Bitmap("Resources/obj.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/obj.png", wx.BITMAP_TYPE_PNG))
+        self.imgno_unknown = self.imgs.GetImageCount()
+        self.imgs.Add(wx.Bitmap("Resources/autogen.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/autogen.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/fac.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/for.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/lin.png", wx.BITMAP_TYPE_PNG))
@@ -209,18 +210,17 @@ class PaletteChoicebook(wx.Choicebook):
         self.imgs.Add(wx.Bitmap("Resources/pol.png", wx.BITMAP_TYPE_PNG))
         self.imgno_ortho = self.imgs.GetImageCount()
         self.imgs.Add(wx.Bitmap("Resources/ortho.png", wx.BITMAP_TYPE_PNG))
-        self.imgno_unknown = self.imgs.GetImageCount()
-        self.imgs.Add(wx.Bitmap("Resources/unknown.png", wx.BITMAP_TYPE_PNG))
         self.imgno_multiple = self.imgs.GetImageCount()
         self.imgs.Add(wx.Bitmap("Resources/objs.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/objs.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/autogens.png", wx.BITMAP_TYPE_PNG))
+        self.imgs.Add(wx.Bitmap("Resources/autogens.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/facs.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/fors.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/lins.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/strs.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/pols.png", wx.BITMAP_TYPE_PNG))
         self.imgs.Add(wx.Bitmap("Resources/orthos.png", wx.BITMAP_TYPE_PNG))
-        self.imgs.Add(wx.Bitmap("Resources/unknowns.png", wx.BITMAP_TYPE_PNG))
         self.imgno_net = self.imgs.GetImageCount()
         self.imgs.Add(wx.Bitmap("Resources/net.png", wx.BITMAP_TYPE_PNG))
         self.imgno_exc = self.imgs.GetImageCount()
