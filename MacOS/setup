@@ -20,7 +20,7 @@ cp -p MacOS/${APPNAME} MacOS/DSFTool ${APP}/Contents/MacOS/
 for i in $PY; do cp -p "$i" ${APP}/Contents/MacOS/; done
 mkdir -p ${APP}/Contents/Resources
 for i in $RSRC; do cp -p "$i" ${APP}/Contents/Resources/; done
-cp -p MacOS/*.icns MacOS/*.png MacOS/screenshot.jpg ${APP}/Contents/Resources/	# overwrite with Mac versions
+cp -p "`python -m requests.certs`" MacOS/*.icns MacOS/*.png MacOS/screenshot.jpg ${APP}/Contents/Resources/	# overwrite with Mac versions
 mkdir -p ${APP}/Contents/Resources/previews
 for i in $PREV; do cp -p "$i" ${APP}/Contents/Resources/previews/; done
 python2.5 -OO MacOS/bundledeps.py -x wx -o ${APP} ${APPNAME}.py	# exclude wx - included with 10.5 and 10.6

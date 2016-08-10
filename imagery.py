@@ -28,8 +28,8 @@ try:
     from requests import Session
     from requests.packages import urllib3
     urllib3.disable_warnings()        # yuck suppress InsecurePlatformWarning under Python < 2.7.9 which lacks SNI support
-    if platform=='win32' and getattr(sys, 'frozen', False):
-        environ['REQUESTS_CA_BUNDLE'] = join(dirname(sys.executable), 'Resources', 'cacert.pem')
+    if getattr(sys, 'frozen', False):
+        environ['REQUESTS_CA_BUNDLE'] = join('Resources', 'cacert.pem')
 
 except:
     if __debug__: print_exc()
