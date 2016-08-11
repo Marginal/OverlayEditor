@@ -1113,7 +1113,10 @@ class AutoGenString(Polygon):
             return Polygon.locationstr(self, dms, imp, node)
         else:
             (height, code) = self.decodeparam()
-            return u'%s  Height\u2195 %dm  Sides\u21e7\u2195 %d  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), height * 4, code, len(self.nodes[0]))
+            if len(self.nodes)==1 and code==1:		# Omit #sides if only one winding
+                return u'%s  Height\u2195 %dm  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), height * 4, len(self.nodes[0]))
+            else:
+                return u'%s  Height\u2195 %dm  Sides\u21e7\u2195 %d  (%d nodes)' % (self.latlondisp(dms, self.lat, self.lon), height * 4, code, len(self.nodes[0]))
 
     def move(self, dlat, dlon, dhdg, dparam, loc, tile):
         (height, code) = self.decodeparam()
