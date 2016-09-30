@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 import pstats
 import os.path
 import sys
