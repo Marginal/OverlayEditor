@@ -21,7 +21,7 @@ surfaces = {0:  [0.125, 0.125],	# unknown
             14: [0.625, 0.875],	# ice
             15: [0.875, 0.875]}	# transparent
 
-apt_versions = [600, 703, 715, 810, 850, 1000, 1050]
+apt_versions = [600, 703, 715, 810, 850, 1000, 1050, 1100]
 
 # Scan global airport list - assumes code is ASCII for speed
 def scanApt(filename):
@@ -320,7 +320,7 @@ def readNav(filename):
         c=h.readline().split()
         if c: break
     ver=c[0]
-    if not ver in ['740','810']:
+    if not ver in ['740','810','1100']:
         raise IOError
     for line in h:
         c=line.split()
