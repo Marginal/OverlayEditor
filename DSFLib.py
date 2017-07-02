@@ -61,6 +61,7 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
     wantmesh = not wantoverlay
     baddsf=(0, "Invalid DSF file", path)
 
+    if __debug__: print path.encode(getfilesystemencoding() or 'utf-8')
     h=file(path, 'rb')
     sig=h.read(8)
     if sig.startswith('7z\xBC\xAF\x27\x1C'):	# X-Plane 10 compressed
@@ -97,7 +98,7 @@ def readDSF(path, netdefs, terrains, bbox=None, bytype=None):
         (c,l)=unpack('<4sI', d)
         table[c]=p+4
         p+=l
-    if __debug__: print path.encode(getfilesystemencoding() or 'utf-8'), table
+    if __debug__: print table
     if not 'DAEH' in table or not 'NFED' in table or not 'DOEG' in table or not 'SDMC' in table:
         raise IOError, baddsf
 
