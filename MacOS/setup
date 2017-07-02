@@ -25,5 +25,5 @@ mkdir -p ${APP}/Contents/Resources/previews
 for i in $PREV; do cp -p "$i" ${APP}/Contents/Resources/previews/; done
 python2.7 -OO MacOS/bundledeps.py -x setuptools -x pkg_resources -x simplejson -x PIL.ImageQt -o ${APP} ${APPNAME}.py
 xattr -r ${APP}	# warn about superfluous resource forks / metadata
-codesign --deep -s "Developer ID Application: Jonathan Harris" ${APP}
+codesign --deep -s "Developer ID Application: Jonathan Harris (R8954VZGV2)" ${APP}
 ditto -ck --keepParent --sequesterRsrc ${APP} ${APPNAME}_${VER}_mac.zip

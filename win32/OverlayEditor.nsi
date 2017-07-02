@@ -19,7 +19,7 @@ ManifestDPIAware true
 VIProductVersion "$%VERSION%.0.0"
 VIAddVersionKey "FileDescription" "OverlayEditor Installer"
 VIAddVersionKey "FileVersion" "$%VERSION%"
-VIAddVersionKey "LegalCopyright" "2007-2016 Jonathan Harris"
+VIAddVersionKey "LegalCopyright" "2007-2017 Jonathan Harris"
 VIAddVersionKey "ProductName" "OverlayEditor"
 
 Name "OverlayEditor $%VERSION%"
